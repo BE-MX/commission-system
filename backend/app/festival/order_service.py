@@ -27,6 +27,9 @@ class FestivalOrderScope:
 
 
 def _roster(db: Session) -> list[dict]:
+    if service.local_mode(db):
+        from app.trade.query_service import load_roster
+        return load_roster(db)
     return [dict(row) for row in db.execute(text(
         "SELECT t.user_id, t.Name AS user_name, t.Team AS team, t.Camp AS camp, "
         "       t.newclient_t AS target "
@@ -59,6 +62,13 @@ def resolve_scope(db: Session, current_user: dict,
         ark_user_id = int(current_user.get("sub"))
     except (TypeError, ValueError):
         raise HTTPException(422, "当前登录账号无法识别，请重新登录") from None
+    if service.local_mode(db):
+        selected = by_id.get(str(ark_user_id))
+        if selected is None:
+            raise HTTPException(422, "当前账号不在采购节有效参赛名册中")
+        if requested_user_id and str(requested_user_id) != str(ark_user_id):
+            raise HTTPException(403, "无权查看其他业务员的订单")
+        return FestivalOrderScope("self", str(ark_user_id), selected["user_name"], False, [])
     binding = (
         db.query(ArkUserExternalBinding)
         .filter(
@@ -86,6 +96,9 @@ def resolve_scope(db: Session, current_user: dict,
 
 def _order_rows(db: Session, order_type: OrderType,
                 scope: FestivalOrderScope) -> list[dict]:
+    if service.local_mode(db):
+        from app.festival.local_service import order_rows
+        return order_rows(db, order_type, scope)
     if order_type == "new_sign":
         mark, date_from, date_to = (
             service.NEW_SIGN_MARK, *service.ACTIVITY_NEW_SIGN_WINDOW,
@@ -136,7 +149,7 @@ def _decorate_new_sign(rows: list[dict]) -> list[dict]:
             customer_rows,
             key=lambda row: (str(row["account_date"] or ""), str(row["order_id"] or "")),
         )
-        points = max(service.new_sign_source_points(row.get("custom_fields"))
+        points = max(row.get("source_points") or service.new_sign_source_points(row.get("custom_fields"))
                      for row in customer_rows)
         for row in customer_rows:
             row["points"] = points if row is earliest else 0.0

@@ -7,12 +7,13 @@ import logging
 import threading
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.trade.service import local_mode
 from app.core.time import BEIJING_TIMEZONE, beijing_now, beijing_now_aware
 from app.dingtalk.gmv_daily_config import admin_users, decorate_config, load_config, okki_user_bindings
 from app.dingtalk.models import DingTalkMessageLog
@@ -113,7 +114,17 @@ def _parse_allocations(amount: Decimal, raw: object, order_no: str) -> tuple[lis
         return [], anomalies, fatal_anomalies
     total_rate = sum((item["rate"] for item in allocations), Decimal("0"))
     if total_rate == HUNDRED:
-        allocations[-1]["amount"] += amount - sum((item["amount"] for item in allocations), Decimal("0"))
+        # Allocate integer cents by largest remainder. Repeated half-up rounding
+        # can otherwise force the last positive department below zero.
+        cents = int(abs(amount) / CENT)
+        exact = [Decimal(cents) * item["rate"] / HUNDRED for item in allocations]
+        floor = [int(value.to_integral_value(rounding=ROUND_DOWN)) for value in exact]
+        remaining = cents - sum(floor)
+        priority = sorted(range(len(allocations)), key=lambda i: (-(exact[i] - floor[i]), allocations[i]["department_id"], i))
+        for index in priority[:remaining]:
+            floor[index] += 1
+        for item, value in zip(allocations, floor):
+            item["amount"] = Decimal(value) * CENT * (-1 if amount < 0 else 1)
     else:
         message = f"订单 {order_no} 的部门分摊合计为 {total_rate.normalize()}%，不是 100%"
         anomalies.append(message)
@@ -121,9 +132,9 @@ def _parse_allocations(amount: Decimal, raw: object, order_no: str) -> tuple[lis
     return allocations, anomalies, fatal_anomalies
 
 
-def _new_member(source: dict, *, configured: bool, order_index: int) -> dict:
+def _new_member(source: dict, *, configured: bool, order_index: int, user_field="okki_user_id") -> dict:
     return {
-        "okki_user_id": source["okki_user_id"],
+        user_field: source[user_field],
         "name": source["name"],
         "exclude_from_total": bool(source.get("exclude_from_total")),
         "configured": configured,
@@ -135,6 +146,8 @@ def _new_member(source: dict, *, configured: bool, order_index: int) -> dict:
 
 def calculate_report(report_date: date, config: dict, orders: list[dict]) -> dict:
     """纯计算：按订单部门 rate 分摊，并仅在配置所属队伍排除指定成员。"""
+    user_field = "ark_user_id" if config.get("source") == "local" else "okki_user_id"
+    captain_field = "captain_ark_user_id" if config.get("source") == "local" else "captain_okki_user_id"
     team_states: dict[int, dict] = {}
     configured_members: dict[tuple[int, str], dict] = {}
     for team_index, team in enumerate(config["teams"]):
@@ -143,17 +156,17 @@ def calculate_report(report_date: date, config: dict, orders: list[dict]) -> dic
         state = {
             "department_id": int(team["department_id"]),
             "name": team["name"],
-            "captain_okki_user_id": team["captain_okki_user_id"],
+            captain_field: team[captain_field],
             "sort": team_index,
             "members": {},
             "raw_gmv": Decimal("0.00"),
         }
         for member_index, member in enumerate(team.get("members", [])):
-            key = (state["department_id"], member["okki_user_id"])
+            key = (state["department_id"], str(member[user_field]))
             configured_members[key] = member
             if member.get("is_active", True):
-                state["members"][member["okki_user_id"]] = _new_member(
-                    member, configured=True, order_index=member_index,
+                state["members"][str(member[user_field])] = _new_member(
+                    member, configured=True, order_index=member_index, user_field=user_field,
                 )
         team_states[state["department_id"]] = state
 
@@ -192,12 +205,12 @@ def calculate_report(report_date: date, config: dict, orders: list[dict]) -> dic
             if member is None:
                 member_config = configured_members.get((department_id, user_id))
                 source = member_config or {
-                    "okki_user_id": user_id,
+                    user_field: user_id,
                     "name": str(order.get("user_name") or user_id),
                     "exclude_from_total": False,
                     "is_active": False,
                 }
-                member = _new_member(source, configured=False, order_index=10000 + len(state["members"]))
+                member = _new_member(source, configured=False, order_index=10000 + len(state["members"]), user_field=user_field)
                 state["members"][user_id] = member
                 anomalies.append(f"{state['name']} 的订单人员 {member['name']} 不在该队在职配置中")
             member["gmv"] += allocation["amount"]
@@ -211,7 +224,7 @@ def calculate_report(report_date: date, config: dict, orders: list[dict]) -> dic
         teams.append({
             "department_id": state["department_id"],
             "name": state["name"],
-            "captain_okki_user_id": state["captain_okki_user_id"],
+            captain_field: state[captain_field],
             "members": members,
             "raw_gmv": state["raw_gmv"].quantize(CENT),
             "excluded_gmv": excluded.quantize(CENT),
@@ -248,6 +261,9 @@ def calculate_report(report_date: date, config: dict, orders: list[dict]) -> dic
 
 
 def load_valid_orders(db: Session, report_date: date) -> list[dict]:
+    if local_mode():
+        from app.trade.query_service import load_orders
+        return load_orders(db, date_from=report_date, date_to=report_date)
     schema = get_settings().BUSINESS_DB_NAME
     rows = db.execute(text(f"""
         SELECT o.order_id, o.order_no, o.amount_usd, o.user_id, o.departments,
@@ -263,7 +279,18 @@ def load_valid_orders(db: Session, report_date: date) -> list[dict]:
 def build_report(db: Session, report_date: date | None = None) -> tuple[dict, dict]:
     effective_date = report_date or yesterday_in_beijing()
     config = decorate_config(db, load_config(db))
-    return calculate_report(effective_date, config, load_valid_orders(db, effective_date)), config
+    return _report_data(db, effective_date, config), config
+
+
+def _report_data(db, effective_date, config):
+    report = calculate_report(effective_date, config, load_valid_orders(db, effective_date))
+    if local_mode():
+        from app.trade.refresh_service import projection_status
+        # Daily company totals include every owner, including unassigned orders.
+        report["projection_status"] = projection_status(db, date_from=effective_date, date_to=effective_date)
+        if report["projection_status"]["pending_count"]:
+            report["fatal_anomalies"].append("本地订单统计更新中")
+    return report
 
 
 def _format_money(value: Decimal) -> str:
@@ -442,17 +469,18 @@ async def send_daily_report(db: Session, report_date: date | None = None, scope:
         if scope in {"all", "admins"} and not raw_config.get("admin_recipient_user_ids"):
             raise ValueError("GMV 日报尚未配置管理员接收人")
         config = decorate_config(db, raw_config)
-        binding_map = okki_user_bindings(db)
+        binding_map = {str(uid): row for uid, row in admin_users(db).items()} if local_mode() else okki_user_bindings(db)
+        captain_field = "captain_ark_user_id" if local_mode() else "captain_okki_user_id"
         delivery_plan: list[dict] = []
         jobs: list[dict] = []
         if scope in {"all", "teams"}:
             for configured in config["teams"]:
                 if not configured.get("is_active", True):
                     continue
-                recipient = binding_map.get(configured["captain_okki_user_id"])
+                recipient = binding_map.get(str(configured[captain_field]))
                 if not recipient or not recipient["dingtalk_id"]:
                     delivery_plan.append({"result": {
-                        "recipient": configured["captain_okki_user_id"],
+                        "recipient": configured[captain_field],
                         "status": "failed",
                         "reason": "captain_dingtalk_missing",
                     }})
@@ -461,7 +489,7 @@ async def send_daily_report(db: Session, report_date: date | None = None, scope:
                     "recipient": recipient,
                     "title": _message_title(f"{effective_date.isoformat()} GMV 日报｜{configured['name']}"),
                     "related_type": "gmv_daily_team",
-                    "related_id": f"{effective_date:%Y%m%d}:{configured['department_id']}:{recipient['ark_user_id']}",
+                    "related_id": f"{effective_date:%Y%m%d}:{'ark-department:' if local_mode() else ''}{configured['department_id']}:{recipient['ark_user_id']}",
                     "department_id": configured["department_id"],
                 }
                 jobs.append(job)
@@ -503,7 +531,7 @@ async def send_daily_report(db: Session, report_date: date | None = None, scope:
                 job["title"] = job["frozen_log"].title
                 job["content"] = job["frozen_log"].content
         elif jobs:
-            report = calculate_report(effective_date, config, load_valid_orders(db, effective_date))
+            report = _report_data(db, effective_date, config)
             if report["fatal_anomalies"]:
                 raise ValueError(f"GMV 数据存在阻断异常，请先预览核查：{report['fatal_anomalies'][0]}")
             teams_by_id = {team["department_id"]: team for team in report["teams"]}

@@ -25,6 +25,7 @@ from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.shipping_inspection import constants as C
 from app.shipping_inspection import file_service, outbound_service, outbound_queue_service, qr_service, service
+from app.shipping_inspection.local_outbound_service import is_native
 from app.shipping_inspection.outbound_sync_state import BLOCKED, can_allow_print_before_recheck, can_print_before_recheck
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto, ShippingOperationEvent
 from app.shipping_inspection.schemas import ShippingRecallRequest
@@ -44,7 +45,14 @@ router.include_router(outbound_inventory_router)
 _READ = ("shipping_inspection:read", "shipping_inspection:write", "shipping_inspection:admin")
 
 
-def _outbound_scope(db: Session, user: dict, read_all_permission: str = "shipping_inspection:read_all") -> str | None:
+class OutboundScope(str):
+    def __new__(cls, external_id, ark_user_id):
+        value = super().__new__(cls, external_id or f"ark-user:{ark_user_id}")
+        value.ark_user_id = ark_user_id
+        return value
+
+
+def _outbound_scope(db: Session, user: dict, read_all_permission: str = "shipping_inspection:read_all", *, local=False) -> str | None:
     """出库单数据范围：看全部返回 None；否则返回当前用户绑定的 OKKI 业务员 id。
 
     解析模式与 order_intelligence.resolve_scope 一致：active OKKI 绑定、primary 优先。
@@ -69,20 +77,20 @@ def _outbound_scope(db: Session, user: dict, read_all_permission: str = "shippin
         .first()
     )
     okki_user_id = str(binding.external_account_id).strip() if binding and binding.external_account_id else ""
-    if not okki_user_id:
+    if not okki_user_id and not local:
         raise HTTPException(status_code=422, detail="当前账号尚未绑定 OKKI 业务员，请联系管理员配置")
-    return okki_user_id
+    return OutboundScope(okki_user_id, ark_user_id)
 
 
-def _inspection_scope(db: Session, user: dict) -> str | None:
-    return _outbound_scope(db, user, "shipping_inspection:inspection_read_all")
+def _inspection_scope(db: Session, user: dict, *, local=False) -> str | None:
+    return _outbound_scope(db, user, "shipping_inspection:inspection_read_all", local=local)
 
 
 def _require_inspection_scope(db: Session, user: dict, inspection_id: int):
-    scope = _inspection_scope(db, user)
     inspection = db.get(ShippingInspection, inspection_id)
     if inspection is None:
         raise HTTPException(status_code=404, detail="验货单不存在")
+    scope = _inspection_scope(db, user, local=inspection.local_outbound_id is not None)
     if scope is not None:
         try:
             record = outbound_service.get_outbound_record(db, inspection.outbound_record_id, okki_user_id=scope, include_deleted=True)
@@ -120,7 +128,7 @@ def delete_outbound_record(
     from app.shipping_inspection import outbound_delete_service as deletion
     from app.shipping_inspection.outbound_delete_client import DeleteRemoteError
     from app.invoice.okki_client import OkkiApiError
-    scope = _outbound_scope(db, user)
+    scope = _outbound_scope(db, user, local=is_native(db, record_id))
     record = outbound_service.get_outbound_record(db, record_id, okki_user_id=scope, include_deleted=True)
     if record is None:
         # A normal mirror sync may remove the header after an ambiguous POST.
@@ -144,6 +152,7 @@ def delete_outbound_record(
 
 @router.get("/outbound-records", summary="出库单分页列表（含检验状态）")
 def list_outbound_records(
+    transaction_mode: Literal["local", "legacy"] = "legacy",
     keyword: str | None = Query(None, description="匹配出库单号/客户"),
     order_id: str | None = Query(None, pattern=r"^[1-9][0-9]*$", max_length=64),
     outbound_state: Literal['ready', 'waiting_stock', 'pending', 'running', 'retrying',
@@ -158,9 +167,11 @@ def list_outbound_records(
     db: Session = Depends(get_db),
     user: dict = Depends(require_any_permission(*_READ)),
 ):
-    scope_okki_user = _outbound_scope(db, user)
+    scope_okki_user = _outbound_scope(db, user, local=transaction_mode == "local")
     try:
-        rows, total = outbound_queue_service.list_outbound_records(
+        from app.shipping_inspection import local_outbound_service
+        list_rows = local_outbound_service.list_records if transaction_mode == "local" else outbound_queue_service.list_outbound_records
+        rows, total = list_rows(
             db, keyword=keyword, order_id=order_id, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
             outbound_state=outbound_state, inspection_status=inspection_status,
             sort_field=sort_field, sort_order=sort_order,
@@ -215,7 +226,7 @@ def outbound_print_data(
     db: Session = Depends(get_db),
     user: dict = Depends(require_any_permission(*_READ)),
 ):
-    scope_okki_user = _outbound_scope(db, user)
+    scope_okki_user = _outbound_scope(db, user, local=is_native(db, record_id))
     try:
         # 归属过滤并入查询：不可见与不存在统一 404，不泄露单号是否存在
         record = outbound_service.get_outbound_record(db, record_id, okki_user_id=scope_okki_user)
@@ -251,7 +262,7 @@ def outbound_word(
 ):
     from app.shipping_inspection.print_service import annotate_print_items
     from app.shipping_inspection.word_service import build_outbound_word
-    scope = _outbound_scope(db, user)
+    scope = _outbound_scope(db, user, local=is_native(db, record_id))
     try:
         record = outbound_service.get_outbound_record(db, record_id, okki_user_id=scope)
         if record is None:
@@ -291,6 +302,7 @@ def recall_record(
 
 @router.get("/records", summary="已提交验货单分页列表")
 def list_records(
+    transaction_mode: Literal["local", "legacy"] = "legacy",
     keyword: str | None = Query(None, description="匹配出库单号/客户"),
     order_id: str | None = Query(None, pattern=r"^[1-9][0-9]*$", max_length=64),
     salesperson_name: str | None = Query(None, max_length=100, description="关联订单业务员姓名"),
@@ -306,12 +318,12 @@ def list_records(
 ):
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=422, detail="提交日期起不能晚于提交日期止")
-    scope = _inspection_scope(db, _user)
+    scope = _inspection_scope(db, _user, local=transaction_mode == "local")
     try:
         items, total = service.list_records(
             db, keyword=keyword, order_id=order_id, submitted_by_name=submitted_by_name, salesperson_name=salesperson_name, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
             sort_field=sort_field, sort_order=sort_order,
-            okki_user_id=scope,
+            okki_user_id=scope, transaction_mode=transaction_mode,
         )
     except outbound_service.OutboundTableError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -394,7 +406,7 @@ def recover_outbound_delete(record_id: str, body: DeleteRecovery, db: Session = 
     from app.shipping_inspection import outbound_delete_service as deletion
     from app.shipping_inspection.outbound_delete_client import DeleteRemoteError
     from app.invoice.okki_client import OkkiApiError
-    record = outbound_service.get_outbound_record(db, record_id, okki_user_id=_outbound_scope(db, user), include_deleted=True)
+    record = outbound_service.get_outbound_record(db, record_id, okki_user_id=_outbound_scope(db, user, local=is_native(db, record_id)), include_deleted=True)
     if record is None:
         raise HTTPException(404, '请使用原删除入口核对已消失的出库单')
     if not body.confirmed:

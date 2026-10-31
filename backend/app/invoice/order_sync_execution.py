@@ -12,7 +12,7 @@ from sqlalchemy import select, or_
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.time import beijing_now
-from app.invoice import edit_authority, linked_sync_service as linked, okki_client
+from app.invoice import edit_authority, linked_sync_service as linked, okki_client, legacy_sending
 from app.invoice import order_push_facts as facts, product_service, service, uncertain_recovery, xiaoman_service, outbound_task_service
 from app.invoice.lifecycle_guard import ensure_mutable
 from app.invoice.models import OkkiOutboundTask, InvoiceLinkedSync
@@ -81,7 +81,8 @@ def prepare(db,invoice_id,user,linked_id=None,linked_token=None):
     identifiers=[row["unique_id"] for row in payload["product_list"] if row.get("unique_id")]
     if len(identifiers)!=len(set(identifiers)):
         raise HTTPException(409,"原推单明细身份重复，请先核对")
-    expected=capture(db,invoice,payload)
+    authority = legacy_sending.authorize(db, invoice)
+    expected=(capture(db,invoice,payload), authority.epoch)
     db.commit()
     return expected,deepcopy(payload)
 
@@ -101,23 +102,30 @@ def claim(db,invoice_id,user,expected,payload,linked_id=None,linked_token=None):
     invoice,actor=edit_authority.prepare_recovery(db,invoice_id,user,"invoice:sync")
     linked.ensure_idle(invoice,linked_id);ensure_mutable(db,invoice)
     if linked_id:linked.ensure_running(db,invoice,linked_id,linked_token)
+    authority = legacy_sending.authorize(db, invoice, expected[1], confirm=True)
     current_payload,_,issues=xiaoman_service.build_push_payload(db,invoice)
-    if issues or capture(db,invoice,current_payload)!=expected or facts.unresolved(db,invoice):
+    if issues or capture(db,invoice,current_payload)!=expected[0] or facts.unresolved(db,invoice):
         raise HTTPException(409,"取证期间发票、映射或本地执行资料已变化")
     if xiaoman_service._screenshot_sync_issue(db,invoice):raise HTTPException(409,"截图订单身份查重未通过")
+    if not invoice.xiaoman_order_id and invoice.order_type!='presale' and xiaoman_service.get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
+        # Persist original fulfillment intent even if the process dies after
+        # the provider accepts; a partial response must never lose enrollment.
+        invoice.outbound_auto_requested=1
     receipt_token=invoice_link.arm(db,invoice,int(actor["id"]))
     operation_key=inventory.prepare_invoice_sync(db,invoice,int(actor["id"]),commit=False)
     inventory.ensure_pending_matches_invoice(db,invoice,operation_key)
     invoice.sync_status=invoice.status="sync_uncertain"
-    invoice.sync_attempt={"token":uuid4().hex,"attempt_key":str(uuid4()),
+    invoice.sync_attempt={"token":uuid4().hex,"attempt_key":str(uuid4()),"authority_epoch":authority.epoch,
                           "lease_until":(beijing_now()+timedelta(minutes=5)).isoformat()}
     db.flush()
     binding=capture(db,invoice,current_payload)
     attempt=facts.start(db,invoice,int(actor["id"]),binding,payload,operation_key,receipt_token)
+    ticket = legacy_sending.start(db, invoice, f'legacy:order:{attempt.invoice_id}:{attempt.key}:1', 'order_push', payload,
+        {'actor_id': attempt.actor_id, 'task_key': attempt.key, 'binding_hash': facts.digest(attempt.binding), 'inventory_operation_key': operation_key, 'command_input': attempt.data['command_input']}, authority.epoch)
     try:db.commit()
     except SQLAlchemyError:
         db.rollback();unavailable()
-    return attempt
+    return attempt, ticket
 
 
 def owns(db,invoice,attempt):
@@ -137,12 +145,15 @@ def authorize_retry(db,attempt,user):
     invoice,actor=edit_authority.prepare_recovery(db,attempt.invoice_id,user,"invoice:sync")
     facts.validate(db,attempt)
     if not owns(db,invoice,attempt):raise HTTPException(409,"原执行权或完整绑定已变化，停止重发")
+    ticket = legacy_sending.start(db, invoice, f'legacy:order:{attempt.invoice_id}:{attempt.key}:2', 'order_push', attempt.payload,
+        {'actor_id': attempt.actor_id, 'task_key': attempt.key, 'binding_hash': facts.digest(attempt.binding), 'inventory_operation_key': attempt.inventory_key, 'command_input': attempt.data['command_input']}, attempt.data['authority_epoch'])
     db.commit()
+    return ticket
 
 
-def send(api_token,attempt,round_number):
+def send(api_token,attempt,round_number,*,db,ticket):
     try:
-        result=okki_client._post_json("/v1/invoices/order/push",api_token,deepcopy(attempt.payload),context="订单推送")
+        result=legacy_sending.invoke(db,ticket,"/v1/invoices/order/push",api_token,deepcopy(attempt.payload),context="订单推送")
         if result is None:return facts.observation(attempt,round_number,"auth_rejected"),None
         if not isinstance(result,dict):return facts.observation(attempt,round_number,"unknown"),None
         try:
@@ -255,10 +266,18 @@ def apply(db,invoice,attempt,observation,data):
             invoice.outbound_auto_requested=int(invoice.order_type!="presale")
         # A partial first acceptance is retried as an update. Complete its
         # existing enrollment after full verification, without resetting tasks.
-        if invoice.outbound_auto_requested and outbound_enabled:
-            outbound_task_service.enqueue_outbound_task(db,invoice)
-        if attempt.data["action"]=="update":
-            outbound_task_service.requeue_waiting_stock_after_invoice_sync(db,invoice)
+        try:
+            # A queue failure cannot erase a verified supplier order or mutate
+            # an existing task partway. Its enrollment survives for recovery.
+            with db.begin_nested():
+                if invoice.outbound_auto_requested and outbound_enabled:
+                    outbound_task_service.enqueue_outbound_task(db,invoice)
+                if attempt.data["action"]=="update":
+                    outbound_task_service.requeue_waiting_stock_after_invoice_sync(db,invoice)
+        except (ValueError,RuntimeError,SQLAlchemyError) as error:
+            logger.warning('Synced order outbound enrollment requires recovery (%s)', type(error).__name__)
+            print(f'[invoice-push] outbound enrollment requires recovery ({type(error).__name__})', flush=True)
+            result.update(outbound_pending=True,outbound_message='订单已同步；出库任务登记待恢复，请核对后续出库')
         result.update(ok=True,message="已同步到小满",xiaoman_order_id=invoice.xiaoman_order_id)
         result.update(invoice_link.mark_success(db,invoice,attempt.receipt_token))
     elif result_class in {"rejected","auth_rejected"}:
@@ -284,7 +303,11 @@ def record_original(db,attempt,observations):
         db.rollback();db.expire_all()
         try:
             lock_authority(db,force=True)
-            edit_authority.lock_document(db,attempt.invoice_id,force=True)
+            from app.invoice.models import Invoice
+            from app.commerce_transition import service as transition
+            transition.lock_policy(db)
+            transition._lock_authority(db, attempt.invoice_id)
+            db.scalar(select(Invoice).where(Invoice.id == attempt.invoice_id).with_for_update())
             facts.validate(db,attempt)
             for observation in observations:facts.record(db,attempt,observation)
             db.commit()
@@ -319,6 +342,10 @@ def persist(db,attempt,observations,data,*,finish=True):
                 "resolved":owned and (bool(result.get("ok")) or observations[-1]["result_class"] in {"rejected","auth_rejected"}),
                 "observation_fingerprint":facts.observation_fingerprint(db,invoice.id,attempt.key)},
                 attempt.object_id,attempt.access_id)
+            legacy_sending.observe_formal(db, f'legacy:order:{attempt.invoice_id}:{attempt.key}:{observations[-1]["round"]}',
+                'legacy.order.push', 'accepted' if result.get('ok') else 'rejected' if observations[-1]['result_class'] in {'rejected','auth_rejected'} else 'unknown',
+                result_row=invoice if result.get('ok') else None, actor_id=attempt.actor_id,
+                evidence_ref={'original_attempt_key': attempt.key, 'facts_fingerprint': final})
             db.commit();return result
         except (SQLAlchemyError,PortalError,ValueError):
             db.rollback();logger.warning("Order push business recovery retry %s",retry+1)
@@ -340,17 +367,17 @@ def run(db,invoice_id,user,*,linked_id=None,linked_token=None,follow_outbound=Tr
     try:
         expected,payload=prepare(db,invoice_id,user,linked_id,linked_token)
         api_token=token(db)
-        attempt=claim(db,invoice_id,user,expected,payload,linked_id,linked_token)
+        attempt,ticket=claim(db,invoice_id,user,expected,payload,linked_id,linked_token)
         observations=[]
-        observation,data=send(api_token,attempt,1);observations.append(observation)
+        observation,data=send(api_token,attempt,1,db=db,ticket=ticket);observations.append(observation)
         if observation["result_class"]=="auth_rejected":
             persist(db,attempt,tuple(observations),None,finish=False)
             try:
-                api_token=token(db,force=True);authorize_retry(db,attempt,user)
+                api_token=token(db,force=True);ticket=authorize_retry(db,attempt,user)
             except HTTPException:
                 persist(db,attempt,tuple(observations),None)
                 raise
-            observation,data=send(api_token,attempt,2);observations.append(observation)
+            observation,data=send(api_token,attempt,2,db=db,ticket=ticket);observations.append(observation)
         if observation['result_class']=='accepted' and (repeated_products(attempt)
                 or attempt.data.get('requires_commercial_readback')):
             persist(db,attempt,tuple(observations),None,finish=False)

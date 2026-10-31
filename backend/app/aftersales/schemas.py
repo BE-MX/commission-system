@@ -24,6 +24,7 @@ ISSUE_TYPES = (
 
 
 class CaseCreate(BaseModel):
+    local_invoice_item_id: int | None = Field(None, gt=0)
     customer_id: str = Field(min_length=1, max_length=64)
     customer_name_snapshot: str = Field(min_length=1, max_length=256)
     customer_grade: Literal["A", "B", "C", "D", "E"]
@@ -34,7 +35,7 @@ class CaseCreate(BaseModel):
     feedback_channel: str | None = Field(default=None, max_length=32)
 
     product_id: int | None = None
-    product_name_snapshot: str = Field(min_length=1, max_length=256)
+    product_name_snapshot: str = Field(min_length=1, max_length=512)
     is_custom_product: bool = False
     batch_no: str | None = Field(default=None, max_length=128)
     color_value: str = Field(min_length=1, max_length=128)
@@ -71,9 +72,11 @@ class CaseCreate(BaseModel):
     def validate_business_rules(self):
         if self.feedback_date < self.purchase_date:
             raise ValueError("反馈日期不得早于购买日期")
+        if self.local_invoice_item_id is not None and self.product_id is not None:
+            raise ValueError("本地售后使用订单行身份，不能混用小满产品 ID")
         if self.is_custom_product and self.product_id is not None:
             raise ValueError("定制产品不能同时提交标准产品 ID")
-        if not self.is_custom_product and self.product_id is None:
+        if self.local_invoice_item_id is None and not self.is_custom_product and self.product_id is None:
             raise ValueError("标准产品必须选择产品 ID")
         return self
 

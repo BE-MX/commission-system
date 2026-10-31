@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 import string
 import sys
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import quote_plus
 
 from pydantic import Field, field_validator, model_validator
@@ -20,6 +20,13 @@ _PublicPoolQuota = Annotated[int, Field(gt=0, le=100)]
 
 
 class Settings(BaseSettings):
+    COMMERCE_PHASE: Literal['legacy_only', 'transition', 'local_only'] | None = None
+    COMMERCE_RECEIVING_ENTITY_KEY: str = 'leshine'
+    COMMERCE_BANK_CHANNEL: str = 'bank_statement'
+    COMMERCE_SHADOW_ENABLED: bool = False
+    COMMERCE_SHADOW_DATABASE_URL: str = Field(default='', repr=False)
+    COMMERCE_SHADOW_WORKER_ENABLED: bool = False
+    COMMERCE_SHADOW_EXECUTION_ONLY: bool = False
     # Customer ordering portal stays off until isolated acceptance and tenant configuration.
     PORTAL_ENABLED: bool = False
     PORTAL_WRITES_ENABLED: bool = False
@@ -57,6 +64,8 @@ class Settings(BaseSettings):
     # Internal DingTalk group robot for new portal requests and issued PIs; empty disables it.
     PORTAL_DINGTALK_WEBHOOK_URL: str = Field(default="", repr=False)
     PORTAL_DINGTALK_WEBHOOK_SECRET: str = Field(default="", repr=False)
+
+    TRANSACTION_MODE: Literal["legacy", "local"] = "legacy"
     PRESALE_SETTLEMENT_ENABLED: bool = False
     PRESALE_DELIVERY_ENABLED: bool = False
     OKKI_PRESALE_WAREHOUSE_ID: int | None = None

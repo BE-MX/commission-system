@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import * as vue from 'vue'
+import * as routeState from '../src/views/commerce-transition/routeState.js'
 import { parse, compileScript } from '@vue/compiler-sfc'
 import { renderToString } from '@vue/server-renderer'
 
@@ -10,8 +11,8 @@ const source = readFileSync(new URL('../src/views/invoice/components/InvoiceTota
 const compiled = compileScript(parse(source).descriptor, { id: 'presale-footer-test', inlineTemplate: true })
 const module = new vm.SourceTextModule(compiled.content)
 await module.link(name => {
-  const exports = name === 'vue' ? vue : { useAuthStore: () => ({ hasPermission: () => true }) }
-  assert.ok(name === 'vue' || name === '@/stores/auth')
+  const exports = name === 'vue' ? vue : name === '@/views/commerce-transition/routeState' ? routeState : { useAuthStore: () => ({ hasPermission: () => true }) }
+  assert.ok(name === 'vue' || name === '@/stores/auth' || name === '@/views/commerce-transition/routeState')
   return new vm.SyntheticModule(Object.keys(exports), function () {
     for (const [key, value] of Object.entries(exports)) this.setExport(key, value)
   })

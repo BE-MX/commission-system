@@ -19,16 +19,16 @@ export function deleteOutboundRecord(id) {
   return shippingClient.delete(`/outbound-records/${encodeURIComponent(id)}`)
 }
 
-export function getOutboundPrintData(id) {
-  return shippingClient.get(`/outbound-records/${id}/print-data`)
+export function getOutboundPrintData(id, config = {}) {
+  return shippingClient.get(`/outbound-records/${encodeURIComponent(id)}/print-data`, config)
 }
 
 export function getOutboundInventory(id, config = {}) {
   return shippingClient.get(`/outbound-records/${encodeURIComponent(id)}/inventory`, config)
 }
 
-export function downloadOutboundWord(id) {
-  return shippingClient.get(`/outbound-records/${encodeURIComponent(id)}/word`, { responseType: 'blob' })
+export function downloadOutboundWord(id, config = {}) {
+  return shippingClient.get(`/outbound-records/${encodeURIComponent(id)}/word`, { ...config, responseType: 'blob' })
 }
 
 export function recallInspectionRecord(id, editVersion) {
@@ -40,8 +40,8 @@ export function listInspectionRecords(params, config = {}) {
   return shippingClient.get('/records', { ...config, params })
 }
 
-export function getInspectionRecord(id) {
-  return shippingClient.get(`/records/${id}`)
+export function getInspectionRecord(id, config = {}) {
+  return shippingClient.get(`/records/${encodeURIComponent(id)}`, config)
 }
 
 // 图片走鉴权端点，浏览器 <img src> 不带 token —— 一律取 blob 再转 object URL
@@ -61,8 +61,8 @@ export async function fetchVideoBlobUrl(path) {
 }
 
 // 打印文档要塞进 iframe，blob URL 在跨文档场景不可靠，一律转 data URL
-export async function fetchImageDataUrl(path) {
-  const res = await shippingClient.get(`/images/${path}`, { responseType: 'blob' })
+export async function fetchImageDataUrl(path, config = {}) {
+  const res = await shippingClient.get(`/images/${path}`, { ...config, responseType: 'blob' })
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(reader.result)

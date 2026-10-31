@@ -8,6 +8,7 @@
     <template v-else>
       <div class="detail-overview"><div><strong>{{ order.customer_name }}</strong><span>{{ orderTypeLabel(order.order_type) }} · {{ order.customer_grade || '未分级' }} · 业务员 {{ order.sales_user_name || '—' }}</span><StatusBadge v-if="['cancelled','cancel_pending'].includes(order.status)" :type="detailStatus(order.status).type">{{ detailStatus(order.status).label }}</StatusBadge></div><span>发票日期 {{ order.invoice_date }}</span></div>
       <div v-if="order.sync_error && ['sync_failed','sync_uncertain'].includes(order.sync_status)" class="detail-warning" role="alert">订单同步：{{ order.sync_error }}</div>
+      <InvoiceRouteStatus :invoice="order" />
       <div class="detail-progress-grid">
         <div class="detail-amount"><span>{{ order.order_type === 'presale' ? '当前明细应付' : '应付合计' }} · {{ order.currency }}</span><strong>{{ formatMoney(order.total_amount) }}</strong><small>{{ order.items?.reduce((sum,r) => sum + Number(r.quantity), 0) }} 件 · {{ order.items?.length }} 行商品</small><small v-if="order.order_type === 'presale'">累计账面 {{ formatMoney(order.ledger_total_amount) }}</small></div>
         <button v-for="card in progressCards" :key="card.key" type="button" class="detail-progress-card" @click="activeTab = card.key">
@@ -36,6 +37,7 @@
 import { computed } from 'vue'
 import { FullScreen } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
+import InvoiceRouteStatus from '@/views/commerce-transition/InvoiceRouteStatus.vue'
 import InvoiceAnomalyBadge from './InvoiceAnomalyBadge.vue'
 import InvoiceDetailOrder from './InvoiceDetailOrder.vue'
 import InvoiceDetailOutbounds from './InvoiceDetailOutbounds.vue'

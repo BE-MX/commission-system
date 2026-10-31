@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.invoice import lifecycle_remote, okki_client
+from app.invoice import lifecycle_remote, okki_client, legacy_sending
 from app.invoice.settlement_models import SettlementApplication
 from app.receipt import access, authority, deletion_evidence, service, sync_service
 from app.receipt.models import ReceiptIntent, ReceiptLog
@@ -170,6 +170,8 @@ def _finish(db, identity, user):
     row.last_error = "原小满回款已核实删除，凭证及审计保留；请重新登记回款，此操作不代表退款"
     row.version += 1
     service.log(db, row, "remote_deleted", f"删除原回款已核实；原因：{flow['reason']}；原金额、手续费与凭证保留，不执行退款", access.user_id(current))
+    legacy_sending.finish(db,f'legacy:delete-receipt:{identity}:{flow["token"]}','succeeded',
+        {'original_request_readback':True,'deleted':True,'evidence_hash':_hash(_audit_proof(proof))},str(row.xiaoman_receipt_id))
     return _result(db, row, invoice, "deleted")
 
 
@@ -201,13 +203,17 @@ def remove(db, identity, body, user):
     row.sync_status, row.recovery_kind, row.next_attempt_at = "uncertain", "blocked", None
     row.last_error = "回款删除结果待核对，请继续核验；确认删除前不能重新登记"
     row.version += 1
-    service.log(db, row, STARTED, json.dumps({"token": uuid4().hex, "target": row.xiaoman_receipt_id,
+    token=uuid4().hex
+    ticket=legacy_sending.start_removal(db,invoice,f'legacy:delete-receipt:{identity}:{token}',
+        'receipt',row.xiaoman_receipt_id,{'actor_id':access.user_id(current),'receipt_id':identity,'task_token':token,
+        'receipt_version':row.version,'amount':str(row.amount),'currency':row.currency}) if proof['status']=='active' else None
+    service.log(db, row, STARTED, json.dumps({"token": token, "target": row.xiaoman_receipt_id,
         "reason": body.reason.strip(), "before": vars(target), "remote_before": _audit_proof(proof),
         "message": "已请求删除原回款；原金额、手续费与凭证保留，不执行退款"}, ensure_ascii=False, default=str), access.user_id(current))
     db.commit()
     if proof["status"] == "active":
         try:
-            lifecycle_remote.request(api_token, "receipt", target.xiaoman_receipt_id, remove=True)
+            lifecycle_remote.request(api_token, "receipt", target.xiaoman_receipt_id, remove=True,db=db,ticket=ticket)
         except (okki_client.OkkiApiError, ValueError) as error:
             _warn(error)  # A rejected/unknown response never permits another destructive POST.
     return _finish(db, identity, user)

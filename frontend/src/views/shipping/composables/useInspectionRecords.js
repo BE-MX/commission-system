@@ -1,7 +1,7 @@
 /**
  * 验货单列表 + 详情抽屉 + 打印弹框逻辑（宪法 12/14：useListPage + DetailDrawer）。
  */
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { downloadBlob } from '@/utils/download'
 import { getInspectionRecord, listInspectionRecords, recallInspectionRecord, downloadInspectionPdf } from '@/api/shipping'
@@ -35,7 +35,7 @@ export function useInspectionRecords() {
 
   const listApi = useListPage(
     async ({ page, page_size, ...form }, { signal, isCurrent }) => {
-      const params = { page, page_size }
+      const params = { page, page_size, transaction_mode: form.transaction_mode }
       if (form.sort_field) { params.sort_field = form.sort_field; params.sort_order = form.sort_order }
       if (form.keyword) params.keyword = form.keyword
       if (form.orderId?.trim()) params.order_id = form.orderId.trim()
@@ -48,12 +48,19 @@ export function useInspectionRecords() {
     },
     {
       searchForm: {
+        transaction_mode: route.query.transaction_mode === 'local' ? 'local' : 'legacy',
         keyword: route.query.keyword || '',
         orderId: route.query.order_id || '',
         submittedByName: '', salespersonName: '', dateFrom: '', dateTo: '',
       },
     },
   )
+  watch(() => [route.path, route.query.transaction_mode, route.query.order_id], ([path, mode, id]) => {
+    if (path !== '/shipping/inspections' || !['local', 'legacy'].includes(mode)) return
+    listApi.searchForm.transaction_mode = mode
+    listApi.searchForm.orderId = String(id || '')
+    listApi.handleSearch()
+  })
 
   // ── 详情抽屉 ──
   const detailVisible = ref(false)

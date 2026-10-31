@@ -24,12 +24,16 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.invoice.order_role import goods_order_sql
+from app.trade.service import formal_projection_enabled as local_mode
 
 logger = logging.getLogger(__name__)
 
 
-def _data_source(source: str | None = None) -> str:
+def _data_source(source: str | None = None, *, db=None) -> str:
     """取数轨道：okki（保底轨，默认）/ ark（主轨，方舟发票域）。?source= 可临时覆盖调试。"""
+    if db is not None and local_mode(db):
+        from app.trade.service import consumer_phase
+        return "mixed" if consumer_phase(db) == "transition" else "local"
     s = (source or get_settings().FESTIVAL_DATA_SOURCE or "okki").lower()
     return s if s in ("okki", "ark") else "okki"
 
@@ -166,6 +170,9 @@ def _ark_invoice_source_points(db: Session, order_ids: list[str]) -> dict[str, f
 def get_new_sign_board(db: Session, date_from: str, date_to: str,
                        source: str | None = None) -> dict:
     """个人新签积分榜：在职参赛人员全员展示，按积分降序、新签金额决胜（B-10）。"""
+    if local_mode(db):
+        from app.festival.local_service import new_sign_board
+        return new_sign_board(db, date_from, date_to)
     roster = db.execute(text(
         "SELECT user_id, Name AS name, En_name AS en_name, Team AS team, Camp AS camp,"
         "       newclient_t AS target "
@@ -181,7 +188,7 @@ def get_new_sign_board(db: Session, date_from: str, date_to: str,
         )).mappings()
     }
 
-    if _data_source(source) == "ark":
+    if _data_source(source, db=db) == "ark":
         # 不做 order_type 过滤：主轨与保底轨均以新成交业务标记为准、全量订单计入。
         rows = db.execute(text(
             "SELECT t.user_id, i.customer_id, i.xiaoman_order_id,"
@@ -241,7 +248,10 @@ def get_company_new_total(db: Session, date_from: str, date_to: str,
                           source: str | None = None) -> int:
     """公司 143 进度：全局 COUNT(DISTINCT company_id)——A-4"同一客户只计一次"
     在公司口径同样成立（同一客户被两名业务员各报一单时，个人各计、公司只计一次）。"""
-    if _data_source(source) == "ark":
+    if local_mode(db):
+        from app.festival.local_service import company_new_total
+        return company_new_total(db, date_from, date_to)
+    if _data_source(source, db=db) == "ark":
         val = db.execute(text(
             "SELECT COUNT(DISTINCT i.customer_id)"
             + _ARK_JOIN +
@@ -269,7 +279,10 @@ def get_company_new_total(db: Session, date_from: str, date_to: str,
 def get_gmv_total(db: Session, date_from: str, date_to: str,
                   source: str | None = None) -> float:
     """公司业绩进度：名册内订单总额（A-13 GMV 口径，不限订单类型；主轨扣手续费）。"""
-    if _data_source(source) == "ark":
+    if local_mode(db):
+        from app.festival.local_service import gmv_total
+        return gmv_total(db, date_from, date_to)
+    if _data_source(source, db=db) == "ark":
         val = db.execute(text(
             f"SELECT COALESCE(SUM({_ARK_AMOUNT}), 0)"
             + _ARK_JOIN +
@@ -301,7 +314,10 @@ def get_daily_orders(db: Session, target_date: date, source: str | None = None) 
     day = target_date.isoformat()
     if not (ACTIVITY_GMV_WINDOW[0] <= day <= ACTIVITY_GMV_WINDOW[1]):
         return {}
-    if _data_source(source) == "ark":
+    if local_mode(db):
+        from app.festival.local_service import daily_orders
+        return daily_orders(db, target_date)
+    if _data_source(source, db=db) == "ark":
         rows = db.execute(text(
             "SELECT COALESCE(i.xiaoman_order_id, i.invoice_no) AS order_id,"
             f"       SUM({_ARK_AMOUNT}) AS amount, t.user_id AS user_id, t.Name AS name,"
@@ -340,12 +356,14 @@ def _windows(date_from: str | None, date_to: str | None):
 
 
 def _summary(db: Session, ns, gmv, preview: bool, source: str | None = None) -> dict:
+    from app.trade.refresh_service import projection_status
     return {
         "new_total": get_company_new_total(db, ns[0], ns[1], source=source),
         "new_target": COMPANY_NEW_SIGN_TARGET,
         "gmv_total": get_gmv_total(db, gmv[0], gmv[1], source=source),
         "gmv_target": COMPANY_GMV_TARGET,
-        "source": _data_source(source),
+        "source": _data_source(source, db=db),
+        "projection_status": projection_status(db) if local_mode(db) else None,
         "window": {"from": ns[0], "to": ns[1], "preview": preview},
     }
 
@@ -354,8 +372,11 @@ def get_repurchase_stats(db: Session, date_from: str, date_to: str,
                          source: str | None = None) -> dict:
     """每人复购口径：首返客户数（A-5 有史以来第一次返单，标记源自 OKKI 首返字段；
     拆分 LIKE）+ 复购金额（限 2025-01-01 起有新成交单的客户池，A-6/A-10 口径）。"""
+    if local_mode(db):
+        from app.festival.local_service import repurchase_stats
+        return repurchase_stats(db, date_from, date_to)
     stats: dict = {}
-    if _data_source(source) == "ark":
+    if _data_source(source, db=db) == "ark":
         first_rows = db.execute(text(
             "SELECT t.user_id, COUNT(DISTINCT i.customer_id) AS cnt"
             + _ARK_JOIN +
@@ -431,6 +452,9 @@ def get_headline_payload(db: Session, date_from: str | None, date_to: str | None
     if persist_events:
         # 必须在任何业务快照查询前拿锁；否则等待锁期间已建立的旧事务快照会覆盖新状态。
         events_service.acquire_detector_lock(db)
+        if local_mode(db):
+            from app.trade.refresh_service import projection_status
+            persist_events = projection_status(db)["status"] == "current"
     # 快照复用：board / 复购统计 / summary 各算一次，四个子 payload 共用（防冗余全表扫）
     items = get_new_sign_board(db, ns[0], ns[1], source=source)["items"]
     re_stats = get_repurchase_stats(db, gmv[0], gmv[1], source=source)
@@ -467,7 +491,7 @@ def get_headline_payload(db: Session, date_from: str | None, date_to: str | None
                   for idx, c in enumerate(reversed(candidates))]
         events.reverse()
     elif persist_events:
-        state_scope = _data_source(None)
+        state_scope = _data_source(None, db=db)
         candidates = events_service.detect_candidates(
             db, ns, gmv, items, camps_payload["camps"], teams_payload["teams"],
             rep["first_board"], rep["amount_board"], source=None)
@@ -509,6 +533,9 @@ def get_headline_payload(db: Session, date_from: str | None, date_to: str | None
 def get_reconcile(db: Session, date_from: str | None, date_to: str | None) -> dict:
     """双轨对账（§6.3）：okki vs ark 按人输出新签数/首返数/复购金额三列 diff。
     差异只有两种来源：没走方舟录入的单、未推单（synced 前）的滞后。"""
+    if local_mode(db):
+        from fastapi import HTTPException
+        raise HTTPException(409, "本地交易模式使用统一经营事实；旧小满双轨对账已停用")
     ns, gmv, _ = _windows(date_from, date_to)
     per_track: dict = {}
     for src in ("okki", "ark"):
@@ -604,7 +631,8 @@ def get_repurchase_payload(db: Session, date_from: str | None, date_to: str | No
     """首返·复购双榜：在职参赛人员全员展示（周露露参与个人奖）。
     首返榜：个数降序，个数相同看复购金额（§1.4）；复购金额榜：金额降序，同额比首返数。"""
     ns, gmv, custom = _windows(date_from, date_to)
-    roster = db.execute(text(
+    from app.trade.query_service import load_roster
+    roster = load_roster(db) if local_mode(db) else db.execute(text(
         "SELECT t.user_id, t.Name AS name FROM lsordertest.user_rel_team t WHERE 1=1"
         + _active_roster_filter("t") + " ORDER BY id"
     )).mappings().all()
@@ -771,7 +799,7 @@ def get_teams_payload(db: Session, date_from: str | None, date_to: str | None,
             continue
         rs = re_stats.get(i["user_id"], {"first_count": 0, "re_amount": 0.0})
         rp = repurchase_points(rs["first_count"], rs["re_amount"])
-        wn, wr = member_weights(i["user_id"])
+        wn, wr = member_weights(i.get("legacy_user_id") if local_mode(db) else i["user_id"])
         grouped[team].append({
             "user_id": i["user_id"],
             "name": i["name"],

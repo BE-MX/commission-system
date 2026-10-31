@@ -131,6 +131,11 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
     from app.customer.work_item_source_service import reconcile_sources_job
 
     settings = get_settings()
+    from app.trade.scheduler import refresh_orders_job
+    # The job re-reads persistent phase before scanning. Registering it also
+    # supports a controlled phase change without relying on a process env flag.
+    scheduler.add_job(refresh_orders_job, trigger="interval", seconds=30,
+                      id="local_trade_projection", replace_existing=True, max_instances=1, coalesce=True)
     worker_enabled = settings.PORTAL_ENABLED and settings.PORTAL_OUTBOUND_WORKER_ENABLED
     if outbound_mode not in {'legacy', 'outbound-worker-v1'} or (worker_enabled and outbound_mode == 'legacy'):
         raise RuntimeError('Outbound mode must be confirmed before scheduler registration')
@@ -384,7 +389,11 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
 
     def _color_sales_aggregate_job():
         with SessionLocal() as db:
-            aggregate_sales_by_color(db)
+            from app.trade.service import formal_projection_enabled
+            if formal_projection_enabled(db):
+                from app.color.local_sales_service import refresh_sales_history
+                return refresh_sales_history(db)
+            return aggregate_sales_by_color(db)
 
     scheduler.add_job(
         _color_social_extract_job,
@@ -393,7 +402,7 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
     )
     scheduler.add_job(
         _color_sales_aggregate_job,
-        trigger="cron", day_of_week="mon", hour=6, minute=0,
+        trigger="cron", day_of_week="*", hour=6, minute=0,
         id=JOB_COLOR_SALES_AGGREGATE, replace_existing=True,
     )
     if settings.WHATSAPP_AUTO_SYNC_ENABLED:

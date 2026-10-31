@@ -62,6 +62,10 @@ def describe(db, row, invoice=None, *, detail=False):
                 customer_name=invoice.customer_name, attachment_count=len(row.attachment_ids))
     from app.receipt.deletion_service import pending
     data["deletion_pending"] = pending(db, row)
+
+    if row.source == "local":
+        data.update(reversed_amount=str(row.reversed_amount), reversed_bank_charge=str(row.reversed_bank_charge),
+                    effective_amount=str(row.effective_amount), effective_bank_charge=str(row.effective_bank_charge))
     if detail:
         from app.invoice.settlement_models import SettlementApplication, ShipmentSettlement
         data["shipment_applications"] = [{"settlement_id": settlement.id,

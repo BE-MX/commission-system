@@ -9,6 +9,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import create_engine, pool
+from importlib.util import module_from_spec, spec_from_file_location
 
 from app.core.config import get_settings
 from app.core.database import Base
@@ -28,6 +29,13 @@ settings = get_settings()
 
 # 只迁移 commission_db 的表（Base），不包含 BusinessBase
 target_metadata = Base.metadata
+
+# Keep published revision sources immutable. This scoped DDL policy only makes
+# an explicit singleton CHECK compatible with MySQL's implicit-PK default.
+_singleton_spec = spec_from_file_location('ark_migration_singleton_ddl', Path(__file__).with_name('singleton_ddl.py'))
+_singleton_ddl = module_from_spec(_singleton_spec)
+_singleton_spec.loader.exec_module(_singleton_ddl)
+_singleton_ddl.install()
 
 
 def run_migrations_offline() -> None:

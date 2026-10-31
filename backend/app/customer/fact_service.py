@@ -160,11 +160,11 @@ EVENT_REGISTRY: Mapping[str, EventRegistration] = MappingProxyType({
         classification=DataClassification.RESTRICTED_INTERNAL,
     ),
     "order.placed": _event_registration(
-        ("okki",), {"is_valid_business_order": bool, "historical_replay": bool},
+        ("okki", "ark"), {"is_valid_business_order": bool, "historical_replay": bool},
         required=("is_valid_business_order",), reference="order",
     ),
     "order.validity_revoked": _event_registration(
-        ("okki",),
+        ("okki", "ark"),
         {
             "order_id": int,
             "source_record_id": int,
@@ -195,7 +195,7 @@ EVENT_REGISTRY: Mapping[str, EventRegistration] = MappingProxyType({
         ("identity",), {"identity_ids": list}, required=("identity_ids",),
     ),
     "relationship.stage_changed": _event_registration(
-        ("manual", "qualification", "okki"),
+        ("manual", "qualification", "okki", "ark"),
         {
             "reason_code": str,
             "is_valid_business_order": bool,
@@ -2393,7 +2393,8 @@ def _relationship_transition_applies(
         return True
     if target_stage == "active_customer":
         order = (
-            db.get(CustomerOrder, int(source_ref_id))
+            db.query(CustomerOrder).filter(CustomerOrder.id == int(source_ref_id),
+                logical_root_predicate(CustomerOrder, "order", account.id)).one_or_none()
             if event_type in {"order.placed", "relationship.stage_changed"}
             and source_ref_type == "order"
             and source_ref_id
@@ -2402,7 +2403,6 @@ def _relationship_transition_applies(
         )
         if (
             order is None
-            or order.customer_id != account.id
             or not order.is_valid_business_order
             or payload.get("is_valid_business_order") is not order.is_valid_business_order
             or trigger not in {"valid_order", "historical_order_replay"}
@@ -2557,6 +2557,7 @@ def append_customer_event(
             ("manual", "customer"),
             ("qualification", "qualification_review"),
             ("okki", "order"),
+            ("ark", "order"),
         }
     ):
         raise CustomerDomainError("EVENT_REFERENCE_INVALID")

@@ -11,8 +11,9 @@ from app.semifinished.schemas import CartPlanInput
 
 
 class SafetyStockSaveItem(BaseModel):
-    product_id: int
+    product_id: int | str
     safety_stock: int = Field(ge=0)
+    expected_version: int = Field(default=0, ge=0)
     # 乐观锁,带上当前 updated_at,服务端校验未变化才接受
     updated_at: Optional[str] = None
 
@@ -24,14 +25,14 @@ class SafetyStockSaveRequest(BaseModel):
 
 
 class AutoGenerateRequest(BaseModel):
-    product_ids: Optional[List[int]] = None
+    product_ids: Optional[List[int | str]] = None
     lead_time_days: int = Field(default=30, ge=1, le=365)
     safety_factor: float = Field(default=1.5, ge=0.1, le=10.0)
     history_days: int = Field(default=30, ge=7, le=365)
 
 
 class TftPredictRequest(BaseModel):
-    product_id: int
+    product_id: int | str
     history_days: int = Field(default=90, ge=7, le=365)
 
 
@@ -41,9 +42,9 @@ class TftPredictRequest(BaseModel):
 
 class CartAddRequest(BaseModel):
     """加入购物车"""
-    product_id: int
-    product_name: str = Field(max_length=255)
-    model: Optional[str] = Field(None, max_length=100)
+    product_id: int | str
+    product_name: str = Field(max_length=512)
+    model: Optional[str] = Field(None, max_length=200)
     spec_info: Optional[str] = Field(None, max_length=255)
     order_qty: int = Field(gt=0, le=999999)
     remark: Optional[str] = Field(None, max_length=500)
@@ -79,6 +80,7 @@ class OrderCreateRequest(BaseModel):
     remark: Optional[str] = Field(None, max_length=500)
     is_urgent: bool = Field(default=False)
     expected_delivery_date: Optional[date] = None
+    request_key: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class OrderUpdateRequest(BaseModel):
@@ -185,7 +187,7 @@ class OrderItemListResponse(BaseModel):
 # ═══════════════════════════════════════════════════════════
 
 class StockStatusQueryRequest(BaseModel):
-    product_ids: List[int]
+    product_ids: List[int | str]
 
 
 class StockStatusItemResponse(BaseModel):
@@ -200,7 +202,7 @@ class StockStatusItemResponse(BaseModel):
 # ═══════════════════════════════════════════════════════════
 
 class InTransitQueryRequest(BaseModel):
-    product_ids: List[int]
+    product_ids: List[int | str]
 
 
 class InTransitItemResponse(BaseModel):

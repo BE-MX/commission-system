@@ -80,7 +80,17 @@ def allow_print_before_recheck(db, record, actor_id, reason):
 
 
 def lock(db, record_id, actor):
-    event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=str(record_id)).populate_existing().with_for_update().first()
+    from app.shipping_inspection import local_outbound_service
+    native = local_outbound_service.lock_for_edit(db, record_id) is not None
+    query = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=str(record_id))
+    # Local outbound parent already serializes this identity. Avoid locking an
+    # empty secondary-index gap shared by different first-time inspections.
+    if native:
+        event = query.first()
+        if event is not None:
+            event = db.query(ShippingOperationEvent).filter_by(id=event.id).populate_existing().with_for_update().one()
+    else:
+        event = query.populate_existing().with_for_update().first()
     if event is None:
         try:
             with db.begin_nested():
@@ -102,6 +112,8 @@ def ensure_invoice_idle(db, invoice):
 
 def overlay(db, record, *, event=None):
     if not record:
+        return None
+    if record.get('transaction_mode') == 'local':
         return None
     if event is None:
         event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=str(record['outbound_record_id'])).first()

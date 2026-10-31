@@ -405,6 +405,9 @@ def list_outbound_records(
 
 def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = None, *, include_deleted=False) -> dict | None:
     """单条出库单头；不存在（或归属过滤后不可见）返回 None。"""
+    from app.shipping_inspection import local_outbound_service
+    if local_outbound_service.is_native(db, record_id):
+        return local_outbound_service.header(db, record_id, okki_user_id, include_deleted=include_deleted)
     if str(record_id).startswith("task:"):
         return None  # Local queue entries never authorize printing, downloading or inspection.
     rm = _record_columns(db)
@@ -434,11 +437,19 @@ def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = 
 
 def order_ids_for_records(db: Session, record_ids: list[str]) -> dict[str, list[str]]:
     """Read exact order associations from outbound items; never infer from the document number."""
+    from app.shipping_inspection import local_outbound_service as local
+    local_ids = [identity for identity in record_ids if local.is_native(db, identity)]
+    result = {}
+    for identity in local_ids:
+        record = local.header(db, identity, include_deleted=True)
+        if record:
+            result[str(identity)] = [record["order_id"]]
+    record_ids = [identity for identity in record_ids if identity not in local_ids]
     if not record_ids:
-        return {}
+        return result
     link, rm, im = _link(db)
     if not link or "order_id" not in _table_columns(db, ITEMS_TABLE):
-        return {}
+        return result
     item_key = im["invoice_id"] if link == "invoice" else im["record_id"]
     record_key = rm["invoice_id"] if link == "invoice" else rm["id"]
     rows = db.execute(text(f"""SELECT DISTINCT r.`{rm['id']}` AS rid, i.order_id AS order_id
@@ -446,7 +457,6 @@ def order_ids_for_records(db: Session, record_ids: list[str]) -> dict[str, list[
         JOIN `{_schema()}`.`{ITEMS_TABLE}` i ON i.`{item_key}`=r.`{record_key}`
         WHERE r.`{rm['id']}` IN :record_ids AND i.order_id IS NOT NULL""").bindparams(
             bindparam("record_ids", expanding=True)), {"record_ids": record_ids}).mappings()
-    result: dict[str, list[str]] = {}
     for row in rows:
         result.setdefault(str(row["rid"]), []).append(str(row["order_id"]))
     return {key: sorted(values) for key, values in result.items()}
@@ -455,6 +465,9 @@ def order_ids_for_records(db: Session, record_ids: list[str]) -> dict[str, list[
 def get_record_by_outbound_invoice_id(db: Session, outbound_invoice_id: str,
                                       okki_user_id: str | None = None, *, include_deleted=False) -> dict | None:
     """Resolve a live OKKI document to its mirror row without using a fuzzy number search."""
+    from app.shipping_inspection import local_outbound_service
+    if local_outbound_service.is_native(db, outbound_invoice_id):
+        return local_outbound_service.header(db, outbound_invoice_id, okki_user_id)
     rm = _record_columns(db)
     if not rm["invoice_id"]:
         return None
@@ -521,6 +534,12 @@ def mirror_matches_snapshot(db: Session, record_id: str, snapshot: dict) -> bool
 
 def inspection_item_links(db: Session, record_id: str) -> list[dict]:
     """Raw detail identities for evidence; never infer links from product labels."""
+    from app.shipping_inspection import local_outbound_service as local
+    if local.is_native(db, record_id):
+        return [{**row, 'local_item_id': row['item_id'], 'remote_item_id': row['item_id'],
+                 'outbound_count': row['qty'], 'product_unit': row['unit'],
+                 'product_model': row.get('spec'), 'sku_code': row.get('sku')}
+                for row in local.items(db, record_id)]
     link, rm, im = _link(db)
     if link != 'invoice' or 'outbound_record_id' not in _table_columns(db, ITEMS_TABLE):
         return []
@@ -553,6 +572,9 @@ def item_link_snapshot(db: Session, record_id: str) -> list[dict]:
 
 def list_outbound_items(db: Session, record_id: str, *, use_overlay=True, sync_event=None) -> list[dict]:
     """出库明细附产品表 model/size/color；LEFT JOIN 保留产品缺失的原始明细。"""
+    from app.shipping_inspection import local_outbound_service
+    if local_outbound_service.is_native(db, record_id):
+        return local_outbound_service.items(db, record_id)
     from app.shipping_inspection.outbound_sync_state import overlay
     snapshot = overlay(db, get_outbound_record(db, record_id), event=sync_event) if use_overlay else None
     if snapshot:

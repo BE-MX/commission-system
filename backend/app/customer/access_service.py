@@ -212,6 +212,7 @@ def apply_customer_scope(
     user: dict,
     read_permissions: Iterable[str],
     include_public_pool: bool = True,
+    manage_permissions: Iterable[str] = ("customer:admin",),
 ) -> Query:
     """Apply the human customer's live scope in SQL before loading rows."""
     try:
@@ -251,7 +252,7 @@ def apply_customer_scope(
         CustomerAssignment.effective_to.is_(None),
     ))
     predicates = [live_assignment]
-    if "customer:admin" in permissions:
+    if permissions & set(manage_permissions):
         department_id = query.session.query(ArkUser.okki_department_id).filter(
             ArkUser.id == actor_user_id,
             ArkUser.is_active.is_(True),

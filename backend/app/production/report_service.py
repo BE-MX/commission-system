@@ -3,6 +3,7 @@
 import hmac
 import hashlib
 import re
+import logging
 from datetime import datetime
 
 from app.core.time import beijing_now
@@ -11,7 +12,7 @@ def _bj_now():
     """兼容既有调用的无时区北京时间。"""
     return beijing_now()
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -24,6 +25,14 @@ from app.auth.models import ArkUser
 from app.stock.models import ProductionOrderItem, ProductionOrder
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+
+def _route_id(db, item):
+    if item.local_sku_id is not None:
+        return item.process_route_id
+    binding = db.query(ProductProcessRoute).filter(ProductProcessRoute.product_id == item.product_id).first()
+    return binding.route_id if binding else None
 
 
 # ── 二维码签名 ────────────────────────────────────────────
@@ -63,19 +72,28 @@ def verify_qr_data(qr_data: str) -> tuple[bool, int]:
 
 # ── 进度初始化 ────────────────────────────────────────────
 
-def init_order_product_progress(db: Session, order_product_id: int, force: bool = False) -> dict:
+def init_order_product_progress(db: Session, order_product_id: int, force: bool = False, *, _native_new=False) -> dict:
     """初始化订单产品的工序进度"""
     item = db.query(ProductionOrderItem).get(order_product_id)
     if not item:
         raise LookupError("订单产品不存在")
+    order = db.scalar(select(ProductionOrder).where(ProductionOrder.id == item.order_id)
+        .with_for_update().execution_options(populate_existing=True))
+    item = db.scalar(select(ProductionOrderItem).where(ProductionOrderItem.id == order_product_id)
+        .with_for_update().execution_options(populate_existing=True))
+    if order is None or item is None:
+        raise LookupError("生产订单或产品不存在")
+    native = order.transaction_mode in {'opening', 'local'} or item.local_sku_id is not None
+    if native and (not _native_new or force):
+        raise ValueError('本地生产原工序身份不可重建，请使用本地报工与撤销操作')
 
-    binding = db.query(ProductProcessRoute).filter(ProductProcessRoute.product_id == item.product_id).first()
-    if not binding:
+    route_id = _route_id(db, item)
+    if not route_id:
         raise ValueError("该产品未绑定工序路线，无法初始化进度")
 
     steps = (
         db.query(ProcessRouteStep)
-        .filter(ProcessRouteStep.route_id == binding.route_id)
+        .filter(ProcessRouteStep.route_id == route_id)
         .order_by(ProcessRouteStep.step_order)
         .all()
     )
@@ -84,7 +102,10 @@ def init_order_product_progress(db: Session, order_product_id: int, force: bool 
 
     existing = db.query(OrderProductProcessProgress).filter(
         OrderProductProcessProgress.order_product_id == order_product_id
-    ).first()
+    ).populate_existing().with_for_update().first()
+
+    if native and existing:
+        raise ValueError('本地生产工序已存在，不能再次初始化')
 
     if existing and not force:
         raise ValueError("进度记录已存在，请使用 force=true 重新初始化")
@@ -109,17 +130,17 @@ def init_order_product_progress(db: Session, order_product_id: int, force: bool 
             db.add(OrderProductProcessProgress(
                 order_product_id=order_product_id,
                 process_id=step.process_id,
-                route_id=binding.route_id,
+                route_id=route_id,
                 step_order=step.step_order,
                 status=0,
             ))
             new_count += 1
     db.flush()
 
-    route = db.query(ProcessRoute).get(binding.route_id)
+    route = db.query(ProcessRoute).get(route_id)
     return {
         "order_product_id": order_product_id,
-        "route_id": binding.route_id,
+        "route_id": route_id,
         "route_name": route.name if route else "",
         "initialized_steps": new_count,
         "message": f"工序进度已初始化，共 {new_count} 个工序",
@@ -192,9 +213,18 @@ def handle_production_report(db: Session, qr_data: str, wx_id: str) -> dict:
     item = db.query(ProductionOrderItem).get(order_product_id)
     if not item:
         return {"success": False, "message": "订单产品不存在，请联系管理员"}
+    if item.local_sku_id is not None:
+        return {"success": False, "message": "本地生产请使用已登录的小程序或本地报工接口，不能仅凭微信编号报工"}
 
     # 检查订单维度是否已完工（通过 order status 判断）
-    order = db.query(ProductionOrder).get(item.order_id)
+    order = db.scalar(select(ProductionOrder).where(ProductionOrder.id == item.order_id)
+                      .with_for_update().execution_options(populate_existing=True))
+    item = db.scalar(select(ProductionOrderItem).where(ProductionOrderItem.id == order_product_id)
+                     .with_for_update().execution_options(populate_existing=True))
+    if item is None or (order and order.transaction_mode in {'opening', 'local'}) or item.local_sku_id is not None:
+        return {"success": False, "message": "本地生产请使用已登录的小程序或本地报工接口，不能仅凭微信编号报工"}
+    if order is None or order.deleted_flag or order.status == 1 or item.status == 1:
+        return {"success": False, "message": "生产订单已终止或删除，不能继续报工"}
     if item.status == 2:
         return {"success": False, "message": "该产品所有工序已完成，无需再次报工"}
 
@@ -219,6 +249,7 @@ def handle_production_report(db: Session, qr_data: str, wx_id: str) -> dict:
             OrderProductProcessProgress.status == 0,
         )
         .order_by(OrderProductProcessProgress.step_order.asc())
+        .populate_existing().with_for_update()
         .first()
     )
     if not pending:
@@ -234,10 +265,12 @@ def handle_production_report(db: Session, qr_data: str, wx_id: str) -> dict:
                     OrderProductProcessProgress.status == 0,
                 )
                 .order_by(OrderProductProcessProgress.step_order.asc())
+                .populate_existing().with_for_update()
                 .first()
             )
-        except (LookupError, ValueError):
-            pass
+        except (LookupError, ValueError) as exc:
+            logger.warning("Production progress initialization rejected: %s", type(exc).__name__)
+            print(f"Production progress initialization rejected: {type(exc).__name__}", flush=True)
     if not pending:
         return {"success": False, "message": "该产品所有工序已完成"}
 
@@ -258,25 +291,15 @@ def handle_production_report(db: Session, qr_data: str, wx_id: str) -> dict:
     db.flush()
 
     # Step 8: 检查是否全部完成
-    remaining = (
-        db.query(func.count())
-        .filter(
-            OrderProductProcessProgress.order_product_id == order_product_id,
-            OrderProductProcessProgress.status == 0,
-        )
-        .scalar()
-    )
-    total = (
-        db.query(func.count())
-        .filter(OrderProductProcessProgress.order_product_id == order_product_id)
-        .scalar()
-    )
+    statuses = db.scalars(select(OrderProductProcessProgress.status).where(
+        OrderProductProcessProgress.order_product_id == order_product_id).with_for_update()).all()
+    remaining = sum(status == 0 for status in statuses)
+    total = len(statuses)
     all_completed = remaining == 0
 
     if all_completed:
         item.status = 2  # 已完成
         item.updated_at = _bj_now()
-        # 检查是否所有明细都完成，同步订单状态
         _sync_order_status(db, item.order_id)
 
     db.flush()
@@ -353,12 +376,12 @@ def get_print_card_data(db: Session, order_product_id: int) -> dict:
     order = db.query(ProductionOrder).get(item.order_id)
 
     # 查询产品路线绑定
-    binding = db.query(ProductProcessRoute).filter(ProductProcessRoute.product_id == item.product_id).first()
+    route_id = _route_id(db, item)
 
     process_steps = []
-    if binding:
+    if route_id:
         from app.production.route_service import get_route_steps
-        route_steps = get_route_steps(db, binding.route_id)
+        route_steps = get_route_steps(db, route_id)
         process_steps = [{"step_order": s["step_order"], "process_name": s["process_name"]} for s in route_steps]
 
     # 生成二维码
@@ -367,6 +390,7 @@ def get_print_card_data(db: Session, order_product_id: int) -> dict:
     return {
         "order_product_id": order_product_id,
         "order_no": order.order_no if order else "",
+        "transaction_mode": order.transaction_mode if order else None,
         "product_name": item.product_name,
         "model": item.model,
         "spec_info": item.spec_info,

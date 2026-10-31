@@ -13,6 +13,9 @@ from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session
 
 from app.aftersales import query_service, service
+from app.aftersales.local_execution import ReturnReceive
+from app.aftersales.local_replacement import ReplacementCreate
+from app.aftersales.money_schemas import MoneyExecute
 from app.aftersales.file_service import (
     FileValidationError,
     resolve_private_path,
@@ -122,7 +125,7 @@ def _case_data(case: AfterSalesCase) -> dict:
     fields = [
         "id", "case_no", "creator_user_id", "creator_name_snapshot", "customer_id",
         "customer_name_snapshot", "customer_grade", "order_id", "order_no_snapshot",
-        "purchase_date", "feedback_date", "feedback_channel", "product_id",
+        "purchase_date", "feedback_date", "feedback_channel", "product_id", "local_invoice_item_id",
         "product_name_snapshot", "is_custom_product", "batch_no", "color_value",
         "length_value", "weight_value", "weight_unit", "quantity", "primary_issue_type",
         "secondary_issue_types_json", "problem_description", "occurred_stage",
@@ -408,7 +411,7 @@ def create_case(
 ):
     user = _ark_user(db, payload)
     try:
-        case = service.create_case(db, body, user)
+        case = service.create_case(db, body, user, scope=payload)
         db.commit()
         db.refresh(case)
         return ok(_case_data(case), message="售后草稿已创建")
@@ -426,7 +429,7 @@ def update_case(
 ):
     user = _ark_user(db, payload)
     try:
-        case = service.update_case(db, case_id, body, user)
+        case = service.update_case(db, case_id, body, user, scope=payload)
         db.commit()
         db.refresh(case)
         return ok(_case_data(case), message="售后单已保存")
@@ -1108,6 +1111,91 @@ def activate_sop(
         db.commit()
         db.refresh(version)
         return ok(_sop_data(version, db), message="SOP 版本已启用")
+    except Exception as exc:
+        db.rollback()
+        _to_http_error(exc)
+
+
+
+
+@router.post("/cases/{case_id}/local-returns", summary="接收本地售后退货进入隔离库存")
+def receive_local_return(case_id: int, body: ReturnReceive, db: Session = Depends(get_db),
+                         payload=Depends(require_permission("aftersales:write")),
+                         _inventory=Depends(require_permission("inventory:write"))):
+    from app.aftersales import local_execution
+    from app.invoice.native_authority import require_write
+    payload = require_write(db, payload, 'aftersales:write', 'inventory:write')
+    _get_visible_case(db, case_id, _ark_user(db, payload), payload)
+    try:
+        row = local_execution.receive_return(db, case_id, body, payload)
+        data = local_execution.describe(row)
+        db.commit()
+        return ok(data)
+    except Exception as exc:
+        db.rollback()
+        _to_http_error(exc)
+
+
+@router.post("/cases/{case_id}/local-replacements", summary="从批准方案创建免费补发或重做订单")
+def create_local_replacement(case_id: int, body: ReplacementCreate, db: Session = Depends(get_db),
+                             payload=Depends(require_permission("aftersales:write")),
+                             _invoice=Depends(require_permission("invoice:write")),
+                             _inventory=Depends(require_permission("inventory:write"))):
+    from app.aftersales import local_replacement, local_execution
+    from app.invoice.native_authority import require_write
+    payload = require_write(db, payload, 'aftersales:write', 'invoice:write', 'inventory:write')
+    _get_visible_case(db, case_id, _ark_user(db, payload), payload)
+    try:
+        row = local_replacement.create_replacement(db, case_id, body, payload)
+        data = local_execution.describe(row)
+        db.commit()
+        return ok(data)
+    except Exception as exc:
+        db.rollback()
+        _to_http_error(exc)
+
+
+@router.get("/cases/{case_id}/local-executions", summary="读取本地售后执行凭证")
+def list_local_executions(case_id: int, db: Session = Depends(get_db),
+                          payload=Depends(require_permission("aftersales:read"))):
+    from app.aftersales.models import AfterSalesExecution
+    from app.aftersales.local_execution import describe
+    _get_visible_case(db, case_id, _ark_user(db, payload), payload)
+    rows = db.query(AfterSalesExecution).filter(AfterSalesExecution.case_id == case_id).order_by(AfterSalesExecution.id).all()
+    return ok({"items": [describe(row) for row in rows]})
+
+
+@router.get("/local/orders/search", summary="搜索已发货本地售后订单")
+def local_order_search(keyword: str = "", customer_id: int | None = None,
+                       limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db),
+                       payload=Depends(require_any_permission("aftersales:read", "aftersales:write"))):
+    from app.aftersales.local_queries import search_orders
+    return ok({"items": search_orders(db, payload, keyword, customer_id, limit)})
+
+
+@router.get("/local/orders/{invoice_id}/items", summary="读取本地订单售后商品和实际发货批次")
+def local_order_items(invoice_id: int, db: Session = Depends(get_db),
+                      payload=Depends(require_any_permission("aftersales:read", "aftersales:write"))):
+    from app.aftersales.local_queries import order_items
+    try:
+        return ok({"items": order_items(db, invoice_id, payload)})
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/cases/{case_id}/local-money", summary="执行已批准退款或贷项并关联原发货资金")
+def execute_local_money(case_id: int, body: MoneyExecute, db: Session = Depends(get_db),
+                        payload=Depends(require_permission("aftersales:write")),
+                        _finance=Depends(require_permission("receipt:admin"))):
+    from app.aftersales import local_money, local_execution
+    from app.invoice.native_authority import require_write
+    payload = require_write(db, payload, 'aftersales:write', 'receipt:admin')
+    _get_visible_case(db, case_id, _ark_user(db, payload), payload)
+    try:
+        row = local_money.execute_money(db, case_id, body, payload)
+        data = local_execution.describe(row)
+        db.commit()
+        return ok(data)
     except Exception as exc:
         db.rollback()
         _to_http_error(exc)

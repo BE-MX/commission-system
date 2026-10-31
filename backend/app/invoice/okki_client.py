@@ -129,30 +129,31 @@ def push_order(db: Session, payload: dict, *, before_send=None) -> dict:
     NO SANDBOX: this creates/edits a REAL order in OKKI. Retries once with a
     forced token refresh on auth failure, same as get_order_enums.
     """
-    token = ensure_access_token(db)
-    if before_send:
-        before_send()
-    data = _post_json("/v1/invoices/order/push", token, payload, context="订单推送")
-    if data is None:  # auth failure → one forced refresh
-        token = ensure_access_token(db, force=True)
-        if before_send:
-            before_send()
-        data = _post_json("/v1/invoices/order/push", token, payload, context="订单推送")
-        if data is None:
-            raise OkkiApiError("OKKI 订单推送失败：token 刷新后仍被拒绝，请检查凭证与 scope")
-    return data
+    from app.invoice import legacy_sending
+    if before_send is None:
+        raise ValueError("交易POST必须由当前持久发送执行器提供办理权凭证")
+    for force in (False, True):
+        token = ensure_access_token(db, force=force)
+        db.commit()  # Credential cache only; no policy/invoice locks survive this boundary.
+        ticket = before_send()
+        data = legacy_sending.invoke(db, ticket, "/v1/invoices/order/push", token, payload, context="订单推送")
+        if data is not None:
+            return data
+    raise OkkiApiError("OKKI 订单推送鉴权被拒绝，请检查凭证与 scope")
 
 
 def push_outbound(db: Session, payload: dict, *, before_send=None) -> dict:
     """Create one pending outbound; an ambiguous result must never be replayed."""
+    from app.invoice import legacy_sending
+    if before_send is None:
+        raise ValueError("交易POST必须由当前持久发送执行器提供办理权凭证")
     for force in (False, True):
         token = ensure_access_token(db, force=force)
-        if before_send:
-            before_send()
-        data = _post_json("/v1/invoices/outbound/push", token, payload, context="分批出库单创建")
+        db.commit()
+        ticket = before_send()
+        data = legacy_sending.invoke(db, ticket, "/v1/invoices/outbound/push", token, payload, context="分批出库单创建")
         if data is not None:
-            if (not isinstance(data, dict)
-                    or not str(data.get("outbound_invoice_id") or "").isdigit()):
+            if not isinstance(data, dict) or not str(data.get("outbound_invoice_id") or "").isdigit():
                 raise OkkiOutcomeUncertainError("小满分批出库响应缺少出库单 ID，请核对原单")
             return data
     raise OkkiApiError("小满分批出库鉴权被拒绝，请检查应用权限")

@@ -446,6 +446,19 @@ def create_production_order(
     user: dict = Depends(require_permission("production:write")),
 ):
     """从购物车生成生产订单"""
+    from app.trade.service import local_mode
+    if local_mode():
+        from app.stock.local_cart_service import create_order
+        try:
+            result = create_order(db, req, user)
+            db.commit()
+            return _ok(result, message="本地生产订单已创建", code=201)
+        except ValueError as exc:
+            db.rollback()
+            raise HTTPException(409, str(exc)) from exc
+        except Exception:
+            db.rollback()
+            raise
     user_id = _get_user_id(user)
     cart_items = service.get_cart_items_by_ids(db, user_id, req.cart_ids)
     if not cart_items:
@@ -699,6 +712,14 @@ def reset_order_process(
     """删除订单下所有明细的工序进度，按最新产品工艺路线重新生成。"""
     from app.production.models import OrderProductProcessProgress, ProcessRouteStep, ProductProcessRoute
     from app.stock.models import ProductionOrder, ProductionOrderItem
+    from app.stock.production_order_service import ensure_legacy_order
+    try:
+        ensure_legacy_order(db, order_id)
+    except ValueError as exc:
+        db.rollback()
+        logger.warning("Legacy progress reset rejected for local production")
+        print("Legacy progress reset rejected for local production", flush=True)
+        raise HTTPException(409, str(exc)) from exc
 
     order = db.query(ProductionOrder).filter(
         ProductionOrder.id == order_id, ProductionOrder.deleted_flag == 0

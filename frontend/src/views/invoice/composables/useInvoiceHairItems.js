@@ -1,3 +1,4 @@
+import { invoiceIsLocal } from '@/views/commerce-transition/routeState'
 import { msgWarning, msgInfo } from '@/utils/feedback'
 import {
   getInvoiceEntryOptions,
@@ -45,6 +46,7 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
     form.items = form.items.filter(item => !doomed.has(item))
   }
   async function loadLineOptions(row) {
+    if (invoiceIsLocal(form)) return
     const result = await getInvoiceProductOptions({
       model: row.model || undefined, color: row.color || undefined,
       size: row.length || undefined, unit: row.net_weight_grams || undefined,
@@ -59,6 +61,7 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
     }
   }
   async function onLineFilterChange(row) {
+    if (invoiceIsLocal(form)) return
     Object.assign(row, { product_id: null, sku_id: null, product_name: '', product_display: '', stock_warning: '', available_stock: null })
     await loadLineOptions(row)
     if (!row.model || !row.color || !row.length || !row.net_weight_grams) return
@@ -85,6 +88,7 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
     if (row.product_display && row.color && row.length && row.net_weight_grams) await refreshLinePrice(row)
   }
   async function refreshLinePrice(row) {
+    if (invoiceIsLocal(form)) return
     if (!row.product_display || !row.color || !row.length || !row.net_weight_grams) return
     const context = linePriceContext(row)
     const gate = linePriceGate(row)
@@ -93,7 +97,7 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
       customer_id: form.customer_id || undefined, product_display: row.product_display,
       length: row.length, unit: row.net_weight_grams, color: row.color,
     })
-    if (!gate.isCurrent(token, linePriceContext(row))) return
+    if (invoiceIsLocal(form) || !gate.isCurrent(token, linePriceContext(row))) return
     row.standard_price = result.standard_price == null ? null : Number(result.standard_price)
     row.customer_price = result.customer_price == null ? null : Number(result.customer_price)
     row.color_type_source = result.color_type_source || ''

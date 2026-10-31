@@ -164,102 +164,13 @@ def _refresh_pending_generation(db, invoice, order, invoice_version):
 
 
 def run(db, invoice, user):
-    from app.portal import authority
-    enabled = authority.get_settings().PORTAL_ENABLED
-    if enabled and (db.in_transaction() or db.new or db.dirty or db.deleted):
-        from fastapi import HTTPException
-        raise HTTPException(409, '出库取证必须从新事务开始', headers={'Cache-Control': 'private, no-store'})
-    if invoice.order_type == "presale":
-        return {"status": "manual", "message": "预售单由发货结算按批次安排，不执行整单自动出库"}
-    """Never create an outbound here: the fenced worker owns that operation."""
-    if invoice.sync_status != 'synced' or not invoice.xiaoman_order_id:
-        return {'status': 'manual', 'message': '订单尚未完整同步到小满，出库未处理'}
-    invoice_version = edit_version(invoice)
-    task = db.query(OkkiOutboundTask).filter_by(invoice_id=invoice.id).with_for_update().first()
-    if task and task.status == 'running':
-        return {'status': 'pending', 'message': GENERATING_MESSAGE}
-    if task and task.status == 'uncertain':
-        return {'status': 'manual', 'message': '出库提交结果待核对，不能自动重发'}
-
-    order = remote.read(db, '/v1/invoices/order/info', {'order_id': invoice.xiaoman_order_id})
-    if str(order.get('order_id')) != str(invoice.xiaoman_order_id):
-        raise ValueError('小满订单身份不一致，出库未处理')
-    related = linked_outbound_service.find_related(db, order)
-    if not related:
-        if task and task.status == 'pending':
-            return (_refresh_pending_generation(db, invoice, order, invoice_version)
-                    if (task.reason or '').startswith('regenerate:') else
-                    {'status': 'pending', 'message': GENERATING_MESSAGE})
-        if task and task.status == 'skipped' and not (task.reason or '').startswith('deleted:'):
-            return {'status': 'manual', 'message': task.reason or '该订单不自动生成出库单，请人工核对'}
-        if task and task.status == 'waiting_stock':
-            generation = (task.reason or '').split(' ', 1)[0] if (task.reason or '').startswith('regenerate:') else ''
-            latest = (db.query(InvoiceSyncLog.id).filter_by(invoice_id=invoice.id, success=1)
-                      .order_by(InvoiceSyncLog.id.desc()).first())
-            if generation and latest and generation != f'regenerate:{latest.id}':
-                current = db.query(Invoice).options(selectinload(Invoice.items)).filter_by(
-                    id=invoice.id).populate_existing().with_for_update().one()
-                task = db.query(OkkiOutboundTask).filter_by(invoice_id=invoice.id).populate_existing().with_for_update().one()
-                newest = (db.query(InvoiceSyncLog.id).filter_by(invoice_id=invoice.id, success=1)
-                          .order_by(InvoiceSyncLog.id.desc()).first())
-                if (current.sync_status != 'synced' or str(current.xiaoman_order_id) != str(order['order_id'])
-                        or edit_version(current) != invoice_version or task.status != 'waiting_stock'
-                        or not (task.reason or '').startswith(generation) or not newest or newest.id != latest.id):
-                    return {'status': 'manual', 'message': '核对期间任务或订单发生变化，请刷新后核对'}
-                task.status, task.reason, task.last_error, task.attempts = 'pending', f'regenerate:{latest.id}', None, 0
-                db.commit()
-                return {'status': 'pending', 'message': GENERATING_MESSAGE}
-            shortages = _stock_shortages(db, order)
-            fresh_order = remote.read(db, '/v1/invoices/order/info', {'order_id': invoice.xiaoman_order_id})
-            if fresh_order != order:
-                return {'status': 'manual', 'message': '库存核查期间小满订单发生变化，请重新核对缺货状态'}
-            # The live scan may refresh an access token and commit the session;
-            # re-lock both rows before changing the queue after a long read.
-            current = db.query(Invoice).options(selectinload(Invoice.items)).filter_by(
-                id=invoice.id).populate_existing().with_for_update().one()
-            task = db.query(OkkiOutboundTask).filter_by(invoice_id=invoice.id).populate_existing().with_for_update().one()
-            if (current.sync_status != 'synced' or str(current.xiaoman_order_id) != str(order['order_id'])
-                    or edit_version(current) != invoice_version):
-                return {'status': 'manual', 'message': '核对期间订单发生变化，请重新同步后处理出库'}
-            if task.status != 'waiting_stock':
-                return {'status': 'pending' if task.status in ('pending', 'running') else 'manual',
-                        'message': '出库任务状态已变化，请刷新出库列表核对'}
-            generation = (task.reason or '').split(' ', 1)[0] if (task.reason or '').startswith('regenerate:') else ''
-            if generation:
-                latest = (db.query(InvoiceSyncLog.id).filter_by(invoice_id=invoice.id, success=1)
-                          .order_by(InvoiceSyncLog.id.desc()).first())
-                if latest:
-                    generation = f'regenerate:{latest.id}'
-            if shortages:
-                task.reason = (generation + ' ' if generation else '') + 'Insufficient warehouse stock'
-                task.last_error = json.dumps({'outcome': 'waiting_stock', 'order_id': str(order['order_id']),
-                                              'reason': task.reason, 'shortages': shortages})
-                db.commit()
-                return {'status': 'waiting_stock', 'message': '订单已更新，目标仓库仍缺货；库存齐全后自动生成',
-                        'shortages': shortages}
-            # Only the fenced worker may create; wake it for a fresh live check.
-            task.status = 'pending'
-            task.reason = generation or None
-            task.last_error = None
-            db.commit()
-            return {'status': 'pending', 'message': GENERATING_MESSAGE}
-        if task and task.status == 'failed':
-            return _failed_task_result(task)
-        if task is None:
-            return {'status': 'manual', 'message': '尚未登记自动出库任务；请由管理员在订单“取消 / 恢复”中选择“恢复漏建 / 未发送出库”，重新核对后恢复'}
-        if task.status == 'done':
-            return {'status': 'manual', 'message': '未查到关联出库单，但原出库任务已完成；请人工核对原单，不能自动重建'}
-        if task.status != 'skipped':
-            return {'status': 'manual', 'message': '出库任务状态异常，请人工核对，不能自动重建'}
-        return _queue_missing_after_sync(db, invoice, task, order, invoice_version)
-    if len(related) != 1:
-        return {'status': 'manual', 'message': '订单关联多张出库单，请分别核对，不能整单覆盖'}
-    if enabled:
-        from types import SimpleNamespace
-        invoice = SimpleNamespace(id=invoice.id, invoice_no=invoice.invoice_no)
-        db.rollback()  # Discard only run's own read-only supplier/mirror phase.
-        db.expire_all()
-    return _follow_existing(db, invoice, user, related, force_authority=enabled)
+    """All callers use the current executor, independently of portal rollout."""
+    from app.invoice import outbound_followup_execution
+    if db.new or db.dirty or db.deleted:
+        raise ValueError('后续出库存在未提交修改，请先保存后核对原任务')
+    identity = invoice.id
+    db.rollback()  # Only a clean read snapshot; never commit another caller's work.
+    return outbound_followup_execution.run(db, identity, user)
 
 
 def _follow_existing(db, invoice, user, related, *, force_authority=False):

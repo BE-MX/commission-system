@@ -31,6 +31,24 @@
 
 `ark_receipt_attempts` 保留准确响应 ID 与处理时间，可核查迟到响应和重复 ID 冲突。详情恢复仅 GET，发送开关关闭仍可运行；不应因为显示“同步成功”就将财务未生效当成已结清。发布须通过统一入口应用迁移 175，保留全部恢复证据。详见[状态与验收说明](requirements/2026-10-08-receipt-sync-recovery.md)。
 
+
+## 交易双路线过渡运行（开发分支，未发布）
+
+采用[双路线设计](requirements/2026-10-27-commerce-dual-route-design.md)，实现证据与范围见[开发验收报告](reports/2026-10-28-commerce-dual-route-implementation.md)。生产升级仍须具体环境发布授权并走 `deploy/deploy.bat`；开发测试、Git状态和下列步骤均不表示现场已切换。
+
+1. 固定包含226的唯一迁移链。208–225是未发布本地候选重编号；126仍走其冻结证据链，138单例DDL已通过真实MySQL，不stamp或downgrade绕过。保留共享schema恢复日志、原媒体和所有原资金凭证。
+2. 清点实际后端、Scheduler、出库timer/creator、订单/回款协调器、交易采集、独立MCP/n8n及小满手工权限。客户档案/联系人/归属同步继续运行；交易writer需逐实例兼容回执或已撤权回执。试点页面保存证据不会自动改变第三方权限；现场无法强制排他时仅开隔离对比。
+3. 管理员在“交易试点配置”登记writer回执，以真实安装版本和撤权/强制执行证据提交。持久策略初始legacy_only；核验完整后用expected_version切transition。COMMERCE_PHASE仅作启动一致性检查，TRANSACTION_MODE不是过渡办理权开关；持久策略和writer不符合时启动/动作拒绝。
+4. 按真实盘点及旧责任核清凭证登记SKU/仓库、物料与生产范围。已知旧出库sending/unknown、旧running任务或待核对同步不允许新增本地实物范围。未有可信远端仓库映射时，同一映射SKU的本地桶与旧出库整SKU排他；未知SKU身份不能绕过该边界。
+5. 核实银行主体、账户ID集合、渠道和银行原流水。多个账户代码别名须归同一真实域；未映射旧回款或账户未知时拒绝本地新本金，即使勾选“完整”也不会放行。旧款身份核验只关联原账，不新建本金。
+6. 统一订单页选择正式路线；草稿无事实且epoch匹配时可改线，生效后固化。原订单默认沿旧路线结清；例外通过“交易历史承接”的强类型清单与prepare返回的完整闭包/epoch启用，不能逐单绕开共享款和生产责任。真实零余额结清使用settlement预览/应用接口，缺退款或未决原请求证据不能结清。
+7. “双路线核对”只处理验证输入与差异，不办理真实资金/发货。正式事务写observation/outbox，拒绝样本在原事务rollback后另记诊断。管理员导出固定run输入包，由独立受限候选库进程运行 `python -m app.commerce_shadow.cli`，再导入候选回执；完整命令与映射契约见[模块说明](../backend/app/commerce_shadow/README.md)。候选进程清除源环境、禁止HTTP及正式API启动，不接生产凭据；预期结果不会导入候选账本。缺映射/来源覆盖/前置版本显示incomplete。
+8. 正式经营统计同时检查小满来源和本地投影水位，交接未完或来源不完整不得发布最终榜单。对比数据始终零贡献。最后将所有旧订单/银行身份真实结清或完整承接后才能进入local_only，小满继续客户维护。
+
+异常恢复以原request_key/claim/run/batch为查询入口。超时先读回原对象，不换新键重发；迟到原响应/GET证据先独立保存，再重新校验当前权限、scope、epoch与任务token，失权不继续业务推进。旧删除/恢复与本地取消保留不同接口和语义，打印不豁免当前检验。撤权阻断后台尚未发送的新claim，已发送原事实仍可保存。
+
+已有本地责任后不得删账、恢复旧整库、downgrade或凭环境变量退回legacy_only；向前修复并保留全部身份/凭证。开发中的所有外部调用均为合成provider，真实银行、仓库、扫码设备和第三方权限执行仍由现场业务验收证明。
+
 ## 色卡工作台备份容量控制
 
 北京 `ark-colorwork-backup-retention.timer` 每小时保留最近两份备份及当前成功恢复点。发布锁忙时跳过；发布失败、服务异常或保留备份验证失败时不删除，查看 `journalctl -u ark-colorwork-backup-retention.service`。脚本仅管理 `/home/ubuntu/commission-system/.deploy_state/colorwork/backups`，运行数据 `colorwork/data` 不在删除范围。安装/更新从 `deploy.bat --colorwork-backup-policy` 进入，详见 [部署说明](../deploy/README.md)。
@@ -343,7 +361,7 @@ python scripts/customer_domain_cutover.py verify-ready `
   --stopped-writer-manifest ops/stopped-writers-<nonce>.json `
   --expected-inventory-sha256 <inventory_sha256>
 
-# 4. 执行唯一允许的重建入口；内部会生成绑定 contract、DDL proof 和 receipt
+# 4. 执行唯一允许的重建入口；仅升级至126，生成绑定 contract、DDL proof 和 receipt
 python scripts/customer_domain_cutover.py apply-reset `
   --preflight-report backend/tmp/customer-domain-cutover/preflight-<nonce>.json `
   --suppression-manifest backend/tmp/customer-domain-cutover/suppressions-<nonce>.json `
@@ -364,7 +382,9 @@ python scripts/customer_domain_cutover.py verify-after `
   --target-profile-policy-backfill ops/target-profile-policy-<nonce>.json
 ```
 
-后验通过后，按顺序执行：重放 HMAC 抑制映射 → 仅启动新版本后端 → 用四类客户做烟测（已识别公司、个人邮箱 provisional、已有订单客户、DNC 客户）→ 核对客户档案/时间线/公海/机会/行动及 Agent 只读上下文 → 恢复调度器与外部 Worker → 撤维护页。任何一步失败都保持停写，保留 contract、DDL proof、receipt 和日志，不要手工补表或重跑同一个 nonce。
+后验必须在唯一 revision `126` 时执行。保存 contract、DDL proof 和 receipt 后，保持全部相关 writer 停止，通过统一发布入口重新计算待迁移链并完成后续迁移；不得先升到最新 head 再运行本次126后验，也不得在126结构上启动依赖后续字段的最新版应用。
+
+后续迁移完成后，按顺序执行：重放 HMAC 抑制映射 → 仅启动新版本后端 → 用四类客户做烟测（已识别公司、个人邮箱 provisional、已有订单客户、DNC 客户）→ 核对客户档案/时间线/公海/机会/行动及 Agent 只读上下文 → 恢复调度器与外部 Worker → 撤维护页。任何一步失败都保持停写，保留 contract、DDL proof、receipt 和日志，不要手工补表或重跑同一个 nonce。
 
 特别说明：`ark_sales_target_profiles` 不清空，迁移会校验原物理结构并强制回填版本化策略；旧客户业务表可清空，抑制登记必须保留。共享数据库不可达或仍有 writer 时，允许完成代码与隔离 MySQL 演练，但不得把它记录为“生产切换完成”。
 

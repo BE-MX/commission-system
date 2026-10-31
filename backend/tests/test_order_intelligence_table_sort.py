@@ -11,6 +11,8 @@ def test_customer_action_headers_sort_full_derived_result_before_page(monkeypatc
                     'overdue_days': i, 'lifetime_amount_usd': i * 100,
                     'top_models': [{'name': 'Model', 'quantity': i * 2}], 'top_colors': []}
             for i, name in [(1, 'Zulu'), (2, 'Alpha'), (3, 'Middle')]}
+    # This is a pure derived-table test; installed-policy integration has its own suite.
+    monkeypatch.setattr(service, "local_mode", lambda db: False)
     monkeypatch.setattr(service, '_load_orders', lambda *a: [])
     monkeypatch.setattr(service, '_load_product_rows', lambda *a: [])
     monkeypatch.setattr(service, '_profile_analysis', lambda *a: {'customer_cycles': deepcopy(rows)})

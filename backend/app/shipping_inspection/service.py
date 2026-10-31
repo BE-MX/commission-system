@@ -86,11 +86,16 @@ def _photo_count(db: Session, inspection_id: int) -> int:
 
 
 def _get_by_outbound_id(db: Session, outbound_record_id: str) -> ShippingInspection | None:
-    return (
+    from app.shipping_inspection.local_outbound_service import get, locked
+    outbound = get(db, outbound_record_id)
+    query = (
         db.query(ShippingInspection)
-        .filter(ShippingInspection.outbound_record_id == outbound_record_id)
-        .first()
+        .filter(ShippingInspection.local_outbound_id == outbound.id if outbound else
+            ShippingInspection.outbound_record_id == outbound_record_id)
     )
+    if locked(db, outbound_record_id) is not None:
+        query = query.populate_existing().with_for_update()
+    return query.first()
 
 
 def _lock_inspection(db: Session, inspection_id: int) -> ShippingInspection | None:
@@ -127,6 +132,8 @@ def get_or_create_draft(db: Session, outbound_record_id: str, user_id: int) -> S
     inspection = ShippingInspection(
         outbound_record_id=outbound_record_id,
         outbound_no=record["outbound_no"],
+        local_outbound_id=record.get("local_outbound_id"),
+        local_outbound_version=record.get("local_outbound_version"),
         customer_name=record["customer_name"],
         status=C.STATUS_DRAFT,
         created_by=user_id,
@@ -397,13 +404,19 @@ def list_records(
     okki_user_id: str | None = None,
     sort_field: str = "submitted_at",
     sort_order: str = "desc",
+
+    transaction_mode: str = "legacy",
 ) -> tuple[list[dict], int]:
     """已提交验货单分页：keyword 匹配单号/客户，date 按提交时间过滤（含当日）。"""
+    if transaction_mode == "local":
+        from app.shipping_inspection.local_outbound_service import list_inspections
+        return list_inspections(db, keyword=keyword, order_id=order_id, salesperson_name=salesperson_name,
+            submitted_by_name=submitted_by_name, date_from=date_from, date_to=date_to, page=page, page_size=page_size, okki_user_id=okki_user_id)
     from app.shipping_inspection import record_query_service
     query = (
         db.query(ShippingInspection, ArkUser.real_name)
         .outerjoin(ArkUser, ArkUser.id == ShippingInspection.submitted_by)
-        .filter(ShippingInspection.status == C.STATUS_SUBMITTED)
+        .filter(ShippingInspection.status == C.STATUS_SUBMITTED, ShippingInspection.local_outbound_id.is_(None))
     )
     if okki_user_id is not None:
         query = query.filter(ShippingInspection.outbound_record_id.in_(

@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class GmvMemberConfig(BaseModel):
@@ -52,3 +52,27 @@ class GmvDailyPreviewRequest(BaseModel):
 class GmvDailySendRequest(BaseModel):
     report_date: date | None = None
     scope: Literal["all", "teams", "admins"] = "all"
+
+
+class GmvNativeMemberConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ark_user_id: int = Field(gt=0)
+    name: str = Field(min_length=1, max_length=128)
+    exclude_from_total: bool = False
+    is_active: bool = True
+
+
+class GmvNativeTeamConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    department_id: int = Field(gt=0)
+    name: str = Field(min_length=1, max_length=128)
+    captain_ark_user_id: int = Field(gt=0)
+    is_active: bool = True
+    members: list[GmvNativeMemberConfig] = Field(min_length=1, max_length=200)
+
+
+class GmvNativeConfigUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: Literal["local"]
+    teams: list[GmvNativeTeamConfig] = Field(min_length=1, max_length=50)
+    admin_recipient_user_ids: list[int] = Field(min_length=1, max_length=50)

@@ -9,12 +9,16 @@ from sqlalchemy.orm import Session
 
 from app.semifinished.inventory_service import qty
 from app.semifinished.models import CartPlan, SemifinishedMaterial
+from app.trade.service import local_mode
 
 logger = logging.getLogger("stock.production_cart")
 
 
 def get_cart_list(db: Session, user_id: int) -> list[dict]:
     """获取用户购物车列表"""
+    if local_mode():
+        from app.stock.local_cart_service import list_items
+        return list_items(db, user_id)
     rows = db.execute(
         text("""
             SELECT id, product_id, product_name, model, spec_info,
@@ -51,6 +55,9 @@ def get_cart_list(db: Session, user_id: int) -> list[dict]:
 
 def get_cart_count(db: Session, user_id: int) -> int:
     """获取购物车商品数量(用于角标)"""
+    if local_mode():
+        from app.stock.local_cart_service import count
+        return count(db, user_id)
     return db.execute(
         text("SELECT COUNT(*) FROM ark_production_cart WHERE user_id = :user_id"),
         {"user_id": user_id},
@@ -69,6 +76,9 @@ def add_or_update_cart(
     semifinished_items: list[dict] | None = None,
 ) -> dict:
     """加入购物车: 已存在则更新数量和备注,不存在则新增"""
+    if local_mode():
+        from app.stock.local_cart_service import add
+        return add(db, user_id, product_id, order_qty, remark, semifinished_items)
     existing = db.execute(
         text("SELECT id FROM ark_production_cart WHERE user_id = :user_id AND product_id = :product_id"),
         {"user_id": user_id, "product_id": product_id},
@@ -142,6 +152,9 @@ def update_cart_item(
     remark: Optional[str],
 ) -> bool:
     """更新购物车项,仅允许修改自己的"""
+    if local_mode():
+        from app.stock.local_cart_service import update
+        return update(db, user_id, cart_id, order_qty, remark)
     old_qty = db.execute(
         text("SELECT order_qty FROM ark_production_cart WHERE id = :id AND user_id = :user_id"),
         {"id": cart_id, "user_id": user_id},
@@ -168,6 +181,9 @@ def update_cart_item(
 
 def delete_cart_item(db: Session, user_id: int, cart_id: int) -> bool:
     """删除购物车单项"""
+    if local_mode():
+        from app.stock.local_cart_service import delete
+        return bool(delete(db, user_id, [cart_id]))
     result = db.execute(
         text("DELETE FROM ark_production_cart WHERE id = :id AND user_id = :user_id"),
         {"id": cart_id, "user_id": user_id},
@@ -178,6 +194,9 @@ def delete_cart_item(db: Session, user_id: int, cart_id: int) -> bool:
 
 def delete_cart_items(db: Session, user_id: int, cart_ids: list[int], *, commit: bool = True) -> int:
     """批量删除购物车项,返回删除数量"""
+    if local_mode():
+        from app.stock.local_cart_service import delete
+        return delete(db, user_id, cart_ids, commit=commit)
     if not cart_ids:
         return 0
     placeholders = ",".join([f":c{i}" for i in range(len(cart_ids))])
@@ -198,6 +217,9 @@ def delete_cart_items(db: Session, user_id: int, cart_ids: list[int], *, commit:
 
 def get_cart_items_by_ids(db: Session, user_id: int, cart_ids: list[int]) -> list[dict]:
     """按ID批量查询购物车项(用于生成订单时取数据)"""
+    if local_mode():
+        from app.stock.local_cart_service import list_items
+        return list_items(db, user_id, cart_ids)
     if not cart_ids:
         return []
     placeholders = ",".join([f":c{i}" for i in range(len(cart_ids))])

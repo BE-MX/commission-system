@@ -12,12 +12,13 @@ from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.auth.service import list_okki_department_options
 from app.core.config import get_settings
 from app.core.time import beijing_now
+from app.trade.service import local_mode
 from app.dingtalk.gmv_daily_schemas import GmvDailyConfigUpdate
 from app.system.models import SysDict
 from app.system.reserved_dict_types import (
     ADMIN_DICT_TYPE,
     MEMBER_DICT_TYPE,
-    RESERVED_DICT_TYPES,
+    LEGACY_GMV_DICT_TYPES,
     TEAM_DICT_TYPE,
 )
 
@@ -92,9 +93,12 @@ def _parse_member(row: SysDict) -> dict | None:
 
 
 def load_config(db: Session) -> dict:
+    if local_mode():
+        from app.dingtalk.gmv_native_config import load_native_config
+        return load_native_config(db)
     rows = (
         db.query(SysDict)
-        .filter(SysDict.type.in_(RESERVED_DICT_TYPES))
+        .filter(SysDict.type.in_(LEGACY_GMV_DICT_TYPES))
         .order_by(SysDict.sort, SysDict.id)
         .all()
     )
@@ -199,6 +203,9 @@ def _public_recipient(source: dict) -> dict:
 
 def decorate_config(db: Session, config: dict | None = None) -> dict:
     config = deepcopy(config or load_config(db))
+    if local_mode():
+        from app.dingtalk.gmv_native_config import decorate_native_config
+        return decorate_native_config(db, config)
     bindings = okki_user_bindings(db)
     for team in config["teams"]:
         captain = bindings.get(team["captain_okki_user_id"], {})
@@ -219,6 +226,9 @@ def decorate_config(db: Session, config: dict | None = None) -> dict:
 
 
 def config_options(db: Session) -> dict:
+    if local_mode():
+        from app.dingtalk.gmv_native_config import native_options
+        return native_options(db)
     bindings = okki_user_bindings(db)
     recipients = [_public_recipient(value) for value in admin_users(db).values()]
     captain_options = [dict(_public_recipient(value), okki_user_id=key) for key, value in bindings.items()]
@@ -247,6 +257,14 @@ def config_options(db: Session) -> dict:
 
 
 def save_config(db: Session, request: GmvDailyConfigUpdate) -> dict:
+    from app.dingtalk.gmv_daily_schemas import GmvNativeConfigUpdate
+    if local_mode():
+        if not isinstance(request, GmvNativeConfigUpdate):
+            raise ValueError("本地模式请使用方舟人员配置，不能提交旧外部账号配置")
+        from app.dingtalk.gmv_native_config import save_native_config
+        return save_native_config(db, request)
+    if isinstance(request, GmvNativeConfigUpdate):
+        raise ValueError("当前尚未切换本地交易模式")
     department_ids: set[int] = set()
     member_ids: set[str] = set()
     bindings = okki_user_bindings(db)
@@ -269,7 +287,7 @@ def save_config(db: Session, request: GmvDailyConfigUpdate) -> dict:
 
     now = beijing_now()
     try:
-        db.query(SysDict).filter(SysDict.type.in_(RESERVED_DICT_TYPES)).delete(synchronize_session=False)
+        db.query(SysDict).filter(SysDict.type.in_(LEGACY_GMV_DICT_TYPES)).delete(synchronize_session=False)
         for team_index, team in enumerate(request.teams):
             db.add(SysDict(
                 type=TEAM_DICT_TYPE, code=str(team.department_id), label=team.name,

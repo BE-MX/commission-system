@@ -6,7 +6,7 @@ from datetime import datetime
 from app.core.time import beijing_now
 from decimal import Decimal
 
-from sqlalchemy import exists
+from sqlalchemy import cast, exists, String, or_
 from sqlalchemy.orm import Session
 
 from app.models.commission import (
@@ -27,6 +27,7 @@ class CalcResult:
     total_second_supervisor_commission: Decimal = Decimal("0")
     skipped_incomplete: int = 0
     skipped_no_snapshot: int = 0
+    skipped_dependency: int = 0
     errors: list = field(default_factory=list)
 
 
@@ -46,7 +47,10 @@ def calculate_commission(db: Session, batch_id: int) -> CalcResult:
     result = CalcResult()
 
     # ---- Step 1: 获取批次 ----
-    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
+    from app.finance.service import book, lock
+    from app.commission.projection_service import sync_events
+    book(db)
+    batch = lock(db, CommissionBatch, batch_id)
     if not batch:
         raise ValueError(f"批次 {batch_id} 不存在")
     if batch.status != "draft":
@@ -54,20 +58,24 @@ def calculate_commission(db: Session, batch_id: int) -> CalcResult:
 
     period_start = batch.period_start
     period_end = batch.period_end
+    sync_events(db, period_end)
+    from app.commission.models import CommissionBasis
+    from app.finance.models import FinanceEvent
+    result.skipped_no_snapshot = len(db.query(CommissionBasis.id).join(FinanceEvent,
+        CommissionBasis.event_id == FinanceEvent.id).filter(
+        FinanceEvent.business_date <= period_end, CommissionBasis.pending_reason.isnot(None),
+        CommissionBasis.resolved_at.is_(None)).with_for_update().all())
     logger.info(f"开始计算批次 {batch_id}: {period_start} ~ {period_end}")
 
     # ---- Step 2: 获取待计算回款（排除已计算的） ----
-    already_calculated = (
-        db.query(PaymentCommissionStatus.payment_id)
-        .subquery()
-    )
+    already_calculated = db.query(PaymentCommissionStatus.payment_id).with_for_update()
     pending_payments = (
         db.query(SyncedPayment)
         .filter(
-            SyncedPayment.payment_date >= period_start,
+            or_(SyncedPayment.payment_date >= period_start, SyncedPayment.payment_id.like("ark-finance:%")),
             SyncedPayment.payment_date <= period_end,
             ~SyncedPayment.payment_id.in_(
-                db.query(already_calculated.c.payment_id)
+                already_calculated
             ),
             ~exists().where(
                 Receivable.kind == "freight",
@@ -76,6 +84,8 @@ def calculate_commission(db: Session, batch_id: int) -> CalcResult:
                 Receivable.remote_order_id == SyncedPayment.order_id,
             ),
         )
+        .order_by(SyncedPayment.id)
+        .with_for_update().populate_existing()
         .all()
     )
     logger.info(f"待计算回款 {len(pending_payments)} 条")
@@ -99,6 +109,19 @@ def calculate_commission(db: Session, batch_id: int) -> CalcResult:
     status_rows = []
 
     for payment in pending_payments:
+        if payment.payment_id.startswith("ark-finance:"):
+            from app.commission.calculation_service import native_detail
+            detail = native_detail(db, payment, batch_id, {row["payment_id"] for row in status_rows})
+            if detail is None:
+                result.skipped_dependency += 1
+                continue
+            detail_rows.append(detail)
+            status_rows.append({"payment_id": payment.payment_id, "batch_id": batch_id})
+            result.total_payments += 1
+            result.total_salesperson_commission += detail["salesperson_commission"]
+            result.total_supervisor_commission += detail["supervisor_commission"]
+            result.total_second_supervisor_commission += detail["second_supervisor_commission"]
+            continue
         snapshot = snapshot_map.get(payment.customer_id)
 
         if not snapshot:
@@ -212,7 +235,9 @@ def void_batch(db: Session, batch_id: int) -> None:
 
     status='calculated' 或 'confirming' 的批次可作废。
     """
-    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
+    from app.finance.service import book, lock
+    book(db)
+    batch = lock(db, CommissionBatch, batch_id)
     if not batch:
         raise ValueError(f"批次 {batch_id} 不存在")
     if batch.status not in ("calculated", "confirming"):
@@ -237,7 +262,9 @@ def send_confirm(db: Session, batch_id: int) -> dict:
     """
     发送确认：批次状态 calculated → confirming，返回涉及的业务员钉钉 ID 列表。
     """
-    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
+    from app.finance.service import book, lock
+    book(db)
+    batch = lock(db, CommissionBatch, batch_id)
     if not batch:
         raise ValueError(f"批次 {batch_id} 不存在")
     if batch.status != "calculated":
@@ -262,12 +289,18 @@ def send_confirm(db: Session, batch_id: int) -> dict:
     sp_ids = [r[0] for r in salesperson_ids]
 
     dingtalk_ids = []
-    if sp_ids:
+    native_ids = [int(identity[4:]) for identity in sp_ids if identity.startswith("ark:") and identity[4:].isdigit()]
+    legacy_ids = [identity for identity in sp_ids if not identity.startswith("ark:")]
+    if native_ids:
+        dingtalk_ids.extend(row[0] for row in db.query(ArkUser.dingtalk_id).filter(
+            ArkUser.id.in_(native_ids), ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None),
+            ArkUser.dingtalk_id.isnot(None), ArkUser.dingtalk_id != "").all())
+    if legacy_ids:
         rows = (
             db.query(ArkUser.dingtalk_id)
             .join(UserBasic, ArkUser.real_name == UserBasic.full_name)
             .filter(
-                UserBasic.user_id.in_(sp_ids),
+                UserBasic.user_id.in_(legacy_ids),
                 ArkUser.dingtalk_id.isnot(None),
                 ArkUser.dingtalk_id != "",
                 ArkUser.is_active == True,
@@ -275,7 +308,8 @@ def send_confirm(db: Session, batch_id: int) -> dict:
             )
             .all()
         )
-        dingtalk_ids = [r[0] for r in rows]
+        dingtalk_ids.extend(r[0] for r in rows)
+    dingtalk_ids = sorted(set(dingtalk_ids))
 
     batch.status = "confirming"
     db.flush()
@@ -288,7 +322,9 @@ def revoke_confirm(db: Session, batch_id: int) -> None:
     """
     撤销确认：批次状态 confirming → calculated。
     """
-    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
+    from app.finance.service import book, lock
+    book(db)
+    batch = lock(db, CommissionBatch, batch_id)
     if not batch:
         raise ValueError(f"批次 {batch_id} 不存在")
     if batch.status != "confirming":
@@ -305,7 +341,9 @@ def confirm_batch(db: Session, batch_id: int, confirmed_by: str) -> None:
 
     status='calculated' 或 'confirming' 的批次可确认。
     """
-    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
+    from app.finance.service import book, lock
+    book(db)
+    batch = lock(db, CommissionBatch, batch_id)
     if not batch:
         raise ValueError(f"批次 {batch_id} 不存在")
     if batch.status not in ("calculated", "confirming"):

@@ -141,7 +141,7 @@ def test_scheduler_reads_known_ids_even_when_new_sends_disabled(db, order, monke
     info = remote.receipt_info
     monkeypatch.setattr(remote, "receipt_info", lambda db, identity: dict(info(db, identity), collect_status=1))
     monkeypatch.setattr(scheduler, "SessionLocal", lambda: db)
-    monkeypatch.setattr(scheduler, "get_settings", lambda: SimpleNamespace(RECEIPT_SYNC_ENABLED=False))
+    monkeypatch.setattr(scheduler, "get_settings", lambda: SimpleNamespace(RECEIPT_SYNC_ENABLED=False, TRANSACTION_MODE='legacy'))
     monkeypatch.setattr(settlement_policy, "capabilities", lambda: {
         "freight_delivery_enabled": False, "outbound_delivery_enabled": False})
     monkeypatch.setattr(remote, "push", lambda *a: pytest.fail("sending disabled"))

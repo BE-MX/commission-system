@@ -628,6 +628,7 @@ class CustomerOrder(Base):
     )
 
     id = Column(BigInteger, primary_key=True, comment="方舟客户订单投影ID")
+    local_invoice_id = Column(BigInteger, ForeignKey("ark_invoices.id"), nullable=True, unique=True, comment="本地订单唯一关联；迁入历史订单复用既有投影身份")
     customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="创建时不可变的存储客户ID；订单明细保持同域，当前逻辑客户统一解析ark_customer_object_ownerships")
     source_system = Column(String(32), nullable=False, index=True, comment="订单来源系统，第一阶段固定okki")
     source_account_key = Column(String(128), nullable=False, index=True, comment="订单所属外部账号或租户命名空间；用于隔离不同连接中的外部订单ID")
@@ -657,19 +658,28 @@ class CustomerOrderItem(Base):
     __tablename__ = "ark_customer_order_items"
     __table_args__ = (
         UniqueConstraint("order_id", "item_fingerprint", name="uq_customer_order_item_fingerprint"),
+        CheckConstraint("projection_role IN ('active', 'historical_alias') AND "
+            "(projection_role <> 'historical_alias' OR (historical_alias_id IS NULL AND local_invoice_item_id IS NULL))",
+            name="ck_customer_item_projection_role"),
         {"comment": "从小满同步到方舟的客户订单产品明细；用于产品族、型号、颜色、长度、数量和客单偏好分析。"},
     )
 
     id = Column(BigInteger, primary_key=True, comment="方舟客户订单明细投影ID")
     order_id = Column(BigInteger, ForeignKey("ark_customer_orders.id"), nullable=False, index=True, comment="所属方舟客户订单ID")
+    local_invoice_item_id = Column(BigInteger, ForeignKey("ark_invoice_items.id", ondelete="RESTRICT"), nullable=True,
+        unique=True, comment="核验后的本地销售行唯一关联；承接保留原明细身份与信源")
+    projection_role = Column(String(24), nullable=False, default='active', server_default='active',
+        comment="活动真实明细或保留原身份的历史聚合别名")
+    historical_alias_id = Column(BigInteger, ForeignKey('ark_customer_order_items.id', ondelete='RESTRICT'),
+        nullable=True, comment="真实明细所对应的已核验原聚合行")
     external_item_id = Column(String(128), nullable=True, comment="外部订单明细稳定ID；源系统无ID时使用明细指纹")
     external_product_id = Column(String(128), nullable=True, index=True, comment="小满产品ID快照")
     external_sku_id = Column(String(128), nullable=True, index=True, comment="小满SKU ID快照")
-    product_name = Column(String(255), nullable=True, index=True, comment="外部订单产品名称原值")
-    product_family = Column(String(128), nullable=True, index=True, comment="经确定性规则标准化的产品族")
-    model = Column(String(128), nullable=True, index=True, comment="产品型号原值或标准化值")
+    product_name = Column(String(512), nullable=True, index=True, comment="订单产品名称原值")
+    product_family = Column(String(256), nullable=True, index=True, comment="经确定性规则标准化的产品族")
+    model = Column(String(200), nullable=True, index=True, comment="产品型号原值或标准化值")
     color = Column(String(128), nullable=True, index=True, comment="产品颜色原值或标准化值")
-    length = Column(String(64), nullable=True, comment="产品长度及原单位文本")
+    length = Column(String(128), nullable=True, comment="产品长度及原单位文本")
     quantity = Column(Numeric(15, 4), nullable=True, comment="产品数量；单位见quantity_unit")
     quantity_unit = Column(String(32), nullable=True, comment="数量单位，例如pcs、kg、bundles")
     unit_price = Column(Numeric(15, 4), nullable=True, comment="订单原币种单位价格")
@@ -892,7 +902,7 @@ class CustomerListProjection(Base):
     primary_industry = Column(String(128), nullable=True, index=True, comment="当前档案选择的主要行业标准值")
     primary_market = Column(String(128), nullable=True, index=True, comment="当前主要销售或采购市场标准值")
     acquisition_source = Column(String(32), nullable=True, index=True, comment="首次有效获客来源标准值")
-    primary_product_family = Column(String(128), nullable=True, index=True, comment="当前主要产品兴趣或成交产品族")
+    primary_product_family = Column(String(256), nullable=True, index=True, comment="当前主要产品兴趣或成交产品族")
     commercial_value_score = Column(Numeric(5, 2), nullable=True, index=True, comment="基于有效订单和人工确认的客户价值分0至100")
     has_valid_order = Column(Boolean, nullable=False, index=True, comment="方舟是否存在至少一笔有效业务订单")
     valid_order_count = Column(Integer, nullable=False, comment="有效业务订单总数")

@@ -98,8 +98,10 @@
             <span v-if="column.key === 'invoice_no'" class="invoice-detail-entry"><button type="button" class="invoice-number invoice-number-button" @click="invoiceDetailRef.open(row)">{{ row.invoice_no }} ↗</button><InvoiceAnomalyBadge :anomalies="row.anomalies || []" /></span>
             <StatusBadge v-else-if="column.key === 'order_type'" size="small" :type="orderTypeTone(row.order_type)" effect="plain">{{ orderTypeLabel(row.order_type) }}</StatusBadge>
             <template v-else-if="column.key === 'total_amount'">{{ row.currency }} {{ money(row.total_amount) }}</template>
-            <StatusBadge v-else-if="column.key === 'status'" size="small" :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge>
-            <StatusBadge v-else-if="column.key === 'sync_status'" size="small" :type="syncType(row.sync_status)" effect="plain">{{ syncText(row.sync_status) }}</StatusBadge>
+            <StatusBadge v-else-if="column.key === 'status'" size="small" :type="statusType(row.status)" effect="plain">{{ invoiceIsLocal(row) ? businessLabel(row.commerce_status) : statusText(row.status) }}</StatusBadge>
+            <StatusBadge v-else-if="column.key === 'transaction_route'" size="small" type="info">{{ routeLabel(row.transaction_route || row.transaction_mode) }}</StatusBadge>
+            <StatusBadge v-else-if="column.key === 'shadow_status'" size="small" type="info">{{ shadowLabel(row.shadow_status) }}</StatusBadge>
+            <StatusBadge v-else-if="column.key === 'sync_status'" size="small" :type="syncType(row.sync_status)" effect="plain">{{ invoiceIsLocal(row) ? '无需小满同步' : syncText(row.sync_status) }}</StatusBadge>
             <template v-else-if="column.key === 'created_by'">{{ row.created_by_name || '-' }}</template>
             <template v-else-if="column.key === 'created_at'">{{ formatDateTime(row.created_at) }}</template>
             <template v-else>{{ row[column.prop] }}</template>
@@ -108,12 +110,14 @@
         <el-table-column class-name="table-action-column" label="操作" min-width="220" max-width="260" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
-              <el-button v-permission="'invoice:write'" link type="primary" :disabled="isInvoiceDeleting(row.id) || ['cancel_pending','cancelled'].includes(row.status)" @click="openEdit(row.id)">
+              <el-button v-permission="'invoice:write'" link type="primary" :disabled="isInvoiceDeleting(row.id) || ['cancel_pending','cancelled'].includes(row.status) || (invoiceIsLocal(row) && row.commerce_status !== 'draft')" @click="openEdit(row.id)">
                 <el-icon><Edit /></el-icon>
                 编辑
               </el-button>
+              <GlassButton v-if="invoiceIsLocal(row)" v-permission="'invoice:read'" variant="link" left-icon="Box" @click="router.push({ path: '/invoice/native', query: { invoice: String(row.id) } })">履约</GlassButton>
               <el-button
                 v-permission="'invoice:sync'"
+                v-if="!invoiceIsLocal(row)"
                 link
                 type="warning"
                 :loading="isInvoiceSyncing(row.id)"
@@ -124,7 +128,7 @@
                 {{ isInvoiceSyncing(row.id) ? '同步中' : '同步' }}
               </el-button>
               <el-dropdown
-                v-if="row.sync_status === 'sync_uncertain'"
+                v-if="!invoiceIsLocal(row) && row.sync_status === 'sync_uncertain'"
                 v-permission="'invoice:admin'"
                 trigger="click"
                 @command="command => resolveUncertain(row, command)"
@@ -138,21 +142,22 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-button v-if="row.order_type === 'presale'" v-permission="'shipment:write'" link type="primary" :disabled="!shipmentCapabilities.enabled || row.sync_status !== 'synced' || ['cancel_pending','cancelled'].includes(row.status)" @click="shipmentInvoice = row"><el-icon><Box /></el-icon>生成出库单</el-button>
+              <el-button v-if="row.order_type === 'presale' && !invoiceIsLocal(row)" v-permission="'shipment:write'" link type="primary" :disabled="!shipmentCapabilities.enabled || row.sync_status !== 'synced' || ['cancel_pending','cancelled'].includes(row.status)" @click="shipmentInvoice = row"><el-icon><Box /></el-icon>生成出库单</el-button>
               <el-dropdown trigger="click" placement="bottom-end">
                 <el-button link>更多<el-icon><ArrowDown /></el-icon></el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
+                    <el-dropdown-item v-if="invoiceIsLocal(row)" @click="router.push({ path: '/invoice/native', query: { invoice: String(row.id) } })">订单履约与资金</el-dropdown-item>
                     <el-dropdown-item :icon="Download" @click="handleExport('excel', row)">导出 Excel</el-dropdown-item>
                     <el-dropdown-item :icon="Download" @click="handleExport('pdf', row)">导出 PDF</el-dropdown-item>
                     <el-dropdown-item :icon="Download" @click="handleExport('print', row)">打印 / 预览</el-dropdown-item>
                     <div v-permission="'invoice:read'" role="none">
                       <el-dropdown-item :icon="Document" @click="openSyncLogs(row)">日志</el-dropdown-item>
                     </div>
-                    <div v-permission="'invoice:admin'" role="none">
+                    <div v-if="!invoiceIsLocal(row)" v-permission="'invoice:admin'" role="none">
                       <el-dropdown-item :disabled="isInvoiceDeleting(row.id)" @click="openLifecycle(row)">取消 / 恢复</el-dropdown-item>
                     </div>
-                    <div v-permission="'invoice:delete'" role="none">
+                    <div v-if="!invoiceIsLocal(row)" v-permission="'invoice:delete'" role="none">
                       <el-dropdown-item v-if="usesRelatedInvoiceDeletion(row) && row.status !== 'cancelled'" divided class="invoice-danger-action" :aria-busy="isInvoiceDeleting(row.id)" :disabled="isInvoiceDeleting(row.id) || isInvoiceSyncing(row.id)" @click="removeInvoice(row)">
                         <el-icon><Delete /></el-icon>
                         {{ isInvoiceDeleting(row.id) ? '处理中' : row.status === 'cancel_pending' ? '继续删除' : '删除' }}
@@ -190,7 +195,8 @@
           <div :class="['drawer-panes', sideCollapsed ? 'is-side-collapsed' : '']">
             <!-- 左窗格：录入主流（客户/订单 → 产品明细 → 配件明细），独立滚动 -->
             <main class="pane pane-main">
-              <LinkedSyncResult
+              <InvoiceRouteField :form="form" :dirty="editor.hasUnsavedChanges.value" @changed="openEdit(form.id)" />
+              <LinkedSyncResult v-if="!invoiceIsLocal(form)"
                 :operation="linkedOperation"
                 :busy="linkedBusy"
                 @refresh="refreshLinked"
@@ -218,7 +224,8 @@
                 @open-whole-order-paste="wholeOrderPasteVisible = true"
               />
 
-              <InvoiceHairTable
+              <LocalInvoiceLines v-if="invoiceIsLocal(form)" :form="form" />
+              <InvoiceHairTable v-else
                 class="form-card"
                 :invoice-id="form.id"
                 :active="drawerVisible"
@@ -242,7 +249,7 @@
                 @remove-many="removeLines"
               />
 
-              <InvoiceAccessoryTable
+              <InvoiceAccessoryTable v-if="!invoiceIsLocal(form)"
                 class="form-card"
                 :items="accessoryItems"
                 :quantity-error-row="quantityErrorRow"
@@ -341,7 +348,7 @@
                 :on-total-discount-change="applyTotalDiscount"
               />
 
-              <InvoiceReceiptFields class="form-card" :form="form" :total="formTotal" :locked="editor.receiptLocked.value" />
+              <InvoiceReceiptFields v-if="!invoiceIsLocal(form)" class="form-card" :form="form" :total="formTotal" :locked="editor.receiptLocked.value" />
             </aside>
           </div>
         </el-form>
@@ -423,9 +430,10 @@ import InvoiceAnomalyBadge from './components/InvoiceAnomalyBadge.vue'
 import { useInvoiceShipments, orderTypeLabel } from './composables/useInvoiceShipments'
 import { useInvoiceImportDialogs } from './composables/useInvoiceImportDialogs'
 import InvoiceLifecycle from './components/InvoiceLifecycle.vue'
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onDeactivated, ref, watch } from 'vue'
 import { ArrowDown, Box, Calendar, DArrowLeft, DArrowRight, Delete, Document, Download, Edit, Refresh, RefreshLeft, Search, Tools } from '@element-plus/icons-vue'
 import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
+import { useRouter, useRoute } from 'vue-router'
 import { useInvoiceEditor } from './composables/useInvoiceEditor'
 import { useInvoiceManagePage } from './composables/useInvoiceManagePage'
 import InvoicePasteImport from './components/InvoicePasteImport.vue'
@@ -440,6 +448,9 @@ import InvoiceSettlementFields from './components/InvoiceSettlementFields.vue'
 import InvoiceSummaryCard from './components/InvoiceSummaryCard.vue'
 import InvoiceTotalsFooter from './components/InvoiceTotalsFooter.vue'
 import InvoiceOverview from './components/InvoiceOverview.vue'
+import LocalInvoiceLines from '@/views/commerce-transition/LocalInvoiceLines.vue'
+import InvoiceRouteField from '@/views/commerce-transition/InvoiceRouteField.vue'
+import { invoiceIsLocal, businessLabel, routeLabel, shadowLabel } from '@/views/commerce-transition/routeState'
 import LinkedSyncResult from './components/LinkedSyncResult.vue'
 import InvoiceHairTable from './components/InvoiceHairTable.vue'
 import TableTools from '@/components/TableTools.vue'
@@ -467,6 +478,7 @@ const {
   hasActiveFilters, handleSizeChange, orderTypeTone, resetFilters, statusOptions,
   columnDefs, density, densityClass, isFullscreen, panelRef, toggleFullscreen, visibleColumns, visibleKeys,
 } = listPage
+const router = useRouter(), route = useRoute()
 const editor = useInvoiceEditor({ onSaved: handleSaved })
 const {
   drawerVisible, legacyVisible, customerLoading, customerOptions, salesUserOptions, selectedCustomer, customerRule,
@@ -487,6 +499,7 @@ const {
   matchWholeOrderCustomer, applyWholeOrderPaste, openLegacyCreate,
 } = editor
 onBeforeRouteLeave(confirmEditorClose)
+onDeactivated(() => { editor.cancelEntry(); drawerVisible.value = false; legacyVisible.value = false })
 const linkedTaskActive = computed(() => linkedLoading.value || linkedBusy.value ||
   ['pending', 'running', 'failed', 'uncertain'].includes(linkedOperation.value?.status))
 bindIssueHandler(showIssues)
@@ -501,6 +514,11 @@ async function openLifecycle(row) {
   await nextTick()
   if (lifecycleInvoiceId.value === invoiceId) lifecycleRef.value?.open()
 }
+watch(() => [route.path, route.query.edit, route.query.create], async ([path, id, type]) => {
+  if (path !== '/invoice/manage') return
+  if (/^[1-9]\d*$/.test(String(id || ''))) { await openEdit(Number(id)); if (route.path !== '/invoice/manage') return; await router.replace({ path: '/invoice/manage', query: {} }) }
+  else if (['stock', 'production', 'presale'].includes(type)) { await openCreate(type); if (route.path !== '/invoice/manage') return; await router.replace({ path: '/invoice/manage', query: {} }) }
+}, { immediate: true })
 const drawerTitle = computed(() => {
   const typeLabel = orderTypeLabel(form.order_type)
   return form.id ? `编辑${typeLabel} ${form.invoice_no}` : `新建${typeLabel}`

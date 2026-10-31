@@ -25,7 +25,8 @@
       </el-select>
     </el-form-item>
     <el-form-item label="客户" required>
-      <div class="customer-filter-row">
+      <NativeCustomerPicker v-if="invoiceIsLocal(form)" v-model="form.local_customer_id" :disabled="Boolean(form.id)" :selected-name="form.customer_name" @select="selectLocalCustomer" />
+      <div v-else class="customer-filter-row">
         <el-select
           v-model="selectedCustomer"
           value-key="option_key"
@@ -53,12 +54,12 @@
         </el-select>
         <el-checkbox v-permission="'invoice_private_filter:read'" v-model="privateOnlyCompany" class="customer-filter-check">仅私海</el-checkbox>
       </div>
-      <div v-if="!okkiBound && privateOnlyCompany" class="binding-helper">
+      <div v-if="!invoiceIsLocal(form) && !okkiBound && privateOnlyCompany" class="binding-helper">
         {{ canTogglePrivate
           ? '未绑定 OKKI，私海筛选无结果。请取消“仅私海”或前往外部账号绑定。'
           : '未绑定 OKKI，暂无法搜索私海客户。请到 系统管理 → 外部账号绑定 处理。' }}
       </div>
-      <InvoiceCustomerSyncEntry :on-select="selectSyncedCustomer" />
+      <InvoiceCustomerSyncEntry v-if="!invoiceIsLocal(form)" :on-select="selectSyncedCustomer" />
       <div v-if="customerRule" class="rule-badge">该客户价格规则：{{ describeCustomerRule(customerRule) }}</div>
     </el-form-item>
     <el-form-item label="客户等级" required>
@@ -106,7 +107,7 @@
       <el-form-item v-if="form.id" label="币种">
         <el-input v-model="form.currency" maxlength="16" @change="onCurrencyChange" />
       </el-form-item>
-      <el-form-item label="小满标记" required class="fgrid-c3">
+      <el-form-item v-if="!invoiceIsLocal(form)" label="小满标记" required class="fgrid-c3">
         <div class="okki-flags-row">
           <span class="okki-flag">
             新成交
@@ -152,6 +153,14 @@
 </template>
 
 <script setup>
+import NativeCustomerPicker from '../native/components/NativeCustomerPicker.vue'
+import { invoiceIsLocal } from '@/views/commerce-transition/routeState'
+function selectLocalCustomer(customer) {
+  props.form.local_customer_id = customer?.id || null
+  props.form.customer_id = customer ? `ark:${customer.id}` : ''
+  props.form.customer_name = customer?.display_name || ''
+}
+
 import { DocumentCopy } from '@element-plus/icons-vue'
 import { customerOptionLabel } from '../composables/useInvoiceCustomerSearch'
 import { orderTypeLabel } from '../composables/useInvoiceShipments'
@@ -163,7 +172,7 @@ const privateOnlyCompany = defineModel('privateOnlyCompany')
 const contactDetailsExpanded = defineModel('contactDetailsExpanded', { default: true })
 
 defineEmits(['open-whole-order-paste'])
-defineProps({
+const props = defineProps({
   form: { type: Object, required: true },
   contactDetailsComplete: Boolean,
   salesUserOptions: { type: Array, required: true },

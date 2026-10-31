@@ -46,15 +46,11 @@ def scope(db, identity, user, *permissions):
 def detail(invoice_id: int, db: Session = Depends(get_db), user=Depends(require_permission("invoice:admin"))):
     from app.invoice.linked_sync_service import edit_version
     from app.invoice.models import OkkiOutboundTask
-    from app.portal.authority import get_settings
-    if get_settings().PORTAL_ENABLED:
-        from app.invoice import edit_authority
-        invoice, user = edit_authority.prepare_local(db, invoice_id, user, "invoice:admin")
-    else:
-        invoice = scope(db, invoice_id, user)
+    from app.invoice import edit_authority
+    invoice, user = edit_authority.prepare_local(db, invoice_id, user, "invoice:admin")
     from app.invoice import cancellation_facts, order_push_facts
-    recovery = cancellation_facts.summary(db, invoice) if get_settings().PORTAL_ENABLED else None
-    order_recovery = order_push_facts.summary(db, invoice) if get_settings().PORTAL_ENABLED else None
+    recovery = cancellation_facts.summary(db, invoice)
+    order_recovery = order_push_facts.summary(db, invoice)
     task = db.query(OkkiOutboundTask).filter_by(invoice_id=invoice_id).first()
     return ok({"invoice_id": invoice.id, "invoice_no": invoice.invoice_no, "status": invoice.status,
                "version": edit_version(invoice), "cancellation": cancellation.public_state(invoice.cancellation),
@@ -64,21 +60,20 @@ def detail(invoice_id: int, db: Session = Depends(get_db), user=Depends(require_
 
 @router.post("/invoices/{invoice_id}/lifecycle", summary="Process reviewed invoice lifecycle action")
 def apply(invoice_id: int, body: LifecycleAction, db: Session = Depends(get_db), user=Depends(require_permission("invoice:admin"))):
-    from app.portal.authority import get_settings
     if body.action == "remove":
         require_permission("invoice:delete")(user)
-    if body.action in {"outbound_retry", "ack_outbound"} and get_settings().PORTAL_ENABLED:
+    if body.action in {"outbound_retry", "ack_outbound"}:
         from app.invoice import outbound_recovery
         if not body.confirmed:
             raise HTTPException(409, "请确认处理范围及核对依据")
         return ok(outbound_recovery.recover(db, invoice_id, user, body.action,
                                           body.reason.strip(), body.expected_version))
-    if body.action == "remove" and get_settings().PORTAL_ENABLED:
+    if body.action == "remove":
         from app.invoice import cancellation_execution
         if not body.confirmed:
             raise HTTPException(409, "请确认处理范围及核对依据")
         return ok(cancellation.public_state(cancellation_execution.remove_authorized(db, invoice_id, user)))
-    if body.action == "refresh" and get_settings().PORTAL_ENABLED:
+    if body.action == "refresh":
         if not body.confirmed:
             raise HTTPException(409, "请确认处理范围及核对依据")
         try:
@@ -90,11 +85,9 @@ def apply(invoice_id: int, body: LifecycleAction, db: Session = Depends(get_db),
             logger.warning("Cancellation reconciliation rejected by current state")
             print("[invoice-cancel] reconciliation rejected by current state", flush=True)
             raise HTTPException(409, "当前取消流程不可核对，请重新读取") from None
-    if body.action in {"begin", "retain", "abort"}:
-        from app.invoice import edit_authority
-        invoice, user = edit_authority.prepare_local(db, invoice_id, user, "invoice:admin")
-    else:
-        invoice = scope(db, invoice_id, user, *("invoice:delete",) if body.action == "remove" else ())
+    from app.invoice import edit_authority, legacy_sending
+    invoice, user = edit_authority.prepare_local(db, invoice_id, user, "invoice:admin")
+    legacy_sending.authorize(db, invoice)
     actor = int(user.get("id") or user["sub"])
     try:
         if (invoice.cancellation or {}).get("deletion") and (invoice.cancellation or {}).get("status") != "remote_deleted":
@@ -103,20 +96,12 @@ def apply(invoice_id: int, body: LifecycleAction, db: Session = Depends(get_db),
             raise ValueError("请确认处理范围及核对依据")
         if body.action == "begin":
             result = cancellation.begin(db, invoice, body.reason.strip(), actor, body.expected_version)
-        elif body.action == "refresh":
-            result = cancellation.refresh(db, invoice, actor)
-        elif body.action == "remove":
-            result = cancellation.remove_remote(db, invoice, actor)
         elif body.action == "retain":
             result = cancellation.retain(db, invoice, body.reason, actor, body.confirmed)
         elif body.action == "abort":
             result = cancellation.abort(db, invoice, actor, body.reason)
-        elif body.action == "ack_outbound":
-            from app.invoice.linked_sync_service import acknowledge_outbound
-            result = acknowledge_outbound(db, invoice, actor, body.reason, body.expected_version)
         else:
-            from app.invoice.outbound_task_service import retry_reviewed
-            result = retry_reviewed(db, invoice, actor, body.reason, body.expected_version)
+            raise ValueError("不支持的订单生命周期操作")
         db.commit()
         return ok(cancellation.public_state(result))
     except (ValueError, okki_client.OkkiApiError) as exc:

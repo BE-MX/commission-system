@@ -27,7 +27,9 @@ class SafetyStock(Base):
     __tablename__ = "ark_safety_stock"
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
-    product_id = Column(BigInteger, nullable=False, comment="产品ID,对应 lsordertest.okki_products.product_id")
+    product_id = Column(BigInteger, nullable=True, comment="历史OKKI产品ID；本地配置使用local_sku_id")
+    local_sku_id = Column(BigInteger, ForeignKey("ark_catalog_skus.id", ondelete="RESTRICT"), nullable=True, comment="本地安全库存SKU ID")
+    version = Column(Integer, nullable=False, default=1, comment="安全库存配置并发版本")
     safety_stock = Column(Integer, nullable=False, default=0, comment="安全库存阈值(件)")
     lead_time_days = Column(SmallInteger, nullable=False, default=30, comment="备货周期(天)")
     safety_factor = Column(Numeric(4, 2), nullable=False, default=1.50, comment="安全系数")
@@ -38,6 +40,7 @@ class SafetyStock(Base):
 
     __table_args__ = (
         UniqueConstraint("product_id", name="uk_product_id"),
+        UniqueConstraint("local_sku_id", name="uq_safety_local_sku"),
         Index("idx_safety_stock_updated_at", "updated_at"),
         {"comment": "安全库存配置表,每个产品一条"},
     )
@@ -74,6 +77,7 @@ class ProductionOrder(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     order_no = Column(String(32), nullable=False, comment="生产单号")
     batch_no = Column(String(64), nullable=False, comment="生产批次号")
+    transaction_mode = Column(String(16), nullable=False, default="legacy", server_default="legacy", comment="legacy历史或local本地生产与库存账")
     remark = Column(String(500), nullable=True, comment="生产单备注")
     status = Column(SmallInteger, nullable=False, default=0, comment="0=已提交,1=已终止,2=已完成")
     created_by = Column(Integer, nullable=False, comment="创建人 user_id")
@@ -98,9 +102,15 @@ class ProductionOrderItem(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     order_id = Column(Integer, ForeignKey("ark_production_orders.id", ondelete="CASCADE"), nullable=False, comment="关联生产订单ID")
-    product_id = Column(BigInteger, nullable=False, comment="产品ID")
-    product_name = Column(String(255), nullable=False, comment="产品名称")
-    model = Column(String(100), nullable=True, comment="型号")
+    product_id = Column(BigInteger, nullable=True, comment="旧外部产品ID；本地生产使用local_sku_id")
+    local_sku_id = Column(BigInteger, ForeignKey("ark_catalog_skus.id"), nullable=True, index=True, comment="本地生产SKU ID")
+    process_route_id = Column(Integer, ForeignKey("process_route.id"), nullable=True, comment="生产下单时选定工序路线")
+    completed_qty = Column(Integer, nullable=False, default=0, server_default="0", comment="实际生产完工件数，独立于验收入库")
+    supplied_qty = Column(Integer, nullable=False, default=0, server_default="0", comment="已规划给销售订单的件数，含已交付不含释放")
+    supplied_received_qty = Column(Integer, nullable=False, default=0, server_default="0", comment="已验收入库并交付销售预占的件数")
+    local_version = Column(Integer, nullable=False, default=1, server_default="1", comment="本地生产明细并发版本")
+    product_name = Column(String(512), nullable=False, comment="产品名称")
+    model = Column(String(200), nullable=True, comment="型号")
     spec_info = Column(String(255), nullable=True, comment="规格属性")
     order_qty = Column(Integer, nullable=False, comment="生产下单数量")
     received_qty = Column(Integer, nullable=False, default=0, comment="已入库数量")
@@ -126,9 +136,10 @@ class ProductionCart(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     user_id = Column(Integer, nullable=False, comment="用户ID")
-    product_id = Column(BigInteger, nullable=False, comment="产品ID")
-    product_name = Column(String(255), nullable=False, comment="产品名称")
-    model = Column(String(100), nullable=True, comment="型号")
+    product_id = Column(BigInteger, nullable=True, comment="历史外部产品ID，本地使用local_sku_id")
+    local_sku_id = Column(BigInteger, ForeignKey("ark_catalog_skus.id", ondelete="RESTRICT"), nullable=True, comment="本地备货SKU ID")
+    product_name = Column(String(512), nullable=False, comment="产品名称")
+    model = Column(String(200), nullable=True, comment="型号")
     spec_info = Column(String(255), nullable=True, comment="规格属性")
     order_qty = Column(Integer, nullable=False, comment="生产下单数量")
     remark = Column(String(500), nullable=True, comment="备注")
@@ -137,6 +148,7 @@ class ProductionCart(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "product_id", name="uk_cart_user_product"),
+        UniqueConstraint("user_id", "local_sku_id", name="uq_cart_user_local_sku"),
         Index("idx_production_cart_user_id", "user_id"),
         {"comment": "生产单购物车,按用户隔离"},
     )

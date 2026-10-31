@@ -60,16 +60,40 @@ class Attempt:
 
 
 def start(db,invoice,actor_id,binding,payload,inventory_key,receipt_token):
+    from app.core.config import get_settings
+    from app.auth.service import get_live_user_authorization
     token=(invoice.sync_attempt or {}).get("token")
     key=(invoice.sync_attempt or {}).get("attempt_key")
     if not token or not key:raise ValueError("Missing durable order attempt")
     object_id,access_id=object_binding(db,invoice.id)
     data={"invoice_id":invoice.id,"attempt_key":key,"task_type":"invoice_order_push",
+          "authority_epoch":(invoice.sync_attempt or {}).get("authority_epoch"),
           "action":"update" if invoice.xiaoman_order_id else "create",
           "original_order_id":invoice.xiaoman_order_id,"original_actor_id":actor_id,
           "payload_fingerprint":digest(payload),"binding_fingerprint":digest(binding),
           "token_fingerprint":digest(token),"document_version":invoice.portal_document_version,
           "inventory_operation_key":inventory_key,"receipt_token_fingerprint":digest(receipt_token)}
+    roles,permissions=get_live_user_authorization(db,int(actor_id))
+    data['command_input']={'actor':{'sub':str(actor_id),'roles':list(roles),'permissions':list(permissions)},
+      'original_payload':deepcopy(payload),'contract':{
+        'source_invoice_id':invoice.id,'invoice_no':invoice.invoice_no,'invoice_date':invoice.invoice_date.isoformat(),
+        'currency':invoice.currency,'order_type':invoice.order_type,'source_namespace':'okki',
+        'tenant':get_settings().PORTAL_OKKI_NAMESPACE,'sales_user_id':invoice.sales_user_id,
+        'local_deposit_amount':str(invoice.local_deposit_amount) if invoice.local_deposit_amount is not None else None,
+        'local_deposit_charge':str(invoice.local_deposit_charge) if invoice.local_deposit_charge is not None else None,
+        'internal_accessory':str(invoice.internal_accessory) if invoice.internal_accessory is not None else None,'surcharge_name':invoice.surcharge_name,
+        'okki_new_deal':invoice.okki_new_deal,'okki_free_shipping':invoice.okki_free_shipping,'okki_first_return':invoice.okki_first_return,
+        'customer_external_id':str(invoice.customer_id),
+        'shipping_fee':str(invoice.shipping_fee),'surcharge_amount':str(invoice.surcharge_amount),
+        'product_amount':str(invoice.product_amount),'total_amount':str(invoice.total_amount),'items':[{
+            'source_item_id':item.id,'item_type':item.item_type,'external_product_id':str(item.product_id) if item.product_id is not None else None,
+            'external_sku_id':str(item.sku_id) if item.sku_id is not None else None,
+            'quantity':item.quantity,'price_per_piece':str(item.price_per_piece) if item.price_per_piece is not None else None,
+            'discount_amount':str(item.discount_amount),'total_price':str(item.total_price),
+            'commercial_kind':item.commercial_kind,
+            'source_line_state':'existing' if item.xiaoman_unique_id else 'new'} for item in invoice.items]}}
+    from app.commerce_shadow.capture import contract_history
+    data['command_input']['contract'].update(contract_history(db, invoice))
     if getattr(invoice,'presale_order_revision',None):data['requires_commercial_readback']=True
     if data['action'] == 'create' and invoice.order_type == 'stock' and not inventory_key:
         from app.core.config import get_settings

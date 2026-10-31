@@ -56,6 +56,8 @@ export function useInvoiceManagePage() {
     { key: 'item_count', label: '明细', prop: 'item_count', minWidth: 80, maxWidth: 120, align: 'right' },
     { key: 'total_amount', label: '应付合计', minWidth: 150, maxWidth: 190, align: 'right' },
     { key: 'status', label: '状态', minWidth: 160, maxWidth: 180, tooltip: true },
+    { key: 'transaction_route', label: '正式来源', minWidth: 120 },
+    { key: 'shadow_status', label: '对比状态', minWidth: 125 },
     { key: 'sync_status', label: '同步', minWidth: 110, maxWidth: 130, tooltip: true },
     { key: 'created_by', label: '创建人', minWidth: 84, maxWidth: 120, tooltip: true },
     { key: 'created_at', label: '创建时间', minWidth: 130, maxWidth: 160, tooltip: true, defaultVisible: false },

@@ -1,6 +1,8 @@
 """集中注册所有 FastAPI router。新增业务模块时在此追加。"""
 
 from fastapi import FastAPI
+from app.trade.router import router as trade_router
+from app.commerce_migration.router import router as commerce_migration_router
 
 from app.api import (
     employee_router, supervisor_router, customer_router,
@@ -23,6 +25,7 @@ from app.stock.public_router import router as stock_public_router
 from app.asset.router import router as asset_router
 from app.color.router import router as color_router
 from app.production.router import router as production_router
+from app.production.local_router import router as local_production_router
 from app.mini.router import router as mini_router
 from app.governance.router import router as governance_router
 from app.training.router import router as training_router
@@ -30,6 +33,7 @@ from app.task.router import router as task_router
 from app.inkboard.router import router as inkboard_router
 from app.whatsapp.router import router as whatsapp_router
 from app.invoice.router import router as invoice_router
+from app.invoice.commerce_router import router as invoice_commerce_router
 from app.receipt.router import router as receipt_router
 from app.expo.router import router as expo_router
 from app.aftersales.router import router as aftersales_router
@@ -75,10 +79,23 @@ from app.colorwork.proxy import router as colorwork_proxy_router
 from app.battle_report.router import router as battle_report_router
 from app.fx_settlement.router import router as fx_settlement_router
 from app.perf_goal.router import router as perf_goal_router
+from app.commerce_transition.router import router as commerce_transition_router
+from app.commerce_shadow.router import router as commerce_shadow_router
+
+from app.catalog.router import router as catalog_router
+from app.inventory.router import router as inventory_router
+from app.finance.router import router as finance_router
+from app.commission.router import router as local_commission_router
 
 
 def register_routers(app: FastAPI) -> None:
     """注册所有业务路由到 FastAPI app"""
+    app.include_router(catalog_router, prefix="/api/catalog", tags=["产品目录"])
+    app.include_router(commerce_migration_router, prefix="/api/commerce-migration", tags=["交易历史承接"])
+    app.include_router(inventory_router, prefix="/api/inventory", tags=["仓库与库存账"])
+    app.include_router(finance_router, prefix="/api/finance", tags=["本地收款与应收账"])
+    app.include_router(local_commission_router, prefix="/api/commission/local", tags=["本地提成归属"])
+    app.include_router(local_production_router, prefix="/api/production/local", tags=["本地生产与验收入库"])
     app.add_middleware(PublicSecurityHeadersMiddleware)
     app.include_router(domestic_decision_router, prefix="/api/domestic-decision", tags=["内贸经营决策"])
     app.include_router(fx_settlement_router, prefix="/api/fx-settlement", tags=["结汇决策"])
@@ -86,6 +103,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(auth_router, prefix="/api/auth", tags=["认证"])
     app.include_router(admin_router, prefix="/api/auth", tags=["用户角色管理"])
     app.include_router(employee_router, prefix="/api/v1/employee", tags=["员工属性"])
+    app.include_router(trade_router, prefix="/api/trade", tags=["本地经营配置"])
     app.include_router(supervisor_router, prefix="/api/v1/supervisor", tags=["主管关系"])
     app.include_router(customer_router, prefix="/api/v1/customer", tags=["客户归属"])
     app.include_router(payment_router, prefix="/api/v1/payment", tags=["回款同步"])
@@ -118,6 +136,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(settlement_router, prefix="/api", tags=["发货结算"])
     app.include_router(receipt_router, prefix="/api/receipts", tags=["回款单"])
     app.include_router(invoice_router, prefix="/api/invoice", tags=["Order Invoice"])
+    app.include_router(invoice_commerce_router, prefix="/api/invoice/local", tags=["本地交易订单"])
     app.include_router(expo_router, prefix="/api/expo", tags=["展会 AI 试戴"])
     app.include_router(aftersales_router, prefix="/api/aftersales", tags=["客户售后管理"])
     app.include_router(mcp_token_router, prefix="/api/mcp", tags=["MCP 网关 token 管理"])
@@ -162,3 +181,5 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(colorwork_proxy_router, prefix="/api/colorwork")
     app.include_router(battle_report_router, prefix="/api/battle-reports", tags=["临时战报"])
     app.include_router(perf_goal_router, prefix="/api/perf-goals", tags=["绩效目标"])
+    app.include_router(commerce_transition_router, prefix="/api/commerce-transition", tags=["交易双路线管理"])
+    app.include_router(commerce_shadow_router, prefix="/api/commerce-shadow", tags=["交易双路线核对"])

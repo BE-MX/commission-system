@@ -14,7 +14,7 @@
         <el-button @click="$emit('cancel')">取消</el-button>
         <!-- 无同步权限时「保存」升为主按钮，避免抽屉底部没有主操作 -->
         <el-button v-permission="'invoice:write'" :type="canSync && !writeBlocked ? '' : 'primary'" :disabled="writeBlocked" @click="$emit('save')">保存</el-button>
-        <el-tooltip :disabled="!writeBlocked" :content="blockedReason">
+        <el-tooltip v-if="!invoiceIsLocal(form)" :disabled="!writeBlocked" :content="blockedReason">
           <span>
             <el-button v-permission="'invoice:sync'" type="primary" :disabled="writeBlocked" :loading="syncing" @click="$emit('sync')">
               {{ syncing ? '保存并同步中' : '保存并同步' }}
@@ -28,6 +28,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { invoiceIsLocal } from '@/views/commerce-transition/routeState'
 import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({

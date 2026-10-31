@@ -3,14 +3,18 @@
 Never writes the business mirror. An uncertain delete is read back, not resent.
 """
 import logging
+from copy import deepcopy
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
+from fastapi import HTTPException
 
 from app.auth.models import ArkUser
 from app.core.time import beijing_now
 from app.invoice.models import Invoice, OkkiOutboundTask
+from app.invoice import legacy_sending
 from app.invoice.okki_client import ensure_access_token
 from app.shipping_inspection import audit_service, outbound_delete_client as remote, outbound_service
 from app.shipping_inspection.models import ShippingOperationEvent
@@ -38,7 +42,25 @@ def _commit(db):
 
 
 def _finish(db, event, action, message):
-    event = db.query(ShippingOperationEvent).filter_by(id=event.id).populate_existing().with_for_update().one()
+    event_id, remote_id = event.id, str(event.request_id)
+    legacy_sending.ownership.lock_policy(db)
+    keys=deepcopy((event.payload or {}).get('sending_claims',[]))
+    if action==DELETED:
+        conflict = False
+        for key in keys:
+            claim = legacy_sending.finish(db,key,'succeeded',{'original_request_readback':True,'deleted':True},remote_id)
+            conflict = conflict or (claim is not None and claim.state != 'succeeded')
+        if keys:
+            _commit(db)  # Late original evidence must survive subsequent route rejection.
+            legacy_sending.ownership.lock_policy(db)
+        if conflict:
+            raise OutboundDeleteError('原出库删除证据冲突，办理权已冻结，请核对原任务')
+    snapshot = deepcopy(event.payload or {})
+    for identity in sorted(snapshot.get('invoice_ids', [])):
+        expected = snapshot.get('authority_epochs', {}).get(str(identity),
+            snapshot.get('authority_epochs', {}).get(identity))
+        legacy_sending.authorize(db, identity, expected)
+    event = db.query(ShippingOperationEvent).filter_by(id=event_id).populate_existing().with_for_update().one()
     if event.action == DELETED:
         _commit(db)
         return {'outbound_record_id': event.outbound_record_id, 'deleted': True}
@@ -76,6 +98,28 @@ def delete_outbound(db, record, user_id, *, expected_order_id=None, expected_sna
                             expected_snapshot=expected_snapshot)
 
 
+def _current_delete_actor(db, user_id, record=None):
+    """Recheck installed live grants and source scope in each claim phase."""
+    from app.portal.authority import lock_authority
+    from app.portal.access_policy import employee_principal
+    from app.portal.errors import PortalError
+    lock_authority(db, force=True)
+    try:
+        actor = employee_principal(db, user_id, 'shipping_inspection:delete')
+    except PortalError as exc:
+        raise HTTPException(exc.status, '当前账号无权删除出库单') from None
+    actor = {**actor, 'sub': str(actor['id'])}
+    if record is not None:
+        from app.shipping_inspection.router import _outbound_scope
+        scope = _outbound_scope(db, actor)
+        if scope is not None:
+            current = outbound_service.get_outbound_record(db, str(record['outbound_record_id']),
+                okki_user_id=scope, include_deleted=True)
+            if current is None or str(current.get('outbound_invoice_id')) != str(record.get('outbound_invoice_id')):
+                raise HTTPException(404, '出库单不存在或当前归属已变化')
+    return actor
+
+
 def task_version(task):
     return (task.id, task.status, task.reason, task.attempts, task.updated_at)
 
@@ -93,19 +137,42 @@ def _delete_outbound(db, record, user_id, *, missing=False, task_versions=None, 
     invoice_id = str(record.get('outbound_invoice_id') or '')
     if not invoice_id.isdigit() or int(invoice_id) <= 0:
         raise OutboundDeleteError('该记录尚未生成有效的小满出库单，不能删除')
+    if record.get('transaction_mode') == 'local':
+        raise OutboundDeleteError('方舟独立批次请使用本地取消流程')
+    if db.new or db.dirty or db.deleted:
+        raise OutboundDeleteError('删除前存在未提交修改，请先保存后核对')
+    db.rollback()  # Entry callers may only supply a clean read snapshot.
+    if not missing:
+        _current_delete_actor(db, user_id)
     # Refreshing credentials is done before reserving an irreversible operation.
-    event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=invoice_id).populate_existing().with_for_update().first()
+    event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=invoice_id).populate_existing().first()
+    event_before=deepcopy((event.action,event.payload,event.result)) if event else None
     if event and event.action == DELETED:
         return {'outbound_record_id': record['outbound_record_id'], 'deleted': True}
+    db.rollback()
     token = None if missing else ensure_access_token(db)
-    if event and event.action in (PENDING, UNCERTAIN, 'delete_abandoned'):
+    db.commit()  # Credential writes only; no transaction spans provider reads.
+    # Resolve every known Ark route before even resuming an old delete entry.
+    known_orders = ((event_before[1] or {}).get('order_ids', []) if event_before else
+        [str(expected_order_id)] if expected_order_id is not None else _mirror_order_ids(db, invoice_id))
+    known_ids=[value for (value,) in db.query(Invoice.id).filter(Invoice.xiaoman_order_id.in_(known_orders)).order_by(Invoice.id)]
+    recovering = bool(event_before and event_before[0] in (PENDING, UNCERTAIN, 'delete_abandoned'))
+    if recovering:
+        legacy_sending.ownership.lock_policy(db)
+        for identity in known_ids:
+            legacy_sending.ownership._lock_authority(db, identity)
+    else:
+        for identity in known_ids:
+            legacy_sending.authorize(db, identity)
+    db.commit()
+    if event_before and event_before[0] in (PENDING, UNCERTAIN, 'delete_abandoned'):
         try:
             current = None if missing else remote.read(token, invoice_id)
         except remote.DeleteRemoteError as exc:
             raise OutboundDeleteError('删除结果待核对，请稍后重新核对；不会重复发送删除') from exc
         if current is None:
             return _finish(db, event, DELETED, '已核实小满出库单不存在')
-        if event.action == 'delete_abandoned':
+        if event_before[0] == 'delete_abandoned':
             raise OutboundDeleteError('原删除已人工终止，请在小满处理后重新核对，禁止重发原请求')
         raise OutboundDeleteError('删除正在处理或结果待核对；小满单据仍存在，未重复发送删除')
 
@@ -131,7 +198,17 @@ def _delete_outbound(db, record, user_id, *, missing=False, task_versions=None, 
     order_ids = [identity for identity in order_ids if identity not in retained_orders]
     # Match the poller's invoice -> task locking order, so a claimed writer wins
     # before our hold or observes skipped after our durable intent commits.
-    invoices = db.query(Invoice).filter(Invoice.xiaoman_order_id.in_(order_ids)).order_by(Invoice.id).populate_existing().with_for_update().all()
+    invoice_ids=[value for (value,) in db.query(Invoice.id).filter(Invoice.xiaoman_order_id.in_(order_ids)).order_by(Invoice.id)]
+    db.rollback()
+    epochs={identity:legacy_sending.authorize(db,identity).epoch for identity in invoice_ids}
+    if not missing:
+        _current_delete_actor(db, user_id, record)
+    invoices = db.query(Invoice).filter(Invoice.id.in_(invoice_ids)).order_by(Invoice.id).populate_existing().with_for_update().all()
+    if current is not None and (not order_ids or {str(row.xiaoman_order_id) for row in invoices}!=set(order_ids)):
+        raise OutboundDeleteError('关联原订单缺少完整办理权登记，不能删除')
+    event=db.query(ShippingOperationEvent).filter_by(scope=SCOPE,request_id=invoice_id).populate_existing().with_for_update().first()
+    if (deepcopy((event.action,event.payload,event.result)) if event else None)!=event_before:
+        raise OutboundDeleteError('原删除记录在取证期间变化，请读取原任务')
     from app.shipping_inspection import outbound_sync_state
     for invoice in invoices:
         try:
@@ -166,7 +243,8 @@ def _delete_outbound(db, record, user_id, *, missing=False, task_versions=None, 
             tasks.append(task)
             saved_tasks.append({'id': task.id, 'created': True})
     snapshot = {'outbound_invoice_id': invoice_id, 'outbound_no': record['outbound_no'],
-                'order_ids': order_ids, 'tasks': saved_tasks, 'before': current}
+                'order_ids': order_ids, 'invoice_ids':invoice_ids,'authority_epochs':epochs,
+                'attempt_key':uuid4().hex,'tasks': saved_tasks, 'before': current}
     if event is None:
         event = audit_service.record(db, PENDING, user_id, record['outbound_record_id'],
             context={'scope': SCOPE, 'source': 'scheduler' if missing else 'pc'}, request_id=invoice_id, payload=snapshot)
@@ -193,11 +271,20 @@ def _delete_outbound(db, record, user_id, *, missing=False, task_versions=None, 
     if current is None:
         return _finish(db, event, DELETED, '小满出库单已不存在')
 
-    event = db.query(ShippingOperationEvent).filter_by(id=event.id).populate_existing().with_for_update().one()
+    event_id=event.id
+    db.rollback()
+    for identity in invoice_ids:legacy_sending.authorize(db,identity,epochs[identity])
+    _current_delete_actor(db, user_id, record)
+    event = db.query(ShippingOperationEvent).filter_by(id=event_id).populate_existing().with_for_update().one()
     if event.action != PENDING or datetime.fromisoformat(event.result['started_at']) + timedelta(minutes=5) <= beijing_now():
         raise OutboundDeleteError('删除执行权已失效，请重新核对原任务')
+    tickets=[legacy_sending.start_removal(db,identity,f'legacy:delete-outbound:{invoice_id}:{snapshot["attempt_key"]}:{identity}',
+        'outbound',invoice_id,{'actor_id':user_id,'outbound_id':invoice_id,'event_id':event_id,
+        'attempt_key':snapshot['attempt_key'],'invoice_ids':invoice_ids,'binding_hash':legacy_sending.ownership.digest(snapshot)},epochs[identity]) for identity in invoice_ids]
+    event.payload={**snapshot,'sending_claims':[ticket.request_key for ticket in tickets]}
+    _commit(db)
     try:
-        remote.remove(token, invoice_id)
+        remote.remove(token, invoice_id,db=db,ticket=tickets)
     except remote.DeleteRemoteError as exc:
         if not exc.uncertain:
             _finish(db, event, FAILED, str(exc))
@@ -217,29 +304,38 @@ def _delete_outbound(db, record, user_id, *, missing=False, task_versions=None, 
 
 
 def abandon_pending(db, record, actor, reason):
-    """End an ambiguous attempt without replay or automatic recreation."""
-    identity = str(record['outbound_invoice_id'])
-    token = ensure_access_token(db)
-    event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=identity).with_for_update().first()
-    if not event or event.action not in (PENDING, UNCERTAIN):
+    """End the local workflow; preserve any unresolved original HTTP claim."""
+    identity=str(record['outbound_invoice_id'])
+    if db.new or db.dirty or db.deleted:raise OutboundDeleteError('请先保存后核对原删除任务')
+    db.rollback()
+    event=db.query(ShippingOperationEvent).filter_by(scope=SCOPE,request_id=identity).first()
+    if not event or event.action not in (PENDING,UNCERTAIN):
         raise OutboundDeleteError('没有待恢复的删除任务')
-    # The event row is held across remote.remove by every live sender. Waiting
-    # out the original lease also fences a process paused before taking it.
-    stamp = (event.result or {}).get('started_at') or (event.result or {}).get('checked_at')
-    if not stamp or datetime.fromisoformat(stamp) + timedelta(minutes=5) > beijing_now():
+    expected=deepcopy((event.action,event.payload,event.result));event_id=event.id
+    stamp=(event.result or {}).get('started_at') or (event.result or {}).get('checked_at')
+    if not stamp or datetime.fromisoformat(stamp)+timedelta(minutes=5)>beijing_now():
         raise OutboundDeleteError('原删除任务尚未过期，请至少等待5分钟后核对')
-    current = remote.read(token, identity)
-    if current is None:
-        return _finish(db, event, DELETED, '人工核对时确认小满出库单已不存在')
-    before = (event.payload or {}).get('before') or {}
-    if str(current.get('company_info', {}).get('id')) != str(before.get('company_info', {}).get('id')):
+    orders=(event.payload or {}).get('order_ids',[])
+    ids=[value for (value,) in db.query(Invoice.id).filter(Invoice.xiaoman_order_id.in_(orders)).order_by(Invoice.id)]
+    db.rollback()
+    epochs={value:legacy_sending.authorize(db,value).epoch for value in ids}
+    db.commit()
+    token=ensure_access_token(db);db.commit()
+    current=remote.read(token,identity)
+    db.rollback()
+    for value in ids:legacy_sending.authorize(db,value,epochs[value])
+    event=db.query(ShippingOperationEvent).filter_by(id=event_id).populate_existing().with_for_update().one()
+    if (event.action,event.payload,event.result)!=expected:
+        raise OutboundDeleteError('原删除记录在核对期间变化，请重新读取')
+    if current is None:return _finish(db,event,DELETED,'人工核对时确认小满出库单已不存在')
+    before=(event.payload or {}).get('before') or {}
+    if str(current.get('company_info',{}).get('id'))!=str(before.get('company_info',{}).get('id')):
         raise OutboundDeleteError('小满客户归属已变化，不能恢复原任务')
-    event.action = 'delete_abandoned'
-    event.result = {'status': 'delete_abandoned', 'message': reason, 'operator_id': actor,
-                    'checked_at': str(beijing_now()), 'remote_status': current.get('status')}
-    for saved in event.payload.get('tasks', []):
-        task = db.query(OkkiOutboundTask).filter_by(id=saved['id']).with_for_update().first()
-        if task and task.reason == f'delete_pending:{identity}':
-            task.reason = f'delete_abandoned:{identity}'
+    event.action='delete_abandoned'
+    event.result={'status':'delete_abandoned','message':reason,'operator_id':actor,
+        'checked_at':str(beijing_now()),'remote_status':current.get('status')}
+    for saved in event.payload.get('tasks',[]):
+        task=db.query(OkkiOutboundTask).filter_by(id=saved['id']).with_for_update().first()
+        if task and task.reason==f'delete_pending:{identity}':task.reason=f'delete_abandoned:{identity}'
     _commit(db)
-    return {'deleted': False, 'message': '已保留小满原单并终止原删除；自动重建仍暂停，原请求不会重发'}
+    return {'deleted':False,'message':'已保留小满原单并终止本地删除流程；原发送责任继续待核对，不会重发或自动重建'}

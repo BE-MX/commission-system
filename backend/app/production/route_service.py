@@ -93,6 +93,9 @@ def delete_route(db: Session, route_id: int) -> None:
     obj = db.query(ProcessRoute).filter(ProcessRoute.id == route_id).with_for_update().first()
     if not obj:
         raise LookupError("路线不存在")
+    from app.stock.models import ProductionOrderItem
+    if db.query(ProductionOrderItem.id).filter(ProductionOrderItem.process_route_id == route_id).first():
+        raise ValueError("该路线仍被本地生产订单引用，不能删除")
     for model, label in (
         (ProductProcessRoute, "外贸产品"), (OrderProductProcessProgress, "外贸生产进度"),
         (DomesticProduct, "内贸产品"), (DomesticCraftRoute, "内贸工艺映射"),

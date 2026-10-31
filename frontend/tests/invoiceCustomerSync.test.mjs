@@ -30,7 +30,7 @@ const api = readFileSync(
 test('customer selector offers a manual OKKI sync entry next to it', () => {
   // 客户选择框旁（同一 form-item 内）挂同步入口组件
   assert.match(invoiceView, /<InvoiceOrderCustomerFields/)
-  assert.match(orderFields, /<InvoiceCustomerSyncEntry :on-select="selectSyncedCustomer" \/>/)
+  assert.match(orderFields, /<InvoiceCustomerSyncEntry v-if="!invoiceIsLocal\(form\)" :on-select="selectSyncedCustomer" \/>/)
   assert.match(syncEntry, /搜索不到客户？点击这里同步最新客户信息/)
 })
 

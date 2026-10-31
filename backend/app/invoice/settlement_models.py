@@ -43,6 +43,9 @@ class Receivable(Base):
     business_key = Column(String(96), nullable=False, unique=True)
     kind = Column(String(16), nullable=False)
     amount = Column(Numeric(14, 2), nullable=False)
+    paid_amount = Column(Numeric(14, 2), nullable=False, default=0, server_default="0", comment="本地有效核销累计金额")
+    adjustment_amount = Column(Numeric(14, 2), nullable=False, default=0, server_default="0", comment="本地应收调整累计金额，贷项为负")
+    due_date = Column(Date, nullable=True, comment="约定到期日，北京业务日期")
     handling_amount = Column(Numeric(14, 2), nullable=False, default=0)
     currency = Column(String(16), nullable=False)
     customer_id = Column(String(64), nullable=False)
@@ -60,11 +63,26 @@ class Receivable(Base):
 
 class ReceiptBatch(Base):
     __tablename__ = "ark_receipt_batches"
+    __table_args__ = (UniqueConstraint("bank_account_id", "bank_reference", name="uq_receipt_batch_bank_reference"),)
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     batch_no = Column(String(64), nullable=False, unique=True)
     customer_id = Column(String(64), nullable=False)
     currency = Column(String(16), nullable=False)
     gross_amount = Column(Numeric(14, 2), nullable=False)
+    transaction_mode = Column(String(16), nullable=False, default="legacy", server_default="legacy", comment="legacy历史或local本地资金")
+    local_customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=True, comment="本地稳定客户 ID")
+    bank_account_id = Column(BigInteger, ForeignKey("ark_bank_accounts.id"), nullable=True, comment="本地收款银行账户")
+    bank_reference = Column(String(128), nullable=True, comment="账户内唯一收款流水号")
+    finance_status = Column(String(16), nullable=False, default="registered", server_default="registered", comment="registered/confirmed/voided")
+    actual_bank_fee = Column(Numeric(14, 2), nullable=False, default=0, server_default="0", comment="银行实际扣费，与客户附加费用分开")
+    net_amount = Column(Numeric(14, 2), nullable=True, comment="银行实际到账金额")
+    allocated_amount = Column(Numeric(14, 2), nullable=False, default=0, server_default="0", comment="有效核销金额累计")
+    refunded_amount = Column(Numeric(14, 2), nullable=False, default=0, server_default="0", comment="实际退款金额累计")
+    rate_to_cny = Column(Numeric(18, 8), nullable=True, comment="登记时冻结原币兑人民币汇率")
+    rate_to_usd = Column(Numeric(18, 8), nullable=True, comment="登记时冻结原币兑美元汇率，用于提成")
+    confirmed_by = Column(Integer, nullable=True, comment="财务确认人 ID")
+    confirmed_at = Column(DateTime, nullable=True, comment="财务确认北京时间")
+    confirmed_date = Column(Date, nullable=True, comment="财务确认业务日；核销退款不得早于此日")
     bank_charge_total = Column(Numeric(14, 2), nullable=False, default=0)
     collection_date = Column(Date, nullable=False)
     payment_type = Column(String(64), nullable=False)
@@ -91,9 +109,19 @@ class SettlementApplication(Base):
     component = Column(String(16), nullable=False)
     amount = Column(Numeric(14, 2), nullable=False)
     bank_charge = Column(Numeric(14, 2), nullable=False, default=0)
+    released_amount = Column(Numeric(14, 2), nullable=False, default=0, server_default="0", comment="售后累计释放占用金额，保留原占用事实")
+    released_bank_charge = Column(Numeric(14, 2), nullable=False, default=0, server_default="0", comment="售后累计释放客户附加费用")
     status = Column(String(16), nullable=False, default="reserved")
     created_at = Column(DateTime, nullable=False, default=beijing_now)
     __table_args__ = (UniqueConstraint("settlement_id", "receipt_id", "component", name="uq_settlement_application"),)
+
+    @property
+    def effective_amount(self):
+        return 0 if self.status == "released" else self.amount - (self.released_amount or 0)
+
+    @property
+    def effective_bank_charge(self):
+        return 0 if self.status == "released" else self.bank_charge - (self.released_bank_charge or 0)
 
 
 class ShipmentOutbound(Base):

@@ -9,6 +9,7 @@ from app.battle_report.access import actor_id, bound_accounts, can_read_all, is_
 from app.battle_report.models import BattleReport, BattleReportAudit, BattleReportMember
 from app.battle_report.statistics import money
 from app.core.time import beijing_now
+from app.trade.service import formal_projection_enabled as local_mode
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +67,13 @@ def validate_roster(db, inputs, existing=()):
                 account = {"ark_user_id": member.ark_user_id, "okki_user_id": member.okki_user_id,
                            "user_name": member.user_name}
             else:
-                raise HTTPException(422, "所选业务员须有唯一有效的 OKKI 绑定，请在系统管理 → 外部账号绑定中配置")
+                raise HTTPException(422, "所选方舟员工已停用或不存在" if local_mode(db) else "所选业务员须有唯一有效的 OKKI 绑定，请在系统管理 → 外部账号绑定中配置")
         if item.ark_user_id in old:
             # Existing reports retain the external identity even after HR/organization edits.
             member = old[item.ark_user_id]
             account = {**account, "okki_user_id": member.okki_user_id, "user_name": member.user_name}
         resolved.append({**account, "team": item.team, "is_captain": item.is_captain})
-    if len({r["okki_user_id"] for r in resolved}) != len(resolved):
+    if not local_mode(db) and len({r["okki_user_id"] for r in resolved}) != len(resolved):
         raise HTTPException(422, "不同参与人不能共用同一个 OKKI 账号")
     return resolved
 
@@ -185,7 +186,13 @@ def change_state(db, report_id, user, payload):
             if not members:
                 raise HTTPException(422, "请先配置参与人")
             current = {r["ark_user_id"]: r["okki_user_id"] for r in bound_accounts(db)}
-            if any(current.get(m.ark_user_id) != m.okki_user_id for m in members):
+            if local_mode(db):
+                from app.trade.refresh_service import projection_status
+                if projection_status(db)["status"] != "current":
+                    raise HTTPException(409, "正式订单来源尚未完整更新，不能发布最终战报")
+                if any(m.ark_user_id not in current for m in members):
+                    raise HTTPException(422, "发布前请核对参与人的方舟账号状态")
+            elif any(current.get(m.ark_user_id) != m.okki_user_id for m in members):
                 raise HTTPException(422, "发布前请核对参与人的 OKKI 绑定")
         before = report_payload(report)
         bump_report(db, report, payload.version, status=status)

@@ -26,6 +26,12 @@ def _visible(db, invoice, user):
 
 def lock_document(db, invoice_id, *, force=False):
     """Lock portal lineage before its invoice; caller already holds authority."""
+    from app.invoice.transition_gate import lock_platform, require_invoice
+    lock_platform(db)
+    from app.invoice.models import Invoice
+    route = db.scalar(select(Invoice.transaction_mode).where(Invoice.id == invoice_id, Invoice.status != 'deleted'))
+    if route is not None:
+        require_invoice(db, invoice_id, route)
     scope = (db.get_transaction(), db.get_nested_transaction())
     held = scope[0] is not None and db.info.get('portal_authority_scope') == scope
     if force or held or authority.get_settings().PORTAL_ENABLED:

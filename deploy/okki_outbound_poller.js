@@ -17,6 +17,7 @@ import {assertLegacyMode} from './okki_outbound_mode.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertLegacyTransactions } from './okki_outbound_creator.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -111,6 +112,7 @@ export const NO_ORIGINAL_ATTEMPT = `NOT EXISTS (
 )`;
 
 export async function claimBatch(conn) {
+  assertLegacyTransactions();
   const now = beijingNow();
   const [rows] = await conn.query(
     `SELECT id, invoice_id, order_id, attempts, status, reason
@@ -314,6 +316,7 @@ async function runOnce(conn) {
 }
 
 async function main() {
+  assertLegacyTransactions();
   if (!config.db.user || !config.db.database) {
     console.error('[outbound-poller] ARK_DB_USER / ARK_DB_NAME 未配置，退出');
     process.exit(2);

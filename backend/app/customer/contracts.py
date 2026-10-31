@@ -354,7 +354,7 @@ _fact_registry: dict[str, FactRegistration] = {
     "commercial.has_valid_order": FactRegistration(
         value_types=_registered_value_types("commercial.has_valid_order"),
         data_classification=DataClassification.INTERNAL_BUSINESS,
-        allowed_sources=frozenset({("okki", "order")}),
+        allowed_sources=frozenset({("okki", "order"), ("ark", "order")}),
         ttl_days=None,
         conflict_key="commercial.has_valid_order",
         allowed_purposes=frozenset({"profile", "relationship_stage", "sales"}),
@@ -388,7 +388,7 @@ _fact_registry.update(_registrations(
 _fact_registry.update(_registrations(
     _OBSERVED_PREFERENCE_FACT_KEYS,
     classification=DataClassification.INTERNAL_BUSINESS,
-    sources=frozenset({("okki", "order")}),
+    sources=frozenset({("okki", "order"), ("ark", "order")}),
     ttl_days=365,
 ))
 _fact_registry.update(_registrations(
@@ -528,6 +528,30 @@ SOURCE_REGISTRY: Mapping[tuple[str, str], SourceRegistration] = MappingProxyType
         ttl_days=None,
         promotion_ceiling="verified",
         collection_legal_basis="authorized internal order-system synchronization",
+    ),
+    ("ark", "order"): SourceRegistration(
+        registry_version=SOURCE_REGISTRY_VERSION,
+        authority="transactional",
+        publisher_key_rule="internal_source_account",
+        source_family_key_rule="local_invoice_id",
+        allowed_fact_keys=(
+            _OBSERVED_PREFERENCE_FACT_KEYS | {"commercial.has_valid_order"}
+        ),
+        default_classification=DataClassification.INTERNAL_BUSINESS,
+        ttl_days=None,
+        promotion_ceiling="verified",
+        collection_legal_basis="committed local invoice and finance facts",
+    ),
+    ("ark", "order_item"): SourceRegistration(
+        registry_version=SOURCE_REGISTRY_VERSION,
+        authority="transactional",
+        publisher_key_rule="internal_source_account",
+        source_family_key_rule="local_invoice_item_id",
+        allowed_fact_keys=frozenset(),
+        default_classification=DataClassification.INTERNAL_BUSINESS,
+        ttl_days=None,
+        promotion_ceiling="verified",
+        collection_legal_basis="committed local invoice and finance facts",
     ),
     ("alibaba", "inquiry"): SourceRegistration(
         registry_version=SOURCE_REGISTRY_VERSION,

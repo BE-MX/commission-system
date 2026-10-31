@@ -146,7 +146,7 @@
 /**
  * OKKI 出库单列表 + 出库单直接打印（无预览弹框）。逻辑在 composables/useOutboundRecords.js（宪法 12）。
  */
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, defineAsyncComponent, onDeactivated, ref } from 'vue'
 import { INSPECTION_STATUS_LABELS, INSPECTION_STATUS_TAGS } from '@/api/shipping'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
@@ -193,6 +193,7 @@ const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullsc
   useTableView('outbound-records', columnDefs)
 const advancedFilterCount = computed(() => Number(Boolean(listPageState.appliedSearchForm.value.orderId)))
 const hasActiveFilters = computed(() => Boolean(searchForm.keyword || searchForm.orderId || searchForm.dateRange?.length || searchForm.outboundState || searchForm.inspectionStatus))
+onDeactivated(() => { printPreviewVisible.value = false; problemsVisible.value = false; inventoryVisible.value = false; syncVisible.value = false; listPageState.cancel(); listPageState.cancelMediaReads() })
 function canShowMore(row) {
   if (row.can_print && (!row.recheck_status || row.print_before_recheck)) return true
   if (row.record_source !== 'okki') return false

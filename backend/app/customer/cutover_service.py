@@ -66,6 +66,22 @@ def _runtime_core_tables() -> Mapping[str, Table]:
     return CORE_TABLES
 
 
+def load_frozen_customer_physical_contract() -> Mapping[str, Any]:
+    """Read revision 126's pinned contract without consulting evolving ORM."""
+    path = Path(__file__).resolve().parents[2] / (
+        "alembic/versions/126_unified_customer_domain_schema.json"
+    )
+    try:
+        contract = json.loads(path.read_bytes())["customer_domain_physical_contract"]
+        payload = {key: value for key, value in contract.items() if key != "contract_sha256"}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise CutoverGuardError("cannot read revision 126 frozen customer contract") from exc
+    expected = "64c40261e7012542affe5ff060c521d80d3ffe28ee3cfa4f77dfec964a027d5d"
+    if contract.get("contract_sha256") != expected or _sha256(payload) != expected:
+        raise CutoverGuardError("revision 126 frozen customer contract SHA-256 mismatch")
+    return contract
+
+
 RETIRED_CUSTOMER_BUSINESS_TABLES = (
     "ark_sales_search_jobs",
     "ark_sales_search_results",
@@ -3551,7 +3567,7 @@ def validate_customer_physical_schema_contract(
     contract: Mapping[str, Any] | None,
 ) -> str:
     """Validate revision 126's mandatory 39-table expected physical contract."""
-    core_tables = _runtime_core_tables()
+    frozen_tables = load_frozen_customer_physical_contract()["tables"]
     if not isinstance(contract, Mapping):
         raise CutoverGuardError("revision 126 physical schema contract is required")
     if set(contract) != {
@@ -3587,11 +3603,7 @@ def validate_customer_physical_schema_contract(
         ):
             raise CutoverGuardError(f"physical columns are invalid for {table_name}")
         actual_column_names = [column.get("name") for column in columns]
-        expected_column_names = (
-            list(core_tables[table_name].c.keys())
-            if table_name in core_tables
-            else list(REBUILT_WORKFLOW_COLUMNS[table_name])
-        )
+        expected_column_names = [column["name"] for column in frozen_tables[table_name]["columns"]]
         if set(actual_column_names) != set(expected_column_names) or len(
             actual_column_names
         ) != len(expected_column_names):
@@ -3955,19 +3967,25 @@ def verify_expected_customer_table_state(
             "retired-only tables still exist: " + ", ".join(remaining)
         )
     for table_name in NEW_CUSTOMER_TABLES + REBUILT_CUSTOMER_WORKFLOW_TABLES:
+        if expected_physical_tables is not None:
+            # The full frozen signature includes column types/comments, keys,
+            # indexes, generated expressions and enforced checks. Current ORM
+            # represents later revisions and is not revision 126's authority.
+            compare_physical_schema_signature(
+                expected_physical_tables[table_name],
+                _reflected_physical_schema_signature(inspector, table_name, connection=connection),
+                table_name,
+            )
+            continue
         reflected_columns = inspector.get_columns(table_name)
         actual_names = {column["name"] for column in reflected_columns}
         if table_name in core_tables:
             model_table = core_tables[table_name]
             expected_names = set(model_table.c.keys())
         else:
-            expected_names = set(REBUILT_WORKFLOW_COLUMNS[table_name])
             candidate = next(iter(core_tables.values())).metadata.tables.get(table_name)
-            model_table = (
-                candidate
-                if candidate is not None and set(candidate.c.keys()) == expected_names
-                else None
-            )
+            model_table = candidate
+            expected_names = set(candidate.c.keys()) if candidate is not None else set(REBUILT_WORKFLOW_COLUMNS[table_name])
         if actual_names != expected_names:
             missing_columns = sorted(expected_names - actual_names)
             extra_columns = sorted(actual_names - expected_names)
@@ -3998,40 +4016,6 @@ def verify_expected_customer_table_state(
                     f"check constraints missing from {table_name}: "
                     + ", ".join(sorted(expected_checks - actual_checks))
                 )
-        if connection.dialect.name == "mysql":
-            expected_comment = (
-                model_table.comment
-                if model_table is not None
-                else REBUILT_WORKFLOW_COMMENTS[table_name]
-            )
-            actual_comment = inspector.get_table_comment(table_name).get("text")
-            if actual_comment != expected_comment:
-                raise CutoverGuardError(f"table comment mismatch for {table_name}")
-            if model_table is not None:
-                actual_by_name = {
-                    column["name"]: column for column in reflected_columns
-                }
-                mismatched_comments = [
-                    column.name
-                    for column in model_table.c
-                    if actual_by_name[column.name].get("comment") != column.comment
-                ]
-                if mismatched_comments:
-                    raise CutoverGuardError(
-                        f"column comments mismatch for {table_name}: "
-                        + ", ".join(mismatched_comments)
-                    )
-            elif any(not column.get("comment") for column in reflected_columns):
-                raise CutoverGuardError(f"column comments are incomplete for {table_name}")
-            compare_physical_schema_signature(
-                expected_physical_tables[table_name],
-                _reflected_physical_schema_signature(
-                    inspector,
-                    table_name,
-                    connection=connection,
-                ),
-                table_name,
-            )
     return True
 
 

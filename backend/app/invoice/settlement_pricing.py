@@ -45,7 +45,7 @@ def _format(cents):
 
 
 def quote_settlement(lines, packaging, handling, deposit, deposit_charge,
-                     prior_packaging="0", prior_handling="0", *, freight="0"):
+                     prior_packaging="0", prior_handling="0", *, freight="0", allow_zero_deposit=False, allow_zero_goods=False):
     """Quote one batch from ALL contract lines, including unrequested lines.
 
     Lines require invoice_item_id, quantity (original), total_price (discounted
@@ -89,7 +89,13 @@ def quote_settlement(lines, packaging, handling, deposit, deposit_charge,
                           "line_amount": _format(amount)})
     if requested_count == 0:
         raise ValueError("At least one requested quantity must be positive")
-    if not 0 < d - dh <= total_goods or dh > h:
+    if total_goods == 0 and allow_zero_goods:
+        if any((p, h, d, dh, pp, ph, f)):
+            raise ValueError("Zero-value goods cannot carry proportional charges")
+        return {"items": items, "is_final": is_final, **{key: "0.00" for key in (
+            "goods_amount", "packaging_amount", "handling_amount", "freight_amount", "deposit_applied",
+            "deposit_charge_applied", "new_payment_due", "goods_payment_due", "goods_payment_charge")}}
+    if total_goods <= 0 or (not (allow_zero_deposit and d == dh == 0) and not 0 < d - dh <= total_goods) or dh > h:
         raise ValueError("Invalid deposit principal or deposit charge")
     expected_pp = _round_ratio(p * prior_goods, total_goods)
     expected_ph = min(_round_ratio(h * (prior_goods + expected_pp), total_goods + p), h - dh)

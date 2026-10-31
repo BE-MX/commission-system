@@ -3,6 +3,7 @@
 An ambiguous POST is never retried. The unique name is reserved in the local
 ledger before any remote write, so early mirror rows can be classified.
 """
+from app.invoice import legacy_sending
 import logging
 from datetime import timedelta
 from decimal import Decimal
@@ -128,6 +129,8 @@ def _claim(db, target_id):
         return None
     invoice_id = target.invoice_id
     db.commit()  # End the identity lookup snapshot before the current locking reads.
+    ownership = legacy_sending.authorize(db, invoice_id)
+    expected_epoch = ownership.epoch
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
     ensure_active(invoice)
     db.refresh(target, with_for_update=True)
@@ -148,7 +151,7 @@ def _claim(db, target_id):
     target.last_error = None
     target.version += 1
     db.commit()
-    return token
+    return token, expected_epoch
 
 
 def _fence(db, target_id, token):
@@ -157,21 +160,29 @@ def _fence(db, target_id, token):
         Receivable.remote_status == "sending", Receivable.lease_until > beijing_now(),
     ).values(lease_until=beijing_now() + timedelta(minutes=5),
              version=Receivable.version + 1)).rowcount
-    db.commit()
     if not count:
+        db.rollback()
         raise ValueError("运费目标发送租约已失效，请核对原单")
 
 
 def deliver(db, target_id):
-    token = _claim(db, target_id)
-    if token is None:
+    claimed = _claim(db, target_id)
+    if claimed is None:
         return
+    token, expected_epoch = claimed
     sent = False
+    send_round = 0
 
     def before_send():
-        nonlocal sent
+        nonlocal sent, send_round
+        legacy_sending.authorize(db, invoice.id, expected_epoch)
         _fence(db, target_id, token)
+        send_round += 1
+        ticket = legacy_sending.start(db, invoice, f'legacy:freight:{target_id}:{token}:{send_round}', 'freight_order_create', payload,
+            {'actor_id': invoice.created_by, 'receivable_id': target_id, 'settlement_id': target.settlement_id, 'amount': str(target.amount), 'currency': target.currency, 'payload_hash': target.remote_payload_hash}, expected_epoch)
+        db.commit()
         sent = True
+        return ticket
 
     try:
         target = db.get(Receivable, target_id)

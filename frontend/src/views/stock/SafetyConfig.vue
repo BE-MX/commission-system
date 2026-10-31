@@ -245,8 +245,8 @@
         <ListPageStatus :error="cartErrorMessage" :loading="cartLoading" :has-data="cartItems.length > 0" @retry="loadCart" />
         <el-empty v-if="cartItems.length === 0" description="购物车为空" />
         <template v-else>
-          <el-table :data="cartItems" @selection-change="toggleCartSelection" style="width:100%" border class="list-table" v-sticky-scrollbar>
-            <el-table-column type="selection" min-width="50" />
+          <el-table ref="cartTableRef" row-key="id" :data="cartItems" @selection-change="toggleCartSelection" style="width:100%" border class="list-table" v-sticky-scrollbar>
+            <el-table-column type="selection" :reserve-selection="true" min-width="50" />
             <el-table-column :sort-by="row => row.product_name || row.model" label="产品名称" min-width="140" show-overflow-tooltip>
               <template #default="{ row }">
                 <div class="cart-product-name">{{ row.product_name }}</div>
@@ -385,7 +385,7 @@
 </template>
 
 <script setup>import { msgWarning, msgSuccessText, msgInfo, msgError, confirmAction } from '@/utils/feedback'
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 
 import {
   Setting, MagicStick, Check, Search, Filter, RefreshRight, QuestionFilled, InfoFilled,
@@ -615,6 +615,21 @@ const {
 } = useProductionCart()
 
 const cartDrawerVisible = ref(false)
+const cartTableRef = ref(null)
+let syncingCartSelection = false, cartSelectionSerial = 0
+watch([cartItems, selectedCartIds, cartTableRef], async () => {
+  const serial = ++cartSelectionSerial
+  await nextTick()
+  const table = cartTableRef.value
+  if (serial !== cartSelectionSerial || !table) return
+  syncingCartSelection = true
+  try {
+    table.clearSelection()
+    for (const row of cartItems.value) {
+      if (selectedCartIds.value.includes(row.id)) table.toggleRowSelection(row, true)
+    }
+  } finally { syncingCartSelection = false }
+}, { flush: 'post' })
 
 const productionDialogVisible = ref(false)
 const currentProductionRow = ref(null)
@@ -633,7 +648,7 @@ const selectedTotalQty = computed(() =>
 )
 
 function toggleCartSelection(selection) {
-  toggleSelection(selection)
+  if (!syncingCartSelection) toggleSelection(selection.filter(row => cartItems.value.some(item => item.id === row.id)))
 }
 
 let cartQtyTimer = null

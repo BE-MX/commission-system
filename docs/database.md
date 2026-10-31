@@ -803,3 +803,146 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 | ark_ink_receipts | (device_id, message_id) 复合主键与 FK | received_at、read_at |
 
 所有 DATETIME 为北京时间。原始设备 token 只在签发响应出现，不入库。迁移禁止通过 downgrade 删除消息/备忘/回执。接口与边界见 [Kindle 看板](requirements/2026-10-25-kindle-dashboard.md)。
+
+# 本地产品与库存账（迁移 208，开发分支）
+
+| 表 | 用途与约束 |
+| --- | --- |
+| `ark_catalog_products` | 本地产品身份，唯一编码、名称/展示名、类别、型号、停用标记 |
+| `ark_catalog_skus` | 本地 SKU，唯一编码、产品外键、颜色/尺寸/卷度/克重；成品计量为整数件 |
+| `ark_catalog_external_identities` | 来源+租户+外部产品/SKU 四元组唯一映射；不把外部 ID 当本地主键 |
+| `ark_warehouses` | 仓库编码、名称、停用；主键顺序锁是库存操作互斥边界 |
+| `ark_stock_balances` | 仓库+SKU+质量状态唯一余额，实存/预占/版本；非负且实存不低于预占 |
+| `ark_stock_documents` | 库存操作头、幂等键及请求摘要、来源、操作者和北京时间；冲销关系唯一 |
+| `ark_stock_ledger` | 单据+行号唯一的有符号实存/预占变动和变后余额；只增事实，不覆盖历史 |
+
+迁移只增加结构，不猜测历史身份、不自动建立期初、不重放旧库存。不支持删除账本式 downgrade，修复走经审计的向前迁移。库存服务保存点保证多行原子性，调用方提交外层事务；HTTP 边界失败回滚。并发验收使用隔离 MySQL RR，不以 SQLite 证明行锁。
+
+## 本地订单及预占（迁移 209，开发分支）
+
+继续使用 `ark_invoices/ark_invoice_items` 主账。订单新增 `transaction_mode`（既有行默认 `legacy`）、`commerce_status`、`commerce_version` 和可空 `local_customer_id`；明细新增本地 `local_sku_id` 及事务维护的 `stock_reserved_quantity/stock_shipped_quantity`。外部 ID 原字段保留，不自动推断历史客户或产品对应关系。
+
+`ark_stock_reservations` 按订单行+仓库唯一记录本地 SKU、当前预占和累计正式出库。预占/释放/消费同时更新订单行跨仓投影、责任行、库存余额和库存单据流水。订单行当前读保护跨仓需求上限；空责任行及空余额用先插入认领，避免 MySQL RR 的缺失键 gap lock。缺失余额的预占直接拒绝，不创建零库存。
+
+`ark_invoice_commerce_events` 保存全局唯一请求键、请求摘要、动作、完整命令快照、订单外键、操作者和北京时间。确认订单在同事务建立现有 `ark_receivables` 应收（货款/运费分别记录）；取消保留原应收面额及事件，活动应收查询须排除已取消订单。已有出库或活动收款/发货结算时不能直接取消。
+
+## 本地资金账结构（migration 210，开发分支）
+
+- `ark_finance_books`：唯一账簿和已结账截止日。持久policy协调之后，资金变更先锁账簿，再依序锁订单、付款、应收等；关闭期间与资金写入原子互斥。
+- `ark_finance_currencies`、`ark_bank_accounts`：币种汇率和收款账户。账户币种创建后不可变；不会迁移或猜测生产汇率。
+- `ark_receipt_batches` 新增本地客户、交易模式、账户与银行流水唯一身份、确认状态/操作者/时间/业务日期、实际银行费/净到账、核销/退款累计、登记时人民币及美元汇率。既有批次默认为legacy，原记录不回放为新确认收款。
+- `ark_receivables` 新增本地有效核销累计、应收调整累计、到期日；原面额保留，余额按面额+调整−核销计算。
+- `ark_finance_events`：不可变资金命令、请求摘要、业务日期、相关付款/核销/应收、金额、美元提成基数与操作证据。收款/退款流水跨表在账簿锁下核验；仅未确认作废可释放当前流水占用，事件保留原始引用。
+- `ark_receipts` 移除批次+应收唯一限制，保留请求键唯一；允许同一付款对应应收多次分配及撤销重分配。历史bank_charge是客户附加费分摊，绝不覆盖为银行实际费用。旧远端同步入口不处理本地not_applicable核销。
+
+210及保留旧结构与数据的完整链已在本轮独立MySQL随机schema验证，证据见双路线开发验收报告；不会自动downgrade删除资金事实。
+
+## 212 本地履约合同与检验绑定（开发分支）
+
+`212_local_fulfillment`接211：`ark_invoices.local_deposit_amount/local_deposit_charge`保存首款合同组成；不拿实时internal_received代替合同首款。`ark_shipping_inspections.local_outbound_id`唯一外键关联`ark_shipment_outbounds`，`local_outbound_version`冻结检验对应明细版本；历史记录保持NULL。
+
+复用ShipmentSettlement/SettlementItem/SettlementApplication/ShipmentOutbound，不另建销售或现金主账。local出库payload保存本地行身份/仓库/明细快照，状态local_pending/local_ready/local_shipped/local_cancelled，不进入远端发送状态。资金占用分别守恒gross本金和客户附加费；库存出库单ID、检验身份及版本写InvoiceCommerceEvent。预售批次运费成立/取消分别写FinanceEvent，业务日不能逆序或跨已关闭期间。实际银行费继续只在ReceiptBatch，不能混入商品附加费。
+
+本迁移已在隔离MySQL实际执行；此证据不替代历史迁移全链和生产切换对账。禁止downgrade丢弃合同事实。
+
+
+## 本地部分冲回与售后凭证（213–215，开发分支未部署）
+
+- `213_partial_receipt_reversal`（父212）：`ark_receipts` 增加 `reversed_amount/reversed_bank_charge NUMERIC(14,2) NOT NULL DEFAULT 0`，保留原金额与费用。仅旧本地已全额冲回记录重建累计投影，legacy不回填。有效额为原额减累计冲回，FinanceEvent保存每次负向经济事实和USD提成调整。
+- `214_local_aftersales`（父213）：`ark_aftersales_cases.local_invoice_item_id` 可空外键关联本地订单行；`product_name_snapshot` 扩为512字符匹配订单事实，旧记录保留。
+- `ark_aftersales_executions`：售后执行ID、case外键、可空发货行外键、动作、数量、库存单据外键、补发订单外键、业务日期、唯一请求键/摘要、不可变JSON依据、执行人及北京时间。库存凭证和补发订单关联各自唯一；查询按case/发货行索引。JSON记录批准快照、原应用/核销/资金事件、实际冲回/贷项/退款、币种/冻结汇率等来源证据。退货不减少原订单或发货行已发数量。
+- `215_aftersales_money_release`（父214）：`ark_settlement_applications` 增加累计 `released_amount/released_bank_charge NUMERIC(14,2) NOT NULL DEFAULT 0`；原占用金额与费用保留。有效占用按状态与累计释放计算；已全部释放的应用有效额为零。`aftersales_release` 资金事件和Execution引用证明部分释放；通用退款接口不能伪造或消费未释放占用。
+
+这些迁移只允许前向纠正，不提供删除经济事实的downgrade。开发验证仅使用隔离随机MySQL schema，不代表生产已迁移，也不替代空库历史全链验收。
+
+
+### 本地提成依据与消费（216_local_commission，开发分支）
+
+- `ark_commission_bases`：唯一原核销 `event_id`、稳定客户身份、冻结受益人/实际比例/规则版本/原佣金分金额；缺配置保存原因并等待有审计的一次补全，不阻断合法收款。
+- `ark_commission_event_projections`：资金事件主键、原 basis 外键、唯一 `payment_id` 和每角色提成金额。退款按同一 basis 的累计应冲额之差投影；不以新身份重放历史已计提原款。
+- `synced_payment.payment_amount` 及 `commission_detail` 金额/各角色佣金从 DECIMAL(12,2) 扩为 (14,2)，保留数据、默认值、nullable 和注释；本地原币与汇率仍以付款/资金事件为准。
+
+### 本地经营投影（217_local_trade_projection，开发分支）
+
+- `ark_invoices.local_rate_to_usd DECIMAL(18,8)` 在确认时冻结；`local_commercial JSON`保存业务来源、新签/首返/私单及客户地域快照。`ark_invoice_items.commercial_kind`区分sample/bulk，旧单保持NULL等待核验。
+- `ark_customer_orders.local_invoice_id`是可空唯一外键，经营事实复用客户订单投影，不增加第二套订单主账；明细名称/型号/长度扩为512/200/128。
+- `ark_trade_projections`以invoice_id为主键，customer_order_id唯一，保存已完成的订单版本、该订单资金事件/售后执行水位、内容摘要与投影完成时间。只有客户事实和复购窗口同时成功后才更新，失败回滚整个单笔投影。
+- `ark_sales_roster`以本地业务员ID为主键，维护英文名、分队、阵营、目标、启用状态、并发版本、维护人和时间；可空唯一历史业务员ID仅供经核验的承接映射。
+- 经营金额为合同金额减客户附加费，加非后补运费应收的调整，并加回已退客户附加费；现金核销冲回不减少经营金额。后补预售运费不纳入主订单GMV，物理退货也不直接改写合同购买数量。取消和零经营金额排除有效订单统计。
+
+217的实际DDL、名册竞争及投影事务可见性/重复消费已在隔离MySQL验证；投影运行在独立READ COMMITTED事务，拒绝沿用旧RR快照。此证据不代替历史全链迁移验收。私单与取消、贷项归零订单排除；原合同零额且全为样品的正常订单保留既有新客口径，零元售后补发不计。已发货和部分发货保持有效，普通合同运费贷项扣减GMV，后补预售运费除外。
+
+### 本地战报人员（218_native_battle_members）
+
+`ark_battle_report_members.okki_user_id` 改为可空，历史值完整保留；`(report_id, ark_user_id)` 唯一约束仍是本地成员去重依据，历史非空外部ID仍受原唯一键保护。本地模式按 ArkUser 和 CustomerOrder 统计，不将方舟ID伪装成OKKI账号。多个无外部账号的员工可同时参与战报。降级不猜造外部ID，须使用经核验备份恢复。
+
+### 本地销售部门（219_local_sales_department）
+
+复用 `sys_dict.type=sales_department`，稳定身份为字典行ID；部门名称/代码可维护，但历史订单冻结名称和比例不随字典修改。`ark_sales_roster.department_id` 可空、外键指向该ID且删除受限。订单 `local_commercial.departments` 保存已确认分摊（本地部门ID、名称、Decimal字符串比例合计100%），`department_allocations` 保留制单输入。缺配置不阻断正常接单，但日报披露异常并阻止产生发送快照；管理员可通过带版本/原因/幂等键的归属核验动作补全或更正，InvoiceCommerceEvent保存前后值。
+
+本地钉钉日报使用独立 `dingtalk_gmv_local_team/member/admin` 三类受保护字典；队长与人员均为 ArkUser ID，不能与历史外部ID混用，原日报三类配置保留供切换核验。部门分币按最大余数法，保证非负金额的各项非负且总和精确守恒。
+
+### 本地配件价格（220_local_accessory_price）
+
+`ark_std_prices.local_sku_id` 为可空唯一外键，引用本地SKU，删除受限；旧 `product_id/sku_id` 仍表示外部身份，迁移不猜测映射或覆盖历史价。本地价格写入只接受 `ark:product:ID` 与 `ark:sku:ID`，校验配件类别、父子关系及启用状态。旧价格需在历史承接阶段通过已核验映射转入本地引用。220已在隔离MySQL实际执行，并验证旧值、多NULL、唯一和外键约束；此证据不替代全链迁移。
+
+### 完整本地迁移验证（base至221）
+
+2026-10-03隔离MySQL8.4.6实际执行原始auth/DingTalk九表bootstrap、base至125、受控126专用证据链及复验、173至221，唯一head。126严格使用自身冻结物理合同，后续新增字段不回写该合同。修复138单例规则表禁自增以兼容CHECK(id=1)，214售后执行case_id匹配057既有BIGINT UNSIGNED，ORM引用同步；历史主键不改。合成旧订单/行/售后/媒体及已有统一客户逐列保留，原生资金/检验/出库/隔离退货在实际外键结构上通过。详见[迁移报告](reports/2026-10-03-local-commerce-migration.md)，不替代生产批准、真实数据期初对账或其余切换验收。
+
+### 本地备货策略与生产购物车（221_local_replenishment）
+
+`ark_safety_stock.product_id`、`ark_production_cart.product_id` 允许 NULL；各新增 `local_sku_id` 外键，分别以 SKU、用户+SKU 唯一。历史外部 ID 行原样保留，本地服务只访问明确的本地行。策略增加 `version`，首次保存使用 expected_version=0，更新须匹配版本。购物车名称扩至512、型号扩至200，由服务端目录生成规格，客户端名称不能覆盖产品事实。
+
+备货销量按有效本地订单投影计算，未投影时拒绝返回旧销量；库存使用启用仓库可售在手减预占。生产完工但未验收入库仍计在途，已分配给客户订单且未收货部分不计自由补货能力。数量汇总转换为整数以支持日报 JSON 持久化，SKU 销量键二进制比较避免 MySQL 列与连接排序规则不一致。221历史保留、首次并发写、反序批量写及真实查询/日报写入已有隔离 MySQL 回归，不能替代完整历史迁移验收。
+
+### 核验导入身份与只读归档（222_commerce_migration）
+
+`ark_commerce_migration_batches`保存稳定batch_key、规范清单SHA256、源文件摘要、核验说明、业务基准日、原始结果、实际操作者及北京时间。`ark_commerce_migration_records`保存首次批次、source/tenant/object_type/external_id唯一组合、不可变content_hash/snapshot、catalog/archive角色及可空本地SKU外键。不是销售或资金主账。
+
+新表来源身份与父子batch_key采用utf8mb4_bin；既有`ark_catalog_external_identities`四个来源身份列前向改为相同二进制比较，保留行和本地ID，允许不同大小写的真实源身份分别映射。归档JSON不做字段名/值归一化。迁移不重放资金、库存或提成，downgrade拒绝丢弃已核验身份。完整base至222真实MySQL链13项通过；目录/归档21项定向回归通过，详见[导入验证报告](reports/2026-10-03-local-commerce-reviewed-import.md)。尚未证明未结责任及期初可继续办理。
+
+库存/半成品期初复用222的来源证据表，以opening角色、stock_balance/material_balance类型认领目标；成品local_sku_id有真实外键，仓库/质量及物料身份存于强类型核验快照，不增加平行库存表。initialize写现有StockDocument/StockLedger或InventoryLedger一次，acknowledge_existing只记录核对依据。金额/订单/已付提成责任尚未接入。
+
+余额version与该目标流水条数匹配用于确认RR快照完整；所有受控成品/半成品写入每条流水递增一次版本（含0数量损耗）。旧半成品收货与调整统一Material共享当前锁→Balance当前排他锁→insert-first流水认领，fresh后才更新余额及收货数量；整笔SAVEPOINT避免失败认领残留。期初操作者/物料共享锁与原生生产领料FK锁兼容。真实完整迁移结构的同/异物料竞争、旧RR幂等与净零历史检测已验证，见[库存期初报告](reports/2026-10-03-local-commerce-inventory-opening.md)。
+
+### 历史明细关联与提成人民币冻结（223_commerce_opening_links）
+
+`ark_customer_order_items.local_invoice_item_id` 新增可空、唯一、RESTRICT 外键，引用原生发票明细；旧外部明细ID和原投影ID保持原样，迁移不自动猜测绑定。
+
+`synced_payment.exchange_rate` 从 Numeric(12,6) 前向扩为 Numeric(18,8)，只扩大精度，旧缩放原值不除100、不覆盖。新本地投影保存实际冻结有效汇率；历史期初依据明确转换既有缩放口径。`ark_commission_event_projections` 三角色新增可空 Numeric(14,2) 的 `*_commission_rmb`；已有行保留 NULL，查询继续沿用原显示舍入；后续冲回从实际已付/已扣余额分摊剩余责任，不改写旧批次。
+
+资金期初沿用222来源证据表，以 `opening/payment_opening` 保存完整原付款/核销/已发生退款/逐笔负提成核验快照。经济责任写现有 ReceiptBatch、Receipt、Receivable 和 FinanceEvent 的 opening_payment/opening_allocation/opening_refund；CommissionBasis 保存原已付消费身份及剩余USD/RMB。不生成历史正 SyncedPayment。223 已通过完整真实MySQL迁移及旧数据保留、三个并发旧RR请求和后续全额退款/重放验证，见[资金期初报告](reports/2026-10-03-local-commerce-finance-opening.md)。
+
+### 完整订单承接与放行（224_commerce_order_bindings）
+
+`ark_commerce_migration_records.local_invoice_id`、`local_customer_order_id` 新增可空、分别唯一、RESTRICT外键，指向现有发票主账及客户经营投影；旧行不猜测填充。opening/order_binding保存完整原合同、原明细及应收/经营事实与全部原身份，`_original_links`保留承接前的关联依据。沿用原 Invoice/InvoiceItem/CustomerOrder/CustomerOrderItem 主键及外部来源；非本地历史经营投影按已核验一对一行关联更新，原同步不得覆盖。
+
+订单准备使用现有 commerce_status=opening，生产准备使用 transaction_mode=opening；普通写入口拒绝办理。shipment_opening、production_opening、material_allocation复用来源证据记录及现有发货/生产/领料模型。历史 SettlementApplication 标记已消费，原出库/API身份写不可变原依据并映射原检验媒体；历史已发出/已验收/已领料不生成新的物理运动。InvoiceCommerceEvent.opening_activate 保存整次联合放行命令和稳定结果，当前待供货预占通过原 StockLedger 建立一次。
+
+合同变更已计入 Invoice.total_amount 时，应收 contract_change 事件引用真实 amend/opening_order 事件，经营统计不再次增加同额；独立贷项仍减少经营金额，释放客户费用按实际凭证加回。售后贷项同时减少当前应收费用额度，原合同和原核销事实保留。
+
+完整真实MySQL链已升级至唯一head190并保留旧列；核验资金/历史履约/生产后放行、旧RR写入口拒绝、双请求一次预占及后续正常收款发货/生产验收已有实际证据。管理员导入工作台仅使用既有来源表，不增加表；摘要分页单独读取当前责任状态，原始snapshot通过详情读取。未决动作核验及完整R01–R22候选验收仍需继续，不代表生产已切换。
+
+### 原非标聚合身份保留（225_customer_item_aliases）
+
+`ark_customer_order_items.projection_role` 默认为active；核验后的原通用聚合行改为historical_alias，保留其全部原值、时间、主键及历史引用。真实活动行的可空 `historical_alias_id` 为同表RESTRICT外键，同时明确关联原 `local_invoice_item_id`。CHECK限制两种角色，并要求别名不再充当活动InvoiceItem或指向其他别名。活动统计显式排除别名；历史按ID读取继续可用，旧样品/物流关联不会被删除，新关联须避免与尚未结束的原聚合责任重复。
+
+产品族四列前向扩为256：order_items.product_family、order_batch_map.product_family、reorder_windows.product_family、list_projections.primary_product_family。迁移读取并保留原nullable/comment；旧值不截断，长经营窗口/事项键使用确定性摘要，短键格式保留。既有原发票编号、真实规格及共享远端UID不改写。
+
+未决物料核验不新增表；222来源记录以opening/material_resolution保存原operation身份和处置前后快照，typed local_invoice_id保持NULL，避免冒用224整单唯一关联。真正运动仍写现有InventoryLedger原finalize/release身份，余额version每次运动递增；再以material_balance认领期末并核对全流水。225完整实际MySQL迁移、旧聚合数量1保留、真实4+6行接续履约、256字符产品族及原生预售尾款均已验证，最新完整链证据见[双路线开发验收](reports/2026-10-28-commerce-dual-route-implementation.md)；原191候选为历史记录。
+
+
+过渡期承接不新增表：完整期初批次结果关联现有 `ark_commerce_transfer_preparations.id`；原子放行回执保存在该准备记录的 verification 中，引用实际 InvoiceCommerceEvent。支付期初 snapshot 的 `_bank_identity_id` 指向复用的唯一银行身份；BankIdentity 的 payer_evidence 保留前归属和真实准备记录ID，不复制付款本金。旧责任结清使用现有 InvoiceAuthority/BankIdentity 的 settled_evidence，并复用 MigrationBatch/MigrationRecord 保存 request_key、清单摘要、审核依据和原账读回对象；不增加金额字段或完成布尔开关。
+
+## 交易双路线协调（226_commerce_transition，开发分支未发布）
+
+唯一新增迁移链为 `207_inkboard → 208_local_commerce → … → 225_customer_item_aliases → 226_commerce_transition`。旧候选174–191未曾发布，已整体重编号为208–225；不改main已发布的同号迁移。226使用冻结DDL，不能用当前ORM模型动态生成历史迁移。历史138内容保持主线版本，MySQL单例表的隐式自增冲突通过Alembic局部DDL适配修正，不stamp跳过。
+
+226新增21张协调/对比表，不另建正式合同、库存或资金主账。核心表为 `ark_commerce_transition_policy`、`ark_commerce_writer_receipts`、`ark_commerce_invoice_authorities`、`ark_commerce_authority_events`、`ark_commerce_sending_claims`、`ark_commerce_claim_evidence`、`ark_commerce_resource_scopes`、`ark_commerce_bank_domains`、`ark_commerce_bank_identities` 及共享责任/移交表；对比表位于 `commerce_shadow/models.py`。
+
+安装策略为 `legacy_only`，writer、资源和账户域均不自动伪造核验。按原Invoice.transaction_mode回填办理权，固化时间是安装时刻，不猜历史批准时间。InvoiceAuthority对Invoice使用RESTRICT；未生效草稿删除改为归档，合同、行、接入幂等与审计保留，正常查询隐藏归档。无经济事实的新草稿归档记录非经济结清依据，有原请求/物料审计等历史则继续保留待核清责任。
+
+银行身份按主体/真实账户域/渠道/原流水唯一，payment_ref还有独立唯一约束，同一原付款不能再绑定第二个身份。源ReceiptBatch/Receipt、金额、原手续费和历史缩放汇率不重新生成；承接更新原身份的归属并追加依据。发送claim与原动作同事务提交，HTTP在提交后执行；unknown不因租约到期解除。所有并发协调以持久policy单例及当前读为起点，避免RR旧快照覆盖新办理权。
+
+完整空库链及原数据保留已在自有回环MySQL8.4验证；具体结果见[开发验收报告](reports/2026-10-28-commerce-dual-route-implementation.md)，不代表生产数据库已升级。

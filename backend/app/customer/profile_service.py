@@ -573,6 +573,7 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
     ).all()
     order_ids = [row.id for row in order_rows]
     item_rows = db.query(CustomerOrderItem).filter(
+        CustomerOrderItem.projection_role == 'active',
         CustomerOrderItem.order_id.in_(order_ids),
     ).all() if order_ids else []
     items_by_order: dict[int, list[dict]] = defaultdict(list)

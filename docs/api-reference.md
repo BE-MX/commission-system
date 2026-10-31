@@ -2614,3 +2614,231 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 ## Kindle 看板（2026-10-25，本地待发布）
 
 新增 /api/inkboard：个人设备签发/撤销、备忘版本更新、消息幂等发布/撤回、受限设备同步与独立接收/已读回执。完整端点、schema 和权限见 [Kindle 看板契约](requirements/2026-10-25-kindle-dashboard.md)。不自动转发所有既有公告。
+
+# 本地产品与库存账（开发分支）
+
+`/api/catalog`：`GET/POST /products`、`PUT /products/{id}`、`POST /products/{id}/skus`、`PUT /skus/{id}/status`。查看需 `catalog:read`（制单/库存读取可使用对应权限），维护需 `catalog:write`；编码和计量单位为稳定身份，停用不改历史交易快照。
+
+`/api/inventory`：`GET/POST /warehouses`、`GET /balances`、`GET/POST /documents`、`GET /documents/{id}`、`POST /documents/{id}/reversal`。读取需 `inventory:read`，收货/调拨需 `inventory:write`；期初/调整/盘点同时需 `inventory:admin`，仓库维护与冲销需 `inventory:admin`。全部返回统一信封。
+
+库存过账接收 `idempotency_key`、`kind`、`reason`、`lines`；每行包含 `warehouse_id`、`sku_id`、`quality`、整数 `quantity`。支持 `opening/receipt/adjustment/count/transfer`，盘点需 `expected_version`，调拨需不同的 `destination_warehouse_id`。同键同请求返回原单，同键不同请求返回 409；单据与全部流水原子写入。冲销写反向事实，不删原单，不能使库存为负或低于预占。`quality=quarantine/damaged` 的可售数恒为零。当前基础 API 尚不代表订单/履约已完成接管。
+
+## 本地订单生命周期（开发分支）
+
+`/api/invoice/local/invoices`：POST 创建草稿，`PUT /{id}` 修改草稿，`POST /{id}/confirm` 确认，`POST /{id}/cancel` 取消。均需 `invoice:write`；业务员/代办与现有发票一致，创建和编辑同时校验统一客户实时数据范围。列表、详情和导出仍使用原发票入口，返回 `transaction_mode/commerce_status/commerce_version/local_customer_id` 以及明细本地SKU和库存责任数量。
+
+草稿请求包含 `request_key`、`expected_version`（创建为0）、统一客户/业务员ID、发票日期、币种及 `items[{id?,local_sku_id,quantity,price_per_piece,discount_amount}]`；支持联系人、收货信息、运费、客户手续费及包装费。成交金额服务端按分四舍五入，产品/客户名称取本地主数据快照。编辑须回传既有明细ID，防止替换已有身份。
+
+确认/取消请求为 `{request_key,expected_version,reason,warehouse_id?}`。现货确认必须指定仓库，全部行预占及应收建立为同一事务；生产/预售确认不虚增可售库存。重放相同命令不重复过账；同键异内容及版本过期返回409。本地交易订单拒绝旧编辑、旧同步及小满推单入口。当前尚待实现已确认订单变更、资金、履约和前端完整接管，不能据此直接切换生产。
+
+## 本地资金账 API（2026-10-03，开发分支）
+
+前缀 `/api/finance`，复用 `receipt:read/write/admin/read_all`。登记与核销需 write，财务确认、退款、核销冲回、应收调整、关账及账户/汇率配置需 admin；read_all只控制数据范围。付款详情及凭证按实时客户范围访问，订单应收按原业务员范围访问。
+
+- `GET /reference-data`；`PUT /currencies`、`PUT /bank-accounts`：本地币种、人民币汇率与账户，不查小满字典。
+- `GET/POST /payments`、`GET /payments/{id}`：允许零分配预收；登记包含客户、账户、真实银行流水、原币总额、实际银行费、日期与可选凭证。
+- `POST /payments/{id}/confirm|void|refund`：登记不产生可核销额度；确认后按gross核销。未确认作废保留事件并释放错误流水身份，允许纠错重录；已确认款必须退款或冲回，不能删除事实。
+- `POST /payments/{id}/allocations`、`POST /allocations/{id}/reverse`：独立操作身份，部分核销和冲回后再核销；资金被发货结算占用时不允许直接冲回。
+- `GET /invoices/{id}/receivables`；`POST /receivables/{id}/adjust`；`PUT /receivables/{id}/due-date`：应收金额、核销、调整和到期日；贷项不得把应收降到已核销金额之下。
+- `POST /close-period`、`GET /aging`、`GET /reconciliation`：已结束日期的期间关闭、按原币分组的当前账龄（未约定日期单列）、付款及应收投影对不可变事件的差异核对。
+
+写命令包含 `request_key`；变更含 `expected_version`、业务日期和必要原因。请求重复返回既有结果；键与内容不符、日期已结账或余额变化返回409。银行流水在同账户内跨收款/退款去重。公司承担银行费示例：gross1000、fee20、net980，可核销1000；客户附加费仍保留旧bank_charge字段语义。汇率冻结在登记时，后续改汇率不改历史提成基数。核销/退款不得早于确认业务日，资金/应收事件不允许倒序回填。
+
+当前接口独立于小满交易查询；未完成前端及发货/提成消费者衔接，不代表完整切换验收。
+
+## 本地生产与发货（2026-10-03，开发分支）
+
+本地生产前缀 `/api/production/local`，沿用production、semifinished与inventory相应动作权限；生产完工和仓库验收各有独立数量。生产单可创建/关联销售行供货，支持分批完工、分配验收入库、验收冲销、领料/退料/损耗及终止。写命令使用request_key/expected_version，验收生成库存事实并将对应生产待供货转为销售预占。验收冲销全量恢复该次关联供货及预占，不允许冲销已耗用的预占。认证小程序报工按进度ID防重复、保留完成/撤销事件；旧未认证报工和旧重置不能写本地生产。
+
+- `GET /orders`：production:read；page/page_size（默认1/20、最大100）、keyword（单号/批次）、status（0生产中/1终止/2完工）；返回items/total/page/page_size。详情另含原始验收凭证及其冲销状态、已使用物料名称。
+- `GET /reference-data`：production:read，返回启用仓库与工序路线；`GET /supply-options?item_id=`需production:write，仅查询同SKU、已确认且仍有需求的本地销售明细。范围与供货命令相同：invoice:read_all/超级管理员或现有销售归属/有效委派策略；支持keyword/page/page_size。
+- `GET /material-options`：semifinished:write，支持item_id/keyword/page/page_size；返回启用物料及该生产明细已领用的停用物料，停用项只能退料或记损耗。可用克数是当前读取提示，执行仍锁定后校验。
+- 页面 `/production/native` 使用上述契约及既有写命令。验收件数为正整数、耗料最多三位小数；待检/损坏库存不能分配销售。关闭窗口或KeepAlive切页保留未成功草稿、原版本、请求身份及原分配上下文，响应丢失可原样重试；只有成功或用户明确核对后重新开始才清理。流转卡沿用本地主键，并提示使用认证小程序。
+
+本地履约前缀 `/api/invoice/local`：
+
+- `POST /invoices/{id}/shipment-quotes`、`POST /invoices/{id}/shipments`：本地数量/仓库/运费报价及创建。创建包含quote_hash、expected_version、request_key；报价和动作的business_date默认为北京时间当日。发货创建复用现有结算/出库表，不发送小满。
+- `GET /invoices/{id}/shipments`；`POST /shipments/{id}/ready|release_funding|cancel|ship`：资金放行、释放未发货占用、取消及正式出库。动作包含expected_version/reason/request_key/business_date；ship另需当前inspection_version和inventory:write，其他沿用shipment权限，创建兼需invoice:write。
+- 普通订单各批运费按累计商品金额分摊整单freight应收，末批吸收尾差；预售每批另建freight应收及财务事件。取消须先处理有效核销，运费以负向调整事件归零，不能重新激活已取消批次的应收。
+- 本地预售确认时冻结local_deposit_amount/local_deposit_charge；首款可由多条部分核销凑齐，核销purpose=presale_deposit，全部确认后才创建批次，仅末批应用首款。非首款核销须提供settlement_id，费用由冻结批次计划计算；既有有效款按本金/费用分别检查占用上限。
+- 检验单使用local-<出库ID>及独立本地外键/明细版本；原扫码、照片视频、打印和Word入口沿用。列表`transaction_mode=local`读取本地出库与检验，不依赖镜像；历史列表保留legacy及原范围约束。正式出库当前读核验有效资金、检验状态/版本和库存预占，同事务消费并记录凭证；已出库后拒绝普通撤回检验。
+
+当前后端履约闭环已验证，但售后执行、历史承接、消费者改源和前端仍未全部完成，不能作为上线切换许可。
+
+### 本地已确认订单变更
+
+`POST /api/invoice/local/invoices/{id}/amend`需invoice:write。在草稿字段基础上增加business_date/reason/warehouse_id（现货必选），expected_version需匹配当前订单。限尚未正式履约且没有未取消发货批次的confirmed订单；客户、币种、归属、类型、原日期和编号不可覆盖。历史库存、生产和取消批次引用过的明细须保留原ID/SKU。变更追加库存释放/预占与应收差额事件，不覆盖原AR面额、既有核销和资金事实；全部同事务回滚。重复请求返回原结果。
+
+
+## 本地售后执行（2026-10-03，开发分支）
+
+提成归属维护另见本文“本地提成事件”段，售后金额冲回继承原核销冻结依据。
+
+前缀 `/api/aftersales`，历史售后流程保持原契约。本地创建/更新 `CaseCreate` 使用 `local_invoice_item_id` 和 `order_id=local:<invoice_id>`，客户必须与该本地订单一致，`product_id` 为空；本地已发货行提供冻结商品名、客户名、订单号和购买日。反馈日不早于实际购买日，数量为不超过已发量的整数件。
+
+- `GET /local/orders/search`、`GET /local/orders/{invoice_id}/items`：本地已发货订单、商品及实际发货批次选择器；按订单访问范围，不查小满交易镜像。权限 `aftersales:read|write`。
+- `POST /cases/{id}/local-returns`：`ReturnReceive` 包含 `request_key/expected_version/settlement_item_id/warehouse_id/quantity/business_date/reason`，需 `aftersales:write + inventory:write`。只处理批准的退回，跨售后累计不超过原批次已发量；原SKU已停用仍可退。生成 `sales_return` 库存凭证进入 `quarantine`，不增加可售数，也不改原已发数量。
+- `POST /cases/{id}/local-replacements`：`ReplacementCreate` 包含请求键/版本、最终批准的 `action_index`、本次数量、`order_type=stock|production`、现货仓库、业务日和原因；需 `aftersales:write + invoice:write + inventory:write`。本地方案须明确 `local_sku_id` 和整数数量；最终批准后建立零应收补发/重做订单，沿用预占、生产、检验和出库。仅批准关联的售后订单可全零货值发货；混合收费与赠品行仍按收费金额核验资金。补发订单不能普通变更绕过批准；未发取消后可以重新安排，同键仍返回原单。
+- `POST /cases/{id}/local-money`：`MoneyExecute` 包含请求键/版本、原 `settlement_item_id/application_id`、受影响数量、`action=cash_refund|discount|order_credit|freight_subsidy`、原币金额/币种、日期和原因；需 `aftersales:write + receipt:admin`。`disbursement=bank_refund` 必填实际退款流水，`customer_credit` 不填流水。现金退款必须银行出款，折扣/抵扣形成可用预收，运费补贴明确选择去向。先释放原发货应用，再冲回对应核销、追加原应收贷项并按需登记退款，失败整笔回滚。
+- 本地金额审批的 `amount_usd` 为成本预算上限，`currency/amount_original` 为可执行原币承诺；非USD必须显式填写原币，USD可沿用 `amount_usd`。执行按原付款冻结汇率记录USD，原币累计不超承诺且USD累计不超预算，跨审批轮次不清零。结案按原币承诺精确完成，不要求不可执行的汇率尾数相等。
+- `GET /cases/{id}/local-executions`：读取有权限售后单的不可变库存、订单和财务凭证引用。
+- 原 `close` 对本地售后校验所需退货收齐、补发订单全部检验出库、金额承诺及完整财务凭证，不能用文字替代执行。已批准或处理中本地售后可经原管理员 `reopen` 重新审批，历史执行保留且继续占用批准额度。
+
+金额及库存原事实不覆盖。请求键重放返回原执行凭证，换内容拒绝；业务日须处于开放期间，执行按账簿→订单→售后→库存次序串行保护。
+
+### 核销部分冲回
+
+原 `/api/finance/allocations/{id}/reverse` 命令的 `amount` 可指定部分冲回，省略则冲回全部剩余有效额。`Receipt.amount/bank_charge` 保持原值，返回累计 `reversed_amount/reversed_bank_charge` 与 `effective_amount/effective_bank_charge`。本金和费用分别保护发货占用。普通冲回不能释放已应用的发货款或绕过预售首款保护；售后通过带不可变凭证的专用释放链处理。USD提成冲回取原事件累计差额，最后一次吸收尾差。
+
+
+## 本地提成事件（2026-10-03，开发分支）
+
+- `GET /api/commission/local/customers/{customer_id}/policies`、`POST` 同路径：查看/维护本地客户提成归属，权限 `customer:write`，独立于客户当前负责人。写入必须携带 `expected_snapshot_id`、本地受益人及属性和原因；既有核销依据不随其变化。
+- `GET /api/commission/local/pending-bases`：`commission:write` 查看缺依据核销，游标 `after_id` 与 `limit`。
+- `POST /api/commission/local/bases/{basis_id}/resolve`：`commission:write` 按明确 `snapshot_id` 与原业务日期适用原因补全一次，记录操作人与北京时间；已冻结依据不可改写。
+- 原提成计算入口消费 `ark-finance:{event_id}`，保留含费 USD 金额与客户附加费之差等于资金事件净基数；实际银行费不再次扣减。已就绪本地旧日事件可补计，退款每角色累计差额吸收尾差。`skipped_dependency` 表示等待原款批次确认的负调整；待补全原核销计入 `skipped_no_snapshot`。
+- 同批允许原款及其冲回一起计提；跨批冲回要求原款批次已确认。核销/批次计算/确认/作废统一账簿锁；历史已付明细不重写。个人本地明细读取冻结身份并使用原生CNY/USD汇率；历史导入、付款列表及混合历史查询改源尚属后续任务。
+## 本地经营配置（开发分支，消费者逐项接入中）
+
+- `GET /api/trade/roster`：需要`employee:read`或`employee:write`；`after_id`及`limit`（1–100）分页，返回本地员工与可空名册配置，无小满绑定前提。未配置version为0，禁用员工有效active为false。
+- `PUT /api/trade/roster/{user_id}`：需要`employee:write`；传`expected_version`、`english_name`、`team`、`camp`、`new_customer_target`、`amount_target`（非负USD、最多两位小数）、`active`。首次expected_version=0，后续须匹配；版本冲突或启用已禁用员工返回409，成功版本加一并记录维护人。历史小满ID不允许通过此接口写入。
+- GET /api/trade/projection-status：需要 employee:write；返回 pending_count、last_projected_at、status。待办按订单版本、资金事件、售后执行和客户逻辑归属差异计算，非按最近运行时间猜测。
+- 本地模式每30秒运行 local_trade_projection，每单独立 READ COMMITTED 事务，死锁最多重试3次；失败不推进水位，分页轮转避免错误历史记录阻塞后续订单。客户订单水位区分 ark/okki。
+- 订单经营分析本地模式使用同一 CustomerOrder 投影，个人权限按 Ark 用户 ID，不要求小满绑定；来源、新签和产品筛选保持原契约。
+- 采购节榜单、公司GMV、复购、订单明细、事件候选和九月历史客户池读取同一投影。原历史业务员奖项权重通过已核验名册别名延续；零额正常样品可计新客，贷项归零及零元补发不计。切换模式后忽略旧轨道调试覆盖，旧双轨对账返回409。概况和九月结果包含真实projection_status；历史事件与state承接仍须P8核验，不能据本地候选测试宣称切换后不会重复播报。
+
+### 本地交易模式：战报与色块统计
+
+`/api/battle-reports` 在本地模式的人员选项、发布校验和个人访问使用启用的方舟员工，无需外部账号绑定；成员输入仍为 `ark_user_id`。订单详情ID为 `ark:customer_order:<id>`。overview 返回本报告成员与周期内的 `projection_status`，同时覆盖源单和旧投影；源数据尚未更新时明细/日历标记不完整，海报返回422而不生成旧金额快照。
+
+色块模板状态在本地模式返回 `source=local`，从本地启用产品/SKU、SKU克重与库存汇总；可售数量为启用仓库 sellable 在手减预占，隔离库存不参与。`source_synced_at` 取库存余额真实更新时间。
+
+### 本地部门归属与钉钉日报
+
+- `GET /api/trade/departments`：`employee:read/write` 或 `invoice:write`；返回启用的本地销售部门ID/名称/代码。
+- `PUT /api/trade/invoices/{invoice_id}/departments`：`employee:write` 且有订单访问权；请求 `request_key/expected_version/reason/department_allocations`，每项 `department_id/rate`，无重复且合计100%。非草稿/非取消本地订单可核验；递增订单版本并记录不可变前后值，重复请求不重复执行。
+- roster 写入增加可选 `department_id`，验证本地部门类型及启用状态；新订单可显式选择分摊，未提供时确认阶段使用业务员名册部门100%。此快照不随员工调队变化。
+- `PUT /api/dingtalk/gmv-daily/config` 本地请求增加 `source=local`；成员字段为 `ark_user_id`，队长为 `captain_ark_user_id`，部门使用本地字典ID。旧外部账号请求在本地模式拒绝；GET配置/候选项返回对应原生字段。发送时依然校验有效钉钉账号，测试只使用假的通知器，未对外发送。
+- 本地日报 `projection_status` 只检查目标业务日期（覆盖旧事实日期）；待更新或缺失分摊阻断新的发送快照，已冻结失败快照仍按原文重试。队伍投递键含 `ark-department` 命名空间，历史消息身份由切换工具显式核验承接。
+
+本地色彩任务每日06:00重算所有订单曾覆盖周及上周/本周（含已失效订单），每周取周一至周日，当前周截至今日；较早订单的迟到取消会修正原周。行业色号通过本地色板映射，缺失或冲突返回 `needs_review` 并保留已发布数值，不将未识别销量当零。
+
+### 本地目录查询消费者
+
+本地模式的发票产品级联候选、四维匹配、生产录入候选和规格查询统一读取启用的 CatalogProduct/CatalogSku，返回 `source=local`、`local_product_id/local_sku_id`，旧通用展示身份字段使用 `ark:product:<id>` / `ark:sku:<id>`，不能当作外部数字ID提交。规格查询仍受权限和条数限制。标准价格矩阵算法沿用现有本地价格表。
+
+`GET /api/public/stock/products` 本地分支使用SKU明确规格与可售库存（启用仓库 sellable 在手减预占）；不返回数量、销量、价格或经营水位。原生SKU的公开 `product_id` 为 `ark:sku:<id>`，历史公开ID及客户外部系统关联仍须P8承接核验，不能把当前原生分支测试当作历史兼容验收。
+
+MCP `find_product` 通过同一本地目录匹配，并移除 `available_stock/stock_warning` 后返回，保持目录权限不泄露库存信息。
+
+### 本地订单与资金页面查询
+
+- `GET /api/invoice/local/invoices`：原生订单分页及关键词、状态、类型、客户筛选，沿用订单可见权限，金额返回字符串。
+- `GET /api/invoice/local/customer-options`：制单可用客户分页候选；`GET /api/invoice/local/reference-data` 返回启用币种汇率与仓库。
+- `GET /api/finance/customer-options`：收款客户候选；`GET /api/finance/order-options` 按客户、币种分页返回可访问的已确认本地订单。
+- 付款详情增加可访问分配明细及累计冲销/有效金额，应收详情增加关联订单与非取消发货结算，页面无需额外获得发货权限即可核对收款关系。
+
+### 本地备货与生产购物车
+
+既有 `/api/stock` 备货查询在本地模式返回 `transaction_mode=local`，产品身份为 `ark:sku:ID`，增加 `local_sku_id/version/projection`。安全库存保存须带 `expected_version`；投影未完成返回409。公式建议使用原生销量，本地模式不调用外部 TFT 模型。
+
+生产购物车在本地模式只接受本地 SKU 身份，数量和半成品计划按当前明细校验；`POST /api/stock/production/orders` 增加本地必填 `request_key`。购物车消耗、生产单及可选半成品采购同事务执行，重放返回同一订单，不能用旧外部购物车行创建本地单。
+
+原生资金配置新增币种使用三位大写字母，与订单、付款、账户请求统一。基础资料读取允许 `receipt:read/write/admin` 任一，管理权限可以独立配置；资金详情与客户付款查询仍沿用各自读取权限和可见范围。
+
+### 本地分批验货与正式出库
+
+本地发货结算详情增加 `inspection_status/inspection_current/inspection_version`；只有已提交且匹配本批出库明细版本的验货，`inspection_current` 才为 true。页面将此版本自动带入 `POST /api/invoice/local/shipments/{id}/ship`，正式出库同时需要 `shipment:write` 和 `inventory:write`，服务端重新锁定核验资金、验货及库存。
+
+预售/生产订单正式出库时，可在同一事务内为本批补足所选仓库的可用合格库存预占，再完成销售出库；已有预占优先使用。库存不足、预占或生产供货责任超量均拒绝，整笔预占、库存和资金占用状态回滚。事件保留新建预占单与正式出库单 ID，重复命令不会再次扣货。
+
+既有出库和验货列表显式支持 `transaction_mode=local|legacy`。原生订单链接携带本地订单 ID，列表不会回退查询交易镜像。共用验货工作台可从本地批次打开指定出库单：先选择实际验货员，再通过原打印接口获取签名二维码并沿用扫码授权/会话校验，图片上传与提交协议保持一致。
+
+本地验货通知读取统一客户当前负责人/协作人，按逻辑客户归属解析，不读取旧交易镜像或使用订单历史业务员作当前负责人。原有历史通知口径保留；本地通知链接带 `transaction_mode=local`。
+
+### 核验目录与只读历史归档
+
+全部端点仅允许 `commerce_migration:admin`，普通目录、仓库或财务管理员不隐式获得导入权限。
+
+- `POST /api/commerce-migration/preview`：只读差异检查，返回 `manifest_hash/can_apply/catalog_count/archive_count/conflicts`；冲突含 section、record_index、code、message。
+- `POST /api/commerce-migration/batches`：同一清单原子导入；请求包括稳定 `batch_key/source/tenant/cutover_date/evidence_sha256/review_reference`、至多500条catalog及500条archives。批次键同内容重放返回原ID，不同内容409；新批次的相同来源记录复用原证据，不能覆盖在线主数据或重新映射SKU。
+- `GET /api/commerce-migration/batches/{batch_key}`：原始结果、核验依据、源文件摘要及导入人/北京时间。
+- `GET /api/commerce-migration/records`：source/tenant/object_type精确筛选，after_id游标、limit默认50最大100，返回不可变快照及本地SKU绑定。
+- `GET /api/commerce-migration/records/page`：管理员工作台分页；source/tenant/object_type/role联合精确筛选，page从1开始，page_size默认20最大100。返回items/total；列表仅含来源摘要和当前订单/生产状态，不下发原始snapshot。
+- `GET /api/commerce-migration/records/{record_id}`：单条不可变来源快照、强类型关联和原批次结果/核验依据；不存在404。
+
+catalog条目显式提供外部产品/SKU身份、本地ProductCreate/SkuCreate及启用状态。同一来源产品的所有SKU必须属于同一本地产品；本地ASCII业务编码按数据库大小写等价判冲突。来源身份使用二进制排序规则，大小写不同的来源ID或租户分别保存。archive只接受order/payment/outbound/inspection/production/material/commission，单条JSON256KiB、整份清单4MiB；保留快照原始字段名与值。归档不会创建订单、核销、提成或出入库，未结业务责任与期初仍需后续专门承接协议。
+
+### 核验库存与半成品期初
+
+`POST /api/commerce-migration/inventory/preview`只读核对；`POST /api/commerce-migration/inventory/batches`原子登记/过账，均需要commerce_migration:admin。沿用批次身份、来源/租户、基准日、源文件摘要和核验说明，stocks/materials各至多500条。
+
+stock条目含external_id、mode、warehouse_id、local_sku_id、quality、整数on_hand/reserved；material条目含external_id、mode、material_id、三位小数on_hand_grams/reserved_grams。mode为initialize或acknowledge_existing。initialize只接受零余额、version0且无历史流水，预占/占用须为0，历史已发出或领用量不再次扣除；销售/物料责任通过后续专门承接建立。acknowledge_existing要求核验数量、流水及当前余额版本全部一致，不新增库存运动。
+
+来源记录永久认领目标余额，零期初同样认领；换来源不能再次期初。相同原事实跨批复用记录，不重置其后的在线数量。旧RR快照缺少流水即拒绝，需结束该事务重新核验。批次详情和记录读回复用通用导入GET端点，role为opening；库存单据/物料流水以commerce_opening及record_id关联依据。
+
+### 核验资金与已付提成期初
+
+`POST /api/commerce-migration/finance/preview` 只读差异检查；`POST /api/commerce-migration/finance/batches` 原子承接，均仅允许 `commerce_migration:admin`。沿用批次身份、来源/租户、切换日、源文件摘要及核验说明，payments 至多500条，整份至多4MiB。冲突409，批次同内容重放返回原关联；跨批同源内容复用记录，已发生的新退款不被重放重置。
+
+付款须给出 source_customer_id、已核验 customer_external_identity_id、local_customer_id、银行账户/真实流水、完整 gross_amount/actual_bank_fee、冻结 rate_to_cny/rate_to_usd、原收款日/确认日/确认人/明确北京时间 confirmed_at。声明期末 allocated_amount/refunded_amount/bank_charge_total/available_amount 须等于全部 allocations/refunds 原事实。可显式 existing_batch_id 复用旧付款；已有银行和冻结确认事实不能覆盖。
+
+核销显式给出整单 order_binding_record_id、invoice_id/receivable_id、原回款 original_receipt_id、来源客户、原日期、用途 ordinary/presale_deposit/presale_balance/freight、完整原币金额/客户费用和既有逐笔冲回。每笔 prior_reversals 保留原提成付款ID、原币金额/费用、自身冻结USD/CNY汇率及业务日；累计必须匹配声明冲回。有效提成USD须等于已付历史余额，独立运费为0。显式 existing_receipt_id 复用旧回款并保留ID/附件/原金额；用途及非空原应收关联须一致。普通/预售本金与费用、跨付款总额均不能超合同组成。
+
+当前资金承接要求整单责任关联及原已付提成记录已核验；整单先由下列 orders 协议生成强类型 order_binding，不能将只读 archive 当成整单证明。缺证据返回差异并禁止写入。历史正提成不重新生成；新退款仅消费尚未冲回的已付USD/RMB余额。详见[资金期初验证](reports/2026-10-03-local-commerce-finance-opening.md)。
+
+### 核验完整订单、历史履约与生产责任
+
+以下接口均需要 `commerce_migration:admin`，使用现有导入批次读回和409冲突规则；preview只读，batches原子承接。同源同内容跨批复用原记录，相同批次重复请求返回原结果。来源、租户、切换日、证据摘要和核验说明为必填依据，各清单禁止未声明字段且总量最多4MiB。
+
+| 路径（POST） | 责任和请求要点 |
+| --- | --- |
+| `/api/commerce-migration/orders/preview`、`/orders/batches` | orders完整原合同、所有原明细/应收及调整、冻结币种汇率/经营金额、强客户身份、历史发货/生产/领料身份清单。既有主账须显式 existing_invoice_id、existing_customer_order_id 及全部明细/应收ID；保留原主键、名称、价格、来源和外部身份，不能只导入未发部分。 |
+| `/api/commerce-migration/fulfillment/preview`、`/fulfillment/batches` | orders内 order_binding_record_id、全部 shipments；保留原批次序号、北京时间、原冻结组成、原出库/API/媒体身份及检验ID，applications列出已消费原核销及真实原冲回。商品、首款、费用、独立批次运费须各自对应，不能释放或重用已发货现金。 |
+| `/api/commerce-migration/production/preview`、`/production/batches` | productions完整原生产头/明细、原完工与已验收数量、工序进度与原ID、销售供货、领料/退料/损耗依据。原已入库部分须有实物期末证明；不能再次入库或扣料。停产已结数量及在产供货不能互相矛盾。 |
+| `/api/commerce-migration/materials/preview`、`/materials/batches` | allocations中的 order_binding_record_id、既有 InvoiceAllocation ID、物料/已领克数及 material 归档记录，另须全局物料期末证明。只认领已扣责任，不新增物料运动；pending/未决远端动作仍阻断。 |
+
+过渡期整单准备必须复用原 Invoice ID，并整体冻结共享付款、生产及订单责任闭包。准备后仍为 `transaction_mode=legacy, commerce_status=opening`，原办理权为 frozen，原 epoch 不变；原在途或 unknown 未核清时返回 `status=waiting/batch_key/handover_preparation_id/orders=[]`，同一请求继续核对，不生成期初流水。原已发数量在历史履约承接后建立，历史动作不新增库存出库流水。`local_only` 的原有期初模式继续以 local/opening 等待完整放行；shadow 或重放结果不能作为正式期初。普通收款/履约/生产写入口不允许办理未放行责任。原客户经营投影外部来源与明细身份保留；旧同步不得覆盖已关联本地主账。打印和检验按原镜像/API出库ID及本地ID读取同一记录，原媒体不重建。
+
+`POST /api/commerce-migration/activation/preview`、`/activation` 使用 request_key、business_date、orders（order_binding_record_id、expected_version）和/或 productions（production_opening_record_id、全部生产明细ID/expected_version）。过渡期订单命令还携带 prepare 返回的 `handover_preparation_id/expected_authority_epochs`。服务端锁定重新核对完整闭包、原 epoch 及全部原在途，再复核完整资金余额、历史发货资金占用、物料期末/已领责任、生产供货及实际成品库存，通过真实期初回调与 `complete_transfer` 在同一事务放行为原真实订单状态与本地生产，并推进 epoch。共享付款复用原 ReceiptBatch 和 BankIdentity，仅迁移归属，不另造本金。独立备货生产沿用完整 production_opening、opening 状态、本地 production 资源 scope 和全部明细当前版本核验，不制造订单办理权。所有当前待供货预占由既有库存 reserve 一次建立；同一生产单关联多个未放行销售单时须联合放行。放行后重复请求不重建预占，也不回写后来收款/出库/验收数量。
+
+`POST /api/commerce-migration/activation/prepare` 为工作台只读准备：request_key及1–200个互不重复的record_ids，只接受仍待放行的完整订单/生产责任。服务端读取当前版本和同一切换日，返回command、descriptions及report；不建预占、不写事件。执行仍调用`/activation`并锁定重新核对，prepare之后版本/资金/库存变化返回409。所有新读取与准备接口同样需要commerce_migration:admin。
+
+管理员页面`/commerce-migration`从本地选择不超过4MiB的已核验JSON，识别责任类型、预览差异再承接；未知响应保留原文件/批次或放行命令，按相同参数重试，明确409后重新核验。列表选择当前待放行订单/生产，无需人工填写版本；核验依据按记录查看。工作台及本地浏览器闭环证据见[验证报告](reports/2026-10-04-local-commerce-migration-workbench.md)。
+
+### 旧路线责任结清
+
+`POST /api/commerce-migration/settlement/preview`、`/settlement` 均要求实时数据库中的 `commerce_migration:admin` 权限；写入另受员工写屏障约束。请求为 `{request_key,evidence_sha256,review_reference,invoices:[{invoice_id,expected_authority_epoch}],bank_identity_ids:[]}`，不接受余额、完成勾选或核验布尔值。preview 返回 `can_apply/conflicts/request_key`，apply 返回 `request_key/invoice_ids/bank_identity_ids`；稳定请求同内容重放复用原审核结果。
+
+服务端从原账读取完整共享闭包、实际零余额、closed/cancelled 履约事实、已发/预占/在产/物料/售后以及原发送任务，任何未知或未收尾责任均拒绝。历史售后同时按原远端订单身份核对。银行款必须已关联原整 ReceiptBatch 或无共享批次的原 Receipt，所有有效核销加实际退款等于原银行总额，退款还需不可变事件；未分配预收不得结清。通过后将审核依据写入现有 settled_evidence 并冻结旧订单写入，绝不改金额或新增本金。缺少真实关闭事实的旧单继续旧路线办理或走完整原单承接，不能仅凭审核勾选退出旧路线。
+
+### 原非标聚合行与未决领料结果
+
+整单明细须明确提供唯一 `source_item_id`、原 `legacy_unique_id`（可明确为null）及 `product_family`，经营订单号与原发票 `legacy_invoice_order_no` 分开保存。多条真实非标明细可以共享原远端UID；不得用远端UID代替真实行身份。原通用非标聚合行通过 `customer_item_aliases` 给出既有经营行ID、源记录、fingerprint、原全字段快照摘要及完整真实行键。聚合金额须等于各真实行总额，数量不猜测分摊；原数量1、名称、金额、时间、媒体与其他关联保留，新活动明细明确关联原别名。统计只计活动真实行。
+
+`POST /api/commerce-migration/materials/pending/preview` 与 `/materials/pending/batches` 仅允许 `commerce_migration:admin`。清单 `resolutions` 最多100笔；每笔必须有原invoice/source_order/operation_key、明确 `accepted|not_accepted`、核验说明、同源不可变material归档ID和完整pending allocations。每条包含既有领料/物料ID、已领与pending克数、各自北京时间pending_at、当前余额版本及实存/预占，最多三位小数。原operation全部pending明细必须完整；成功日志、原预占流水、未结束同步/取消及已登记期末冲突会阻断。`unknown`不能通过超时或默认失败释放。
+
+明确受理的正delta转正式扣料，负delta增加退回实存；明确未受理只释放正delta的原预占，不改已领量。批次先锁完整集合再复核合计，原canonical finalize/release幂等身份认领一次；保存处置前后不可变证据并清理已解决pending字段。随后用库存 `acknowledge_existing` 核对真实期末；已领责任另走materials协议，不能再次扣料。结果重放返回原关联且不覆盖后来新库存。详情对象类型为 `material_resolution`，工作台自动识别此清单。
+
+## 交易双路线协调与独立验证（本地开发，未发布）
+
+共同约束：HTTP动作验证数据库实时权限、当前范围、持久phase及办理权epoch；生效合同没有普通改线接口。所有正式本地动作仍使用原Invoice/item和已有本地账本，期望版本与原请求键不变；错误后查询原结果，不能换键绕过unknown。
+
+| 方法/路径 | 权限与用途 |
+| --- | --- |
+| GET `/api/commerce-transition/status` | invoice read/write或transition read/admin；返回phase/version/readiness/capabilities |
+| POST `/api/commerce-transition/policy` | transition:admin；phase、expected_version、真实inventory_evidence；不代替现场撤权 |
+| GET/POST `/api/commerce-transition/writers` | transition:admin；writer_key/protocol_version/state/evidence |
+| GET/POST `/api/commerce-transition/resources` | 读取transition:read、写入admin；route/resource_kind/resource_key/warehouse_key/完整checkpoint与排他证据 |
+| GET/POST `/api/commerce-transition/bank-domains` | admin；subject_key/account_key/channel、bank_account_ids、旧身份完整及强制约束证据 |
+| GET `/api/commerce-transition/bank-identities` | admin；items和unmapped_legacy_money，未知旧款不能被完整勾选覆盖 |
+| POST `/api/commerce-transition/bank-identities/reconcile-legacy` | transition:admin+receipt:admin；domain_id、transaction_id、receipt_id或batch_id、statement_reference；原款只关联不新建本金 |
+| GET `/api/commerce-transition/invoices/{id}/authority` | transition:read+原单可见；route/epoch/state及未决claim |
+| POST `/api/commerce-transition/invoices/{id}/route` | transition:write+invoice:write；仅无事实草稿，expected_authority_epoch、route、evidence |
+| GET `/api/invoice/local/shipments` | shipment read/write；page/page_size及可选keyword/invoice_id/state；返回typed local_shipment身份、epoch、当前检验与服务端capabilities |
+| GET `/api/commerce-shadow/status`、`/runs`、`/differences` | shadow:read+完整订单/资金/客户实时范围；分页查询，覆盖不足不能标一致 |
+| POST `/api/commerce-shadow/runs` | shadow:write；固定dataset、订单/付款/客户闭包及through_observation_id；只排队不发真实业务 |
+| GET `/api/commerce-shadow/runs/{id}/input` | shadow:admin+完整闭包；导出输入包，不确认outbox已执行 |
+| POST `/api/commerce-shadow/runs/{id}/receipts` | shadow:admin+完整闭包；候选ExecutionReport，服务端重新生成源bundle并核对固定水位，禁止上传targetURL/seed/正式预期结果 |
+
+新增权限为commerce_transition:read/write/admin、commerce_shadow:read/write/admin。菜单/按钮能力不代替提交时后端授权。独立进程及旧路线原始映射契约见[说明](../backend/app/commerce_shadow/README.md)；完整交接/settlement接口见前文“完整订单承接与放行”。

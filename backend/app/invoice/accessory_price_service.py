@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.invoice import price_service, product_service
 from app.invoice.models import StdPrice
+from app.trade.service import local_mode
 
 
 _API_MONEY = Decimal("0.0001")
@@ -24,6 +25,9 @@ _CATALOG_GUIDANCE = "配件目录暂不可用，请检查OKKI产品同步任务/
 
 def search_candidates(db: Session, keyword: str | None, limit: int = 50) -> list[dict]:
     """Return one active OKKI product/SKU candidate per SKU."""
+    if local_mode():
+        from app.invoice.accessory_local_service import search_candidates as native_search
+        return native_search(db, keyword, limit)
     product_columns, _sku_columns = _catalog_columns(db)
     name_column = _name_column(product_columns)
 
@@ -71,7 +75,10 @@ def list_prices(
     active_only: bool = False,
     currency: str | None = None,
 ) -> list[dict]:
-    query = db.query(StdPrice).filter(StdPrice.product_kind == "accessory")
+    if local_mode():
+        from app.invoice.accessory_local_service import list_prices as native_list
+        return native_list(db, keyword, customer_id, active_only, currency)
+    query = db.query(StdPrice).filter(StdPrice.product_kind == "accessory", StdPrice.local_sku_id.is_(None))
     if currency and currency.strip():
         query = query.filter(func.upper(StdPrice.currency) == currency.strip().upper())
     if keyword and keyword.strip():
@@ -110,6 +117,9 @@ def list_prices(
 
 
 def upsert_price(db: Session, payload, user_id: int | None) -> StdPrice:
+    if local_mode():
+        from app.invoice.accessory_local_service import upsert_price as native_upsert
+        return native_upsert(db, payload, user_id)
     snapshot = _load_active_snapshot(db, int(payload.product_id), int(payload.sku_id))
     price_id = getattr(payload, "id", None)
 
@@ -117,7 +127,7 @@ def upsert_price(db: Session, payload, user_id: int | None) -> StdPrice:
     if price_id is not None:
         row = (
             db.query(StdPrice)
-            .filter(StdPrice.id == int(price_id), StdPrice.product_kind == "accessory")
+            .filter(StdPrice.id == int(price_id), StdPrice.product_kind == "accessory", StdPrice.local_sku_id.is_(None))
             .first()
         )
         if not row:
@@ -155,7 +165,8 @@ def upsert_price(db: Session, payload, user_id: int | None) -> StdPrice:
 def delete_price(db: Session, id: int) -> bool:
     row = (
         db.query(StdPrice)
-        .filter(StdPrice.id == id, StdPrice.product_kind == "accessory")
+        .filter(StdPrice.id == id, StdPrice.product_kind == "accessory",
+                StdPrice.local_sku_id.is_not(None) if local_mode() else StdPrice.local_sku_id.is_(None))
         .first()
     )
     if not row:
@@ -262,6 +273,9 @@ def resolve_configured_price(
     changes a financial snapshot. The configured product/SKU pair and currency
     therefore have to match exactly and still be active in the OKKI catalog.
     """
+    if local_mode():
+        from app.invoice.accessory_local_service import resolve_configured_price as native_resolve
+        return native_resolve(db, customer_id=customer_id, product_id=product_id, sku_id=sku_id, currency=currency)
     row = (
         db.query(StdPrice)
         .filter(
@@ -301,6 +315,9 @@ def resolve_configured_price(
 
 def validate_active_identity(db: Session, *, product_id: int, sku_id: int) -> dict:
     """Re-check an accessory against the live OKKI catalog before pushing."""
+    if local_mode():
+        from app.invoice.accessory_local_service import identity, snapshot
+        return snapshot(*identity(db, product_id, sku_id))
     return _load_active_snapshot(db, int(product_id), int(sku_id))
 
 

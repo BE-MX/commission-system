@@ -143,6 +143,9 @@ def sync_payments(db: Session, date_start: date, date_end: date) -> SyncResult:
     """
     result = SyncResult()
     settings = get_settings()
+    if settings.TRANSACTION_MODE == "local":
+        from fastapi import HTTPException
+        raise HTTPException(409, "交易已切换到方舟，请从本地回款账生成提成事实，不再拉取OKKI回款")
     schema = settings.BUSINESS_DB_NAME
 
     # ---- Step 1: 从业务库拉取回款 ----

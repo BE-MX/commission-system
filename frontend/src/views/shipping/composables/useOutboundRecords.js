@@ -16,7 +16,7 @@ export function useOutboundRecords() {
 
   const listApi = useListPage(
     async ({ page, page_size, ...form }, { signal, isCurrent }) => {
-      const params = { page, page_size }
+      const params = { page, page_size, transaction_mode: 'legacy' }
       if (form.sort_field) { params.sort_field = form.sort_field; params.sort_order = form.sort_order }
       if (form.keyword) params.keyword = form.keyword
       if (form.orderId?.trim()) params.order_id = form.orderId.trim()
@@ -31,6 +31,7 @@ export function useOutboundRecords() {
     },
     {
       searchForm: {
+        transaction_mode: 'legacy',
         keyword: route.query.keyword || '',
         orderId: route.query.order_id || '',
         outboundState: '',
@@ -39,7 +40,6 @@ export function useOutboundRecords() {
       },
     },
   )
-
   // Navigation from a problem must also work when this list is already open.
   watch(() => [route.path, route.query.order_id, route.query.keyword, route.query.problem, route.query.problem_focus], ([path], previous) => {
     if (path !== '/shipping/outbound') return
@@ -57,9 +57,14 @@ export function useOutboundRecords() {
   const downloadingId = ref(null)
   const deletingId = ref(null)
   const allowingPrintId = ref(null)
+  let mediaSequence = 0, mediaController
+  function cancelMediaReads() { mediaSequence++; mediaController?.abort(); printingId.value = null; downloadingId.value = null }
+  function beginMediaRead() { cancelMediaReads(); mediaController = new AbortController(); return { version: mediaSequence, signal: mediaController.signal } }
+  const mediaCurrent = ticket => ticket.version === mediaSequence && !ticket.signal.aborted
+
 
   async function allowPrintBeforeRecheck(row) {
-    if (!row.can_allow_print_before_recheck || allowingPrintId.value !== null) return
+    if (row.record_source !== 'okki' || !row.can_allow_print_before_recheck || allowingPrintId.value !== null) return
     let reason
     try {
       reason = (await promptAction(
@@ -99,6 +104,7 @@ export function useOutboundRecords() {
   }
 
   async function recoverDeletion(row) {
+    if (row.record_source !== 'okki') return
     if (deletingId.value !== null) return
     let reason
     try { reason = (await promptAction('仅处理超时待核对的删除。确认保留小满原单并终止原请求，自动重建仍暂停。请填写至少10字核对依据。', '恢复删除任务', { inputValidator: v => v?.trim().length >= 10 || '请填写至少10字依据' })).value.trim() }
@@ -112,25 +118,32 @@ export function useOutboundRecords() {
   }
 
   async function downloadWord(row) {
-    if (!row.can_print) return
+    if (row.transaction_route === 'local' || row.record_source === 'local_shipment' || !row.can_print) return
     if (downloadingId.value !== null) return
+    const ticket = beginMediaRead()
     downloadingId.value = row.outbound_record_id
     try {
+      const blob = await downloadOutboundWord(row.outbound_record_id, { signal: ticket.signal })
+      if (!mediaCurrent(ticket)) return
       downloadBlob(
-        await downloadOutboundWord(row.outbound_record_id),
+        blob,
         `出库单-${row.outbound_no || row.outbound_record_id}.docx`,
       )
+    } catch (error) {
+      if (mediaCurrent(ticket)) throw error
     } finally {
-      downloadingId.value = null
+      if (mediaCurrent(ticket)) downloadingId.value = null
     }
   }
 
   async function openPrint(row) {
-    if (!row.can_print) return
+    if (row.transaction_route === 'local' || row.record_source === 'local_shipment' || !row.can_print) return
     if (printingId.value) return
+    const ticket = beginMediaRead()
     printingId.value = row.outbound_record_id
     try {
-      const res = await getOutboundPrintData(row.outbound_record_id)
+      const res = await getOutboundPrintData(row.outbound_record_id, { signal: ticket.signal })
+      if (!mediaCurrent(ticket)) return
       const data = res.data || {}
       printDocHtml(buildOutboundDoc({
         record: data.record || {},
@@ -138,15 +151,16 @@ export function useOutboundRecords() {
         qr_code_base64: data.qr_code_base64 || '',
       }))
     } catch {
+      if (!mediaCurrent(ticket)) return
       msgError('出库单打印数据加载失败，请稍后重试')
     } finally {
-      printingId.value = null
+      if (mediaCurrent(ticket)) printingId.value = null
     }
   }
 
   return {
     ...listApi,
-    printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord, recoverDeletion,
+    cancelMediaReads, printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord, recoverDeletion,
     allowingPrintId, allowPrintBeforeRecheck,
   }
 }

@@ -3,7 +3,7 @@
 import json
 import re
 from datetime import date, datetime
-from app.core.time import beijing_today
+from app.core.time import beijing_today, beijing_now
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
@@ -50,8 +50,9 @@ def list_invoices(
     viewer_user_id: int | None = None,
     sort_field: str = "",
     sort_order: str = "",
+    user=None,
 ) -> tuple[list[dict], int]:
-    query = _visible_invoice_query(db, created_by=created_by, viewer_user_id=viewer_user_id)
+    query = _visible_invoice_query(db, created_by=created_by, viewer_user_id=viewer_user_id, user=user)
     if keyword:
         like = f"%{keyword}%"
         query = query.filter(
@@ -80,13 +81,21 @@ def list_invoices(
     ], total
 
 
+
+
+
+
 def _visible_invoice_query(
     db: Session,
     *,
     created_by: int | None = None,
     viewer_user_id: int | None = None,
+    user=None,
 ):
-    query = db.query(Invoice)
+    query = db.query(Invoice).filter(Invoice.status != 'deleted')
+    if user is not None:
+        from app.invoice.native_visibility import local_invoice_scope
+        query = query.filter(local_invoice_scope(db, user))
     if viewer_user_id is not None:
         active_grant = exists().where(
             InvoiceDelegateGrant.delegate_user_id == viewer_user_id,
@@ -113,70 +122,10 @@ def summarize_invoices(
     date_to: date,
     created_by: int | None = None,
     viewer_user_id: int | None = None,
+    user=None,
 ) -> dict:
     """Aggregate synced visible invoices by order date, independent of pagination."""
-    query = _visible_invoice_query(db, created_by=created_by, viewer_user_id=viewer_user_id).filter(
-        Invoice.invoice_date.between(date_from, date_to),
-        Invoice.sync_status == "synced",
-        Invoice.status.notin_(("cancel_pending", "cancelled")),
-
-    )
-    is_usd = func.upper(Invoice.currency) == "USD"
-    order_count, new_sign_count, unknown_new_sign_count, gmv, usd_order_count = query.with_entities(
-        func.count(Invoice.id),
-        func.count(func.distinct(case((Invoice.okki_new_deal == 1, Invoice.customer_id)))),
-        func.coalesce(func.sum(case((Invoice.okki_new_deal.is_(None), 1), else_=0)), 0),
-        func.coalesce(func.sum(case((is_usd, Invoice.total_amount), else_=0)), 0),
-        func.coalesce(func.sum(case((is_usd, 1), else_=0)), 0),
-    ).one()
-    gmv = _money(Decimal(gmv or 0))
-    usd_order_count = int(usd_order_count or 0)
-    return {
-        "gmv": gmv,
-        "new_sign_count": int(new_sign_count or 0),
-        "unknown_new_sign_count": int(unknown_new_sign_count or 0),
-        "order_count": int(order_count or 0),
-        "average_order_amount": _money(gmv / usd_order_count) if usd_order_count else Decimal("0.00"),
-        "non_usd_count": int(order_count or 0) - usd_order_count,
-    }
-
-
-def _visible_invoice_query(
-    db: Session,
-    *,
-    created_by: int | None = None,
-    viewer_user_id: int | None = None,
-):
-    query = db.query(Invoice)
-    if viewer_user_id is not None:
-        active_grant = exists().where(
-            InvoiceDelegateGrant.delegate_user_id == viewer_user_id,
-            InvoiceDelegateGrant.sales_user_id == Invoice.sales_user_id,
-            ArkUser.id == InvoiceDelegateGrant.sales_user_id,
-            ArkUser.deleted_at.is_(None),
-            ArkUser.is_active.is_(True),
-        )
-        query = query.filter(or_(
-            Invoice.sales_user_id == viewer_user_id,
-            and_(Invoice.created_by == viewer_user_id, active_grant),
-        ))
-    elif created_by is not None:
-        # 数据范围口径（invoice:read_all 缺失时只看自己创建的），
-        # created_by 为 NULL 的历史发票只对全量范围可见
-        query = query.filter(Invoice.created_by == created_by)
-    return query
-
-
-def summarize_invoices(
-    db: Session,
-    *,
-    date_from: date,
-    date_to: date,
-    created_by: int | None = None,
-    viewer_user_id: int | None = None,
-) -> dict:
-    """Aggregate synced visible invoices by order date, independent of pagination."""
-    query = _visible_invoice_query(db, created_by=created_by, viewer_user_id=viewer_user_id).filter(
+    query = _visible_invoice_query(db, created_by=created_by, viewer_user_id=viewer_user_id, user=user).filter(
         Invoice.invoice_date.between(date_from, date_to),
         Invoice.sync_status == "synced",
         Invoice.status.notin_(("cancel_pending", "cancelled")),
@@ -324,20 +273,24 @@ def resolve_okki_flags(db: Session, invoice: Invoice) -> dict:
     }
 
 
-def delete_invoice(db: Session, invoice: Invoice) -> None:
+def delete_invoice(db: Session, invoice: Invoice, *, actor_id=None) -> None:
     """Judge by xiaoman_order_id, not sync_status: editing flips a synced invoice
     back to not_synced while the real OKKI order still exists, and deleting would
     orphan it AND cascade-drop its push audit logs."""
     if invoice.source_type == "portal":
         raise ValueError("门户发票必须保留订单关联，不允许删除；请使用作废流程")
+    if invoice.transaction_mode != 'legacy':
+        raise ValueError('本地订单请使用独立订单取消流程，保留原合同与办理权记录')
+    from app.invoice.transition_gate import require_invoice
+    authority = require_invoice(db, invoice, 'legacy')
     from app.invoice.lifecycle_guard import ensure_mutable
     ensure_mutable(db, invoice)
     from app.receipt.invoice_link import guard_delete
     guard_delete(db, invoice)
     if invoice.xiaoman_order_id or invoice.sync_status in {"synced", "sync_uncertain"}:
         raise ValueError("该发票已同步或同步结果待核对，不允许删除，请先在小满侧确认")
-    # 半成品同步失败可能留下 allocated=0 的审计占位行。它们不代表真实出库，
-    # 删除草稿时一并清掉；pending 或非零分配必须先恢复/冲销，不能静默丢失。
+    # Zero allocation audit rows remain with the archived contract. Pending or
+    # nonzero responsibility must first be reversed, never silently discarded.
     from app.semifinished.models import InvoiceAllocation
 
     allocations = db.query(InvoiceAllocation).filter(InvoiceAllocation.invoice_id == invoice.id).all()
@@ -348,17 +301,21 @@ def delete_invoice(db: Session, invoice: Invoice) -> None:
         for row in allocations
     ):
         raise ValueError("该发票存在半成品库存记录，请先完成库存恢复后再删除")
-    if invoice.source_type == "external_api":
-        from app.integration.models import InvoiceIngestRequest
-
-        ingest_requests = db.query(InvoiceIngestRequest).filter(
-            InvoiceIngestRequest.invoice_id == invoice.id,
-        ).all()
-        for row in ingest_requests:
-            db.delete(row)
-    for row in allocations:
-        db.delete(row)
-    db.delete(invoice)
+    # Every saved draft now has an immutable authority identity. Archive it
+    # instead of deleting its audit, ingest idempotency or zero-allocation facts.
+    from app.commerce_transition import service as ownership
+    if authority.confirmed_at is None:
+        try:
+            ownership._no_draft_facts(db, invoice)
+        except ownership.TransitionError:
+            pass  # Existing history remains subject to explicit closure review.
+        else:
+            authority.settled_evidence = {'basis': 'unconfirmed_draft_archive',
+                'actor_id': actor_id, 'no_economic_facts_checked_at': beijing_now().isoformat()}
+    invoice.status = 'deleted'
+    authority.state = 'frozen'
+    from app.commerce_transition.service import _event
+    _event(db, authority, 'draft_deleted', {'actor_id': actor_id, 'invoice_no': invoice.invoice_no})
 
 
 def get_invoice(db: Session, invoice_id: int, *, for_update: bool = False) -> Invoice | None:
@@ -367,7 +324,7 @@ def get_invoice(db: Session, invoice_id: int, *, for_update: bool = False) -> In
     query = (
         db.query(Invoice)
         .options(selectinload(Invoice.items))
-        .filter(Invoice.id == invoice_id)
+        .filter(Invoice.id == invoice_id, Invoice.status != 'deleted')
     )
     if for_update:
         query = query.with_for_update()
@@ -400,6 +357,16 @@ def create_invoice(
         raise ValueError("发票创建入口来源授权冲突")
     if (body.source_type == "portal") != allow_portal_source:
         raise ValueError("门户来源发票只能通过客户订单审核入口创建")
+
+    if body.transaction_route == 'local':
+        from app.invoice import transition_editor
+        return transition_editor.create(db, body, user_id)
+
+    from app.commerce_transition import service as commerce_authority
+    commerce_authority.require_phase(db, 'legacy')
+    from app.trade.service import local_mode
+    if local_mode():
+        raise ValueError("交易已切换到方舟，请使用本地订单入口并选择本地客户与SKU")
     if body.order_type == "presale":
         from app.invoice.settlement_policy import require_enabled
         require_enabled()
@@ -444,6 +411,7 @@ def create_invoice(
         if duplicate_source:
             raise ValueError("同一 OKKI 截图订单已经创建过发票，请勿重复导入")
     invoice = Invoice(
+        transaction_mode="legacy",
         invoice_no=invoice_no,
         order_type=body.order_type,
         currency=body.currency or "USD",
@@ -479,6 +447,9 @@ def create_invoice(
         request_payload=body,
     )
     db.flush()
+    commerce_authority.ensure_authority(db, invoice, route='legacy', confirmed=False,
+        source_evidence={'explicit_transaction_mode': 'legacy', 'source_type': invoice.source_type,
+                         'created_by': user_id})
     # Portal-sourced PIs skip the creation-time receipt intent draft; their
     # collection is handled later through the existing Ark receipt entries
     # (manual receipt or invoice edit), same as historical invoices.
@@ -492,6 +463,13 @@ def create_invoice(
 
 
 def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None, *, linked_change=False, receipt_rows=None) -> Invoice:
+    if invoice.transaction_mode == 'local':
+        if body.transaction_route == 'legacy':
+            raise ValueError('本地订单不能通过旧路线编辑入口保存，请保持原办理路线')
+        from app.invoice import transition_editor
+        return transition_editor.update(db, invoice, body, user_id)
+    if body.transaction_route == 'local':
+        raise ValueError("旧路线订单不能通过普通保存切换，请先核验并办理责任承接")
     from app.receipt import invoice_link
     from app.invoice.linked_sync_service import ensure_idle
     ensure_idle(invoice)
@@ -628,7 +606,7 @@ def mark_ready_if_valid(invoice: Invoice) -> list[dict]:
     return issues
 
 
-def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
+def serialize_detail(invoice: Invoice, db: Session | None = None, user=None) -> dict:
     from app.invoice.linked_sync_service import edit_version
     summary = summarize_items(invoice)
     material_state: dict[int, dict] = {}
@@ -659,10 +637,12 @@ def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
             }
     from app.receipt.invoice_link import describe as describe_receipt
     from app.invoice.lifecycle_guard import presale_edit_blocked_reason
+    from app.invoice.transition_editor import describe as describe_transition
     return {
         **_invoice_list_row(invoice, len(invoice.items)),
-        "receipt_draft": describe_receipt(db, invoice) if db is not None else None,
-        "presale_edit_blocked_reason": presale_edit_blocked_reason(db, invoice) if db is not None else None,
+        **describe_transition(db, invoice, user),
+        "receipt_draft": describe_receipt(db, invoice) if db is not None and invoice.transaction_mode != 'local' else None,
+        "presale_edit_blocked_reason": presale_edit_blocked_reason(db, invoice) if db is not None and invoice.transaction_mode != 'local' else None,
         "customer_grade": invoice.customer_grade,
         "contact_name": invoice.contact_name,
         "contact_phone": invoice.contact_phone,
@@ -704,7 +684,7 @@ def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
         "updated_at": to_beijing_time(invoice.updated_at),
         "edit_version": edit_version(invoice),
         "items": [_serialize_item(item, material_state) for item in invoice.items if not item.presale_archived],
-        **(_presale_editor_fields(invoice,material_state) if invoice.order_type == "presale" else {}),
+        **(_presale_editor_fields(invoice,material_state) if invoice.order_type == "presale" and invoice.transaction_mode != 'local' else {}),
     }
 
 
@@ -1052,6 +1032,14 @@ def _invoice_list_row(invoice: Invoice, item_count: int, creator_name: str | Non
         "id": invoice.id,
         "invoice_no": invoice.invoice_no,
         "order_type": invoice.order_type,
+        "transaction_mode": invoice.transaction_mode,
+        "commerce_status": invoice.commerce_status,
+        "local_deposit_amount": float(invoice.local_deposit_amount or 0),
+        "local_deposit_charge": float(invoice.local_deposit_charge or 0),
+        "commerce_version": invoice.commerce_version,
+        "local_customer_id": invoice.local_customer_id,
+        "local_rate_to_usd": str(invoice.local_rate_to_usd) if invoice.local_rate_to_usd is not None else None,
+        "local_commercial": invoice.local_commercial,
         "created_by_name": creator_name,
         "customer_id": invoice.customer_id,
         "customer_name": invoice.customer_name,
@@ -1208,6 +1196,10 @@ def _serialize_item(item: InvoiceItem, material_state: dict[int, dict] | None = 
         "product_id": item.product_id,
         "sku_id": item.sku_id,
         "custom_product_id": item.custom_product_id,
+        "local_sku_id": item.local_sku_id,
+        "commercial_kind": item.commercial_kind,
+        "stock_reserved_quantity": item.stock_reserved_quantity,
+        "stock_shipped_quantity": item.stock_shipped_quantity,
         "product_name": item.product_name,
         "product_display": item.product_display,
         "net_weight_grams": item.net_weight_grams,

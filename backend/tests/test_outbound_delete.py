@@ -10,11 +10,20 @@ from app.shipping_inspection import outbound_delete_service as deletion, outboun
 from app.shipping_inspection import outbound_service, outbound_queue_service
 from app.shipping_inspection.models import ShippingOperationEvent, ShippingInspection
 from tests.test_shipping_inspection import _user, _pc_client, _bind_okki, outbound_scope_seed, product_display_source
+from tests.test_commerce_legacy_transition_sending import ready
+from app.invoice import legacy_sending
+
+
+def install_remove(monkeypatch, sender):
+    # Keep the actual persistent gate; replace only its provider transport.
+    monkeypatch.setattr(remote, '_request', lambda token, identity, *, remove=False: sender(token, identity))
 
 
 @pytest.fixture
 def case(db, outbound_scope_seed, monkeypatch):
     user = _user(db, 'deletion-user')
+    from tests.authority_helpers import seed_authority
+    seed_authority(db, user.id, 'shipping_inspection:read', 'shipping_inspection:delete', 'shipping_inspection:read_all')
     _bind_okki(db, user)
     db.execute(text('ALTER TABLE lsordertest.okki_outbound_records ADD COLUMN outbound_invoice_id TEXT'))
     db.execute(text("UPDATE lsordertest.okki_outbound_records SET outbound_invoice_id='77' WHERE id='OB001'"))
@@ -45,7 +54,7 @@ def case(db, outbound_scope_seed, monkeypatch):
         state['exists'] = False
 
     monkeypatch.setattr(remote, 'read', read)
-    monkeypatch.setattr(remote, 'remove', remove)
+    install_remove(monkeypatch, remove)
     return user, inv, task, state
 
 
@@ -80,6 +89,8 @@ def test_delete_requires_permission_and_owner_scope(db, case):
     with _pc_client(db, user, ['shipping_inspection:read']) as client:
         assert client.delete(f'{BASE}/OB001').status_code == 403
     other = _user(db, 'other-deleter')
+    from tests.authority_helpers import seed_authority
+    seed_authority(db, other.id, 'shipping_inspection:delete')
     _bind_okki(db, other, '9002')
     with _pc_client(db, other, ['shipping_inspection:delete']) as client:
         assert client.delete(f'{BASE}/OB001').status_code == 404
@@ -104,7 +115,7 @@ def test_timeout_is_not_success_and_second_click_only_checks_then_recovers(db, c
     def timeout(*args):
         state['posts'] += 1
         raise remote.DeleteRemoteError('timeout', uncertain=True)
-    monkeypatch.setattr(remote, 'remove', timeout)
+    install_remove(monkeypatch, timeout)
     with _pc_client(db, user, PERMS) as client:
         assert client.delete(f'{BASE}/OB001').status_code == 409
         assert client.delete(f'{BASE}/OB001').status_code == 409
@@ -117,7 +128,7 @@ def test_timeout_is_not_success_and_second_click_only_checks_then_recovers(db, c
 def test_locked_remote_restores_task_without_hiding_record(db, case, monkeypatch):
     user, _, task, _ = case
     def locked(*args): raise remote.DeleteRemoteError('小满单据被锁定，无法删除')
-    monkeypatch.setattr(remote, 'remove', locked)
+    install_remove(monkeypatch, locked)
     with _pc_client(db, user, PERMS) as client:
         assert client.delete(f'{BASE}/OB001').status_code == 409
     assert task.status == 'done' and task.reason == 'created: OLD'
@@ -131,7 +142,7 @@ def test_remote_success_with_failed_local_commit_recovers_without_second_post(db
     def fail_once(session):
         nonlocal count
         count += 1
-        if count == 2:
+        if count == 3:
             session.rollback()
             raise RuntimeError('simulated database outage')
         original(session)
@@ -150,7 +161,7 @@ def test_missing_task_is_reserved_so_reconciliation_cannot_recreate_deleted_outb
     def remove(*args):
         state['posts'] += 1
         state['exists'] = False
-    monkeypatch.setattr(remote, 'remove', remove)
+    install_remove(monkeypatch, remove)
     record = outbound_service.get_outbound_record(db, 'OB001')
     assert deletion.delete_outbound(db, record, user.id)['deleted']
     queued = enqueue_outbound_task(db, inv)
@@ -180,7 +191,7 @@ def test_uncertain_intent_can_recover_after_mirror_header_disappears(db, case, m
     def timeout(*args):
         state['posts'] += 1
         raise remote.DeleteRemoteError('timeout', uncertain=True)
-    monkeypatch.setattr(remote, 'remove', timeout)
+    install_remove(monkeypatch, timeout)
     with _pc_client(db, user, ['shipping_inspection:read', 'shipping_inspection:delete']) as client:
         assert client.delete(f'{BASE}/OB001').status_code == 409
         db.execute(text("DELETE FROM lsordertest.okki_outbound_records WHERE id='OB001'"))
@@ -199,13 +210,14 @@ def test_finished_receipt_cannot_be_downgraded_by_late_failed_response(db, case)
     assert event.action == deletion.DELETED and task.reason == 'deleted:77'
 
 
-def test_remote_client_uses_query_id_and_does_not_retry_timeout(monkeypatch):
+def test_remote_client_uses_query_id_and_does_not_retry_timeout(db, ready, monkeypatch):
     calls = []
     def request(method, url, **kwargs):
         calls.append((method, url, kwargs))
         raise httpx.ReadTimeout('timeout')
     monkeypatch.setattr(remote.httpx, 'request', request)
-    with pytest.raises(remote.DeleteRemoteError) as error: remote.remove('test', '77')
+    grant=legacy_sending.start_removal(db,ready,'client-delete-timeout','outbound','77',{'actor_id':1},1);db.commit()
+    with pytest.raises(remote.DeleteRemoteError) as error: remote.remove('test', '77',db=db,ticket=grant)
     assert error.value.uncertain
     assert len(calls) == 1 and calls[0][0] == 'POST'
     assert calls[0][1].endswith('/outbound/remove')
@@ -227,7 +239,7 @@ def test_outbound_recovery_abandons_expired_intent_without_replay(db, case, monk
     def timeout(*args):
         state['posts']+=1
         raise remote.DeleteRemoteError('timeout',uncertain=True)
-    monkeypatch.setattr(remote,'remove',timeout)
+    install_remove(monkeypatch, timeout)
     record=outbound_service.get_outbound_record(db,'OB001')
     with pytest.raises(deletion.OutboundDeleteError): deletion.delete_outbound(db,record,user.id)
     with pytest.raises(deletion.OutboundDeleteError,match='5分钟'): deletion.abandon_pending(db,record,user.id,'核对保留原出库单')

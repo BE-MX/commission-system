@@ -79,3 +79,14 @@ export const perfGoalClient = createApiClient({ baseURL: '/api/perf-goals', time
 export const shipmentClient = createApiClient({ baseURL: '/api', timeout: 300000 })
 
 export const portalAdminClient = createApiClient({ baseURL: '/api/portal/admin/v1', timeout: 30000 })
+
+export const catalogClient = createApiClient({ baseURL: '/api/catalog' })
+export const inventoryClient = createApiClient({ baseURL: '/api/inventory' })
+export const tradeClient = createApiClient({ baseURL: '/api/trade' })
+
+export const nativeInvoiceClient = createApiClient({ baseURL: '/api/invoice/local' })
+export const financeClient = createApiClient({ baseURL: '/api/finance' })
+export const commerceMigrationClient = createApiClient({ baseURL: '/api/commerce-migration', timeout: 120000 })
+
+export const commerceTransitionClient = createApiClient({ baseURL: '/api/commerce-transition' })
+export const commerceShadowClient = createApiClient({ baseURL: '/api/commerce-shadow', timeout: 120000 })

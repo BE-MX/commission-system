@@ -59,13 +59,14 @@ export const MENU_GROUPS = {
     icon: Document,
     anyPermission: [
       'invoice:read', 'invoice:write', 'invoice:sync',
+      'receipt:read', 'receipt:write', 'receipt:admin',
       'shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin',
       'invoice_price:read', 'invoice_okki:read', 'invoice_repair:read',
       FESTIVAL_PERMISSION, FESTIVAL_ORDER_PERMISSION,
       'battle_report:read', 'battle_report:admin',
       'perf_goal:read', 'perf_goal:write',
       ORDER_INTELLIGENCE_PERMISSION,
-      'fx_settlement:read',
+      'fx_settlement:read', 'shipment:read', 'commerce_shadow:read',
     ],
   },
   aftersales: {
@@ -106,6 +107,7 @@ export const MENU_GROUPS = {
     icon: Box,
     anyPermission: [
       'stock:read', 'stock:write', 'stock:admin', 'stock_daily:read',
+      'catalog:read', 'inventory:read',
       'production:read', 'production:write', 'production:print', 'production:admin',
       'production_product:read', 'production_dashboard:read', 'production_route:read',
       'semifinished:read', 'semifinished:write', 'semifinished:admin',
@@ -184,7 +186,7 @@ export const MENU_GROUPS = {
     // 会让只有这些权限的用户看不到整个分组）
     anyPermission: [
       'user:read', 'role:read', 'dict:read', 'ai:admin',
-      'mcp:admin', 'integration:admin',
+      'mcp:admin', 'integration:admin', 'commerce_transition:admin',
       'operations:read', 'operations:admin',
       'dingtalk:admin',
       'external_binding:read', 'external_binding:write',
@@ -223,12 +225,23 @@ export const MENU_GROUPS = {
  *                    顶级菜单折叠态没有 popup 兜底,文字会溢出 68px 侧栏
  */
 export const NAV_ENTRIES = [
+  { path: '/shipping/native', name: 'NativeOutbound', component: () => import('@/views/shipping/NativeOutbound.vue'), title: '出库管理（方舟独立）', permission: 'shipment:read', menu: { group: 'invoice', icon: Box, order: 16 } },
+  { path: '/commerce/shadow', name: 'CommerceShadow', component: () => import('@/views/commerce-transition/ShadowWorkbench.vue'), title: '双路线核对', permission: 'commerce_shadow:read', menu: { group: 'invoice', icon: DataAnalysis, order: 17 } },
+  { path: '/commerce/transition', name: 'CommerceTransition', component: () => import('@/views/commerce-transition/TransitionSettings.vue'), title: '交易试点配置', permission: 'commerce_transition:admin', menu: { group: 'system', icon: Setting, order: 95 } },
   { path: '/portal/customers/:accessId/preview', name: 'PortalCustomerPreview', component: () => import('@/views/portal/CustomerPreview.vue'), title: '客户目录预览', permission: 'portal_mapping:read' },
   { path: '/portal/catalog', name: 'PortalCatalog', component: () => import('@/views/portal/PortalCatalog.vue'), title: '门户商品目录', permission: 'portal_site:admin', menu: { group: 'customerPortal', title: '商品目录', icon: Document, order: 30, permission: 'portal_site:admin' } },
   { path: '/portal/settings', name: 'PortalSettings', component: () => import('@/views/portal/PortalSettings.vue'), title: '客户门户站点设置', permission: 'portal_site:admin', menu: { group: 'customerPortal', title: '站点设置', icon: Document, order: 40, permission: 'portal_site:admin' } },
   { path: '/portal/customers', name: 'PortalCustomers', component: () => import('@/views/portal/PortalCustomers.vue'), title: '客户访问与账号', permission: 'portal_access:read', menu: { group: 'customerPortal', title: '客户访问', icon: User, order: 20, permission: 'portal_access:read' } },
   { path: '/portal/access-requests', name: 'PortalAccessRequests', component: () => import('@/views/portal/AccessRequestPanel.vue'), title: '客户账号申请', permission: 'portal_access:read', menu: { group: 'customerPortal', title: '账号申请', icon: User, order: 25, permission: 'portal_access:read' } },
   { path: '/portal/orders', name: 'PortalOrders', component: () => import('@/views/portal/PortalOrders.vue'), title: '客户下单请求', permission: 'portal_order:read', menu: { group: 'customerPortal', title: '下单请求', icon: Document, order: 10, permission: 'portal_order:read' } },
+  { path: '/commerce-migration', name: 'CommerceMigration', component: () => import('@/views/commerce-migration/MigrationWorkbench.vue'), title: '交易历史承接', permission: 'commerce_migration:admin', menu: { group: 'invoice', icon: Document, order: 14 } },
+  { path: '/invoice/native', name: 'NativeOrders', component: () => import('@/views/invoice/native/NativeOrders.vue'), title: '订单履约（方舟独立）', permission: 'invoice:read', menu: { group: 'invoice', icon: Document, order: 11 } },
+  { path: '/finance/native', name: 'NativeFinance', component: () => import('@/views/finance/native/NativeFinance.vue'), title: '本地资金与应收', permission: 'receipt:read', menu: { group: 'invoice', icon: Money, order: 12 } },
+  { path: '/finance/reference', name: 'FinanceReference', component: () => import('@/views/finance/native/FinanceReference.vue'), title: '本地资金配置', permission: 'receipt:admin', menu: { group: 'invoice', icon: Setting, order: 13 } },
+  { path: '/catalog/products', name: 'CatalogProducts', component: () => import('@/views/catalog/CatalogProducts.vue'), title: '产品与 SKU', permission: 'catalog:read', menu: { group: 'stock', icon: Goods, order: 1 } },
+  { path: '/inventory', name: 'InventoryLedger', component: () => import('@/views/inventory/InventoryPage.vue'), title: '本地成品库存账', permission: 'inventory:read', menu: { group: 'stock', icon: Box, order: 2 } },
+  { path: '/trade/roster', name: 'TradeRoster', component: () => import('@/views/trade/SalesRoster.vue'), title: '本地业务员名册', anyPermission: ['employee:read', 'employee:write'], menu: { group: 'personnel', icon: User, order: 3 } },
+  { path: '/trade/projection', name: 'TradeProjection', component: () => import('@/views/trade/ProjectionStatus.vue'), title: '本地经营投影', permission: 'employee:write', menu: { group: 'personnel', icon: DataAnalysis, order: 4 } },
   // ── 工作台 (顶级,不属任何分组) ──────────────────────────
   {
     path: '/dashboard',
@@ -860,6 +873,7 @@ export const NAV_ENTRIES = [
       permission: 'production:read',
     },
   },
+  { path: '/production/native', name: 'NativeProduction', component: () => import('@/views/production/native/NativeProduction.vue'), title: '本地生产', permission: 'production:read', menu: { group: 'stock', title: '本地生产', icon: Box, order: 39, permission: 'production:read' } },
 
   {
     path: '/stock/production-order-print',
@@ -1035,10 +1049,10 @@ export const NAV_ENTRIES = [
     path: '/shipping/outbound',
     name: 'ShippingOutbound',
     component: () => import('@/views/shipping/OutboundRecords.vue'),
-    title: '出库单打印',
+    title: '出库管理（小满流程）',
     anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
     menu: {
-      group: 'invoice', title: '出库单打印', icon: Printer, order: 11,
+      group: 'invoice', title: '出库管理（小满流程）', icon: Printer, order: 11,
       anomalyDomain: 'outbound',
       anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
     },

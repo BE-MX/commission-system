@@ -69,6 +69,7 @@ class CommissionCalcResponse(BaseModel):
     total_second_supervisor_commission: float = 0
     skipped_incomplete: int
     skipped_no_snapshot: int
+    skipped_dependency: int = 0
     errors: list[str] = []
 
 

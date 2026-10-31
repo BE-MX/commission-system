@@ -5,6 +5,21 @@ import {protectedStock,assertNoOriginalAttempt,recordNativeAssociation,nativeSto
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import {parseEnv} from 'node:util';
+
+export function assertLegacyTransactions(mode = process.env.TRANSACTION_MODE ?? 'legacy') {
+  if (mode !== 'legacy') throw new Error('External outbound writes disabled: TRANSACTION_MODE must be legacy');
+  const root = process.env.OUTBOUND_SCRIPT_DIR || path.dirname(fileURLToPath(import.meta.url));
+  let contents;
+  try { contents = fs.readFileSync(path.join(root, '.ark-outbound.env'), 'utf8'); }
+  catch (error) { if (error.code === 'ENOENT') return; throw error; }
+  // The protected worker setting is an independent fence: an inherited
+  // legacy environment must never override a local cutover configuration.
+  const configured = parseEnv(contents).TRANSACTION_MODE;
+  if (configured !== undefined && configured !== 'legacy') {
+    throw new Error('External outbound writes disabled by .ark-outbound.env');
+  }
+}
 
 export const now = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 19).replace('T', ' ');
 
@@ -230,6 +245,7 @@ async function recoverExisting(existing, order, {api, directory, invoiceNo, invo
 }
 
 export async function createOne(orderId, options) {
+  assertLegacyTransactions();
   try { return await createOneAttempt(orderId, options); }
   catch (error) {
     if (!error.uncertain && /^\d+$/.test(orderId)) {
@@ -311,6 +327,7 @@ async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRema
 }
 
 export async function requestOkki(auth, base, route, payload, fetchImpl = fetch) {
+  assertLegacyTransactions();
   // Read failures may be transient. Never retry a POST whose acceptance is unknown.
   for (let attempt = 0; attempt < (payload ? 1 : 2); attempt++) {
     try {
@@ -373,6 +390,7 @@ export function assertClaimedTask(task, syncLogId, attempt, generation = null) {
 }
 
 async function main() {
+  assertLegacyTransactions();
   const root = process.env.OUTBOUND_SCRIPT_DIR || path.dirname(fileURLToPath(import.meta.url));
   const {OkkiAuth, OKKI_CONFIG} = await import('./auth.js');
   const auth = new OkkiAuth();

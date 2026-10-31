@@ -76,7 +76,7 @@ def evaluate(db, rules, quotas, *, watermark=None, now=None, lock_accounts=False
         for order, customer_id in db.query(CustomerOrder, owner).filter(owner.in_(ids), CustomerOrder.is_valid_business_order.is_(True)):
             orders[customer_id].append(order)
         items = defaultdict(list)
-        for item in db.query(CustomerOrderItem).join(CustomerOrder, CustomerOrder.id == CustomerOrderItem.order_id).filter(owner.in_(ids), CustomerOrder.is_valid_business_order.is_(True)):
+        for item in db.query(CustomerOrderItem).join(CustomerOrder, CustomerOrder.id == CustomerOrderItem.order_id).filter(owner.in_(ids), CustomerOrder.is_valid_business_order.is_(True), CustomerOrderItem.projection_role == 'active'):
             items[item.order_id].append(item)
         contacts = defaultdict(set)
         for customer_id, point_type, platform in db.query(CustomerAccount.id, CustomerContactPoint.point_type, CustomerContactPoint.platform).join(

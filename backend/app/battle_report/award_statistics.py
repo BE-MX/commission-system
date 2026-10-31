@@ -22,6 +22,17 @@ def source_facts(db, report, members, now):
     now = to_beijing_naive(now)
     if not members or now.date() < report.start_date:
         return [], None
+    from app.trade.service import formal_projection_enabled
+    if formal_projection_enabled(db):
+        from app.trade.query_service import load_orders
+        from app.trade.refresh_service import projection_status
+        rows = load_orders(db, date_from=report.start_date, date_to=min(report.end_date, now.date()))
+        owners = {str(m.ark_user_id) for m in members}
+        customers = {r["company_id"] for r in rows if r["user_id"] in owners}
+        state = projection_status(db, date_from=report.start_date, date_to=min(report.end_date, now.date()))
+        return [{**r, "order_id": r["event_order_id"], "is_goods": True,
+                 "custom_fields": {NEW_DEAL_FIELD: r["new_deal"]}, "order_name": r["order_no"]}
+                for r in rows if r["company_id"] in customers], state["last_projected_at"]
     schema = get_settings().BUSINESS_DB_NAME
     query = text(f"""
         SELECT o.order_id, o.order_no, o.user_id, o.company_id, o.account_date, o.amount_usd,
@@ -118,14 +129,17 @@ def cohort_orders(orders):
     return groups
 
 
-def calculate(report, members, raw, now, synced_at=None):
+def calculate(report, members, raw, now, synced_at=None, *, native=False, source_complete=True):
     now = to_beijing_naive(now)
     orders, issues, gmv_issues, decision_count, applied_count = normalize_facts(report, raw, now)
+    if not source_complete:
+        issues.append("正式订单来源水位未完整核验，暂停最终排名")
     groups = cohort_orders(orders)
     rows = []
     for m in members:
-        owned = [o for o in orders if o["uid"] == str(m.okki_user_id) and o["goods"]]
-        group = groups.get(str(m.okki_user_id), {"customers": set(), "new_sign": [], "repeat": []})
+        uid = str(m.ark_user_id if native else m.okki_user_id)
+        owned = [o for o in orders if o["uid"] == uid and o["goods"]]
+        group = groups.get(uid, {"customers": set(), "new_sign": [], "repeat": []})
         new = group["customers"]
         repeats = group["repeat"]
         amount_orders = repeats
@@ -133,7 +147,7 @@ def calculate(report, members, raw, now, synced_at=None):
             amount_orders = repeats + group["new_sign"]
         row = {"member_id": m.id, "ark_user_id": m.ark_user_id, "user_name": m.user_name,
                "team": m.team, "is_captain": bool(m.is_captain),
-               "gmv_complete": str(m.okki_user_id) not in gmv_issues,
+               "gmv_complete": source_complete and uid not in gmv_issues,
                "gmv": format(sum((o["amount"] for o in owned), ZERO), "f"),
                "new_count": len(new), "new_amount": format(sum((o["amount"] for o in owned if o["new"]), ZERO), "f"),
                "repeat_count": len({o["cid"] for o in repeats}), "repeat_orders": len(repeats),
@@ -141,7 +155,7 @@ def calculate(report, members, raw, now, synced_at=None):
         rows.append(row)
     data = {"award_kind": report.award_kind, "people": rows, "issues": issues,
             "data_complete": not issues, "calculated_at": now.isoformat(), "source_synced_at": synced_at,
-            "source_label": "OKKI订单镜像 · 每次刷新重新查询 · 非直连实时接口", "currency": "USD",
+            "source_label": "正式订单统一投影 · 分来源核验水位" if native else "OKKI订单镜像 · 每次刷新重新查询 · 非直连实时接口", "currency": "USD",
             "period_state": "upcoming" if now.date() < report.start_date else "ended" if now.date() > report.end_date else "running",
             "workday_progress": None, "order_decision_count": decision_count,
             "applied_order_decision_count": applied_count}
@@ -219,4 +233,12 @@ def pk(data):
 
 def build_snapshot(db, report, members, now):
     raw, synced = source_facts(db, report, members, now)
-    return calculate(report, members, raw, now, synced)
+    from app.trade.service import formal_projection_enabled
+    native = formal_projection_enabled(db)
+    from app.trade.refresh_service import projection_status
+    state = projection_status(db, date_from=report.start_date, date_to=min(report.end_date, now.date())) if native else None
+    result = calculate(report, members, raw, now, synced, native=native,
+                       source_complete=state is None or state["status"] == "current")
+    if state is not None:
+        result["projection_status"] = state
+    return result

@@ -10,6 +10,11 @@ from app.shipping_inspection import outbound_service as source
 
 def with_customer_order_info(db, record):
     record = {**record, "customer_grade": None, "order_amount_text": "—", "merchandiser_name": "", "express_channel": ""}
+    if record.get("transaction_mode") == "local":
+        invoice = db.get(Invoice, record["invoice_id"])
+        return {**record, "customer_grade": invoice.customer_grade,
+                "order_amount_text": f"{invoice.currency} {invoice.total_amount:,.2f}",
+                "merchandiser_name": invoice.merchandiser_name or "", "express_channel": invoice.express_channel or ""}
     customer_id = record.get("company_id")
     if not customer_id:
         return record

@@ -56,6 +56,7 @@ def _case_for_update(db: Session, case_id: int) -> AfterSalesCase:
         db.query(AfterSalesCase)
         .filter(AfterSalesCase.id == case_id, AfterSalesCase.deleted_at.is_(None))
         .with_for_update()
+        .populate_existing()
         .first()
     )
     if case is None:
@@ -125,7 +126,9 @@ def _next_case_no(db: Session) -> str:
     return f"{prefix}{sequence:03d}"
 
 
-def create_case(db: Session, payload: CaseCreate, creator: ArkUser) -> AfterSalesCase:
+def create_case(db: Session, payload: CaseCreate, creator: ArkUser, *, scope=None) -> AfterSalesCase:
+    from app.aftersales.local_execution import validate_binding
+    payload = validate_binding(db, payload, scope or {"sub": str(creator.id)})
     case = AfterSalesCase(
         case_no=_next_case_no(db),
         creator_user_id=creator.id,
@@ -146,9 +149,14 @@ def update_case(
     case_id: int,
     payload: CaseCreate,
     actor: ArkUser,
+    *, scope=None,
 ) -> AfterSalesCase:
+    from app.aftersales.local_execution import validate_binding
+    payload = validate_binding(db, payload, scope or {"sub": str(actor.id)})
     case = _case_for_update(db, case_id)
     _require_creator(case, actor)
+    if case.local_invoice_item_id != payload.local_invoice_item_id and case.local_invoice_item_id is not None:
+        raise WorkflowOperationError("本地售后订单行关联不可更换，请新建售后单")
     if case.current_status not in EDITABLE_STATUSES:
         raise WorkflowOperationError("售后单已提交，业务字段已锁定")
     _apply_payload(case, payload)
@@ -214,6 +222,10 @@ def save_decision(
     if has_compensation and "subject to final internal approval" not in customer_reply_draft.lower():
         raise WorkflowOperationError("赔偿英文话术必须声明待内部最终审批")
 
+    from app.aftersales.local_replacement import validate_actions as validate_local_actions
+    validate_local_actions(db, case, actions)
+    from app.aftersales.local_money import validate_monetary_actions
+    validate_monetary_actions(case, actions)
     case.responsibility_class = responsibility_class
     case.responsibility_reason = responsibility_reason
     case.responsibility_override_reason = responsibility_override_reason
@@ -745,8 +757,12 @@ def close_case(
     actor: ArkUser,
     customer_feedback: str,
 ) -> AfterSalesCase:
+    from app.aftersales.completion_service import lock_execution_scope, ensure_completed
+    lock_execution_scope(db, case_id)
     case = _case_for_update(db, case_id)
     _require_creator(case, actor)
+    if case.current_status == "processing":
+        ensure_completed(db, case)
     if case.current_status != "processing" or not case.execution_result:
         raise WorkflowOperationError("请先登记执行结果再关闭")
     if not customer_feedback.strip():
@@ -768,8 +784,11 @@ def reopen_case(
     reason: str,
 ) -> AfterSalesCase:
     case = _case_for_update(db, case_id)
-    if case.current_status not in {"closed", "rejected"}:
-        raise WorkflowOperationError("只有已关闭或已拒绝的售后单可以重新打开")
+    allowed = {"closed", "rejected"}
+    if case.local_invoice_item_id is not None:
+        allowed.update({"approved", "processing"})
+    if case.current_status not in allowed:
+        raise WorkflowOperationError("仅已关闭、已拒绝或本地已批准执行中的售后单可以重新审批")
     if not reason.strip():
         raise WorkflowOperationError("重新打开必须填写原因")
     previous_resolution = {

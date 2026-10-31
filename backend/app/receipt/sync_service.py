@@ -5,11 +5,11 @@ import json
 from datetime import timedelta
 from uuid import uuid4
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from app.core.time import beijing_now
 from app.core.queue_scan import take
-from app.invoice import okki_client
+from app.invoice import okki_client, legacy_sending
 from app.invoice.models import Invoice
 from app.invoice.settlement_guard import ensure_receipt_sendable
 from app.invoice.settlement_models import Receivable
@@ -54,6 +54,7 @@ def generate_ready(db):
                ReceiptIntent.invoice_id, "receipt_intent_ready", 20)
     for invoice_id in ids:
         try:
+            legacy_sending.authorize(db, invoice_id)
             invoice = db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
             intent = db.query(ReceiptIntent).filter(ReceiptIntent.invoice_id == invoice_id).with_for_update().one()
             if invoice.status in {"cancel_pending", "cancelled"} or invoice.linked_sync_id or intent.status != "ready" or not intent.eligible:
@@ -86,13 +87,33 @@ def recover_expired(db):
     recovery.recover_expired(db)
 
 
+def _current_sender(db, invoice, actor_id):
+    """Only a new POST needs the original human's current grants and scope."""
+    from fastapi import HTTPException
+    from app.portal.access_policy import employee_principal
+    from app.portal.errors import PortalError
+    from app.receipt import access
+    try:
+        actor = employee_principal(db, int(actor_id), 'receipt:write')
+        access.ensure_invoice(db, invoice, actor)
+    except (PortalError, HTTPException, TypeError, ValueError) as exc:
+        raise ValueError('原回款操作人已停用、撤权或不再具有原订单范围，禁止新发送') from exc
+    return actor
+
+
 def deliver(db, receipt_id):
     row = db.get(Receipt, receipt_id)
     if row is None:
         return
+    if row.status != 'active' or row.sync_status != 'pending' or row.xiaoman_receipt_id:
+        db.rollback()
+        return  # Original evidence/recovery remains read-only, without a new human grant.
     invoice_id = row.invoice_id
+    original_actor = row.created_by
     db.commit()  # End the lookup snapshot before the invoice locking read.
-    # Lock order then row, same ordering used by edit/void/create.
+    # Portal -> platform -> authority -> invoice -> receipt.
+    ownership = legacy_sending.authorize(db, invoice_id)
+    expected_epoch = ownership.epoch
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
     db.refresh(invoice)
     db.refresh(row, with_for_update=True)
@@ -126,13 +147,22 @@ def deliver(db, receipt_id):
     if not count:
         return
     sent = False
+    send_round = 0
     def before_send(payload):
-        nonlocal sent
+        nonlocal sent, send_round
         # Token refresh and all remote reads may commit/release the initial locks.
         # Recheck the frozen local inputs under the normal invoice -> receipt lock order.
+        if db.new or db.dirty or db.deleted:
+            raise ValueError('发送前存在未提交业务修改，禁止外发回款')
+        db.rollback()
+        db.expire_all()  # Discard every provider-preparation RR snapshot before live grants.
+        legacy_sending.authorize(db, invoice_id, expected_epoch)
         db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
         db.refresh(invoice)
         db.refresh(row, with_for_update=True)
+        if row.created_by != original_actor:
+            raise ValueError('原回款操作人关联已变化，禁止新发送')
+        _current_sender(db, invoice, original_actor)
         service.ensure_order_ready(db, invoice)
         ensure_receipt_sendable(db, row, current=True)
         if db.query(ReceiptAttempt.token).filter(ReceiptAttempt.receipt_id == receipt_id,
@@ -157,10 +187,25 @@ def deliver(db, receipt_id):
             db.rollback()
             raise ValueError("回款同步任务已失效，停止发送并等待核对")
         attempt.payload_hash = digest
+        send_round += 1
+        from app.commerce_shadow.hooks import capture_legacy_receipt
+        ticket = legacy_sending.start(db, invoice, f'legacy:receipt:{receipt_id}:{token}:{send_round}', 'receipt_push', payload,
+            {'actor_id': row.created_by, 'receipt_id': receipt_id, 'attempt_token': token, 'batch_id': row.batch_id,
+             'receivable_id': row.receivable_id, 'order_id': row.xiaoman_order_id,
+             'amount': str(row.amount), 'bank_charge': str(row.bank_charge), 'currency': row.currency,
+             'purpose': row.purpose, 'bank_identity_status': 'unmapped_legacy',
+             'command_input': capture_legacy_receipt(db, invoice, row, payload)}, expected_epoch)
         db.commit()  # A crash from this point onwards has an unknown POST outcome.
         sent = True
+        return ticket
     try:
+        db.rollback()
         db.expire_all()
+        legacy_sending.authorize(db, invoice_id, expected_epoch)
+        invoice = db.query(Invoice).filter_by(id=invoice_id).populate_existing().with_for_update().one()
+        row = db.query(Receipt).filter_by(id=receipt_id).populate_existing().with_for_update().one()
+        _current_sender(db, invoice, original_actor)
+        db.commit()  # Authorization/capture only; release locks before provider preparation.
         row = db.get(Receipt, receipt_id)
         invoice = db.get(Invoice, row.invoice_id)
         service.ensure_order_ready(db, invoice)
@@ -324,6 +369,15 @@ def bind_remote(db, row, data, actor):
     service.log(db, row, "reconciled", "已核对并绑定小满回款", actor)
     from app.invoice.shipment_payment_policy import record_effective
     record_effective(db, row, actor)
+    if row.collect_status == 1 and row.attempt_token:
+        from app.commerce_transition.models import SendingClaim
+        claim = db.scalar(select(SendingClaim).where(
+            SendingClaim.invoice_id == row.invoice_id, SendingClaim.operation == 'receipt_push',
+            SendingClaim.external_id == identity).order_by(SendingClaim.id.desc()))
+        if claim is not None:
+            legacy_sending.observe_formal(db, claim.request_key, 'legacy.receipt.remote', 'accepted',
+                result_row=row, actor_id=(claim.responsibilities or {}).get('actor_id'),
+                evidence_ref={'receipt_id': row.id, 'remote_id': identity, 'version': row.version})
 
 
 def _reconcile(db, row, evidence, actor):

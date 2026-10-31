@@ -10,6 +10,13 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
+from tests.current_order_sync_helpers import install_transport, sync_current, current_order_readback
+
+
+@pytest.fixture(autouse=True)
+def current_order_transport(db, monkeypatch):
+    install_transport(db, monkeypatch)
+
 from sqlalchemy import text
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
@@ -87,6 +94,8 @@ def _stock_item(**overrides):
     )
     for key, value in overrides.items():
         setattr(item, key, value)
+    if "total_price" not in overrides:
+        item.total_price = item.price_per_piece * item.quantity
     return item
 
 
@@ -164,7 +173,7 @@ def test_first_sync_success_enqueues_pending_task(db, monkeypatch, no_reconcile)
     db.flush()
     monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
 
-    result = xiaoman_service.sync_invoice(db, invoice, operator_id=7)
+    result = sync_current(db, invoice, operator_id=7)
 
     assert result["ok"] is True
     tasks = _tasks(db)
@@ -186,7 +195,7 @@ def test_first_sync_with_unbackfilled_custom_marks_task_skipped(db, monkeypatch,
     db.flush()
     monkeypatch.setattr(okki_client, "push_order", _fake_push_with_merged)
 
-    result = xiaoman_service.sync_invoice(db, invoice)
+    result = sync_current(db, invoice)
 
     assert result["ok"] is True
     tasks = _tasks(db)
@@ -211,7 +220,7 @@ def test_backfilled_custom_lines_still_enqueue_pending(db, monkeypatch, no_recon
         }
 
     monkeypatch.setattr(okki_client, "push_order", fake_push)
-    result = xiaoman_service.sync_invoice(db, invoice)
+    result = sync_current(db, invoice)
 
     assert result["ok"] is True
     assert [t.status for t in _tasks(db)] == [outbound_task_service.STATUS_PENDING]
@@ -232,7 +241,7 @@ def test_edit_repush_does_not_enqueue(db, monkeypatch, no_reconcile):
         }
 
     monkeypatch.setattr(okki_client, "push_order", fake_push)
-    result = xiaoman_service.sync_invoice(db, invoice)
+    result = sync_current(db, invoice)
 
     assert result["ok"] is True
     assert _tasks(db) == []
@@ -255,20 +264,22 @@ def test_successful_edit_requeues_waiting_stock_for_current_order(db, monkeypatc
     db.commit()
 
     monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
-    result = xiaoman_service.sync_invoice(db, invoice)
+    result = sync_current(db, invoice)
     assert result["ok"] is True
     db.commit()
     db.refresh(task)
-    newest = db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id).order_by(InvoiceSyncLog.id.desc()).first()
+    newest = db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id, action="update", success=1).order_by(InvoiceSyncLog.id.desc()).first()
     assert task.status == "pending"
     assert task.attempts == 0
     assert task.last_error is None
     assert task.reason == (f"regenerate:{newest.id}" if regeneration else None)
-    monkeypatch.setattr(outbound_followup_service.remote, "read", lambda *_args: {"order_id": 424242})
+    monkeypatch.setattr(outbound_followup_service.remote, "read", lambda *_args: current_order_readback(db, invoice))
     monkeypatch.setattr(outbound_followup_service.linked_outbound_service, "find_related", lambda *_args: [])
     monkeypatch.setattr(outbound_followup_service, "_stock_shortages",
                         lambda *_args: pytest.fail("backend stock API must not block the queued task"))
-    assert outbound_followup_service.run(db, invoice, {"sub": "1", "permissions": [], "roles": []})["status"] == "pending"
+    reference = SimpleNamespace(id=invoice.id)
+    db.rollback()
+    assert outbound_followup_service.run(db, reference, {"sub": "1", "permissions": [], "roles": []})["status"] == "pending"
 
 
 @pytest.mark.parametrize("status", ["running", "uncertain", "done", "skipped"])
@@ -283,7 +294,15 @@ def test_successful_edit_does_not_requeue_other_outbound_states(db, monkeypatch,
     db.commit()
     monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
 
-    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
+    if status in {'running', 'uncertain'}:
+        from fastapi import HTTPException
+        monkeypatch.setattr(okki_client, 'push_order', lambda *args, **kwargs: pytest.fail('In-flight task forbids another POST'))
+        with pytest.raises(HTTPException) as blocked:
+            sync_current(db, invoice)
+        assert blocked.value.status_code == 409
+        db.rollback()
+    else:
+        assert sync_current(db, invoice)["ok"] is True
     db.commit()
     db.refresh(task)
     assert (task.status, task.reason, task.attempts, task.last_error) == (
@@ -301,7 +320,7 @@ def test_incomplete_edit_does_not_requeue_waiting_stock(db, monkeypatch, no_reco
     db.commit()
     monkeypatch.setattr(okki_client, "push_order", lambda *args, **kwargs: {"order_id": 424242, "product_list": []})
 
-    result = xiaoman_service.sync_invoice(db, invoice)
+    result = sync_current(db, invoice)
     assert result["ok"] is False and result["okki_accepted"] is True
     db.refresh(task)
     assert (task.status, task.attempts, task.last_error) == ("waiting_stock", 4, "old shortage")
@@ -317,10 +336,13 @@ def test_waiting_stock_requeue_rolls_back_with_incomplete_invoice_finalize(db, m
     db.add(task)
     db.commit()
     monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
-
-    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
-    assert task.status == "pending"
-    db.rollback()  # Simulate a later inventory-finalization failure.
+    from app.invoice import order_sync_execution
+    def incomplete(*args, **kwargs):
+        raise RuntimeError('Injected actual finalization failure before the economic commit')
+    monkeypatch.setattr(order_sync_execution.inventory, 'finalize_invoice_sync', incomplete)
+    result = sync_current(db, invoice)
+    assert result['ok'] is False and result['okki_accepted'] is True
+    db.rollback()
     db.refresh(task)
     assert (task.status, task.attempts, task.last_error) == ("waiting_stock", 4, "old shortage")
 
@@ -338,7 +360,7 @@ def test_edited_order_with_unbackfilled_custom_line_skips_old_stock_task(db, mon
     db.commit()
     monkeypatch.setattr(okki_client, "push_order", _fake_push_with_merged)
 
-    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
+    assert sync_current(db, invoice)["ok"] is True
     db.commit()
     db.refresh(task)
     assert task.status == "skipped"
@@ -357,7 +379,7 @@ def test_partial_accept_does_not_enqueue(db, monkeypatch, no_reconcile):
     db.flush()
     monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
 
-    result = xiaoman_service.sync_invoice(db, invoice)
+    result = sync_current(db, invoice)
 
     assert result["ok"] is False and result["okki_accepted"] is True
     assert _tasks(db) == []
@@ -374,7 +396,7 @@ def test_failed_sync_does_not_enqueue(db, monkeypatch, no_reconcile):
         raise okki_client.OkkiApiError("OKKI 订单推送失败：boom")
 
     monkeypatch.setattr(okki_client, "push_order", fake_push)
-    result = xiaoman_service.sync_invoice(db, invoice)
+    result = sync_current(db, invoice)
 
     assert result["ok"] is False
     assert _tasks(db) == []
@@ -392,7 +414,7 @@ def test_auto_trigger_disabled_by_flag(db, monkeypatch, no_reconcile):
         lambda: SimpleNamespace(OKKI_OUTBOUND_AUTO_ENABLED=False),
     )
 
-    result = xiaoman_service.sync_invoice(db, invoice)
+    result = sync_current(db, invoice)
 
     assert result["ok"] is True
     assert _tasks(db) == []
@@ -411,7 +433,7 @@ def test_enqueue_failure_never_breaks_sync(db, monkeypatch, no_reconcile):
         raise RuntimeError("task table unavailable")
 
     monkeypatch.setattr(outbound_task_service, "enqueue_outbound_task", boom)
-    result = xiaoman_service.sync_invoice(db, invoice)
+    result = sync_current(db, invoice)
 
     assert result["ok"] is True
     assert invoice.sync_status == "synced"
@@ -545,9 +567,9 @@ def test_first_create_persists_outbound_intent_before_timeout_or_process_exit(db
     monkeypatch.setattr(okki_client, "push_order", failed_push)
     if interrupted:
         with pytest.raises(SystemExit):
-            xiaoman_service.sync_invoice(db, invoice)
+            sync_current(db, invoice)
     else:
-        assert xiaoman_service.sync_invoice(db, invoice)["ok"] is False
+        assert sync_current(db, invoice)["ok"] is False
     db.rollback()
     db.refresh(invoice)
     assert invoice.sync_status == "sync_uncertain"
@@ -579,10 +601,10 @@ def test_bound_uncertain_first_order_enrolls_only_after_full_sync(db, monkeypatc
     from app.receipt import invoice_link
     monkeypatch.setattr(invoice_link, "preflight", lambda *args: None)
     monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
-    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
+    assert sync_current(db, invoice)["ok"] is True
     db.commit()
     assert len(_tasks(db)) == wanted
-    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
+    assert sync_current(db, invoice)["ok"] is True
     db.commit()
     assert len(_tasks(db)) == wanted
 
@@ -595,34 +617,48 @@ def test_partial_first_acceptance_enqueues_after_lines_are_restored(db, monkeypa
     invoice.items.append(_stock_item())
     db.commit()
     monkeypatch.setattr(okki_client, "push_order", lambda *a, **kw: {"order_id": 424242, "product_list": []})
-    assert xiaoman_service.sync_invoice(db, invoice)["okki_accepted"] is True
+    assert sync_current(db, invoice)["okki_accepted"] is True
     db.commit()
     assert invoice.outbound_auto_requested == 1 and _tasks(db) == []
     monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
-    assert not xiaoman_service.sync_invoice(db, invoice)["ok"]
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as blocked:
+        sync_current(db, invoice)
+    assert blocked.value.status_code == 409
+    db.rollback()
     assert _tasks(db) == []
     rows, _, _, _ = xiaoman_service._build_product_rows(db, invoice, None, editing=True, reconciling=True)
-    uncertain_recovery.confirm_existing(db, invoice, '已独立核对原单明细与金额一致', 1, evidence={
-        'order_id':'424242', 'company_id':invoice.customer_id, 'currency':'USD', 'amount':37.50,
+    evidence = {
+        'order_id':'424242', 'company_id':invoice.customer_id, 'currency':'USD',
+        'amount': invoice.total_amount - invoice.surcharge_amount,
         'product_list':[{**rows[0], 'unique_id':111}],
-    })
-    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
+    }
+    from app.invoice import sync_recovery
+    identity = invoice.id
+    # The original request remains protected until its lease has elapsed, even
+    # though this test already has the provider's complete, same-order proof.
+    invoice.sync_attempt = {**invoice.sync_attempt,
+        'lease_until': (beijing_now() - timedelta(seconds=1)).isoformat()}
+    db.commit()
+    monkeypatch.setattr(sync_recovery.lifecycle_remote, 'read', lambda *args: evidence)
+    sync_recovery.resolve(db, identity, {'id': 1}, resolution='confirm_existing', reason='已独立核对原单明细与金额一致')
+    assert sync_current(db, invoice)["ok"] is True
     db.commit()
     assert len(_tasks(db)) == 1 and _tasks(db)[0].status == "pending"
 
 
-def test_recovered_sync_task_rolls_back_when_inventory_finalize_fails(db, monkeypatch, no_reconcile):
+def test_current_executor_success_survives_later_caller_rollback(db, monkeypatch, no_reconcile):
     _seed_settings(db)
     _seed_binding(db)
     invoice = _make_invoice(db, xiaoman_order_id="424242", outbound_auto_requested=1)
     invoice.items.append(_stock_item(xiaoman_unique_id="111"))
     db.commit()
     monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
-    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
+    assert sync_current(db, invoice)["ok"] is True
     assert len(_tasks(db)) == 1
     db.rollback()
     db.refresh(invoice)
-    assert invoice.sync_status != "synced" and _tasks(db) == []
+    assert invoice.sync_status == "synced" and len(_tasks(db)) == 1
     assert outbound_task_service._reconcile_missing_outbound_tasks(db)["enqueued"] == 0
 
 
@@ -742,12 +778,11 @@ def test_stock_zero_receipt_sync_enqueues_outbound_without_receipt(db, monkeypat
     invoice.items.append(_stock_item())
     invoice_link.save_draft(db, invoice, ReceiptDraft(amount=amount), 1, new=True)
     db.commit()
-    token = invoice_link.arm(db, invoice, 1)
+    # The current executor owns arming and finishing the intent in its durable
+    # attempt; callers no longer pass an independently armed legacy token.
     monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
-    result = xiaoman_service.sync_invoice(db, invoice, operator_id=1, receipt_sync_token=token)
+    result = sync_current(db, invoice, operator_id=1)
     assert result["ok"] is True
-    invoice_link.mark_success(db, invoice, token)
-    invoice_link.finish_attempt(db, invoice, token)
     db.commit()
     sync_service.generate_ready(db)
     assert db.query(Receipt).count() == 0

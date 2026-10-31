@@ -694,14 +694,11 @@ def _ddl_proof_for_contract(
 
 def _physical_schema_contract(*, omit=None):
     tables = {}
+    frozen = json.loads(SCHEMA_RESOURCE_PATH.read_text(encoding="utf-8"))["customer_domain_physical_contract"]["tables"]
     for table_name in NEW_CUSTOMER_TABLES + REBUILT_CUSTOMER_WORKFLOW_TABLES:
         if table_name == omit:
             continue
-        column_names = (
-            list(ORM_CORE_TABLES[table_name].c.keys())
-            if table_name in ORM_CORE_TABLES
-            else sorted(REBUILT_WORKFLOW_COLUMNS[table_name])
-        )
+        column_names = [column["name"] for column in frozen[table_name]["columns"]]
         tables[table_name] = normalize_physical_schema_signature(
             columns=[
                 {
@@ -2224,6 +2221,16 @@ def test_verify_after_table_state_requires_all_new_tables_and_no_retired_only_ta
             verify_expected_customer_table_state(db)
 
 
+def test_revision126_contract_accepts_frozen_columns_after_later_orm_migrations():
+    resource = json.loads(SCHEMA_RESOURCE_PATH.read_text(encoding="utf-8"))
+    contract = resource["customer_domain_physical_contract"]
+    assert "local_invoice_id" in ORM_CORE_TABLES["ark_customer_orders"].c
+    assert "local_invoice_id" not in {
+        column["name"] for column in contract["tables"]["ark_customer_orders"]["columns"]
+    }
+    assert validate_customer_physical_schema_contract(contract) == contract["contract_sha256"]
+
+
 @pytest.mark.parametrize(
     "category",
     [
@@ -2974,7 +2981,7 @@ def test_apply_reset_rejects_tampered_preflight_content_before_runner(tmp_path):
     assert calls == []
 
 
-def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(
+def test_apply_reset_stops_at_bound_revision_before_later_schema_changes(
     tmp_path, monkeypatch
 ):
     script = _load_cutover_script()
@@ -3056,7 +3063,9 @@ def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(
     assert result.inventory_sha256 == inventory.inventory_sha256
     assert len(calls) == 1
     command = calls[0][0][0]
-    assert command[-2:] == ["upgrade", "head"]
+    # The receipt proves revision 126's exact frozen physical contract. Later
+    # migrations must run only after this post-verification has succeeded.
+    assert command[-2:] == ["upgrade", "126"]
     assert command[-4] == "-x"
     assert command[-3].startswith("customer_cutover_contract=")
     assert calls[0][1]["check"] is True

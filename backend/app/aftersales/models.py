@@ -24,12 +24,13 @@ from app.core.time import beijing_now
 
 
 USER_ID = mysql.INTEGER(unsigned=True)
+CASE_ID = BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql")
 
 
 class AfterSalesCase(Base):
     __tablename__ = "ark_aftersales_cases"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(CASE_ID, primary_key=True, autoincrement=True)
     case_no = Column(String(40), nullable=False, unique=True)
     creator_user_id = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False)
     creator_name_snapshot = Column(String(64), nullable=False)
@@ -43,8 +44,9 @@ class AfterSalesCase(Base):
     feedback_date = Column(Date, nullable=False)
     feedback_channel = Column(String(32))
 
+    local_invoice_item_id = Column(BigInteger, ForeignKey("ark_invoice_items.id"), nullable=True, index=True, comment="本地已发货订单行，历史售后为空")
     product_id = Column(BigInteger)
-    product_name_snapshot = Column(String(256), nullable=False)
+    product_name_snapshot = Column(String(512), nullable=False)
     is_custom_product = Column(Boolean, nullable=False, default=False)
     batch_no = Column(String(128))
     color_value = Column(String(128), nullable=False)
@@ -125,7 +127,7 @@ class AfterSalesEvidence(Base):
     __tablename__ = "ark_aftersales_evidence"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    case_id = Column(BigInteger, ForeignKey("ark_aftersales_cases.id", ondelete="CASCADE"), nullable=False)
+    case_id = Column(CASE_ID, ForeignKey("ark_aftersales_cases.id", ondelete="CASCADE"), nullable=False)
     evidence_type = Column(String(32), nullable=False)
     original_filename = Column(String(255), nullable=False)
     storage_path = Column(String(500), nullable=False)
@@ -148,7 +150,7 @@ class AfterSalesAiRun(Base):
     __tablename__ = "ark_aftersales_ai_runs"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    case_id = Column(BigInteger, ForeignKey("ark_aftersales_cases.id", ondelete="CASCADE"), nullable=False)
+    case_id = Column(CASE_ID, ForeignKey("ark_aftersales_cases.id", ondelete="CASCADE"), nullable=False)
     sop_version_id = Column(BigInteger, ForeignKey("ark_aftersales_sop_versions.id"), nullable=False)
     run_no = Column(mysql.INTEGER(unsigned=True), nullable=False)
     status = Column(String(24), nullable=False)
@@ -174,7 +176,7 @@ class AfterSalesReview(Base):
     __tablename__ = "ark_aftersales_reviews"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    case_id = Column(BigInteger, ForeignKey("ark_aftersales_cases.id", ondelete="CASCADE"), nullable=False)
+    case_id = Column(CASE_ID, ForeignKey("ark_aftersales_cases.id", ondelete="CASCADE"), nullable=False)
     workflow_round = Column(mysql.INTEGER(unsigned=True), nullable=False)
     reviewer_role = Column(String(24), nullable=False)
     reviewer_user_id = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False)
@@ -199,7 +201,7 @@ class AfterSalesEvent(Base):
     __tablename__ = "ark_aftersales_events"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    case_id = Column(BigInteger, ForeignKey("ark_aftersales_cases.id", ondelete="CASCADE"), nullable=True)
+    case_id = Column(CASE_ID, ForeignKey("ark_aftersales_cases.id", ondelete="CASCADE"), nullable=True)
     event_type = Column(String(32), nullable=False)
     actor_user_id = Column(USER_ID, ForeignKey("ark_users.id"))
     actor_name_snapshot = Column(String(64))
@@ -245,7 +247,7 @@ class AfterSalesNotificationLog(Base):
     __tablename__ = "ark_aftersales_notification_logs"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    case_id = Column(BigInteger, ForeignKey("ark_aftersales_cases.id", ondelete="CASCADE"), nullable=False)
+    case_id = Column(CASE_ID, ForeignKey("ark_aftersales_cases.id", ondelete="CASCADE"), nullable=False)
     business_event_key = Column(String(128), nullable=False)
     recipient_user_id = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False)
     recipient_dingtalk_id = Column(String(100), nullable=True)
@@ -268,3 +270,21 @@ class AfterSalesNotificationLog(Base):
         Index("ix_aftersales_notify_retry", "status", "next_retry_at"),
         {"comment": "售后钉钉通知日志"},
     )
+
+
+class AfterSalesExecution(Base):
+    """Immutable evidence of local goods or money execution."""
+    __tablename__ = "ark_aftersales_executions"
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="执行凭证ID")
+    case_id = Column(CASE_ID, ForeignKey("ark_aftersales_cases.id"), nullable=False, index=True, comment="售后单ID")
+    related_invoice_id = Column(BigInteger, ForeignKey("ark_invoices.id"), nullable=True, unique=True, comment="补发或重做订单，金额为零且沿用正常检验出库")
+    settlement_item_id = Column(BigInteger, ForeignKey("ark_shipment_settlement_items.id"), nullable=True, index=True, comment="原发货行ID")
+    action = Column(String(32), nullable=False, comment="执行动作")
+    quantity = Column(mysql.INTEGER(unsigned=True), nullable=False, default=0, comment="本次执行件数")
+    stock_document_id = Column(BigInteger, ForeignKey("ark_stock_documents.id"), nullable=True, unique=True, comment="关联库存凭证ID")
+    business_date = Column(Date, nullable=False, comment="执行业务日（北京时间）")
+    request_key = Column(String(64), nullable=False, unique=True, comment="唯一请求键")
+    request_hash = Column(String(64), nullable=False, comment="命令指纹")
+    payload = Column(JSON, nullable=False, comment="不可变执行依据和关联凭证快照")
+    created_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="执行人ID")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")

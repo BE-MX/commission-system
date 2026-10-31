@@ -1,4 +1,4 @@
-import { onUnmounted, ref, watch } from 'vue'
+import { onDeactivated, onUnmounted, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { getInvoiceRelatedDetail } from '@/api/invoice'
 import { createDetailSession } from './invoiceDetailState'
@@ -43,6 +43,7 @@ export function useInvoiceDetail() {
   }
   function close() { session.cancel(); loading.value = false; identity = null; order.value = null; receipts.value = {state:'idle'}; outbounds.value = {state:'idle'}; trigger?.isConnected && trigger.focus(); trigger = null }
   watch(() => JSON.stringify([auth.user?.id, auth.user?.roles, auth.user?.permissions]), () => { visible.value = false; close() })
+  onDeactivated(() => { visible.value = false; close() })
   onUnmounted(() => session.cancel())
   return { visible, order, activeTab, fullscreen, header, receipts, outbounds, loading, open, close, refresh: () => load(true) }
 }

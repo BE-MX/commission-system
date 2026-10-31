@@ -4,7 +4,7 @@ OKKI is the authoritative order/status source for this screen. All queries are
 read-only; monthly totals are rebuilt so invalid orders are removed on refresh.
 """
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from fractions import Fraction
 import logging
@@ -37,17 +37,19 @@ def champion_names(groups: list[dict]) -> list[str]:
 
 
 def _roster(db: Session, issues: dict) -> tuple[dict, dict]:
-    rows = db.execute(text('SELECT t.user_id, t.Team AS team FROM lsordertest.user_rel_team t '
+    from app.trade.query_service import load_roster
+    rows = load_roster(db) if service.local_mode(db) else db.execute(text('SELECT t.user_id, t.Team AS team FROM lsordertest.user_rel_team t '
                            'WHERE 1=1' + service._active_roster_filter('t'))).mappings().all()
     names = {name for name, _ in TARGETS}
     assignments = defaultdict(set)
+    personal_ids = {str(row['user_id']) for row in rows if row.get('legacy_user_id') == JIASHU_USER_ID} if service.local_mode(db) else {JIASHU_USER_ID}
     for row in rows:
         uid = str(row['user_id'] or '').strip()
         team = str(row['team'] or '').strip()
-        if uid == JIASHU_USER_ID and team in ('个人队', '嘉树'):
+        if uid in personal_ids and team in ('个人队', '嘉树'):
             team = '嘉树'
         # 嘉树 is a named individual, not a catch-all for any personal participant.
-        if not uid or team not in names or (team == '嘉树' and uid != JIASHU_USER_ID):
+        if not uid or team not in names or (team == '嘉树' and uid not in personal_ids):
             issues['unassigned_members'] += 1
         assignments[uid].add(team)
     owners = {}
@@ -57,7 +59,7 @@ def _roster(db: Session, issues: dict) -> tuple[dict, dict]:
             issues['conflicting_members'] += 1
             continue
         team = next(iter(teams))
-        if team in names and uid and (team != '嘉树' or uid == JIASHU_USER_ID):
+        if team in names and uid and (team != '嘉树' or uid in personal_ids):
             owners[uid] = team
             members[team].add(uid)
     issues['missing_groups'] = sum(not members[name] for name, _ in TARGETS)
@@ -81,6 +83,14 @@ def _effective_amount(raw_values: list, issues: dict) -> Decimal | None:
 def _orders(db: Session, user_ids: list[str], end: date, issues: dict) -> tuple[list, set]:
     if not user_ids or end < START:
         return [], set()
+    if service.local_mode(db):
+        from app.trade.query_service import load_orders
+        rows = [{"order_id": row["order_id"], "customer_id": row["company_id"], "user_id": row["user_id"], "amount": row["amount_usd"]}
+            for row in load_orders(db, date_from=START, date_to=end)
+            if row["user_id"] in user_ids and row["new_deal"] == "是"]
+        customers = {row['customer_id'] for row in rows}
+        old = {row['company_id'] for row in load_orders(db, date_to=START - timedelta(days=1)) if row['company_id'] in customers}
+        return rows, old
     stmt = text(
         'SELECT o.order_id, o.company_id AS customer_id, o.user_id, o.amount_usd AS amount '
         'FROM lsordertest.okki_orders o WHERE o.user_id IN :ids '
@@ -112,8 +122,12 @@ def _rate(done: int, target: int) -> float:
 
 
 def get_payload(db: Session, *, finalized: bool = False) -> dict:
+    from app.trade.refresh_service import projection_status
     today = beijing_today()
     issues = defaultdict(int)
+    projection = projection_status(db) if service.local_mode(db) else None
+    if projection is not None and projection["status"] != "current":
+        issues["source_incomplete"] += 1
     owners, members = _roster(db, issues)
     rows, old_customers = _orders(db, list(owners), min(today, END), issues)
     customers = defaultdict(list)
@@ -156,7 +170,7 @@ def get_payload(db: Session, *, finalized: bool = False) -> dict:
         for g in groups
     ) > 1
     phase = ('upcoming' if today < START else 'ongoing' if today <= END
-             else 'finalized' if finalized else 'pending_review')
+             else 'finalized' if finalized and clean else 'pending_review')
     for group in groups:
         group['first'] = group['name'] in winners
         del group['_amount']  # No money, employee or customer details in the public payload.
@@ -168,7 +182,8 @@ def get_payload(db: Session, *, finalized: bool = False) -> dict:
         print(message, flush=True)
     return {
         'period': {'start': START.isoformat(), 'end': END.isoformat()},
-        'phase': phase, 'source': 'okki',
+        'phase': phase, 'source': service._data_source(db=db),
+        'projection_status': projection,
         'groups': groups,
         'total': {'target': target, 'done': total if clean else None,
                   'rate': _rate(total, target) if clean else None,

@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Column,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -38,6 +39,14 @@ class Invoice(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     invoice_no = Column(String(64), nullable=False, unique=True, comment="Invoice number")
     order_type = Column(String(16), nullable=False, default="stock", comment="stock/production")
+    transaction_mode = Column(String(16), nullable=False, default="legacy", server_default="legacy", comment="交易事实来源 legacy/local；历史单须核对后承接")
+    commerce_status = Column(String(24), nullable=False, default="draft", server_default="draft", comment="本地交易状态 draft/confirmed/cancelled/closed，与远端同步状态分离")
+    commerce_version = Column(Integer, nullable=False, default=0, server_default="0", comment="本地订单乐观并发版本")
+    local_rate_to_usd = Column(Numeric(18, 8), nullable=True, comment="确认订单时冻结的一单位原币对应USD；不随后续收款汇率漂移")
+    local_commercial = Column(JSON, nullable=True, comment="本地商业来源/新签/首返/客户地域快照，与外部字段分离")
+    local_deposit_amount = Column(Numeric(14, 2), nullable=False, default=0, server_default="0", comment="本地预售合同首款总额，确认后冻结")
+    local_deposit_charge = Column(Numeric(14, 2), nullable=False, default=0, server_default="0", comment="本地预售首款包含的客户附加费用")
+    local_customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id", ondelete="RESTRICT"), nullable=True, index=True, comment="本地稳定客户ID；保留历史外部客户编号")
     customer_id = Column(String(64), nullable=False, comment="customer_info.company_id")
     customer_name = Column(String(256), nullable=False, comment="客户名称")
     customer_grade = Column(String(1), nullable=True, comment="客户等级快照 S/A/B/C/D/E")
@@ -113,6 +122,21 @@ class Invoice(Base):
     )
 
 
+class InvoiceCommerceEvent(Base):
+    """Immutable command identity and audit for local order lifecycle."""
+
+    __tablename__ = "ark_invoice_commerce_events"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="本地主键")
+    invoice_id = Column(BigInteger, ForeignKey("ark_invoices.id", ondelete="RESTRICT"), nullable=True, index=True, comment="订单ID；创建事务内认领时暂为空")
+    request_key = Column(String(128), nullable=False, unique=True, comment="本地订单命令幂等键")
+    request_hash = Column(String(64), nullable=False, comment="请求SHA256")
+    action = Column(String(32), nullable=False, comment="本地订单动作")
+    payload = Column(JSON, nullable=False, comment="命令快照及变更依据")
+    created_by = Column(USER_ID, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=True, comment="操作人ID")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
+
+
 class InvoiceDelegateGrant(Base):
     """一个用户获准替一个业务员创建订单。"""
 
@@ -140,6 +164,11 @@ class InvoiceItem(Base):
     sort_order = Column(Integer, nullable=False, default=0, comment="明细行排序号")
     product_kind = Column(String(16), nullable=False, default="hair", server_default="hair", comment="hair/accessory")
     item_type = Column(String(16), nullable=False, default="stock", comment="stock/custom")
+    local_sku_id = Column(BigInteger, ForeignKey("ark_catalog_skus.id", ondelete="RESTRICT"), nullable=True, index=True, comment="本地SKU ID；与旧外部SKU编号分离")
+    commercial_kind = Column(String(16), nullable=True, comment="本地商业明细 sample/bulk；旧单不猜测回填")
+    stock_reserved_quantity = Column(Integer, nullable=False, default=0, server_default="0", comment="跨仓当前预占件数；与库存流水同事务更新")
+    production_pending_quantity = Column(Integer, nullable=False, default=0, server_default="0", comment="已关联生产但尚未验收入库的供货件数")
+    stock_shipped_quantity = Column(Integer, nullable=False, default=0, server_default="0", comment="跨仓累计正式出库件数；退货不自动恢复需求")
     product_id = Column(BigInteger, nullable=True, comment="okki_products.product_id; NULL for custom lines")
     sku_id = Column(BigInteger, nullable=True, comment="okki_product_skus.sku_id")
     custom_product_id = Column(BigInteger, nullable=True, comment="ark_custom_products.id, no FK by design")
@@ -147,7 +176,7 @@ class InvoiceItem(Base):
     product_display = Column(String(256), nullable=False, comment="发票 Product 列展示名（series+grade）")
     net_weight_grams = Column(String(64), nullable=True, comment="Mapped from okki_products.unit")
     curl = Column(String(64), nullable=True, comment="卷度")
-    model = Column(String(128), nullable=True, comment="production model; optional for custom lines")
+    model = Column(String(200), nullable=True, comment="production model; optional for custom lines")
     color = Column(String(128), nullable=False, comment="颜色/色号")
     length = Column(String(128), nullable=True, comment="Mapped from okki_products.size")
     quantity = Column(Integer, nullable=False, comment="数量（件）")
@@ -170,6 +199,7 @@ class InvoiceItem(Base):
 
     __table_args__ = (
         Index("idx_ark_invoice_items_invoice", "invoice_id"),
+        CheckConstraint("stock_reserved_quantity >= 0 AND stock_shipped_quantity >= 0", name="ck_invoice_stock_quantities"),
         Index("idx_ark_invoice_items_product", "product_id"),
         Index("idx_ark_invoice_items_custom", "custom_product_id"),
         {"comment": "发票产品明细行（标准价/客户价双价快照）"},
@@ -225,10 +255,12 @@ class StdPrice(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     product_kind = Column(String(16), nullable=False, default="hair", server_default="hair", comment="hair/accessory")
     accessory_name = Column(String(256), nullable=True, comment="Accessory display name")
-    accessory_model = Column(String(128), nullable=True, comment="Accessory model")
+    accessory_model = Column(String(200), nullable=True, comment="Accessory model")
     accessory_color = Column(String(128), nullable=True, comment="Accessory color")
     product_id = Column(BigInteger, nullable=True, comment="OKKI product ID")
     sku_id = Column(BigInteger, nullable=True, comment="OKKI SKU ID")
+    local_sku_id = Column(BigInteger, ForeignKey("ark_catalog_skus.id", ondelete="RESTRICT"), nullable=True,
+                          comment="本地配件SKU，禁止与OKKI数字ID混用")
     series_grade = Column(String(128), nullable=True, comment="e.g. Super Double Drawn Genius")
     length = Column(String(32), nullable=True, comment="normalized, inch mark stripped")
     weight_unit = Column(String(32), nullable=True, comment="e.g. 20g")
@@ -245,6 +277,7 @@ class StdPrice(Base):
             name="uq_ark_std_prices_key",
         ),
         UniqueConstraint("product_kind", "product_id", "sku_id", name="uq_ark_std_accessory_sku"),
+        UniqueConstraint("local_sku_id", name="uq_std_price_local_sku"),
         {"comment": "标准价格矩阵（系列档次×长度×克重×颜色类型）"},
     )
 

@@ -9,13 +9,14 @@
 """
 
 import logging
+from functools import wraps
 from datetime import date
 from app.core.time import beijing_today
 from typing import Any, Optional
 
 from app.core.config import get_settings
 
-from sqlalchemy import text
+from sqlalchemy import text, select
 from sqlalchemy.orm import Session
 
 from app.stock.models import ProductionOrder, ProductionOrderItem, ProductionAuditLog
@@ -24,6 +25,29 @@ logger = logging.getLogger("stock.production_order")
 
 # 状态映射
 STATUS_LABELS = {0: "已提交", 1: "已终止", 2: "已完成"}
+
+
+def ensure_legacy_order(db, order_id):
+    if get_settings().TRANSACTION_MODE == "local":
+        raise ValueError("交易已切换到方舟，请先承接历史生产单，再使用本地生产操作")
+    mode = db.scalar(select(ProductionOrder.transaction_mode).where(ProductionOrder.id == order_id).with_for_update())
+    if mode == "local":
+        raise ValueError("本地生产请使用完工、验收入库和供货操作，不能直接改写旧数量或状态")
+
+
+def _legacy_only(identity_field):
+    """Local production quantities can change only with their inventory journal."""
+    def decorate(fn):
+        @wraps(fn)
+        def wrapped(*args, **kwargs):
+            db = args[0] if args else kwargs["db"]
+            identity = args[1] if len(args) > 1 else kwargs[identity_field]
+            order_id = identity if identity_field == "order_id" else db.scalar(
+                select(ProductionOrderItem.order_id).where(ProductionOrderItem.id == identity))
+            ensure_legacy_order(db, order_id)
+            return fn(*args, **kwargs)
+        return wrapped
+    return decorate
 
 
 def _generate_order_no(db: Session) -> str:
@@ -96,6 +120,8 @@ def create_order(
 
     返回: {"order_id": int, "order_no": str}
     """
+    if get_settings().TRANSACTION_MODE == "local":
+        raise ValueError("本地生产必须使用带幂等键的本地订单入口")
     # 校验批次号唯一
     existing_batch = db.execute(
         text("SELECT 1 FROM ark_production_orders WHERE batch_no = :batch_no AND deleted_flag = 0"),
@@ -280,7 +306,7 @@ def get_order_detail(db: Session, order_id: int) -> Optional[dict]:
         item_list.append({
             "id": i["id"],
             "order_id": i["order_id"],
-            "product_id": int(i["product_id"]),
+            "product_id": int(i["product_id"]) if i["product_id"] is not None else None,
             "product_name": i["product_name"],
             "model": i["model"],
             "spec_info": i["spec_info"],
@@ -310,6 +336,7 @@ def get_order_detail(db: Session, order_id: int) -> Optional[dict]:
     }
 
 
+@_legacy_only("order_id")
 def update_order(
     db: Session,
     order_id: int,
@@ -387,6 +414,7 @@ def update_order(
     return True
 
 
+@_legacy_only("order_id")
 def delete_order(
     db: Session,
     order_id: int,
@@ -496,7 +524,7 @@ def get_order_item_list(
             "order_id": r["order_id"],
             "order_no": r["order_no"],
             "batch_no": r["batch_no"],
-            "product_id": int(r["product_id"]),
+            "product_id": int(r["product_id"]) if r["product_id"] is not None else None,
             "product_name": r["product_name"],
             "model": r["model"],
             "spec_info": r["spec_info"],
@@ -516,6 +544,7 @@ def get_order_item_list(
     return {"total": int(total), "items": items}
 
 
+@_legacy_only("item_id")
 def update_order_item(
     db: Session,
     item_id: int,
@@ -579,6 +608,7 @@ def update_order_item(
     return True
 
 
+@_legacy_only("item_id")
 def update_item_status(
     db: Session,
     item_id: int,
@@ -634,6 +664,7 @@ def update_item_status(
     return True
 
 
+@_legacy_only("item_id")
 def update_item_received(
     db: Session,
     item_id: int,
@@ -688,6 +719,7 @@ def update_item_received(
     return True
 
 
+@_legacy_only("item_id")
 def delete_order_item(
     db: Session,
     item_id: int,
@@ -732,6 +764,9 @@ def get_stock_status_by_product_ids(db: Session, product_ids: list[int]) -> dict
     - 存在未完成(status=0)明细 → "备货中"
     - 否则 → ""
     """
+    if get_settings().TRANSACTION_MODE == "local":
+        from app.stock.local_query_service import production_status
+        return production_status(db, product_ids)
     if not product_ids:
         return {}
 

@@ -1712,18 +1712,35 @@ def complete_action(
     return action
 
 
+def _order_account_for_update(db: Session, order_id: int) -> CustomerAccount:
+    owner_id = db.query(logical_owner_expression(CustomerOrder, "order")).filter(
+        CustomerOrder.id == order_id,
+    ).scalar()
+    if owner_id is None:
+        raise CustomerWorkflowNotFound("ORDER_NOT_FOUND")
+    return _account_for_update(db, owner_id)
+
+
+def _order_source_for_customer(db: Session, order: CustomerOrder, customer_id: int):
+    return db.query(CustomerSourceRecord).filter(
+        CustomerSourceRecord.id == order.source_record_id,
+        logical_root_predicate(CustomerSourceRecord, "source_record", customer_id),
+    ).one_or_none()
+
+
 def activate_customer_from_order(db: Session, order_id: int) -> bool:
     candidate = db.get(CustomerOrder, order_id)
     if candidate is None:
         raise CustomerWorkflowNotFound("ORDER_NOT_FOUND")
-    account = _account_for_update(db, candidate.customer_id)
+    account = _order_account_for_update(db, order_id)
     order = db.query(CustomerOrder).filter(
-        CustomerOrder.id == order_id
+        CustomerOrder.id == order_id,
+        logical_root_predicate(CustomerOrder, "order", account.id),
     ).with_for_update().one_or_none()
     if order is None:
         raise CustomerWorkflowNotFound("ORDER_NOT_FOUND")
-    source = db.get(CustomerSourceRecord, order.source_record_id)
-    if source is None or source.customer_id != order.customer_id:
+    source = _order_source_for_customer(db, order, account.id)
+    if source is None:
         raise CustomerWorkflowConflict("ORDER_SOURCE_INVALID")
     before = account.relationship_stage
     occurred = (
@@ -1737,7 +1754,7 @@ def activate_customer_from_order(db: Session, order_id: int) -> bool:
     )
     append_customer_event(
         db,
-        customer_id=order.customer_id,
+        customer_id=account.id,
         event_type="order.placed",
         event_source=order.source_system,
         event_title="客户订单已同步",
@@ -1770,17 +1787,17 @@ def reconcile_invalidated_order(db: Session, order_id: int) -> CustomerEvent:
     candidate = db.get(CustomerOrder, order_id)
     if candidate is None:
         raise CustomerWorkflowNotFound("ORDER_NOT_FOUND")
-    account = _account_for_update(db, candidate.customer_id)
+    account = _order_account_for_update(db, order_id)
     order = db.query(CustomerOrder).filter(
         CustomerOrder.id == order_id,
-        CustomerOrder.customer_id == account.id,
+        logical_root_predicate(CustomerOrder, "order", account.id),
     ).with_for_update().one_or_none()
     if order is None:
         raise CustomerWorkflowNotFound("ORDER_NOT_FOUND")
     if order.is_valid_business_order:
         raise CustomerWorkflowConflict("ORDER_STILL_VALID")
-    source = db.get(CustomerSourceRecord, order.source_record_id)
-    if source is None or source.customer_id != account.id:
+    source = _order_source_for_customer(db, order, account.id)
+    if source is None:
         raise CustomerWorkflowConflict("ORDER_SOURCE_INVALID")
     existing_correction = db.query(CustomerEvent).filter(
         CustomerEvent.customer_id == account.id,
@@ -1795,13 +1812,13 @@ def reconcile_invalidated_order(db: Session, order_id: int) -> CustomerEvent:
         return existing_correction
 
     other_valid_order = db.query(CustomerOrder).filter(
-        CustomerOrder.customer_id == account.id,
+        logical_root_predicate(CustomerOrder, "order", account.id),
         CustomerOrder.id != order.id,
         CustomerOrder.is_valid_business_order.is_(True),
     ).order_by(CustomerOrder.account_date.desc(), CustomerOrder.id.desc()).with_for_update().first()
     evidence_order = other_valid_order or order
-    evidence_source = db.get(CustomerSourceRecord, evidence_order.source_record_id)
-    if evidence_source is None or evidence_source.customer_id != account.id:
+    evidence_source = _order_source_for_customer(db, evidence_order, account.id)
+    if evidence_source is None:
         raise CustomerWorkflowConflict("ORDER_SOURCE_INVALID")
     observed_at = evidence_source.occurred_at or (
         datetime.combine(evidence_order.account_date, datetime_time.min)
@@ -1809,7 +1826,7 @@ def reconcile_invalidated_order(db: Session, order_id: int) -> CustomerEvent:
         else evidence_order.synced_at
     )
     current_facts = db.query(CustomerFact).filter(
-        CustomerFact.customer_id == account.id,
+        logical_root_predicate(CustomerFact, "fact", account.id),
         CustomerFact.fact_key == "commercial.has_valid_order",
         CustomerFact.effective_to.is_(None),
         CustomerFact.verification_status == "verified",
@@ -1827,7 +1844,7 @@ def reconcile_invalidated_order(db: Session, order_id: int) -> CustomerEvent:
         confidence=1,
         confidence_method_version="confidence_v1",
         confidence_components={"order_state": 1},
-        source_system="okki",
+        source_system=evidence_source.source_system,
         source_entity_type="order",
         observed_at=observed_at,
         source_record_id=evidence_source.id,
@@ -1845,7 +1862,7 @@ def reconcile_invalidated_order(db: Session, order_id: int) -> CustomerEvent:
             )
 
     linked_opportunities = db.query(CustomerOpportunity).filter(
-        CustomerOpportunity.customer_id == account.id,
+        logical_root_predicate(CustomerOpportunity, "opportunity", account.id),
         CustomerOpportunity.linked_order_id == order.id,
     ).order_by(CustomerOpportunity.id).with_for_update().all()
     affected_ids: list[int] = []
@@ -1928,7 +1945,7 @@ def reconcile_invalidated_order(db: Session, order_id: int) -> CustomerEvent:
         db,
         customer_id=account.id,
         event_type="order.validity_revoked",
-        event_source="okki",
+        event_source=source.source_system,
         event_title="订单有效性已撤销",
         event_summary=order.order_no or order.external_order_id,
         event_payload={

@@ -117,6 +117,12 @@ def engine():
 
     Base.metadata.create_all(eng)
 
+    # Revision226 installs a fail-closed legacy policy. Match that installation
+    # state in ORM-only test databases; local fixtures explicitly attest local.
+    from app.commerce_transition.models import PlatformPolicy
+    with eng.begin() as conn:
+        conn.execute(PlatformPolicy.__table__.insert().values(id=1, phase='legacy_only'))
+
     # 镜像迁移 175 的种子：任何已迁移数据库都存在授权屏障行；
     # 不经过 alembic 的 create_all 测试库需要同样的初始状态。
     with eng.connect() as conn:

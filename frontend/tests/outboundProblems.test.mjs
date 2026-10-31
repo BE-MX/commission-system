@@ -90,14 +90,14 @@ test('problem navigation on the mounted outbound page clears conflicting filters
   api.page.value = 4
   route.query = { order_id:'105819851896460', problem:'task:350' }
   await Vue.nextTick()
-  assert.deepEqual(calls.at(-1), {page:1,page_size:20,order_id:'105819851896460'})
+  assert.deepEqual(calls.at(-1), {page:1,page_size:20,transaction_mode:'legacy',order_id:'105819851896460'})
   route.query = {keyword:'宋皓月浅色库存#0906 $459',problem:'event:3341'}
   await Vue.nextTick()
-  assert.deepEqual(calls.at(-1), {page:1,page_size:20,keyword:'宋皓月浅色库存#0906 $459'})
+  assert.deepEqual(calls.at(-1), {page:1,page_size:20,transaction_mode:'legacy',keyword:'宋皓月浅色库存#0906 $459'})
   Object.assign(api.searchForm, {outboundState:'ready',keyword:'changed'})
   route.query = {...route.query, problem_focus:'2'}
   await Vue.nextTick()
-  assert.deepEqual(calls.at(-1), {page:1,page_size:20,keyword:'宋皓月浅色库存#0906 $459'})
+  assert.deepEqual(calls.at(-1), {page:1,page_size:20,transaction_mode:'legacy',keyword:'宋皓月浅色库存#0906 $459'})
   const count = calls.length
   route.path = '/invoice/manage'; route.query = {}
   await Vue.nextTick()

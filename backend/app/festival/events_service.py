@@ -79,8 +79,14 @@ def _deal_candidates(db: Session, date_from: str, date_to: str,
                      source: str | None = None) -> list:
     """大单/超级大单：任意订单单笔 ≥$5000。幂等键对齐 OKKI 订单号——
     主轨优先用 xiaoman_order_id（与保底轨同键，切轨不重报），未推单兜底发票号。"""
+    if fsvc.local_mode(db):
+        from app.festival.local_service import orders
+        return [_cand("super_deal" if row["amount_usd"] >= SUPER_DEAL_USD else "big_deal",
+            "person", row["user_id"], row["user_name"], f"deal:{row['event_order_id']}",
+            amount=row["amount_usd"], detail=f"${row['amount_usd']:,.0f}")
+            for row in orders(db, date_from, date_to) if row["amount_usd"] >= BIG_DEAL_USD]
     out = []
-    if fsvc._data_source(source) == "ark":
+    if fsvc._data_source(source, db=db) == "ark":
         rows = db.execute(text(
             "SELECT i.xiaoman_order_id, i.invoice_no,"
             f"       {fsvc._ARK_AMOUNT} AS amt, t.Name AS name, t.user_id AS user_id"
@@ -116,8 +122,13 @@ def _deal_candidates(db: Session, date_from: str, date_to: str,
 def _new_sign_order_candidates(db: Session, date_from: str, date_to: str,
                                source: str | None = None) -> list:
     """每笔新签订单生成独立候选；订单号作为幂等键，不按客户去重。"""
+    if fsvc.local_mode(db):
+        from app.festival.local_service import orders
+        return [_cand("new_sign_order", "person", row["user_id"], row["user_name"],
+            f"new_sign:{row['event_order_id']}", amount=row["amount_usd"], detail=f"新签订单 · {row['order_no']}")
+            for row in orders(db, date_from, date_to) if row["new_deal"] == "是"]
     out = []
-    if fsvc._data_source(source) == "ark":
+    if fsvc._data_source(source, db=db) == "ark":
         rows = db.execute(text(
             "SELECT i.xiaoman_order_id, i.invoice_no,"
             f"       {fsvc._ARK_AMOUNT} AS amt, t.Name AS name, t.user_id AS user_id"
@@ -159,7 +170,12 @@ def _new_sign_order_candidates(db: Session, date_from: str, date_to: str,
 def _first_sign_candidate(db: Session, date_from: str, date_to: str,
                           source: str | None = None) -> list:
     """首单新签：全活动第一单独享（B-6：日期最早，同日按主键兜底定序）。"""
-    if fsvc._data_source(source) == "ark":
+    if fsvc.local_mode(db):
+        from app.festival.local_service import orders
+        row = next((row for row in orders(db, date_from, date_to) if row["new_deal"] == "是"), None)
+        return [_cand("first_sign", "person", row["user_id"], row["user_name"], "first_sign",
+            amount=row["amount_usd"], detail="全活动第一单 · 红包 ¥66")] if row else []
+    if fsvc._data_source(source, db=db) == "ark":
         row = db.execute(text(
             "SELECT t.Name AS name, t.user_id AS user_id,"
             f"       {fsvc._ARK_AMOUNT} AS amt"

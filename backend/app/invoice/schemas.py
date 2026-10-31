@@ -179,6 +179,8 @@ class InvoiceSemifinishedPlanItem(BaseModel):
 class InvoiceItemPayload(BaseModel):
     # 编辑时回传既有行 id，用于跨保存传承 xiaoman_unique_id（OKKI 编辑推单按行更新）
     id: Optional[int] = None
+    local_sku_id: Optional[int] = Field(None, gt=0)
+    commercial_kind: str = Field(default="bulk", pattern="^(bulk|sample)$")
     product_kind: str = Field(default="hair", pattern="^(hair|accessory)$")
     item_type: str = Field(default="stock", pattern="^(stock|custom)$")
     product_id: Optional[int] = None
@@ -187,7 +189,7 @@ class InvoiceItemPayload(BaseModel):
     product_display: str = Field(..., max_length=256)
     net_weight_grams: Optional[str] = Field(None, max_length=64)
     curl: Optional[str] = Field(None, max_length=64)
-    model: Optional[str] = Field(None, max_length=128)
+    model: Optional[str] = Field(None, max_length=200)
     color: str = Field(..., max_length=128)
     length: Optional[str] = Field(None, max_length=128)
     quantity: int = Field(..., gt=0)
@@ -209,11 +211,11 @@ class InvoiceItemPayload(BaseModel):
 
 class AccessoryPricePayload(BaseModel):
     id: Optional[int] = None
-    product_id: int
-    sku_id: int
+    product_id: int | str
+    sku_id: int | str
     accessory_name: str = Field(..., min_length=1, max_length=256)
-    accessory_model: str = Field(..., min_length=1, max_length=128)
-    accessory_color: str = Field(..., min_length=1, max_length=128)
+    accessory_model: str | None = Field(default=None, max_length=200)
+    accessory_color: str | None = Field(default=None, max_length=128)
     price: Decimal = Field(..., gt=0, max_digits=12, decimal_places=4)
     currency: str = Field(default="USD", pattern="^[A-Z]{3}$")
 
@@ -222,6 +224,15 @@ from app.receipt.schemas import ReceiptDraft
 
 
 class _InvoiceHeaderPayload(BaseModel):
+    transaction_route: Optional[str] = Field(None, pattern="^(legacy|local)$")
+    expected_authority_epoch: Optional[int] = Field(None, ge=1)
+    expected_commerce_version: Optional[int] = Field(None, ge=0)
+    request_key: Optional[str] = Field(None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9:_./-]+$")
+    local_customer_id: Optional[int] = Field(None, gt=0)
+    local_deposit_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)
+    local_deposit_charge: Decimal = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)
+    commercial_source: str = Field(default="unknown", pattern="^(alibaba_inquiry|alibaba_ecosystem|social_owned|social_assigned|referral|website|other|unknown)$")
+    is_private_order: bool = False
     receipt_draft: ReceiptDraft | None = None
     # 发票号开放编辑：None/空串 = 新建时按规则生成、编辑时保持原号
     invoice_no: Optional[str] = Field(None, max_length=64)

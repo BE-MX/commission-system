@@ -234,6 +234,10 @@ def _retained_orders(db):
 
 
 def reconcile_deleted_outbounds(db):
+    from app.trade.service import local_mode
+    if local_mode():
+        return {"checked": 0, "deleted": 0, "deferred": 0, "snapshot_days": 0,
+                "snapshot_errors": 0, "coverage_ready": False, "skipped": "local_transaction_mode"}
     """Refresh bounded immutable creation-day buckets, then reconcile fresh buckets."""
     candidates = _candidates(db)
     stats = {'checked': 0, 'deleted': 0, 'deferred': 0,

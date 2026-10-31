@@ -846,7 +846,7 @@ def apply_reset(
                 "-x",
                 f"customer_cutover_contract={contract_path}",
                 "upgrade",
-                "head",
+                CUTOVER_MIGRATION_REVISION,
             ],
             cwd=BACKEND_ROOT,
             check=True,
@@ -1073,7 +1073,7 @@ def build_parser() -> argparse.ArgumentParser:
     ready.add_argument("--expected-inventory-sha256", required=True)
     ready.set_defaults(handler=_command_verify_ready)
 
-    reset = subparsers.add_parser("apply-reset", help="Run guarded Alembic upgrade head.")
+    reset = subparsers.add_parser("apply-reset", help="Run guarded Alembic upgrade 126.")
     reset.add_argument("--preflight-report", required=True)
     reset.add_argument("--suppression-manifest", required=True)
     reset.add_argument("--stopped-writer-manifest", required=True)

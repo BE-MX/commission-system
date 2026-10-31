@@ -14,6 +14,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.trade.service import local_mode
 from app.invoice.models import CustomProduct, InvoiceCustomerOverlay
 from app.invoice.price_service import make_match_key, normalize_color, normalize_length, normalize_text
 
@@ -247,6 +248,9 @@ def get_filter_options(
     不重复查询。
     """
     filters = {"model": model, "color": color, "size": size, "unit": unit}
+    if local_mode():
+        from app.catalog.query_service import filter_options
+        return filter_options(db, **filters)
     columns = _table_columns(db, "okki_products")
     result: dict[str, list[str]] = {}
     for target, key in (("model", "models"), ("color", "colors"), ("size", "sizes"), ("unit", "units")):
@@ -288,6 +292,15 @@ def match_product(
     size: str,
     unit: str,
 ) -> dict:
+    from app.trade.service import consumer_phase
+    if consumer_phase(db) == "local_only":
+        from app.catalog.query_service import match_product as native_match
+        return native_match(db, model=model, color=color, size=size, unit=unit)
+    return match_legacy_product(db, model=model, color=color, size=size, unit=unit)
+
+
+def match_legacy_product(db: Session, *, model: str, color: str, size: str, unit: str) -> dict:
+    """Explicit mirror catalog read, independent of the process transaction mode."""
     schema = _schema()
     product_columns = _table_columns(db, "okki_products")
     sku_columns = _table_columns(db, "okki_product_skus")
@@ -433,6 +446,9 @@ def _disable_filter(table_name: str, columns: set[str], alias: str | None = None
 
 def get_entry_options(db: Session) -> dict[str, list[str]]:
     """Candidate values for free-form production entry: okki UNION custom."""
+    if local_mode():
+        from app.catalog.query_service import entry_options
+        return entry_options(db)
     schema = _schema()
     product_columns = _table_columns(db, "okki_products")
     name_col = "product_name" if "product_name" in product_columns else "name"

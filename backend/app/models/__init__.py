@@ -1,4 +1,11 @@
 """数据模型汇总导入"""
+from app.catalog.models import CatalogProduct, CatalogSku, CatalogExternalIdentity  # noqa: F401
+from app.commerce_migration.models import MigrationBatch, MigrationRecord  # noqa: F401
+from app.finance.models import FinanceBook, Currency, BankAccount, FinanceEvent  # noqa: F401
+from app.commission.models import CommissionBasis, CommissionEventProjection  # noqa: F401
+from app.trade.models import TradeProjection, SalesRoster  # noqa: F401
+from app.production.local_models import ProductionEvent, ProductionSupply, ProductionMaterial  # noqa: F401
+from app.inventory.models import Warehouse, StockBalance, StockDocument, StockLedger, StockReservation  # noqa: F401
 from app.ai_gateway.models import GatewayApp, GatewayAppPreset, GatewayRequest  # noqa: F401
 from app.announcement.models import AnnouncementConfig, Announcement, AnnouncementMeta, Publication, Delivery, WeeklyReport  # noqa: F401
 
@@ -315,3 +322,5 @@ from app.portal import models as _order_portal_models  # noqa: F401
 # System navigation preferences must be visible to Alembic target_metadata.
 from app.system import models as _system_models  # noqa: F401
 from app.inkboard import models as _inkboard_models  # noqa: F401
+from app.commerce_transition import models as _commerce_transition_models  # noqa: F401
+from app.commerce_shadow import models as _commerce_shadow_models  # noqa: F401

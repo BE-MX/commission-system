@@ -6,7 +6,17 @@ from app.invoice import okki_client
 logger = logging.getLogger(__name__)
 
 
-def request(token, kind, identity, *, remove=False):
+def request(token, kind, identity, *, remove=False, db=None, ticket=None):
+    if remove:
+        from app.invoice import legacy_sending
+        if db is None or ticket is None:
+            raise ValueError('删除必须由当前持久发送执行器提供办理权凭证')
+        return legacy_sending.invoke_removal(db,ticket,kind,identity,
+            lambda:_request_raw(token,kind,identity,remove=True))
+    return _request_raw(token,kind,identity)
+
+
+def _request_raw(token, kind, identity, *, remove=False):
     key = {"order": "order_id", "receipt": "cash_collection_id"}[kind]
     path = f"/v1/invoices/{kind}/{'remove' if remove else 'info'}"
     try:

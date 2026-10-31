@@ -85,10 +85,12 @@ def create_financial(db, body, user):
 
 
 @pytest.fixture(autouse=True)
-def financial_authority_only(monkeypatch):
+def financial_authority_only(db, monkeypatch):
     # SQLite covers the original financial algorithm. Current employee/fence
     # authentication is exercised separately by the actual main/JWT/MySQL suite.
     from app.receipt import access, create_service
+    from tests.authority_helpers import seed_authority
+    seed_authority(db, 1, 'receipt:read', 'receipt:write')
     def authorized(db, body, user):
         if "super_admin" not in user.get("roles", []) and "receipt:write" not in user.get("permissions", []):
             raise HTTPException(403, "Financial fixture requires receipt write")
@@ -509,6 +511,12 @@ def test_stock_router_gates_before_inventory_or_remote_side_effect(db, order, mo
     from app.invoice import router
     monkeypatch.setattr(router.semifinished_invoice_service, "prepare_invoice_sync", lambda *a: pytest.fail("inventory touched"))
     monkeypatch.setattr(router.xiaoman_service, "sync_invoice", lambda *a, **k: pytest.fail("remote touched"))
+    from app.invoice import order_sync_execution
+    def current(db, identity, user):
+        try:invoice_link.preflight(db, db.get(Invoice, identity), int(user.get('id') or user['sub']))
+        except ValueError as error:raise HTTPException(409,str(error)) from error
+        pytest.fail('Missing proof passed the current command boundary')
+    monkeypatch.setattr(order_sync_execution,'run',current)
     with api_client(db, {**USER, "permissions": ["invoice:sync"]}) as client:
         response = client.post(f"/api/invoice/invoices/{order.id}/sync")
         assert response.status_code == 409 and "截图" in response.json()["detail"]
@@ -520,12 +528,19 @@ def test_stock_router_only_complete_success_marks_ready(db, order, monkeypatch, 
     order.xiaoman_order_id = None; order.sync_status = "not_synced"
     invoice_link.save_draft(db, order, ReceiptDraft(**fields(db).model_dump(exclude={"bank_charge"})), 1, new=True)
     db.commit()
-    def push(db, invoice, **kwargs):
-        invoice_link.ensure_attempt(db, invoice, kwargs["receipt_sync_token"])
+    from app.invoice import order_sync_execution
+    def push(db, identity, user):
+        invoice=db.get(Invoice,identity)
+        token=invoice_link.arm(db,invoice,int(user.get('id') or user['sub']))
+        db.commit()
+        invoice_link.ensure_attempt(db, invoice, token)
         invoice.xiaoman_order_id, invoice.sync_status = "2001", "synced"
         db.commit()
-        return {"ok": True}
-    monkeypatch.setattr(router.xiaoman_service, "sync_invoice", push)
+        if not finalize_failure:invoice_link.mark_success(db,invoice,token)
+        invoice_link.finish_attempt(db,invoice,token)
+        db.commit()
+        return {"ok": not finalize_failure}
+    monkeypatch.setattr(order_sync_execution, "run", push)
     if finalize_failure:
         def fail(*args): raise RuntimeError("test finalize failed")
         monkeypatch.setattr(router.semifinished_invoice_service, "finalize_invoice_sync", fail)

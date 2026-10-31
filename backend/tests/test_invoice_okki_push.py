@@ -8,6 +8,13 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from tests.current_order_sync_helpers import install_transport, sync_current
+
+
+@pytest.fixture(autouse=True)
+def current_order_transport(db, monkeypatch):
+    install_transport(db, monkeypatch)
+
 from sqlalchemy import text
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
@@ -101,6 +108,8 @@ def _stock_item(**overrides):
     )
     for key, value in overrides.items():
         setattr(item, key, value)
+    if "total_price" not in overrides:
+        item.total_price = item.price_per_piece * item.quantity
     return item
 
 
@@ -229,16 +238,21 @@ def test_provider_zero_price_rejection_preserves_local_price_and_audit(db, monke
         raise okki_client.OkkiApiError("OKKI rejects unit_price=0")
 
     monkeypatch.setattr(okki_client, "push_order", reject)
-    result = xiaoman_service.sync_invoice(db, invoice, operator_id=7)
+    result = sync_current(db, invoice, operator_id=7)
     assert result["ok"] is False
     assert len(calls) == 1
     assert invoice.items[0].price_per_piece == 0
     assert invoice.sync_status == "sync_failed"
     assert invoice.xiaoman_order_id is None
-    log = db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id).one()
+    log = db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id, action="create").one()
     assert log.success == 0
-    assert json.loads(log.request_digest)["product_list"][0]["unit_price"] == 0
-    assert "unit_price=0" in log.error_message
+    from app.portal.event_models import AuditEvent
+    from app.invoice import order_push_facts
+    attempt = db.query(AuditEvent).filter_by(action=order_push_facts.START).one()
+    assert attempt.safe_diff_json['command_input']['original_payload']['product_list'][0]['unit_price'] == 0
+    observation = order_push_facts.observations(db, invoice.id, attempt.trace_id)[0]
+    assert observation.safe_diff_json['result_class'] == 'rejected'
+    assert log.error_message == invoice.sync_error
 
 
 
@@ -428,12 +442,14 @@ def test_sync_blocks_stale_accessory_identity_before_calling_okki(
 
     monkeypatch.setattr(okki_client, "push_order", unexpected_push)
 
-    result = xiaoman_service.sync_invoice(db, invoice, operator_id=1)
-
-    assert result["ok"] is False
+    from fastapi import HTTPException
+    _payload, _binding, issues = xiaoman_service.build_push_payload(db, invoice)
+    with pytest.raises(HTTPException) as blocked:
+        sync_current(db, invoice, operator_id=1)
+    assert blocked.value.status_code == 409
     assert called["value"] is False
-    assert result["issues"][0]["field"] in {"items[1].product_id", "items[1].sku_id"}
-    assert "重新选择" in result["issues"][0]["message"]
+    assert issues[0]["field"] in {"items[1].product_id", "items[1].sku_id"}
+    assert "重新选择" in issues[0]["message"]
 
 
 def test_accessory_edit_reuses_unique_id_and_protects_duplicate_fresh_sku(db):
@@ -688,8 +704,8 @@ def test_sync_invoice_success_state_and_unique_id_writeback(db, monkeypatch, no_
         }
 
     monkeypatch.setattr(okki_client, "push_order", fake_push)
-    result = xiaoman_service.sync_invoice(
-        db, invoice, operator_id=7, inventory_operation_key="inventory-batch-1",
+    result = sync_current(
+        db, invoice, operator_id=7,
     )
 
     assert result["ok"] is True
@@ -707,10 +723,14 @@ def test_sync_invoice_success_state_and_unique_id_writeback(db, monkeypatch, no_
     assert invoice.items[1].xiaoman_unique_id == "222"
     assert invoice.items[2].xiaoman_unique_id == "222"
 
-    log = db.query(InvoiceSyncLog).filter(InvoiceSyncLog.invoice_id == invoice.id).one()
+    log = db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id, action="create").one()
     assert log.action == "create" and log.success == 1 and log.operator_id == 7
-    assert log.inventory_operation_key == "inventory-batch-1"
-    assert json.loads(log.request_digest)["company_id"] == 123456
+    assert log.inventory_operation_key is None  # No semifinished allocation was requested.
+    from app.portal.event_models import AuditEvent
+    from app.invoice import order_push_facts
+    attempt = db.query(AuditEvent).filter_by(action=order_push_facts.START).one()
+    assert attempt.safe_diff_json['command_input']['original_payload']['company_id'] == 123456
+    assert json.loads(log.response_body)['attempt_reference'] == attempt.trace_id
 
 
 def test_ark_presale_create_push_records_exact_okki_order(db, monkeypatch, presale_for_push):
@@ -724,7 +744,7 @@ def test_ark_presale_create_push_records_exact_okki_order(db, monkeypatch, presa
         ]}
 
     monkeypatch.setattr(okki_client, "push_order", accepted)
-    result = xiaoman_service.sync_invoice(db, presale_for_push, operator_id=1)
+    result = sync_current(db, presale_for_push, operator_id=1)
 
     assert result["ok"] is True, result
     assert len(captured) == 1
@@ -757,14 +777,17 @@ def test_ark_presale_push_failure_preserves_remote_identity(
         return response
 
     monkeypatch.setattr(okki_client, "push_order", push)
-    result = xiaoman_service.sync_invoice(db, presale_for_push, operator_id=1)
+    result = sync_current(db, presale_for_push, operator_id=1)
 
     assert result["ok"] is False
     assert presale_for_push.sync_status == status
     assert bool(presale_for_push.xiaoman_order_id) is has_order_id
     if status == "sync_uncertain":
         monkeypatch.setattr(okki_client, "push_order", lambda *_a, **_k: pytest.fail("must not resend"))
-        assert xiaoman_service.sync_invoice(db, presale_for_push, operator_id=1)["ok"] is False
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as blocked:
+            sync_current(db, presale_for_push, operator_id=1)
+        assert blocked.value.status_code == 409
 
 
 def test_sync_invoice_failure_state_and_log(db, monkeypatch, no_reconcile):
@@ -778,18 +801,20 @@ def test_sync_invoice_failure_state_and_log(db, monkeypatch, no_reconcile):
         raise okki_client.OkkiApiError("OKKI 订单推送失败：boom")
 
     monkeypatch.setattr(okki_client, "push_order", fake_push)
-    result = xiaoman_service.sync_invoice(
-        db, invoice, operator_id=7, inventory_operation_key="inventory-batch-1",
+    result = sync_current(
+        db, invoice, operator_id=7,
     )
 
     assert result["ok"] is False
     assert invoice.sync_status == "sync_failed"
     assert invoice.status == "sync_failed"
-    assert "boom" in invoice.sync_error
+    assert invoice.sync_error == result['message'] and '明确拒绝' in invoice.sync_error
     assert invoice.xiaoman_order_id is None
 
-    log = db.query(InvoiceSyncLog).filter(InvoiceSyncLog.invoice_id == invoice.id).one()
-    assert log.success == 0 and "boom" in log.error_message
+    log = db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id, action='create').one()
+    assert log.success == 0 and log.error_message == invoice.sync_error
+    fact = db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id, action='push_fact').one()
+    assert json.loads(fact.response_body)['result_class'] == 'rejected'
 
 
 def test_sync_invoice_preflight_issues_do_not_mark_failed(db, no_reconcile):
@@ -798,9 +823,11 @@ def test_sync_invoice_preflight_issues_do_not_mark_failed(db, no_reconcile):
     invoice.items.append(_stock_item())
     db.flush()
 
-    result = xiaoman_service.sync_invoice(db, invoice)
-
-    assert result["ok"] is False and result["issues"]
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as blocked:
+        sync_current(db, invoice)
+    assert blocked.value.status_code == 409
+    db.rollback()
     assert invoice.sync_status == "not_synced"
     assert db.query(InvoiceSyncLog).filter(InvoiceSyncLog.invoice_id == invoice.id).count() == 0
 
@@ -814,9 +841,9 @@ def test_sync_create_without_order_id_marks_failed(db, monkeypatch, no_reconcile
     db.flush()
 
     monkeypatch.setattr(okki_client, "push_order", lambda db_, payload, **kwargs: {})
-    result = xiaoman_service.sync_invoice(db, invoice)
+    result = sync_current(db, invoice)
 
-    assert result["ok"] is False and "order_id" in result["message"]
+    assert result["ok"] is False and '待核对' in result["message"]
     assert invoice.sync_status == "sync_uncertain"
     assert invoice.xiaoman_order_id is None
     service.mark_ready_if_valid(invoice)
@@ -827,8 +854,10 @@ def test_sync_create_without_order_id_marks_failed(db, monkeypatch, no_reconcile
         "push_order",
         lambda *_args, **_kwargs: pytest.fail("待核对状态不应再次调用 OKKI"),
     )
-    retry = xiaoman_service.sync_invoice(db, invoice)
-    assert retry["ok"] is False and "禁止重推" in retry["message"]
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as blocked:
+        sync_current(db, invoice)
+    assert blocked.value.status_code == 409
 
 
 def test_sync_create_transport_uncertainty_blocks_retry(db, monkeypatch, no_reconcile):
@@ -845,7 +874,7 @@ def test_sync_create_transport_uncertainty_blocks_retry(db, monkeypatch, no_reco
             okki_client.OkkiOutcomeUncertainError("请求超时，结果不确定")
         ),
     )
-    result = xiaoman_service.sync_invoice(db, invoice)
+    result = sync_current(db, invoice)
 
     assert result["ok"] is False
     assert invoice.sync_status == "sync_uncertain"
@@ -870,20 +899,25 @@ def test_sync_partial_response_stays_uncertain_and_blocks_resend(db, monkeypatch
         }
 
     monkeypatch.setattr(okki_client, "push_order", fake_push)
-    result = xiaoman_service.sync_invoice(
-        db, invoice, operator_id=7, inventory_operation_key="inventory-batch-1",
+    result = sync_current(
+        db, invoice, operator_id=7,
     )
 
-    assert result["ok"] is False and "禁止直接重推" in result["message"]
+    assert result["ok"] is False and '待核对' in result["message"]
     assert result["okki_accepted"] is True
     assert invoice.xiaoman_order_id == "424242"
     assert invoice.sync_status == "sync_uncertain"
     assert invoice.items[0].xiaoman_unique_id is None
     monkeypatch.setattr(okki_client, "push_order", lambda *_a, **_k: pytest.fail("must not resend"))
-    assert not xiaoman_service.sync_invoice(db, invoice)["ok"]
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as blocked:
+        sync_current(db, invoice)
+    assert blocked.value.status_code == 409
     logs = db.query(InvoiceSyncLog).filter(InvoiceSyncLog.invoice_id == invoice.id).all()
-    assert [log.success for log in logs] == [1, 0]  # 受理日志 + 缺行告警日志
-    assert logs[0].inventory_operation_key == "inventory-batch-1"
+    assert [(log.action, log.success) for log in logs] == [('push_fact', 0), ('create', 1)]
+    assert json.loads(logs[0].response_body)['result_class'] == 'accepted'
+    assert json.loads(logs[1].response_body)['order_id'] == '424242'
+    assert all(log.inventory_operation_key is None for log in logs)
 
 
 def test_edit_push_generic_rows_merge_and_stock_duplicates_blocked(db):

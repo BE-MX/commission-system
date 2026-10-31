@@ -10,9 +10,9 @@ from app.core.list_sort import apply_list_sort
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
-from app.semifinished.inventory_service import lock_balance, qty, write_ledger
+from app.semifinished.inventory_service import claim_ledger, lock_balance, qty
 from app.semifinished.models import (
-    InventoryLedger, SemifinishedMaterial, SemifinishedOrder, SemifinishedOrderItem,
+    SemifinishedMaterial, SemifinishedOrder, SemifinishedOrderItem,
 )
 
 
@@ -186,73 +186,49 @@ def receive_item(
     operator_id: int,
     remark: str | None,
 ) -> dict:
+    with db.begin_nested():
+        result = _receive_item(db, item_id=item_id, quantity_grams=quantity_grams,
+            idempotency_key=idempotency_key, operator_id=operator_id, remark=remark)
+    db.commit()
+    return result
+
+
+def _receive_item(db, *, item_id, quantity_grams, idempotency_key, operator_id, remark):
     amount = qty(quantity_grams)
     order_id = db.query(SemifinishedOrderItem.order_id).filter(SemifinishedOrderItem.id == item_id).scalar()
     if order_id is None:
         raise ValueError("半成品订单明细不存在")
-    # 同一订单的收货必须先锁订单头，再按固定顺序锁全部明细；否则两条明细
-    # 并发完成时，各事务可能基于旧快照都把订单留在 partial。
-    order = (
-        db.query(SemifinishedOrder)
-        .filter(SemifinishedOrder.id == order_id)
-        .with_for_update()
-        .one()
-    )
-    items = (
-        db.query(SemifinishedOrderItem)
-        .filter(SemifinishedOrderItem.order_id == order_id)
-        .order_by(SemifinishedOrderItem.id)
-        .populate_existing()
-        .with_for_update()
-        .all()
-    )
+    # Header -> all lines -> balance -> insert-first command identity. A missing
+    # unique-key gap must not be held while waiting for the material balance.
+    order = db.query(SemifinishedOrder).filter(SemifinishedOrder.id == order_id)\
+        .populate_existing().with_for_update().one()
+    items = db.query(SemifinishedOrderItem).filter(SemifinishedOrderItem.order_id == order_id)\
+        .order_by(SemifinishedOrderItem.id).populate_existing().with_for_update().all()
     item = next((row for row in items if row.id == item_id), None)
     if item is None:
         raise ValueError("半成品订单明细不存在")
-    existing = (
-        db.query(InventoryLedger)
-        .filter(InventoryLedger.idempotency_key == idempotency_key)
-        .with_for_update()
-        .one_or_none()
-    )
-    if existing:
-        if not (
-            existing.movement_type == "inbound"
-            and existing.business_type == "semifinished_order"
-            and existing.business_line_id == item_id
-            and qty(existing.quantity_grams) == amount
-        ):
-            raise ValueError("幂等键已被其他库存操作使用")
-        return {"ledger_id": existing.id, "replayed": True}
+    balance = lock_balance(db, item.material_id)
+    after = qty(balance.on_hand_grams) + amount
+    entry, fresh = claim_ledger(db, material_id=item.material_id, movement_type='inbound', quantity_grams=amount,
+        on_hand_after=balance.on_hand_grams, reserved_after=balance.reserved_grams, business_type='semifinished_order',
+        business_id=order.id, business_line_id=item.id, idempotency_key=idempotency_key,
+        operator_id=operator_id, remark=remark)
+    if not fresh:
+        return {'ledger_id': entry.id, 'replayed': True}
     if order.status not in ACTIVE_STATUSES:
         raise ValueError("当前订单状态不允许入库")
     if amount <= 0 or qty(item.received_qty_grams) + amount > qty(item.order_qty_grams):
         raise ValueError("入库数量必须大于0且不能超过剩余数量")
-    balance = lock_balance(db, item.material_id)
+    if after > Decimal('99999999999.999'):
+        raise ValueError('入库后实存超过克数精度范围')
     item.received_qty_grams = qty(item.received_qty_grams) + amount
-    balance.on_hand_grams = qty(balance.on_hand_grams) + amount
+    balance.on_hand_grams = after
+    entry.on_hand_after = after
     balance.version += 1
     _refresh_order_status(order, items)
-    entry = write_ledger(
-        db,
-        balance=balance,
-        movement_type="inbound",
-        quantity_grams=amount,
-        business_type="semifinished_order",
-        business_id=order.id,
-        business_line_id=item.id,
-        idempotency_key=idempotency_key,
-        operator_id=operator_id,
-        remark=remark,
-    )
-    db.commit()
-    return {
-        "ledger_id": entry.id,
-        "replayed": False,
-        "order_status": order.status,
-        "received_qty_grams": item.received_qty_grams,
-        "remaining_qty_grams": qty(item.order_qty_grams - item.received_qty_grams),
-    }
+    return dict(ledger_id=entry.id, replayed=False, order_status=order.status,
+        received_qty_grams=item.received_qty_grams,
+        remaining_qty_grams=qty(item.order_qty_grams - item.received_qty_grams))
 
 
 def terminate_order(db: Session, order_id: int) -> dict:

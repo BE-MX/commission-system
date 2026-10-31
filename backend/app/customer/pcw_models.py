@@ -222,7 +222,7 @@ class OrderAnalysisBatchMap(Base):
     order_id = Column(BigInteger, ForeignKey("ark_customer_orders.id", name="fk_customer_order_batch_order", ondelete="RESTRICT", onupdate="RESTRICT"), nullable=False, index=True, comment="方舟客户订单ID")
     order_item_id = Column(BigInteger, ForeignKey("ark_customer_order_items.id", name="fk_customer_order_batch_item", ondelete="RESTRICT", onupdate="RESTRICT"), nullable=True, comment="方舟订单明细ID；整单级映射允许为空")
     purchase_batch_key = Column(String(128), nullable=False, index=True, comment="商业采购批次稳定键；排除样品、取消、退回失效与拆单重复")
-    product_family = Column(String(128), nullable=False, comment="映射时确定的产品族")
+    product_family = Column(String(256), nullable=False, comment="映射时确定的产品族")
     mapping_version = Column(String(32), nullable=False, comment="批次归并规则版本；版本更新整体重映射")
     provenance = Column(String(32), nullable=False, comment="批次来源：explicit=真实批次证据，same_day_merge=同客户同业务日同族低置信归并")
     quality_status = Column(String(24), nullable=False, default="normal", comment="映射质量：normal、low_confidence")
@@ -238,7 +238,7 @@ class ReorderWindow(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="复购窗口ID")
     customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id", name="fk_customer_reorder_window_customer", ondelete="RESTRICT", onupdate="RESTRICT"), nullable=False, index=True, comment="窗口所属存储客户ID")
-    product_family = Column(String(128), nullable=False, index=True, comment="窗口产品族")
+    product_family = Column(String(256), nullable=False, index=True, comment="窗口产品族")
     anchor_batch_key = Column(String(128), nullable=False, comment="窗口锚定的最近商业采购批次键")
     occurrence_key = Column(String(160), nullable=False, comment="窗口稳定实例键：产品族+锚定批次+窗口实例；规则版本更新同一窗口不重复建")
     metric_version = Column(String(32), nullable=False, default="commercial_cycle_v1", comment="周期口径版本；旧purchase_cycle_days指标语义不变")

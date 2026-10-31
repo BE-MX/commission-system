@@ -67,5 +67,9 @@ def read(token, invoice_id):
     return detail if active else None
 
 
-def remove(token, invoice_id):
-    return _request(token, invoice_id, remove=True)
+def remove(token, invoice_id, *, db=None, ticket=None):
+    from app.invoice import legacy_sending
+    if db is None or ticket is None:
+        raise DeleteRemoteError('删除必须使用当前持久发送执行器')
+    return legacy_sending.invoke_removal(db,ticket,'outbound',invoice_id,
+        lambda:_request(token,invoice_id,remove=True))

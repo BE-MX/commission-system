@@ -31,6 +31,8 @@ def get_order(db, identity, user, *, lock=False, writable=True):
     if not invoice:
         raise HTTPException(404, "订单不存在")
     access.ensure_invoice(db, invoice, user)
+    if invoice.transaction_mode == "local":
+        raise ValueError("本地订单请使用本地发货结算入口")
     if invoice.order_type != "presale":
         raise ValueError("仅预售单支持分批发货结算")
     if writable:

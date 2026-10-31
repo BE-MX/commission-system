@@ -8,7 +8,7 @@ const source = fs.readFileSync(new URL('../src/views/shipping/composables/useIns
 function setup(downloadInspectionPdf, listInspectionRecords = async () => ({ data: { items: [], total: 0 } })) {
   let fetchPage
   const pushes = [], downloads = [], route = { fullPath: '/shipping/inspections?pdf=42&version=3', query: {pdf:'42',version:'3'} }
-  const ctx=vm.createContext({ ref: value=>({value}), reactive: value=>value, computed: fn=>({get value(){return fn()}}),
+  const ctx=vm.createContext({ ref: value=>({value}), reactive: value=>value, computed: fn=>({get value(){return fn()}}), watch:()=>{},
     useRoute:()=>route, useRouter:()=>({push:async value=>pushes.push(value)}), useListPage:fn=>{fetchPage=fn;return {}}, listInspectionRecords,
     downloadInspectionPdf, downloadBlob: value=>downloads.push(value), Blob,
   })
@@ -42,4 +42,6 @@ test('query forwards independent filters and pagination without changing date bo
   assert.equal(JSON.stringify(calls[0]),JSON.stringify({page:2,page_size:20,keyword:'CK001',submitted_by_name:'张三',salesperson_name:'Eva',date_from:'2026-09-16',date_to:'2026-09-17'}))
   await fetchPage({page:1,page_size:20,keyword:'',submittedByName:'',salespersonName:'',dateFrom:'',dateTo:''})
   assert.equal(JSON.stringify(calls[1]),JSON.stringify({page:1,page_size:20}))
+  await fetchPage({page:1,page_size:20,transaction_mode:'local',orderId:'12'})
+  assert.equal(JSON.stringify(calls[2]),JSON.stringify({page:1,page_size:20,transaction_mode:'local',order_id:'12'}))
 })

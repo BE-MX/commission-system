@@ -73,7 +73,7 @@ onMounted(load)
     <div class="search"><el-input v-model="searchForm.keyword" aria-label="搜索图片素材" placeholder="按素材文件名搜索" :disabled="locked" @keyup.enter="handleSearch" /><GlassButton :disabled="locked || loading" @click="handleSearch">搜索</GlassButton></div>
     <el-table v-loading="loading" :data="list" border class="list-table" v-sticky-scrollbar><template #empty><el-empty :image-size="72" description="没有符合公开展示条件的图片素材" /></template>
       <el-table-column prop="name" label="素材文件名" min-width="260" /><el-table-column prop="format" label="格式" min-width="80" />
-      <el-table-column label="操作" min-width="100" fixed="right" class-name="table-action-column"><template #default="{ row }"><GlassButton v-permission="'asset:admin'" variant="link" :disabled="locked || previewing" @click="choose(row)">选择并预览</GlassButton></template></el-table-column>
+      <el-table-column label="操作" min-width="100" fixed="right" class-name="table-action-column"><template #default="{ row }"><GlassButton v-permission="'asset:admin'" variant="link" :disabled="locked || previewing" @click="choose(row)" left-icon="Edit">选择并预览</GlassButton></template></el-table-column>
     </el-table>
     <el-pagination :current-page="page" :page-size="pageSize" :total="total" :disabled="locked || loading" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />
     <div v-loading="previewing" class="image-preview"><img v-if="preview" :src="preview" alt="待批准的商品图片" /><p v-else>{{ selection === null ? '本次将移除商品图片。' : '请选择图片并核对展示内容。' }}</p></div>

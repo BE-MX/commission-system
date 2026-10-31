@@ -14,6 +14,7 @@ from app.invoice.models import Invoice, InvoiceSyncLog, OkkiOutboundTask
 from app.receipt.models import Receipt, ReceiptLog
 from app.receipt import remote, receipt_index, balance, remote_change_service as changes
 from app.receipt.schemas import RemoteChange
+from tests.authority_helpers import seed_authority
 
 
 @pytest.fixture
@@ -27,7 +28,7 @@ def order(db):
 def no_remote(monkeypatch):
     def forbidden(*a,**kw): raise AssertionError("Unexpected network")
     monkeypatch.setattr(lifecycle_remote,"read",forbidden)
-    monkeypatch.setattr(lifecycle_remote,"request",forbidden)
+    monkeypatch.setattr(lifecycle_remote,"_request_raw",forbidden)
     monkeypatch.setattr(okki_client,"ensure_access_token",lambda *a,**kw:"test")
     monkeypatch.setattr(remote,"order_receipts",lambda *a:[])
     monkeypatch.setattr(receipt_index,"verified_rows",lambda *a:[])
@@ -42,6 +43,7 @@ def receipt(db,order):
 
 
 def start(db,order):
+    seed_authority(db,1,"invoice:admin","invoice:delete","invoice:read")
     return cancel.begin(db,order,"客户确认取消订单，开始核对原单",1,linked_sync_service.edit_version(order))
 
 
@@ -67,7 +69,7 @@ def body(row,proof):
 @pytest.mark.parametrize("status",["running","uncertain"])
 def test_edit_and_sync_block_active_outbound(db,order,status):
     db.add(OkkiOutboundTask(invoice_id=order.id,order_id="123",status=status));db.commit()
-    with pytest.raises(ValueError,match="出库"): invoices.update_invoice(db,order,NS(),1)
+    with pytest.raises(ValueError,match="出库"): invoices.update_invoice(db,order,NS(transaction_route=None),1)
     with pytest.raises(sync_coordinator.BeforeSendError) as error: sync_coordinator.synchronize(db,order,1)
     assert error.value.status_code==409
 
@@ -111,7 +113,7 @@ def test_cancel_delete_intent_idempotency(db,order,monkeypatch):
             db.refresh(order);assert order.cancellation["status"]=="deleting"
             calls.append(identity);return True
         return None
-    monkeypatch.setattr(lifecycle_remote,"request",request)
+    monkeypatch.setattr(lifecycle_remote,"_request_raw",request)
     assert cancel.remove_remote(db,order,1)["status"]=="remote_deleted"
     assert cancel.remove_remote(db,order,1)["status"]=="remote_deleted"
     assert calls==["123"] and order.xiaoman_order_id=="123" and order.status=="cancelled"
@@ -121,8 +123,9 @@ def test_cancel_delete_intent_idempotency(db,order,monkeypatch):
 def test_cancel_timeout_never_replays(db,order,monkeypatch):
     live_order(monkeypatch);start(db,order);calls=[]
     def request(*a,**kw):
-        calls.append(1);raise okki_client.OkkiOutcomeUncertainError("timeout")
-    monkeypatch.setattr(lifecycle_remote,"request",request)
+        if kw.get('remove'):calls.append(1)
+        raise okki_client.OkkiOutcomeUncertainError("timeout")
+    monkeypatch.setattr(lifecycle_remote,"_request_raw",request)
     assert cancel.remove_remote(db,order,1)["status"]=="uncertain"
     assert cancel.remove_remote(db,order,1)["status"]=="uncertain"
     with pytest.raises(ValueError): cancel.abort(db,order,1,"cannot abort")
@@ -197,9 +200,11 @@ def test_admin_and_scope_enforced(db,order,monkeypatch):
 @pytest.mark.parametrize("clock",["2026-09-20T23:59:59","2026-09-21T00:00:01"])
 def test_cancel_lease_beijing_midnight(db,order,monkeypatch,clock):
     now=datetime.fromisoformat(clock);monkeypatch.setattr(cancel,"beijing_now",lambda:now)
+    from app.invoice import cancellation_execution
+    monkeypatch.setattr(cancellation_execution,'beijing_now',lambda:now)
     live_order(monkeypatch);start(db,order)
     def timeout(*a,**kw): raise okki_client.OkkiOutcomeUncertainError("timeout")
-    monkeypatch.setattr(lifecycle_remote,"request",timeout)
+    monkeypatch.setattr(lifecycle_remote,"_request_raw",timeout)
     cancel.remove_remote(db,order,1)
     assert datetime.fromisoformat(order.cancellation["lease_until"])==now+timedelta(minutes=5)
 

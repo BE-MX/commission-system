@@ -92,6 +92,9 @@ def _ensure_invoice_visible(db: Session, invoice, current_user) -> None:
     user_id = _user_id(current_user)
     if user_id is None or not delegation_service.can_access_invoice(db, user_id, invoice):
         raise HTTPException(404, "发票不存在")
+    from app.invoice.native_visibility import local_invoice_scope
+    if not db.query(Invoice.id).filter(Invoice.id == invoice.id, local_invoice_scope(db, current_user)).first():
+        raise HTTPException(404, '发票不存在')
 
 
 # ── customers / products ─────────────────────────────────────
@@ -465,8 +468,10 @@ def _is_accessory_price_duplicate(exc: IntegrityError) -> bool:
     args = getattr(original, "args", ())
     message = " ".join(str(part) for part in args) or str(original)
     if args and args[0] == 1062:
-        return "uq_ark_std_accessory_sku" in message
+        return "uq_ark_std_accessory_sku" in message or "uq_std_price_local_sku" in message
     sqlite_message = str(original).lower()
+    if "unique constraint failed: ark_std_prices.local_sku_id" in sqlite_message:
+        return True
     return "unique constraint failed" in sqlite_message and all(
         column in sqlite_message
         for column in (
@@ -788,6 +793,7 @@ def list_invoices(
         db, sort_field=sort_field, sort_order=sort_order, page=page, page_size=page_size, keyword=keyword, order_id=order_id, status=status, order_type=order_type,
         created_by=created_by if _can_read_all(current_user) else None,
         viewer_user_id=None if _can_read_all(current_user) else viewer_user_id,
+        user=current_user,
     )
     from app.invoice.document_anomalies import annotate
     annotate(db, current_user, items)
@@ -811,7 +817,7 @@ def invoice_summary(
     if not can_read_all and viewer_user_id is None:
         raise HTTPException(403, "无法确认用户身份，禁止访问发票统计")
     return ok(service.summarize_invoices(
-        db, date_from=date_from, date_to=date_to, viewer_user_id=viewer_user_id,
+        db, date_from=date_from, date_to=date_to, viewer_user_id=viewer_user_id, user=current_user,
     ))
 
 
@@ -889,7 +895,7 @@ def create_invoice(
     )
     db.refresh(invoice)
     invoice = service.get_invoice(db, invoice.id)
-    return ok(service.serialize_detail(invoice, db))
+    return ok(service.serialize_detail(invoice, db, current_user))
 
 
 @router.post("/import/screenshot/create", summary="Create invoice from a signed screenshot preview", status_code=201)
@@ -912,7 +918,7 @@ def create_invoice_from_screenshot(
     )
     db.refresh(invoice)
     invoice = service.get_invoice(db, invoice.id)
-    return ok(service.serialize_detail(invoice, db))
+    return ok(service.serialize_detail(invoice, db, current_user))
 
 
 @router.get("/invoices/{invoice_id}", summary="Invoice detail")
@@ -926,7 +932,7 @@ def get_invoice(
     if not invoice:
         raise HTTPException(404, "发票不存在")
     _ensure_invoice_visible(db, invoice, current_user)
-    return ok(service.serialize_detail(invoice, db))
+    return ok(service.serialize_detail(invoice, db, current_user))
 
 
 @router.put("/invoices/{invoice_id}", summary="Update invoice")
@@ -942,7 +948,7 @@ def update_invoice(
         db, lambda: service.update_invoice(db, invoice, body, user_id=_user_id(current_user), receipt_rows=receipt_rows),
     )
     invoice = service.get_invoice(db, invoice.id)
-    return ok(service.serialize_detail(invoice, db))
+    return ok(service.serialize_detail(invoice, db, current_user))
 
 
 @router.delete("/invoices/{invoice_id}", summary="Delete invoice")
@@ -954,8 +960,9 @@ def delete_invoice(
     from app.invoice import edit_authority
     invoice, current_user = edit_authority.prepare_local(db, invoice_id, current_user, "invoice:delete")
     try:
-        service.delete_invoice(db, invoice)
+        service.delete_invoice(db, invoice, actor_id=_user_id(current_user))
     except ValueError as exc:
+        db.rollback()
         raise HTTPException(400, str(exc))
     db.commit()
     return ok(message="已删除")
@@ -984,23 +991,11 @@ def sync_invoice(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:sync")),
 ):
-    from app.portal.authority import get_settings
-    if get_settings().PORTAL_ENABLED:
-        from app.invoice import order_sync_execution
-        from fastapi.responses import JSONResponse
-        from fastapi.encoders import jsonable_encoder
-        result = order_sync_execution.run(db, invoice_id, current_user)
-        return JSONResponse(jsonable_encoder(ok(result)), headers={"Cache-Control":"private, no-store"})
-    invoice = service.get_invoice(db, invoice_id, for_update=True)
-    if not invoice:
-        raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(db, invoice, current_user)
-    from app.invoice.sync_coordinator import synchronize
-    result = synchronize(db, invoice, _user_id(current_user))
-    if result.get('ok'):
-        from app.invoice import outbound_followup_service
-        result['outbound_sync'] = outbound_followup_service.safely_run(db, invoice, current_user)
-    return ok(result)
+    from app.invoice import order_sync_execution
+    from fastapi.responses import JSONResponse
+    from fastapi.encoders import jsonable_encoder
+    result = order_sync_execution.run(db, invoice_id, current_user)
+    return JSONResponse(jsonable_encoder(ok(result)), headers={"Cache-Control":"private, no-store"})
 
 
 class ResolveSyncUncertainPayload(BaseModel):
@@ -1021,35 +1016,13 @@ def resolve_sync_uncertain(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:admin")),
 ):
-    from app.portal.authority import get_settings
-    if get_settings().PORTAL_ENABLED:
-        from app.invoice import sync_recovery
-        result = sync_recovery.resolve(db, invoice_id, current_user, resolution=body.resolution,
-            reason=body.reason.strip(), xiaoman_order_id=body.xiaoman_order_id,
-            xiaoman_order_no=body.xiaoman_order_no)
-        from fastapi.responses import JSONResponse
-        from fastapi.encoders import jsonable_encoder
-        return JSONResponse(jsonable_encoder(ok(result)), headers={"Cache-Control":"private, no-store"})
-    invoice = service.get_invoice(db, invoice_id, for_update=True)
-    if not invoice:
-        raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(db, invoice, current_user)
-    try:
-        xiaoman_service.resolve_sync_uncertain(
-            db,
-            invoice,
-            resolution=body.resolution,
-            reason=body.reason,
-            xiaoman_order_no=body.xiaoman_order_no,
-            xiaoman_order_id=body.xiaoman_order_id,
-            operator_id=_user_id(current_user),
-        )
-        db.commit()
-    except ValueError as exc:
-        db.rollback()
-        raise HTTPException(400, str(exc))
-    db.refresh(invoice)
-    return ok(service.serialize_detail(service.get_invoice(db, invoice.id)))
+    from app.invoice import sync_recovery
+    result = sync_recovery.resolve(db, invoice_id, current_user, resolution=body.resolution,
+        reason=body.reason.strip(), xiaoman_order_id=body.xiaoman_order_id,
+        xiaoman_order_no=body.xiaoman_order_no)
+    from fastapi.responses import JSONResponse
+    from fastapi.encoders import jsonable_encoder
+    return JSONResponse(jsonable_encoder(ok(result)), headers={"Cache-Control":"private, no-store"})
 
 
 @router.get("/invoices/{invoice_id}/sync-logs", summary="OKKI push audit logs")
@@ -1232,7 +1205,7 @@ def save_linked(invoice_id: int, body: LinkedSavePayload, db: Session = Depends(
     except (ValueError, IntegrityError) as exc:
         db.rollback()
         raise HTTPException(409, str(exc) if isinstance(exc, ValueError) else "提交标识已被使用，请刷新") from exc
-    return ok({"operation": _linked_result(row, invoice, user), "invoice": service.serialize_detail(invoice, db)})
+    return ok({"operation": _linked_result(row, invoice, user), "invoice": service.serialize_detail(invoice, db, user)})
 
 
 @router.get("/invoices/{invoice_id}/linked-sync", summary="Read latest linked synchronization result")

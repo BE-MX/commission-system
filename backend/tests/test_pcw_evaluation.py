@@ -253,6 +253,25 @@ def test_inquiry_sla_escalates_to_urgent_after_72h(db):
     assert action.priority == "urgent"
 
 
+def test_long_family_reorder_rule_keeps_bounded_identity_and_replays_once(db):
+    account, _owner = _pcw_customer(db, code='C-PCW-LONG-RULE', user_id=9250)
+    window = ReorderWindow(customer_id=account.id, product_family='F'*256,
+        anchor_batch_key='day:2026-08-30', occurrence_key='reorder:9250:sha256:' + 'a'*64,
+        sample_refs_json=['day:2026-08-30'], median_interval_days=30,
+        window_from=TODAY-timedelta(days=3), window_to=TODAY+timedelta(days=3), confidence='regular', state='open')
+    db.add(window); db.flush()
+    first = run_daily_evaluation(db, business_date=TODAY, customer_ids=[account.id])
+    assert len(_run_item(db, first, account.id).action_counters_json['created']) == 1
+    item = db.query(CustomerWorkItem).one()
+    assert len(item.business_key) <= 128 and len(item.business_cycle) <= 64
+    second = run_daily_evaluation(db, business_date=TODAY, customer_ids=[account.id])
+    assert _run_item(db, second, account.id).action_counters_json['created'] == []
+    assert db.query(CustomerWorkItem).count() == db.query(CustomerAction).count() == 1
+    window.state = 'covered'; db.flush()
+    third = run_daily_evaluation(db, business_date=TODAY, customer_ids=[account.id])
+    assert _run_item(db, third, account.id).action_counters_json['cancelled'] == 1
+
+
 def test_reorder_window_covered_cancels_pending_action(db):
     """窗口覆盖/关闭后：遗留 pending 行动取消（window_covered）且事项关闭，不被扫描复活。"""
     account, _owner = _pcw_customer(db, code="C-PCW-WIN", user_id=9204)

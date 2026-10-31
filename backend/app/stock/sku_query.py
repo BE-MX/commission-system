@@ -21,6 +21,9 @@ settings = get_settings()
 
 def get_sku_sales(db: Session, product_id: int, days: int) -> int:
     """指定 SKU 最近 N 天的销量 (只统计已结束订单+7 个指定部门)"""
+    if settings.TRANSACTION_MODE == "local":
+        from app.stock.local_query_service import get_sales
+        return get_sales(db, product_id, days)
     business_db = settings.BUSINESS_DB_NAME
     since = beijing_today() - timedelta(days=days)
     sql = f"""
@@ -53,6 +56,9 @@ def query_all_sku_status(
 
     被销量备货一览 + 日报生成 复用。
     """
+    if settings.TRANSACTION_MODE == "local":
+        from app.stock.local_query_service import query
+        return query(db, keyword=keyword, all_rows=True)["items"]
     business_db = settings.BUSINESS_DB_NAME
     today = beijing_today()
     d30 = today - timedelta(days=30)

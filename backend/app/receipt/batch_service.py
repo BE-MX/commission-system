@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy import select
 from app.core.time import beijing_now
+from app.invoice import legacy_sending
 from app.invoice.models import Invoice
 from app.invoice import settlement_service as shipments
 from app.invoice import shipment_payment_policy as payment_policy
@@ -17,6 +18,10 @@ from app.receipt.models import Receipt, ReceiptAttachment, ReceiptLog
 
 
 def ensure_batch_access(db, batch, user):
+    if batch is not None and batch.transaction_mode == "local":
+        from app.finance.service import ensure_batch_access as local_access
+        local_access(db, batch, user)
+        return db.query(Receipt).filter_by(batch_id=batch.id).all()
     rows = db.query(Receipt).filter_by(batch_id=batch.id).all()
     if not rows:
         raise HTTPException(404, "回款批次不存在")
@@ -65,6 +70,7 @@ def validate_bound_proofs(db, row):
 
 
 def new_batch(db, fields, invoice, actor, key, fingerprint, proof_evidence=None):
+    legacy_sending.authorize(db, invoice)
     row = ReceiptBatch(batch_no="HB" + beijing_now().strftime("%Y%m%d") + "-" + uuid4().hex[:12],
         customer_id=invoice.customer_id, currency=invoice.currency, gross_amount=fields.amount,
         bank_charge_total=0, collection_date=fields.collection_date, payment_type=fields.payment_type,
@@ -126,6 +132,8 @@ def _register_shipment_payment_verified(db, invoice, settlement, fields, actor, 
 
 def _create_verified(db, body, invoices, actor, evidence, fee_evidence, proof_evidence):
     """Pure financial application after current authorization, graph and file checks."""
+    for invoice_id in sorted(invoices):
+        legacy_sending.authorize(db, invoice_id)
     if len({(invoice.customer_id, invoice.currency) for invoice in invoices.values()}) != 1:
         raise ValueError("一笔付款只能选择同一客户、同一币种")
     settlements, charges = {}, {}
@@ -216,6 +224,8 @@ def read(db, identity, user):
 
 def _void_financial(db, row, children, current, version, reason):
     """Invoice/batch/member locks are held by the authorized caller; no I/O."""
+    if row.transaction_mode == "local":
+        raise ValueError("本地收款请使用资金账的作废或退款操作")
     if row.version != version or row.status != "active":
         raise ValueError("回款批次已变化")
     applications = db.scalars(select(SettlementApplication).where(

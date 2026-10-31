@@ -11,7 +11,7 @@ import {
   createProductionOrder,
 } from '@/api/stock'
 
-export function useProductionCart() {
+export function useProductionCart(keyFactory = () => crypto.randomUUID()) {
   const cartResource = useAsyncResource(async (_, { signal }) => {
     const response = await getProductionCart({ signal, suppressToast: true })
     return response.data ?? response
@@ -22,6 +22,8 @@ export function useProductionCart() {
   const cartErrorMessage = cartResource.errorMessage
   const selectedCartIds = ref([])
   const drawerVisible = ref(false)
+  const generating = ref(false)
+  let orderAttempt = null
 
   const isCartEmpty = computed(() => cartItems.value.length === 0)
   const selectedItems = computed(() =>
@@ -82,26 +84,34 @@ export function useProductionCart() {
   }
 
   async function generateOrder({ batch_no, remark, is_urgent, expected_delivery_date }) {
+    if (generating.value) return false
     if (selectedCartIds.value.length === 0) {
       msgWarning('请先选择产品')
       return false
     }
+    generating.value = true
     try {
-      const res = await createProductionOrder({
-        cart_ids: selectedCartIds.value,
+      const body = {
+        cart_ids: [...selectedCartIds.value],
         batch_no,
         remark,
         is_urgent,
         expected_delivery_date,
-      })
+      }
+      const signature = JSON.stringify(body)
+      if (!orderAttempt || orderAttempt.signature !== signature) {
+        orderAttempt = { signature, body: { ...body, request_key: keyFactory() } }
+      }
+      const res = await createProductionOrder(orderAttempt.body)
+      orderAttempt = null
       msgSuccessText(res.message || '生产订单创建成功')
-      selectedCartIds.value = []
+      selectedCartIds.value = selectedCartIds.value.filter(id => !body.cart_ids.includes(id))
       await loadCart()
       return true
     } catch (e) {
       msgError(e?.response?.data?.message || '创建失败', e)
       return false
-    }
+    } finally { generating.value = false }
   }
 
   function toggleSelection(selection) {
@@ -115,6 +125,7 @@ export function useProductionCart() {
     cartErrorMessage,
     selectedCartIds,
     drawerVisible,
+    generating,
     isCartEmpty,
     selectedItems,
     loadCart,

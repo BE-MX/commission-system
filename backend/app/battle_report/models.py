@@ -41,7 +41,7 @@ class BattleReportMember(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     report_id = Column(Integer, ForeignKey("ark_battle_reports.id"), nullable=False, index=True, comment="战报ID")
     ark_user_id = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="方舟用户ID")
-    okki_user_id = Column(String(100), nullable=False, comment="订单负责人OKKI稳定ID快照")
+    okki_user_id = Column(String(100), nullable=True, comment="历史订单负责人OKKI稳定ID快照，本地员工可空")
     user_name = Column(String(100), nullable=False, comment="姓名快照")
     team = Column(String(100), nullable=False, comment="活动小组快照")
     is_captain = Column(Boolean, nullable=False, default=False, comment="是否组长，可查看本组订单")

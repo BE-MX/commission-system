@@ -114,6 +114,7 @@ class OrderProductProcessProgress(Base):
     completed_at = Column(DateTime, nullable=True, comment="完成时间")
     completed_by_user_id = Column(Integer, nullable=True, comment="完成操作人方舟用户ID")
     completed_by_wx_id = Column(String(100), nullable=True, comment="完成操作人微信原始ID")
+    local_event_id = Column(BigInteger, ForeignKey("ark_production_events.id"), nullable=True, comment="本地报工的不可变事件ID，撤销后保留原事实")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
@@ -143,3 +144,6 @@ class UserProcessBinding(Base):
         Index("idx_upb_process_id", "process_id"),
         {"comment": "用户工序绑定表"},
     )
+
+# Register the local scanner journal referenced by progress rows.
+from app.production import local_models as _local_models  # noqa: E402,F401
