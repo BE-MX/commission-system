@@ -29,6 +29,10 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   let pollGen = 0
   // 输入步手填、但建草稿接口不收的字段：AI 结果回来后盖回去（用户亲手写的优先）
   let manualFields = null
+  // 客户上下文请求序号：快速换客户时，先发后到的旧响应不能覆盖新客户的待办
+  let contextSeq = 0
+  // 进入核对步时的表单快照：关闭时只有真改过才弹确认
+  let reviewSnapshot = null
 
   const uploading = computed(() => attachments.value.some(a => a.uploading))
   const canSubmit = computed(() => !saving.value && !uploading.value
@@ -56,14 +60,17 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     step.value = 'input'
     aiFailed.value = false
     manualFields = null
+    reviewSnapshot = null
     requestId = newRequestId()
   }
 
   async function open(preset = {}) {
     reset(preset)
     visible.value = true
+    const gen = pollGen
     await loadDicts()
-    if (form.value.customer_id) await loadCustomerContext(form.value.customer_id)
+    if (gen !== pollGen) return  // 等字典时抽屉已关或已重开
+    if (form.value.customer_id) await loadCustomerContext(form.value.customer_id, gen)
   }
 
   async function addFiles(files) {
@@ -117,7 +124,8 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     } catch (e) { msgError(apiError(e, '建档失败'), e) }
   }
 
-  async function loadCustomerContext(customerId) {
+  async function loadCustomerContext(customerId, gen = pollGen) {
+    const seq = ++contextSeq
     openTasks.value = []
     openItems.value = []
     form.value.closeTaskIds = []
@@ -128,6 +136,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
         followupApi.tasks({ customer_id: customerId, scope: 'visible', due: 'all', page_size: 50 }),
         followupApi.timeline(customerId),
       ])
+      if (seq !== contextSeq || gen !== pollGen) return  // 过期响应：客户已换或抽屉已关
       openTasks.value = tasks.items.filter(t => ['plan', 'receipt'].includes(t.task_type))
       openItems.value = timeline.open_items
       // AI 认出的客户不在搜索结果里时，用时间线头部补一个选项，下拉框才显示店名而不是 ID
@@ -137,7 +146,10 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
       form.value.closeTaskIds = openTasks.value
         .filter(t => t.id === form.value.source_task_id || t.overdue_days > 0 || t.due_date <= form.value.followup_date)
         .map(t => t.id)
-    } catch (e) { msgError(apiError(e, '客户待办加载失败'), e) }
+    } catch (e) {
+      if (seq !== contextSeq || gen !== pollGen) return
+      msgError(apiError(e, '客户待办加载失败'), e)
+    }
   }
 
   const basePayload = () => ({
@@ -214,8 +226,11 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     aiFailed.value = draft.ai_status !== 'done'
     if (aiFailed.value) msgWarning(draft.ai_error || 'AI 整理未完成，请参考截图文字手动填写')
     step.value = 'review'
-    await loadCustomerContext(form.value.customer_id)
+    await loadCustomerContext(form.value.customer_id, gen)
+    if (gen === pollGen) reviewSnapshot = JSON.stringify(form.value)  // 默认勾选也算初始状态
   }
+
+  const reviewDirty = () => reviewSnapshot !== null && JSON.stringify(form.value) !== reviewSnapshot
 
   async function confirm() {
     if (!form.value.customer_id) return msgWarning('请选择客户')
@@ -306,7 +321,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   return {
     visible, step, saving, uploading, canSubmit, customerWritable, dicts, loadDicts, form, attachments,
     customerOptions, searching, openTasks, openItems, aiFailed,
-    open, resume, close, handleClosed, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, createProspect,
+    reviewDirty, open, resume, close, handleClosed, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, createProspect,
     loadCustomerContext, saveDirect, startAi, confirm, discard, addRow, toggleResolved,
   }
 }

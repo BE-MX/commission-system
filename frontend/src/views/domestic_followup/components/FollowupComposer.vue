@@ -8,6 +8,8 @@
     append-to-body
     destroy-on-close
     :before-close="beforeClose"
+    @dragover="blockFileDrop"
+    @drop="blockFileDrop"
     @closed="c.handleClosed()"
   >
     <!-- 第一步：输入 -->
@@ -242,6 +244,11 @@ function onDrop(event) {
   c.onDrop(event)
 }
 
+// 抽屉任何位置松手放图都不让浏览器在当前页打开图片（会丢掉正在写的内容）；真正添加只在 drop-zone 里
+function blockFileDrop(event) {
+  if (hasFiles(event)) event.preventDefault()
+}
+
 function onPick(event) {
   c.addFiles(Array.from(event.target.files || []))
   event.target.value = ''
@@ -264,7 +271,7 @@ async function promptProspect() {
 async function beforeClose(done) {
   const step = c.step.value
   const dirty = step === 'input' && (c.form.value.raw_text.trim() || c.attachments.value.length)
-  if (!dirty && step !== 'review') return done()
+  if (!dirty && !(step === 'review' && c.reviewDirty())) return done()
   try {
     if (step === 'review') await confirmAction('改动还没保存，草稿会保留在『我的草稿』，确定关闭？', '关闭核对')
     else await confirmAction('写的内容还没保存，关掉就没了。', '放弃这条跟进？')

@@ -5938,6 +5938,21 @@ test('imageFilesFromDrop returns only dropped image files', () => {
   assert.deepEqual(imageFilesFromDrop({ dataTransfer: { files: [png, txt] } }), [png])
   assert.deepEqual(imageFilesFromDrop({}), [])
 })
+
+test('mergeManualFields takes the whole next block from user when user set next_date', () => {
+  const ai = draftToForm({
+    id: 6, version: 1, followup_date: TODAY,
+    ai_result: { next: { date: '2026-11-02', expression: '下周一', basis: 'parsed', method: '电话', plan: '问进度' } },
+  }, TODAY)
+  const merged = mergeManualFields(ai, { next_date: '2026-11-06', next_plan: '', next_method: null })
+  assert.equal(merged.next_date, '2026-11-06')
+  assert.equal(merged.next_plan, '')  // 用户定了日期：方式和内容也以用户为准，不拼 AI 的
+  assert.equal(merged.next_method, null)
+  const planOnly = mergeManualFields(ai, { next_date: null, next_plan: '带样品', next_method: null })
+  assert.equal(planOnly.next_date, '2026-11-02')
+  assert.equal(planOnly.next_plan, '带样品')
+  assert.equal(planOnly.next_method, '电话')
+})
 ```
 
 - [ ] **Step 4: 加 script 并跑测试确认失败**
@@ -6041,10 +6056,17 @@ const filled = value => (typeof value === 'string' ? Boolean(value.trim()) : val
 export function mergeManualFields(form, manual) {
   if (!manual) return form
   const merged = { ...form }
-  for (const key of ['channel', 'next_date', 'next_plan', 'next_method']) {
+  if (filled(manual.channel)) merged.channel = manual.channel
+  if (filled(manual.next_date)) {
+    // 用户定了下次跟进日期：日期、方式、内容整体以用户为准，不拼 AI 的半截计划，也不挂 AI 纠正提示
+    return {
+      ...merged, next_date: manual.next_date, next_method: manual.next_method ?? null,
+      next_plan: manual.next_plan ?? '', nextBasis: 'none', nextExpression: null,
+    }
+  }
+  for (const key of ['next_plan', 'next_method']) {
     if (filled(manual[key])) merged[key] = manual[key]
   }
-  if (filled(manual.next_date)) Object.assign(merged, { nextBasis: 'none', nextExpression: null })
   return merged
 }
 
@@ -6078,7 +6100,7 @@ export function nextBasisHint(form) {
 - [ ] **Step 6: 跑测试确认通过**
 
 Run: `cd frontend && npm run test:domestic-followup`
-Expected: PASS（11 tests）
+Expected: PASS（12 tests）
 
 - [ ] **Step 7: 提交**
 
@@ -6159,6 +6181,10 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   let pollGen = 0
   // 输入步手填、但建草稿接口不收的字段：AI 结果回来后盖回去（用户亲手写的优先）
   let manualFields = null
+  // 客户上下文请求序号：快速换客户时，先发后到的旧响应不能覆盖新客户的待办
+  let contextSeq = 0
+  // 进入核对步时的表单快照：关闭时只有真改过才弹确认
+  let reviewSnapshot = null
 
   const uploading = computed(() => attachments.value.some(a => a.uploading))
   const canSubmit = computed(() => !saving.value && !uploading.value
@@ -6186,14 +6212,17 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     step.value = 'input'
     aiFailed.value = false
     manualFields = null
+    reviewSnapshot = null
     requestId = newRequestId()
   }
 
   async function open(preset = {}) {
     reset(preset)
     visible.value = true
+    const gen = pollGen
     await loadDicts()
-    if (form.value.customer_id) await loadCustomerContext(form.value.customer_id)
+    if (gen !== pollGen) return  // 等字典时抽屉已关或已重开
+    if (form.value.customer_id) await loadCustomerContext(form.value.customer_id, gen)
   }
 
   async function addFiles(files) {
@@ -6247,7 +6276,8 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     } catch (e) { msgError(apiError(e, '建档失败'), e) }
   }
 
-  async function loadCustomerContext(customerId) {
+  async function loadCustomerContext(customerId, gen = pollGen) {
+    const seq = ++contextSeq
     openTasks.value = []
     openItems.value = []
     form.value.closeTaskIds = []
@@ -6258,6 +6288,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
         followupApi.tasks({ customer_id: customerId, scope: 'visible', due: 'all', page_size: 50 }),
         followupApi.timeline(customerId),
       ])
+      if (seq !== contextSeq || gen !== pollGen) return  // 过期响应：客户已换或抽屉已关
       openTasks.value = tasks.items.filter(t => ['plan', 'receipt'].includes(t.task_type))
       openItems.value = timeline.open_items
       // AI 认出的客户不在搜索结果里时，用时间线头部补一个选项，下拉框才显示店名而不是 ID
@@ -6267,7 +6298,10 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
       form.value.closeTaskIds = openTasks.value
         .filter(t => t.id === form.value.source_task_id || t.overdue_days > 0 || t.due_date <= form.value.followup_date)
         .map(t => t.id)
-    } catch (e) { msgError(apiError(e, '客户待办加载失败'), e) }
+    } catch (e) {
+      if (seq !== contextSeq || gen !== pollGen) return
+      msgError(apiError(e, '客户待办加载失败'), e)
+    }
   }
 
   const basePayload = () => ({
@@ -6344,8 +6378,11 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     aiFailed.value = draft.ai_status !== 'done'
     if (aiFailed.value) msgWarning(draft.ai_error || 'AI 整理未完成，请参考截图文字手动填写')
     step.value = 'review'
-    await loadCustomerContext(form.value.customer_id)
+    await loadCustomerContext(form.value.customer_id, gen)
+    if (gen === pollGen) reviewSnapshot = JSON.stringify(form.value)  // 默认勾选也算初始状态
   }
+
+  const reviewDirty = () => reviewSnapshot !== null && JSON.stringify(form.value) !== reviewSnapshot
 
   async function confirm() {
     if (!form.value.customer_id) return msgWarning('请选择客户')
@@ -6436,7 +6473,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   return {
     visible, step, saving, uploading, canSubmit, customerWritable, dicts, loadDicts, form, attachments,
     customerOptions, searching, openTasks, openItems, aiFailed,
-    open, resume, close, handleClosed, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, createProspect,
+    reviewDirty, open, resume, close, handleClosed, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, createProspect,
     loadCustomerContext, saveDirect, startAi, confirm, discard, addRow, toggleResolved,
   }
 }
@@ -6455,6 +6492,8 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     append-to-body
     destroy-on-close
     :before-close="beforeClose"
+    @dragover="blockFileDrop"
+    @drop="blockFileDrop"
     @closed="c.handleClosed()"
   >
     <!-- 第一步：输入 -->
@@ -6689,6 +6728,11 @@ function onDrop(event) {
   c.onDrop(event)
 }
 
+// 抽屉任何位置松手放图都不让浏览器在当前页打开图片（会丢掉正在写的内容）；真正添加只在 drop-zone 里
+function blockFileDrop(event) {
+  if (hasFiles(event)) event.preventDefault()
+}
+
 function onPick(event) {
   c.addFiles(Array.from(event.target.files || []))
   event.target.value = ''
@@ -6711,7 +6755,7 @@ async function promptProspect() {
 async function beforeClose(done) {
   const step = c.step.value
   const dirty = step === 'input' && (c.form.value.raw_text.trim() || c.attachments.value.length)
-  if (!dirty && step !== 'review') return done()
+  if (!dirty && !(step === 'review' && c.reviewDirty())) return done()
   try {
     if (step === 'review') await confirmAction('改动还没保存，草稿会保留在『我的草稿』，确定关闭？', '关闭核对')
     else await confirmAction('写的内容还没保存，关掉就没了。', '放弃这条跟进？')
@@ -7421,17 +7465,18 @@ async function resumeDraft(draft) {
 }
 
 function openFromQuery() {
+  if (route.name !== 'DomesticFollowups') return  // 页面缓存在后台时，别的页面换路由不该弹本页的抽屉
   const id = Number(route.query.customer)
   if (!id) return
   timelineRef.value?.open(id)
 }
 
-// 页面被 KeepAlive 缓存时 onMounted 不再触发：盯住 ?customer=，从客户列表换个客户再点也能打开
-// flush: 'post' 让首次执行排在挂载之后，timelineRef 才有值
-watch(() => route.query.customer, openFromQuery, { immediate: true, flush: 'post' })
+// 首次打开在 onMounted 里调（那时 timelineRef 才有值）；之后被 KeepAlive 缓存时 onMounted 不再触发，
+// 改盯 fullPath：客户列表的「跟进」带 t=时间戳，同一客户重复点也会变
+watch(() => route.fullPath, openFromQuery, { flush: 'post' })
 // 每次切到「我的记录」都刷新第一页：刚确认的记录要能马上看到
 watch(tab, value => { if (value === 'records') w.loadRecords(1) })
-onMounted(() => { w.loadTasks(); composer.loadDicts() })  // 看板分类筛选要字典
+onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // 看板分类筛选要字典
 </script>
 
 <style scoped>
@@ -7455,7 +7500,7 @@ onMounted(() => { w.loadTasks(); composer.loadDicts() })  // 看板分类筛选�
 </style>
 ```
 
-`?customer=` 的处理：打开时间线，时间线里点「记一条跟进」再开录入（客户已预选）。这样能先看历史再记录，和原型第 6 屏一致。用 `watch(() => route.query.customer, …, { immediate: true, flush: 'post' })` 而不是 onMounted：页面被 KeepAlive 缓存时，从客户列表换个客户再点也能打开。
+`?customer=` 的处理：打开时间线，时间线里点「记一条跟进」再开录入（客户已预选）。这样能先看历史再记录，和原型第 6 屏一致。首次打开在 onMounted 里调 `openFromQuery()`（这时 `timelineRef` 才有值；带 `immediate` 的 watch 首次是在 setup 里同步跑的，拿不到 ref）；之后盯 `route.fullPath`，回调里先判断 `route.name === 'DomesticFollowups'`，页面被 KeepAlive 缓存在后台时不误弹。客户列表的「跟进」在 query 里带 `t: Date.now()`，同一客户重复点也会触发。
 
 - [ ] **Step 6.5: 写 FollowupConfigDialog.vue（部署后亮哥要在这里设紧急接收人）**
 
@@ -7593,7 +7638,8 @@ defineExpose({ open })
 ```js
 import { useRouter } from 'vue-router'
 const router = useRouter()
-const openFollowup = row => router.push({ path: '/domestic/followups', query: { customer: row.id } })
+// t 只为让同一客户重复点击也产生新路由，工作台据此重新打开时间线
+const openFollowup = row => router.push({ path: '/domestic/followups', query: { customer: row.id, t: Date.now() } })
 ```
 
 先 `grep -n "useRouter\|const router" frontend/src/views/domestic/DomesticCustomers.vue frontend/src/views/domestic/composables/useDomesticCustomers.js` 确认没有重复声明。`GlassButton` 的 `left-icon` 用字符串图标名，确认全局已注册 `ChatDotRound`（`grep -rn "registerIcons\|ElementPlusIconsVue" frontend/src/main.js`）；没有全局注册的话，换一个已在用的图标名。

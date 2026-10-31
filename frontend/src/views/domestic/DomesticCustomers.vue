@@ -441,7 +441,8 @@ import { customersColumnDefs as columnDefs } from './domesticTableColumns'
 
 const chinaRegions = CHINA_REGIONS
 const router = useRouter()
-const openFollowup = row => router.push({ path: '/domestic/followups', query: { customer: row.id } })
+// t 只为让同一客户重复点击也产生新路由，工作台据此重新打开时间线
+const openFollowup = row => router.push({ path: '/domestic/followups', query: { customer: row.id, t: Date.now() } })
 const { tableRef, filtersRef, tableHeight } = useOrderTableHeight()
 
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =

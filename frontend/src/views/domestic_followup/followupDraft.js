@@ -83,10 +83,17 @@ const filled = value => (typeof value === 'string' ? Boolean(value.trim()) : val
 export function mergeManualFields(form, manual) {
   if (!manual) return form
   const merged = { ...form }
-  for (const key of ['channel', 'next_date', 'next_plan', 'next_method']) {
+  if (filled(manual.channel)) merged.channel = manual.channel
+  if (filled(manual.next_date)) {
+    // 用户定了下次跟进日期：日期、方式、内容整体以用户为准，不拼 AI 的半截计划，也不挂 AI 纠正提示
+    return {
+      ...merged, next_date: manual.next_date, next_method: manual.next_method ?? null,
+      next_plan: manual.next_plan ?? '', nextBasis: 'none', nextExpression: null,
+    }
+  }
+  for (const key of ['next_plan', 'next_method']) {
     if (filled(manual[key])) merged[key] = manual[key]
   }
-  if (filled(manual.next_date)) Object.assign(merged, { nextBasis: 'none', nextExpression: null })
   return merged
 }
 

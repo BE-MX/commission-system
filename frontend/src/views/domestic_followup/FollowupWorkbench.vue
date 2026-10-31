@@ -114,17 +114,18 @@ async function resumeDraft(draft) {
 }
 
 function openFromQuery() {
+  if (route.name !== 'DomesticFollowups') return  // 页面缓存在后台时，别的页面换路由不该弹本页的抽屉
   const id = Number(route.query.customer)
   if (!id) return
   timelineRef.value?.open(id)
 }
 
-// 页面被 KeepAlive 缓存时 onMounted 不再触发：盯住 ?customer=，从客户列表换个客户再点也能打开
-// flush: 'post' 让首次执行排在挂载之后，timelineRef 才有值
-watch(() => route.query.customer, openFromQuery, { immediate: true, flush: 'post' })
+// 首次打开在 onMounted 里调（那时 timelineRef 才有值）；之后被 KeepAlive 缓存时 onMounted 不再触发，
+// 改盯 fullPath：客户列表的「跟进」带 t=时间戳，同一客户重复点也会变
+watch(() => route.fullPath, openFromQuery, { flush: 'post' })
 // 每次切到「我的记录」都刷新第一页：刚确认的记录要能马上看到
 watch(tab, value => { if (value === 'records') w.loadRecords(1) })
-onMounted(() => { w.loadTasks(); composer.loadDicts() })  // 看板分类筛选要字典
+onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // 看板分类筛选要字典
 </script>
 
 <style scoped>

@@ -124,3 +124,18 @@ test('imageFilesFromDrop returns only dropped image files', () => {
   assert.deepEqual(imageFilesFromDrop({ dataTransfer: { files: [png, txt] } }), [png])
   assert.deepEqual(imageFilesFromDrop({}), [])
 })
+
+test('mergeManualFields takes the whole next block from user when user set next_date', () => {
+  const ai = draftToForm({
+    id: 6, version: 1, followup_date: TODAY,
+    ai_result: { next: { date: '2026-11-02', expression: '下周一', basis: 'parsed', method: '电话', plan: '问进度' } },
+  }, TODAY)
+  const merged = mergeManualFields(ai, { next_date: '2026-11-06', next_plan: '', next_method: null })
+  assert.equal(merged.next_date, '2026-11-06')
+  assert.equal(merged.next_plan, '')  // 用户定了日期：方式和内容也以用户为准，不拼 AI 的
+  assert.equal(merged.next_method, null)
+  const planOnly = mergeManualFields(ai, { next_date: null, next_plan: '带样品', next_method: null })
+  assert.equal(planOnly.next_date, '2026-11-02')
+  assert.equal(planOnly.next_plan, '带样品')
+  assert.equal(planOnly.next_method, '电话')
+})
