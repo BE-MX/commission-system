@@ -101,8 +101,9 @@ router.beforeEach(async (to, from, next) => {
 
   // 移动端访问登录页：直接走移动端独立登录页
   // 例外：目标是展会 kiosk（展位 iPad 用主站登录，不进移动端素材页）
+  // 例外：客户跟进（钉钉推送入口）
   const redirectTarget = String(to.query.redirect || '')
-  if (isMobileUA && !desktopMode && to.path === '/login' && !redirectTarget.startsWith('/expo') && !isShippingStationPath(redirectTarget) && !isShippingInspectionPath(redirectTarget) && !isFxSettlementPath(redirectTarget)) {
+  if (isMobileUA && !desktopMode && to.path === '/login' && !redirectTarget.startsWith('/expo') && !isShippingStationPath(redirectTarget) && !isShippingInspectionPath(redirectTarget) && !isFxSettlementPath(redirectTarget) && !redirectTarget.startsWith('/domestic/followups')) {
     window.location.href = '/m/login.html'
     return false
   }

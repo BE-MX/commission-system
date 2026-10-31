@@ -121,7 +121,9 @@
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
           <template #default="{ row }">
-            <div v-if="canOperateCustomer(row)" class="table-actions">
+            <div class="table-actions">
+              <GlassButton v-permission="'domestic_followup:read'" variant="link" left-icon="ChatDotRound" @click="openFollowup(row)">跟进</GlassButton>
+              <template v-if="canOperateCustomer(row)">
               <GlassButton v-any-permission="['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin']" variant="link" left-icon="Van" @click="deliveryDialog.open(row)">交付对账</GlassButton>
               <GlassButton v-permission="'domestic:write'" variant="link" left-icon="Edit" @click="openDialog(row)">编辑</GlassButton>
               <GlassButton v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" @click="openLedger(row)">流水</GlassButton>
@@ -149,6 +151,7 @@
                   </template>
                 </el-dropdown>
               </div>
+              </template>
             </div>
           </template>
         </el-table-column>
@@ -422,6 +425,7 @@ const deliveryDialog = deliveryRef(null)
 import DomesticDeliveryDialog from './components/DomesticDeliveryDialog.vue'
 
 import { ENABLED_STATUS } from '@/utils/status'
+import { useRouter } from 'vue-router'
 import { formatMoney } from '../../utils/money.js'
 
 /** 内贸客户管理。下单页可就地新建客户，这里做集中维护；逻辑在 composables/useDomesticCustomers.js。 */
@@ -436,6 +440,8 @@ import { useDomesticCustomers } from './composables/useDomesticCustomers'
 import { customersColumnDefs as columnDefs } from './domesticTableColumns'
 
 const chinaRegions = CHINA_REGIONS
+const router = useRouter()
+const openFollowup = row => router.push({ path: '/domestic/followups', query: { customer: row.id } })
 const { tableRef, filtersRef, tableHeight } = useOrderTableHeight()
 
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =

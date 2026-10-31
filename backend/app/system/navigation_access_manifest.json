@@ -1,5 +1,5 @@
 {
-  "source_sha256": "b658fb4e9eff79936dcd352855292ae278506c8c4aa00ad5efdcd2d34121c138",
+  "source_sha256": "f84bf2376e3d9273b6f7fa0f2ba261411decd53e0f3c5feaef620f1a62003d41",
   "favorite_access": {
     "PortalCatalog": [
       {
@@ -1540,7 +1540,8 @@
           "domestic:write",
           "domestic:recharge",
           "domestic:admin",
-          "domestic_decision:read"
+          "domestic_decision:read",
+          "domestic_followup:read"
         ]
       }
     ],
@@ -1565,7 +1566,8 @@
           "domestic:write",
           "domestic:recharge",
           "domestic:admin",
-          "domestic_decision:read"
+          "domestic_decision:read",
+          "domestic_followup:read"
         ]
       }
     ],
@@ -1582,7 +1584,8 @@
           "domestic:write",
           "domestic:recharge",
           "domestic:admin",
-          "domestic_decision:read"
+          "domestic_decision:read",
+          "domestic_followup:read"
         ]
       }
     ],
@@ -1599,7 +1602,8 @@
           "domestic:write",
           "domestic:recharge",
           "domestic:admin",
-          "domestic_decision:read"
+          "domestic_decision:read",
+          "domestic_followup:read"
         ]
       }
     ],
@@ -1624,7 +1628,8 @@
           "domestic:write",
           "domestic:recharge",
           "domestic:admin",
-          "domestic_decision:read"
+          "domestic_decision:read",
+          "domestic_followup:read"
         ]
       }
     ],
@@ -1651,7 +1656,26 @@
           "domestic:write",
           "domestic:recharge",
           "domestic:admin",
-          "domestic_decision:read"
+          "domestic_decision:read",
+          "domestic_followup:read"
+        ]
+      }
+    ],
+    "DomesticFollowups": [
+      {
+        "permission": "domestic_followup:read"
+      },
+      {
+        "permission": "domestic_followup:read"
+      },
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:recharge",
+          "domestic:admin",
+          "domestic_decision:read",
+          "domestic_followup:read"
         ]
       }
     ],
@@ -1676,7 +1700,8 @@
           "domestic:write",
           "domestic:recharge",
           "domestic:admin",
-          "domestic_decision:read"
+          "domestic_decision:read",
+          "domestic_followup:read"
         ]
       }
     ],

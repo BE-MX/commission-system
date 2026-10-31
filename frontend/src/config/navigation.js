@@ -19,7 +19,7 @@ import {
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
   Lock, Lightning, Picture, Collection, CollectionTag, DataBoard, Key,
   DataLine, Printer, Brush, Tickets, Goods, Postcard, Shop, Wallet, Monitor,
-  Finished,
+  Finished, ChatDotRound,
 } from '@element-plus/icons-vue'
 
 const FESTIVAL_PERMISSION = 'festival:read'
@@ -121,7 +121,7 @@ export const MENU_GROUPS = {
   domestic: {
     title: '内贸订单',
     icon: Tickets,
-    anyPermission: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin', 'domestic_decision:read'],
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin', 'domestic_decision:read', 'domestic_followup:read'],
   },
   shipping: {
     title: '发货检验',
@@ -1023,6 +1023,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'domestic', title: '客户管理', icon: OfficeBuilding, order: 13,
       anyPermission: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin'],
+    },
+  },
+  {
+    path: '/domestic/followups',
+    name: 'DomesticFollowups',
+    component: () => import('@/views/domestic_followup/FollowupWorkbench.vue'),
+    title: '客户跟进',
+    permission: 'domestic_followup:read',
+    menu: {
+      group: 'domestic', title: '客户跟进', icon: ChatDotRound, order: 13,  // 后端按 int 存 sort，小数会被截断；同号已有先例
+      permission: 'domestic_followup:read',
     },
   },
   {
