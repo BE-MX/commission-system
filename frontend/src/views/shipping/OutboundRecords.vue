@@ -141,7 +141,9 @@
       />
     </div>
     <ShippingPrintDialog v-if="printPreviewVisible" v-model:visible="printPreviewVisible" mode="outbound" :record-id="printPreviewRow?.outbound_record_id" />
-    <OutboundSyncDialog v-model:visible="syncVisible" :busy="syncingId !== null" :preview="syncPreview" :row="syncRow" @apply="applySync" />
+    <OutboundSyncDialog v-model:visible="syncVisible" :busy="syncingId !== null || reviewing" :preview="syncPreview" :row="syncRow"
+      @apply="applySync" @review="reviewVisible = true" />
+    <OutboundSyncReviewDialog v-if="reviewVisible" v-model:visible="reviewVisible" :busy="reviewing" :row="syncRow" @submit="submitReview" />
     <OutboundProblemsDrawer v-if="problemsVisible" v-model="problemsVisible" />
     <OutboundInventoryDrawer v-if="inventoryVisible" v-model="inventoryVisible" :row="inventoryRow" />
   </div>
@@ -165,6 +167,7 @@ import { useOutboundRecords } from './composables/useOutboundRecords'
 import { useOutboundInvoiceSync } from './composables/useOutboundInvoiceSync'
 import { useOutboundReplenishment } from './composables/useOutboundReplenishment'
 import OutboundSyncDialog from './OutboundSyncDialog.vue'
+const OutboundSyncReviewDialog = defineAsyncComponent(() => import('./OutboundSyncReviewDialog.vue'))
 import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from './composables/outboundStates'
 import { formatBeijingDate, formatBeijingDateTime } from '@/utils/datetime'
 const ShippingPrintDialog = defineAsyncComponent(() => import('./print/ShippingPrintDialog.vue'))
@@ -191,7 +194,8 @@ const {
   printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord, recoverDeletion,
   allowingPrintId, allowPrintBeforeRecheck,
 } = listPageState
-const { syncingId, syncVisible, syncPreview, syncRow, previewSync, applySync } = useOutboundInvoiceSync(fetchList)
+const { syncingId, syncVisible, syncPreview, syncRow, previewSync, applySync,
+  reviewVisible, reviewing, submitReview } = useOutboundInvoiceSync(fetchList)
 const { replenishingId, replenish } = useOutboundReplenishment(fetchList)
 const auth = useAuthStore()
 
@@ -210,7 +214,7 @@ const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullsc
   useTableView('outbound-records', columnDefs)
 const advancedFilterCount = computed(() => Number(Boolean(listPageState.appliedSearchForm.value.orderId)))
 const hasActiveFilters = computed(() => appliedFilters.value.length > 0)
-onDeactivated(() => { printPreviewVisible.value = false; problemsVisible.value = false; inventoryVisible.value = false; syncVisible.value = false; listPageState.cancel(); listPageState.cancelMediaReads() })
+onDeactivated(() => { printPreviewVisible.value = false; problemsVisible.value = false; inventoryVisible.value = false; syncVisible.value = false; reviewVisible.value = false; listPageState.cancel(); listPageState.cancelMediaReads() })
 function canShowMore(row) {
   if (row.can_print && (!row.recheck_status || row.print_before_recheck)) return true
   if (row.record_source !== 'okki') return false

@@ -8,6 +8,8 @@ export function useOutboundInvoiceSync(refresh) {
   const syncVisible = ref(false)
   const syncPreview = ref(null)
   const syncRow = ref(null)
+  const reviewVisible = ref(false)
+  const reviewing = ref(false)
 
   async function finishSync(data) {
     if (data.requires_preview) {
@@ -53,6 +55,13 @@ export function useOutboundInvoiceSync(refresh) {
       syncVisible.value = true
       if (response.data.recover) await resumeSync()
     } catch (error) {
+      const detail = error?.response?.data?.detail
+      if (error?.response?.status === 409 && typeof detail === 'string' && detail.includes('人工核对')) {
+        // A pre-protocol task cannot be previewed; open the dialog on the review entry instead.
+        syncPreview.value = { recover: true, manual_review: true, message: detail }
+        syncVisible.value = true
+        return
+      }
       if (!syncVisible.value) throw error
       if (error?.response?.status === 409) {
         syncPreview.value = (await previewOutboundInvoiceSync(row.outbound_record_id)).data
@@ -90,5 +99,28 @@ export function useOutboundInvoiceSync(refresh) {
     } finally { syncingId.value = null }
   }
 
-  return { syncingId, syncVisible, syncPreview, syncRow, previewSync, applySync }
+  async function submitReview(review) {
+    if (reviewing.value || !syncRow.value) return
+    const id = syncRow.value.outbound_record_id
+    reviewing.value = true
+    try {
+      const data = (await syncOutboundInvoice(id, null, false, false, false, review)).data
+      reviewVisible.value = false
+      msgSuccessText(data.message)
+      if (data.status === 'sync_done') {
+        syncVisible.value = false
+      } else {
+        // The lock is released; continue from a fresh preview of the latest order.
+        try {
+          syncPreview.value = (await previewOutboundInvoiceSync(id)).data
+        } catch {
+          syncPreview.value = { recover: true, message: `${data.message}。请关闭后重新点击「同步订单」。` }
+        }
+      }
+      await refresh()
+    } finally { reviewing.value = false }
+  }
+
+  return { syncingId, syncVisible, syncPreview, syncRow, previewSync, applySync,
+    reviewVisible, reviewing, submitReview }
 }

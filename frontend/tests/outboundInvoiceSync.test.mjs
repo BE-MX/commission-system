@@ -85,3 +85,36 @@ test('definitive conflict reloads the inspection preview instead of treating it 
   assert.equal(reads, 2)
   assert.equal(api.syncPreview.value.recover, undefined)
 })
+
+test('a pre-protocol task opens the dialog on the manual review entry instead of failing', async () => {
+  const guidance = '历史出库任务缺少可信原发送记录，请由仓库或开票管理员在出库单「人工核对」中确认未生成'
+  const api = factory(ref, () => assert.fail('unexpected success'),
+    async () => { throw Object.assign(Error('conflict'), { response: { status: 409, data: { detail: guidance } } }) },
+    async () => assert.fail('unexpected sync'))(async () => assert.fail('unexpected refresh'))
+  await api.previewSync(row)
+  assert.equal(api.syncVisible.value, true)
+  assert.deepEqual(api.syncPreview.value, { recover: true, manual_review: true, message: guidance })
+  assert.equal(api.syncingId.value, null)
+})
+
+test('manual review sends resolution and reason once, then returns to a fresh preview', async () => {
+  const calls = []; let previews = 0
+  const api = factory(ref, msg => calls.push(msg),
+    async () => { previews += 1; return { data: previews === 1 ? { status: 'sync_uncertain', recover: true, message: 'check' } : preview } },
+    async (...args) => {
+      // Readback recovery cannot settle the uncertain original; only the review releases it.
+      if (!args[5]) return { data: { status: 'sync_uncertain', repairable: false, message: 'needs review' } }
+      calls.push(args); return { data: { status: 'sync_failed', requires_preview: true, message: 'released' } }
+    },
+  )(async () => calls.push('refresh'))
+  await api.previewSync(row)
+  assert.equal(api.syncPreview.value.status, 'sync_uncertain')
+  api.reviewVisible.value = true
+  const review = { resolution: 'confirm_not_created', reason: 'checked in OKKI, nothing changed' }
+  const first = api.submitReview(review); await api.submitReview(review)
+  await first
+  assert.deepEqual(calls, [['1', null, false, false, false, review], 'released', 'refresh'])
+  assert.equal(api.reviewVisible.value, false)
+  assert.equal(api.reviewing.value, false)
+  assert.deepEqual(api.syncPreview.value, preview)
+})

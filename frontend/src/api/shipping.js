@@ -2,7 +2,9 @@
 import { shippingClient } from './clients'
 
 export const previewOutboundInvoiceSync = id => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/invoice-sync/preview`, {}, { timeout: 180000 })
-export const syncOutboundInvoice = (id, expected_version, check_only = false, confirm_recheck = false, repair = false) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/invoice-sync`, { expected_version, check_only, confirm_recheck, repair }, { timeout: 180000 })
+// review: optional administrator manual review { resolution: 'confirm_not_created' | 'bind_existing', reason }.
+export const syncOutboundInvoice = (id, expected_version, check_only = false, confirm_recheck = false, repair = false, review = null) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/invoice-sync`,
+  { expected_version, check_only, confirm_recheck, repair, ...(review ? { resolution: review.resolution, reason: review.reason } : {}) }, { timeout: 180000 })
 export const allowOutboundPrintBeforeRecheck = (id, reason) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/allow-print-before-recheck`, { reason })
 export const syncOutboundReplenishment = id => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/replenishment-sync`, {}, { timeout: 180000, suppressToast: true })
 
