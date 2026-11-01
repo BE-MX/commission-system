@@ -1,7 +1,9 @@
 """Read-only inventory details under the existing outbound visibility boundary."""
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -14,14 +16,23 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+class ReplenishmentRequest(BaseModel):
+    # Administrator manual review of an uncertain submission (shipping_inspection:admin
+    # or invoice:admin, checked live in the service).
+    resolution: Literal['confirm_not_created'] | None = None
+    reason: str | None = Field(None, min_length=8, max_length=300)
+
+
 @router.post('/outbound-records/{record_id}/replenishment-sync', summary='补货后立即核库存并生成原出库单')
-def replenishment_sync(record_id: str, response: Response, db: Session = Depends(get_db),
+def replenishment_sync(record_id: str, response: Response, body: ReplenishmentRequest | None = None,
+                       db: Session = Depends(get_db),
                        user=Depends(require_permission('shipping_inspection:write')),
                        _sync=Depends(require_permission('invoice:sync'))):
     from app.shipping_inspection.replenishment_service import synchronize
     response.headers['Cache-Control'] = 'private, no-store'
+    body = body or ReplenishmentRequest()
     try:
-        return ok(synchronize(db, record_id, user))
+        return ok(synchronize(db, record_id, user, body.resolution, body.reason))
     except (ValueError, RuntimeError) as error:
         db.rollback()
         logger.warning('Outbound replenishment unavailable (%s)', type(error).__name__)

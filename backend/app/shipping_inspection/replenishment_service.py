@@ -20,9 +20,29 @@ def authorize(db, record_id, user):
     return actor, task
 
 
-def synchronize(db, record_id, user):
+def review(db, record_id, user, resolution, reason):
+    """Administrator manual review of an uncertain replenishment submission."""
+    from app.shipping_inspection import replenishment_review
+    if resolution not in replenishment_review.RESOLUTIONS:
+        reject(400, '补货人工核对只能选择确认未生成')
+    try:
+        actor, task = authorize(db, record_id, user)
+        task_id = task.id
+        db.commit();worker.clear(db)
+        with outbound_mode.executor_fence(db) as acquired:
+            if not acquired:
+                return {'status':'busy', 'message':'出库执行正在处理其他任务，请稍后重试'}
+            worker.clear(db)
+            return replenishment_review.confirm_not_created(db, task_id, actor, reason)
+    finally:
+        worker.clear(db)
+
+
+def synchronize(db, record_id, user, resolution=None, reason=None):
     if not re.fullmatch(r'task:[1-9][0-9]*', record_id):
         reject(409, '补货同步仅适用于尚未生成的缺货出库任务')
+    if resolution is not None:
+        return review(db, record_id, user, resolution, reason)
     try:
         actor, task = authorize(db, record_id, user)
         invoice_id, task_id, actor_id = task.invoice_id, task.id, actor['id']
