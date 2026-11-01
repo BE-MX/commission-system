@@ -337,6 +337,57 @@ def finish_send(db, claim_id, outcome, evidence, external_id=None):
     return claim
 
 
+MANUALLY_RELEASABLE = {"sending", "unknown"}
+
+
+def confirm_not_sent(db, claim_id, *, operator_id, reason, remote_evidence, source):
+    """Authorized administrator confirms the original request created nothing.
+
+    Restores the pre-transition manual "confirm not created" recovery for a
+    timed-out or crashed send: the original unknown/sending claim closes as
+    not_sent with append-only evidence and an authority event, which releases
+    the per-order lock. It never sends, never bypasses a frozen authority and
+    keeps route/epoch identity. Callers own the live permission check and
+    must already hold the portal barrier when their entry uses one.
+    """
+    current = _lock_policy(db)
+    invoice_id = db.query(SendingClaim.invoice_id).filter_by(id=claim_id).scalar()
+    if invoice_id is None:
+        raise TransitionError("原发送责任不存在，请刷新后重新核对")
+    held = _lock_authority(db, invoice_id)  # Immutable locator; authority before claim.
+    claim = db.query(SendingClaim).filter_by(id=claim_id).populate_existing().with_for_update().one()
+    if claim.state not in MANUALLY_RELEASABLE:
+        raise TransitionError(f"原请求已有终局结果（{claim.state}），不能再确认未生成；请按原结果核对")
+    if claim.external_id:
+        raise TransitionError("原请求已取得远端单据身份，不能确认未生成；请按已有单据绑定")
+    if held.state != "active":
+        raise TransitionError("订单办理权已冻结（原请求证据冲突或正在移交），不能人工解除原请求；"
+                              "请先由管理员核清冻结原因")
+    if claim.route != held.route or claim.epoch != held.epoch:
+        raise TransitionError("原请求属于订单旧的办理路线或版本，不能在当前订单上直接解除；请核对办理权移交记录")
+    _phase_allows(db, current, claim.route)
+    now = beijing_now()
+    if claim.lease_until is not None and claim.lease_until > now:
+        raise TransitionError("原请求执行租约尚未结束，请稍后再核对，避免与仍在进行的发送冲突")
+    note = str(reason or "").strip()
+    if not note:
+        raise TransitionError("请填写人工核对原因")
+    if type(operator_id) is not int or operator_id < 1:
+        raise TransitionError("无法确认人工核对操作人")
+    if not isinstance(remote_evidence, dict) or not remote_evidence:
+        raise TransitionError("必须记录人工确认时的远端证据")
+    _key(source, "核对入口")
+    evidence = {"manual_confirm_not_created": True, "operator_id": operator_id, "reason": note,
+                "confirmed_at": now.isoformat(), "prior_state": claim.state, "source": source,
+                "remote_evidence": remote_evidence}
+    db.add(ClaimEvidence(claim_id=claim.id, outcome="not_sent", evidence=evidence, external_id=None))
+    _event(db, held, "manual_not_created", {"claim_id": claim.id, "request_key": claim.request_key,
+                                            "operation": claim.operation, **evidence})
+    claim.state, claim.active_invoice_key, claim.terminal_at = "not_sent", None, now
+    db.flush()
+    return claim
+
+
 def authority_view(db, invoice_id):
     row = db.get(InvoiceAuthority, invoice_id)
     if row is None:
