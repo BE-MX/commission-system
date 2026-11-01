@@ -340,6 +340,25 @@ def finish_send(db, claim_id, outcome, evidence, external_id=None):
 MANUALLY_RELEASABLE = {"sending", "unknown"}
 
 
+def lock_recovery_scope(db, invoice_ids):
+    """Policy, then existing authorities by ID, before any business row lock.
+
+    Recovery entries that may close an original claim call this first. It
+    neither gates on route/state nor bumps versions; pre-install orders
+    without an authority row stay readable.
+    """
+    current = _lock_policy(db)
+    ids = sorted({int(identity) for identity in invoice_ids})
+    rows = db.query(InvoiceAuthority).filter(InvoiceAuthority.invoice_id.in_(ids)).order_by(
+        InvoiceAuthority.invoice_id).populate_existing().with_for_update().all() if ids else []
+    return current, {row.invoice_id: row for row in rows}
+
+
+def frozen_message(subject):
+    return (f"订单办理权已冻结（原请求证据冲突或正在移交），不能{subject}；"
+            "请先由管理员核清冻结原因")
+
+
 def confirm_not_sent(db, claim_id, *, operator_id, reason, remote_evidence, source):
     """Authorized administrator confirms the original request created nothing.
 
@@ -361,8 +380,7 @@ def confirm_not_sent(db, claim_id, *, operator_id, reason, remote_evidence, sour
     if claim.external_id:
         raise TransitionError("原请求已取得远端单据身份，不能确认未生成；请按已有单据绑定")
     if held.state != "active":
-        raise TransitionError("订单办理权已冻结（原请求证据冲突或正在移交），不能人工解除原请求；"
-                              "请先由管理员核清冻结原因")
+        raise TransitionError(frozen_message("人工解除原请求"))
     if claim.route != held.route or claim.epoch != held.epoch:
         raise TransitionError("原请求属于订单旧的办理路线或版本，不能在当前订单上直接解除；请核对办理权移交记录")
     _phase_allows(db, current, claim.route)

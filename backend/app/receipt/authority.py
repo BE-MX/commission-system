@@ -106,8 +106,13 @@ def local_receipt(db, identity, user, *permissions):
         unavailable(error)
 
 
-def local_group(db, identity, user, *permissions, any_permission=False):
-    """Authorize a receipt group: all lineage, sorted invoices, batch, receipts."""
+def local_group(db, identity, user, *permissions, any_permission=False, recovery=False):
+    """Authorize a receipt group: all lineage, sorted invoices, batch, receipts.
+
+    recovery=True additionally takes the commerce policy and invoice
+    authorities (portal -> policy -> authority -> lineage -> invoice), so a
+    recovery may close the original sending claim in the documented order.
+    """
     from app.invoice.models import Invoice
     from app.invoice.settlement_models import ReceiptBatch
     from app.portal.models import Conversion, OrderRequest
@@ -122,6 +127,9 @@ def local_group(db, identity, user, *permissions, any_permission=False):
         members = db.execute(select(Receipt.id, Receipt.invoice_id).where(
             Receipt.batch_id == batch_id).order_by(Receipt.id)).all() if batch_id else [(identity, invoice_id)]
         invoice_ids = sorted({member[1] for member in members})
+        if recovery:
+            from app.commerce_transition.service import lock_recovery_scope
+            lock_recovery_scope(db, invoice_ids)
         lineage = db.execute(select(Conversion.id, Conversion.request_id).where(
             Conversion.invoice_id.in_(invoice_ids))).all()
         if lineage:

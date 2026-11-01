@@ -185,3 +185,102 @@ def test_invoice_legacy_uncertain_without_claim_follows_original_manual_flow(db,
     posts = []
     succeed_push(db, pushable, monkeypatch, posts)
     assert len(posts) == 1
+
+
+# ---------------------------------------------------------------- receipt
+
+@pytest.fixture
+def receipts(db, ready, monkeypatch):
+    from app.receipt import attachments, remote, sync_service
+    monkeypatch.setattr(remote, 'order_snapshot', lambda db, invoice: {
+        'rows': [], 'exchange_rate': 1, 'invoice_binding': remote.invoice_binding(invoice)})
+    monkeypatch.setattr(remote, 'receipt_types', lambda db: ['T/T'])
+    monkeypatch.setattr(remote, 'read', lambda *a, **k: [])
+    monkeypatch.setattr(attachments, 'bind', lambda *a, **k: None)
+    monkeypatch.setattr(sync_service, 'refresh_accepted', lambda *a: None)
+    return ready
+
+
+def new_receipt(db, invoice_id, key):
+    from tests.test_commerce_legacy_transition_sending import receipt
+    return receipt(db, invoice_id, key)
+
+
+def deliver_with(db, monkeypatch, identity, outcome):
+    from app.receipt import sync_service
+    def post(*a, **k):
+        if outcome == 'timeout':
+            raise httpx.ReadTimeout('receipt response lost')
+        return httpx.Response(200, json={'code': 200, 'data': {'cash_collection_id': outcome,
+                                                              'cash_collection_no': f'HK{outcome}'}})
+    monkeypatch.setattr(httpx, 'post', post)
+    db.rollback()
+    sync_service.deliver(db, identity)
+    db.rollback()
+
+
+def receipt_claims(db):
+    return db.query(SendingClaim).filter_by(operation='receipt_push').order_by(SendingClaim.id).all()
+
+
+def resolve_receipt(db, identity, user, resolution, **extra):
+    from app.receipt import reconciliation_service
+    from app.receipt.schemas import Resolution
+    db.rollback()
+    body = Resolution(resolution=resolution, reason=extra.pop('reason', 'Checked OKKI receipt list manually'), **extra)
+    reconciliation_service.recover(db, identity, user, body)
+    db.commit()
+
+
+def test_receipt_unknown_confirm_not_created_releases_claim_and_resends(db, receipts, monkeypatch):
+    from app.receipt import remote
+    from app.receipt.models import Receipt
+    first = new_receipt(db, receipts.id, 'receipt-unknown')
+    deliver_with(db, monkeypatch, first, 'timeout')
+    assert db.get(Receipt, first).sync_status == 'uncertain' and receipt_claims(db)[0].state == 'unknown'
+    monkeypatch.setattr(remote, 'order_receipts', lambda db, order_id: [])
+    seed_authority(db, 3, 'receipt:read', 'receipt:write')
+    with pytest.raises(HTTPException) as denied:
+        resolve_receipt(db, first, {'id': 3, 'sub': '3'}, 'confirm_not_created')
+    assert denied.value.status_code == 403
+    db.rollback()
+    resolve_receipt(db, first, ADMIN, 'confirm_not_created')
+    assert db.get(Receipt, first).sync_status == 'pending'
+    assert_manual_release(db, receipt_claims(db)[0], operator_id=1)
+    deliver_with(db, monkeypatch, first, '701')
+    saved = db.get(Receipt, first)
+    assert saved.sync_status == 'synced' and saved.xiaoman_receipt_id == '701'
+    assert [c.state for c in receipt_claims(db)] == ['not_sent', 'succeeded']
+
+
+def test_receipt_frozen_order_confirm_not_created_is_refused(db, receipts, monkeypatch):
+    from app.receipt import remote
+    first = new_receipt(db, receipts.id, 'receipt-frozen')
+    deliver_with(db, monkeypatch, first, 'timeout')
+    monkeypatch.setattr(remote, 'order_receipts', lambda db, order_id: [])
+    db.get(InvoiceAuthority, receipts.id).state = 'frozen'; db.commit()
+    with pytest.raises(ValueError, match='冻结'):  # The receipt router turns ValueError into 409 + message.
+        resolve_receipt(db, first, ADMIN, 'confirm_not_created')
+    db.rollback()
+    assert receipt_claims(db)[0].state == 'unknown'
+
+
+def test_receipt_bind_original_closes_unknown_claim_and_order_can_send_again(db, receipts, monkeypatch):
+    from app.receipt import remote
+    from app.receipt.models import Receipt
+    first = new_receipt(db, receipts.id, 'receipt-bind')
+    deliver_with(db, monkeypatch, first, 'timeout')
+    original = {'cash_collection_id': '701', 'cash_collection_no': 'HK701', 'order_id': '2001', 'currency': 'USD',
+                'amount': '10.00', 'bank_charge': '0', 'real_amount': '10.00',
+                'collection_date': beijing_today().isoformat(), 'collect_status': 1}
+    monkeypatch.setattr(remote, 'receipt_info', lambda db, identity: dict(original))
+    resolve_receipt(db, first, ADMIN, 'bind_receipt', xiaoman_receipt_id='701')
+    assert db.get(Receipt, first).xiaoman_receipt_id == '701'
+    claim = receipt_claims(db)[0]
+    assert claim.state == 'succeeded' and claim.external_id == '701' and claim.active_invoice_key is None
+    monkeypatch.setattr(remote, 'order_snapshot', lambda db, invoice: {  # The bound original is now remote.
+        'rows': [dict(original)], 'exchange_rate': 1, 'invoice_binding': remote.invoice_binding(invoice)})
+    second = new_receipt(db, receipts.id, 'receipt-after-bind')
+    deliver_with(db, monkeypatch, second, '702')
+    assert db.get(Receipt, second).xiaoman_receipt_id == '702', db.get(Receipt, second).last_error
+    assert [c.state for c in receipt_claims(db)] == ['succeeded', 'succeeded']

@@ -90,7 +90,13 @@ def _values(row):
 def _capture(db, identity, user, body):
     permissions = ('receipt:write', 'receipt:admin') if body is None else ('receipt:admin',)
     row, invoice, current, batch, children = authority.local_group(db, identity, user,
-        *permissions, any_permission=body is None)
+        *permissions, any_permission=body is None, recovery=True)
+    if body is not None:
+        from app.commerce_transition.models import InvoiceAuthority
+        from app.commerce_transition.service import frozen_message
+        held = db.get(InvoiceAuthority, row.invoice_id)  # Locked by the recovery scope above.
+        if held is not None and held.state != 'active':
+            raise ValueError(frozen_message('人工处理待核对回款'))
     logs = db.scalars(select(ReceiptLog).where(ReceiptLog.receipt_id.in_([child.id for child in children]))
         .order_by(ReceiptLog.id).with_for_update().execution_options(populate_existing=True)).all()
     if row.status != 'active' or row.sync_status not in ({'synced', 'uncertain'} if body is None else {'uncertain'}):

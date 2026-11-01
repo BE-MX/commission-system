@@ -289,6 +289,10 @@ def refresh_accepted(db, receipt_id):
             return
         identity, version = row.xiaoman_receipt_id, row.version
         data = remote.receipt_info(db, identity)
+        # A verified bind may close the original claim: portal -> policy -> authority -> invoice.
+        from app.portal.authority import lock_authority
+        lock_authority(db, force=True)
+        legacy_sending.ownership.lock_recovery_scope(db, [row.invoice_id])
         db.query(Invoice).filter(Invoice.id == row.invoice_id).with_for_update().one()
         db.refresh(row, with_for_update=True)
         if row.status != "active" or row.xiaoman_receipt_id != identity or row.version != version or pending(db, row):
@@ -373,6 +377,7 @@ def bind_remote(db, row, data, actor):
     service.log(db, row, "reconciled", "已核对并绑定小满回款", actor)
     from app.invoice.shipment_payment_policy import record_effective
     record_effective(db, row, actor)
+    _settle_bound_claims(db, row, identity, data)
     if row.collect_status == 1 and row.attempt_token:
         from app.commerce_transition.models import SendingClaim
         claim = db.scalar(select(SendingClaim).where(
@@ -382,6 +387,35 @@ def bind_remote(db, row, data, actor):
             legacy_sending.observe_formal(db, claim.request_key, 'legacy.receipt.remote', 'accepted',
                 result_row=row, actor_id=(claim.responsibilities or {}).get('actor_id'),
                 evidence_ref={'receipt_id': row.id, 'remote_id': identity, 'version': row.version})
+
+
+def _open_claims(db, row):
+    """Unresolved original POST claims of this receipt, located without external_id."""
+    from app.commerce_transition.models import SendingClaim
+    claims = db.scalars(select(SendingClaim).where(
+        SendingClaim.invoice_id == row.invoice_id, SendingClaim.operation == 'receipt_push',
+        SendingClaim.state.in_(['sending', 'unknown'])).order_by(SendingClaim.id)
+        .with_for_update().execution_options(populate_existing=True)).all()
+    return [claim for claim in claims if (claim.responsibilities or {}).get('receipt_id') == row.id]
+
+
+def _settle_bound_claims(db, row, identity, data):
+    """The verified original receipt closes the attempt that created it."""
+    for claim in _open_claims(db, row):
+        if (claim.responsibilities or {}).get('attempt_token') != row.attempt_token:
+            continue
+        legacy_sending.finish(db, claim.request_key, 'succeeded', {
+            'original_request_readback': True, 'receipt_id': row.id,
+            'readback_sha256': legacy_sending.ownership.digest(data)}, identity)
+
+
+def _release_unsent_claims(db, row, actor, reason, evidence):
+    """Administrator confirmed no remote receipt: release this receipt's unknown POSTs."""
+    for claim in _open_claims(db, row):
+        legacy_sending.ownership.confirm_not_sent(db, claim.id, operator_id=int(actor), reason=reason,
+            source='receipt.resolve', remote_evidence={
+                'remote_readback': 'order_receipts', 'order_id': row.xiaoman_order_id,
+                'candidate_count': len(evidence), 'readback_sha256': legacy_sending.ownership.digest(evidence)})
 
 
 def _reconcile(db, row, evidence, actor):
@@ -411,6 +445,7 @@ def _resolve(db, row, body, evidence, actor):
         candidates = [r for r in evidence if candidate_matches(row, r)]
         if candidates:
             raise ValueError("小满存在同订单同额回款候选，不能确认未创建，请核对后绑定")
+        _release_unsent_claims(db, row, actor, body.reason, evidence)
         row.sync_status, row.last_error = "pending", None
         row.send_phase, row.recovery_kind, row.next_attempt_at, row.recovery_attempts = None, None, None, 0
         row.version += 1
