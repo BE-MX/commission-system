@@ -453,12 +453,17 @@ def _open_claims(db, row):
 
 
 def _settle_bound_claims(db, row, identity, data):
-    """The verified original receipt closes the attempt that created it."""
+    """The verified original receipt closes every unfinished POST of this receipt.
+
+    Not filtered by attempt token: lease recovery clears the row's token and a
+    claim refusal can leave a newer token, while the matched remote receipt is
+    already verified against this receipt. Leaving any open claim would block
+    the whole order indefinitely.
+    """
     for claim in _open_claims(db, row):
-        if (claim.responsibilities or {}).get('attempt_token') != row.attempt_token:
-            continue
         legacy_sending.finish(db, claim.request_key, 'succeeded', {
             'original_request_readback': True, 'receipt_id': row.id,
+            'claim_attempt_token': (claim.responsibilities or {}).get('attempt_token'),
             'readback_sha256': legacy_sending.ownership.digest(data)}, identity)
 
 

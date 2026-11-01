@@ -345,3 +345,59 @@ def test_receipt_claim_refusal_after_precheck_is_classified_not_plain_failed(db,
     row = db.get(Receipt, first)
     assert len(calls) == 2 and row.sync_status == 'uncertain' and row.recovery_kind == 'unknown', row.last_error
     assert len(receipt_claims(db)) == 1
+
+
+# ------------------------------- bind closes every open claim of the receipt
+
+ORIGINAL_701 = {'cash_collection_id': '701', 'cash_collection_no': 'HK701', 'order_id': '2001', 'currency': 'USD',
+                'amount': '10.00', 'bank_charge': '0', 'real_amount': '10.00', 'collect_status': 1}
+
+
+def bind_701_then_second_sends(db, monkeypatch, first, receipts):
+    from app.receipt import remote
+    from app.receipt.models import Receipt
+    original = {**ORIGINAL_701, 'collection_date': beijing_today().isoformat()}
+    monkeypatch.setattr(remote, 'receipt_info', lambda db, identity: dict(original))
+    resolve_receipt(db, first, ADMIN, 'bind_receipt', xiaoman_receipt_id='701')
+    assert db.get(Receipt, first).xiaoman_receipt_id == '701'
+    assert all(claim.state in ('succeeded', 'not_sent', 'failed') for claim in receipt_claims(db)), \
+        [claim.state for claim in receipt_claims(db)]
+    monkeypatch.setattr(remote, 'order_snapshot', lambda db, invoice: {
+        'rows': [dict(original)], 'exchange_rate': 1, 'invoice_binding': remote.invoice_binding(invoice)})
+    second = new_receipt(db, receipts.id, f'after-bind-{first}')
+    deliver_with(db, monkeypatch, second, '702')
+    assert db.get(Receipt, second).xiaoman_receipt_id == '702', db.get(Receipt, second).last_error
+
+
+def test_crash_recovered_receipt_bind_closes_its_original_claim(db, receipts, monkeypatch):
+    from app.receipt import recovery
+    from app.receipt.models import Receipt
+    first = new_receipt(db, receipts.id, 'receipt-crash-bind')
+    deliver_with(db, monkeypatch, first, 'timeout')
+    # Simulate a worker crash mid-send: the row stayed syncing past its lease.
+    db.query(Receipt).filter_by(id=first).update({'sync_status': 'syncing', 'send_phase': 'sending',
+                                                  'lease_until': beijing_now() - timedelta(minutes=1)})
+    db.commit()
+    recovery.recover_expired(db)
+    row = db.get(Receipt, first)
+    assert row.sync_status == 'uncertain' and row.attempt_token is None
+    db.rollback()
+    bind_701_then_second_sends(db, monkeypatch, first, receipts)
+
+
+def test_own_claim_hold_receipt_bind_closes_its_original_claim(db, receipts, monkeypatch):
+    from app.receipt import sync_service
+    from app.receipt.models import Receipt
+    first = new_receipt(db, receipts.id, 'receipt-hold-bind')
+    deliver_with(db, monkeypatch, first, 'timeout')
+    stale_pending(db, first)
+    real, calls = sync_service._claim_block, []
+    def late(db, row):  # Refusal arrives after a new attempt token was issued.
+        calls.append(row.id)
+        return (None, None) if len(calls) == 1 else real(db, row)
+    monkeypatch.setattr(sync_service, '_claim_block', late)
+    deliver_with(db, monkeypatch, first, 'must-not-send')
+    monkeypatch.setattr(sync_service, '_claim_block', real)
+    assert db.get(Receipt, first).sync_status == 'uncertain'
+    db.rollback()
+    bind_701_then_second_sends(db, monkeypatch, first, receipts)
