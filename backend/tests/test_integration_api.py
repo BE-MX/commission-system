@@ -1240,6 +1240,10 @@ def test_external_invoice_can_be_deleted_and_recreated_with_same_order_id(api):
     invoice_service.delete_invoice(db, invoice)
     db.commit()
     assert invoice_service.get_invoice(db, original["invoice_id"]) is None
+    # Soft delete: the draft stays archived and keeps its external request identity,
+    # while the external order's ingest slot is released for a new submission.
+    archived = db.get(Invoice, original["invoice_id"])
+    assert archived.status == "deleted" and archived.source_order_id == original["request_id"]
     assert db.query(InvoiceIngestRequest).count() == 0
 
     recreated = client.post(
@@ -1250,7 +1254,8 @@ def test_external_invoice_can_be_deleted_and_recreated_with_same_order_id(api):
     assert recreated_data["replayed"] is False
     assert recreated_data["request_id"] != original["request_id"]
     assert recreated_data["external_order_id"] == original["external_order_id"]
-    assert db.query(Invoice).count() == 1
+    assert db.query(Invoice).filter(Invoice.status != "deleted").count() == 1
+    assert db.query(Invoice).filter(Invoice.status == "deleted").count() == 1
     ingest = db.query(InvoiceIngestRequest).one()
     assert ingest.status == "created"
     assert ingest.invoice_id == recreated_data["invoice_id"]
@@ -1380,7 +1385,9 @@ def test_external_invoice_delete_rollback_restores_all_ingest_rows(api):
     invoice = invoice_service.get_invoice(db, invoice_id)
     invoice_service.delete_invoice(db, invoice)
     db.flush()
-    assert db.query(Invoice).count() == 0
+    # Soft delete archives the draft and releases every ingest slot that points to it.
+    assert db.query(Invoice).filter(Invoice.status != "deleted").count() == 0
+    assert db.get(Invoice, invoice_id).status == "deleted"
     assert db.query(InvoiceIngestRequest).count() == 0
 
     db.rollback()

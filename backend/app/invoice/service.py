@@ -384,7 +384,7 @@ def delete_invoice(db: Session, invoice: Invoice, *, actor_id=None) -> None:
                 'actor_id': actor_id, 'no_economic_facts_checked_at': beijing_now().isoformat()}
     invoice.status = 'deleted'
     authority.state = 'frozen'
-    audit = {'actor_id': actor_id, 'invoice_no': invoice.invoice_no, **_release_draft_identity(invoice)}
+    audit = {'actor_id': actor_id, 'invoice_no': invoice.invoice_no, **_release_draft_identity(db, invoice)}
     from app.commerce_transition.service import _event
     _event(db, authority, 'draft_deleted', audit)
 
@@ -392,7 +392,7 @@ def delete_invoice(db: Session, invoice: Invoice, *, actor_id=None) -> None:
 DELETED_NO_MARK = "~DEL~"
 
 
-def _release_draft_identity(invoice: Invoice) -> dict:
+def _release_draft_identity(db: Session, invoice: Invoice) -> dict:
     """Free the unique number and screenshot keys of an archived draft.
 
     The archived row keeps its audit/authority, but must not hold the
@@ -404,10 +404,20 @@ def _release_draft_identity(invoice: Invoice) -> dict:
     released = {'released_invoice_no': f"{invoice.invoice_no[:width - len(tag)]}{tag}"}
     invoice.invoice_no = released['released_invoice_no']
     if invoice.source_type == "okki_screenshot":
-        # External-API keys stay: they are the integration's ingest idempotency.
         released['source_order_id'] = invoice.source_order_id
         released['source_image_sha256'] = invoice.source_image_sha256
         invoice.source_order_id = invoice.source_image_sha256 = None
+    elif invoice.source_type == "external_api":
+        # The archived draft keeps its own request identity (source_order_id), but
+        # the external order's ingest slot is released so the site can submit it
+        # again with a new request, as the pre-archive delete allowed.
+        from app.integration.models import InvoiceIngestRequest
+        rows = db.query(InvoiceIngestRequest).filter(
+            InvoiceIngestRequest.invoice_id == invoice.id).with_for_update().all()
+        released['ingest_requests'] = [{'request_id': row.public_id, 'external_order_id': row.external_order_id}
+                                       for row in rows]
+        for row in rows:
+            db.delete(row)
     return released
 
 
