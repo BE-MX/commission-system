@@ -46,7 +46,7 @@ def test_scheduler_routes_only_enabled_receipt_types(db, monkeypatch, ordinary_r
 
     sent = []
     monkeypatch.setattr(scheduler, "SessionLocal", session)
-    monkeypatch.setattr(scheduler, "get_settings", lambda: SimpleNamespace(RECEIPT_SYNC_ENABLED=ordinary_ready))
+    monkeypatch.setattr(scheduler, "get_settings", lambda: SimpleNamespace(RECEIPT_SYNC_ENABLED=ordinary_ready, TRANSACTION_MODE="legacy"))
     monkeypatch.setattr("app.invoice.settlement_policy.capabilities", lambda: {
         "freight_delivery_enabled": presale_ready, "outbound_delivery_enabled": presale_ready})
     monkeypatch.setattr(scheduler.invoice_link, "recover_expired", lambda _: None)
@@ -75,7 +75,7 @@ def test_blocked_pending_receipts_do_not_starve_later_presale(db, monkeypatch):
 
     sent = []
     monkeypatch.setattr(scheduler, "SessionLocal", session)
-    monkeypatch.setattr(scheduler, "get_settings", lambda: SimpleNamespace(RECEIPT_SYNC_ENABLED=True))
+    monkeypatch.setattr(scheduler, "get_settings", lambda: SimpleNamespace(RECEIPT_SYNC_ENABLED=True, TRANSACTION_MODE="legacy"))
     monkeypatch.setattr("app.invoice.settlement_policy.capabilities", lambda: {
         "freight_delivery_enabled": True, "outbound_delivery_enabled": True})
     monkeypatch.setattr(scheduler.invoice_link, "recover_expired", lambda _: None)

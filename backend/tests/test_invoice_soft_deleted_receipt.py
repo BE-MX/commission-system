@@ -18,8 +18,8 @@ def install_soft_delete(monkeypatch, live):
         return {"list": [deepcopy(before)] if match else [], "totalItem": int(match)}
     monkeypatch.setattr(remote, "read", read)
     original = lifecycle_remote.request
-    def request(token, kind, identity, remove=False):
-        result = original(token, kind, identity, remove=remove)
+    def request(token, kind, identity, *, remove=False, db=None, ticket=None):
+        result = original(token, kind, identity, remove=remove, db=db, ticket=ticket)
         if kind == "receipt" and remove:
             live["receipt"] = deepcopy(before)
             live["deleted_receipt"] = True

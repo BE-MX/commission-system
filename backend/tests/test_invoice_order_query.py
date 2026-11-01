@@ -45,7 +45,8 @@ def case(db, monkeypatch, request):
     from app.core import config
     with monkeypatch.context() as origin:
         origin.setattr(config, 'get_settings', lambda: SimpleNamespace(
-            OKKI_OUTBOUND_AUTO_ENABLED=getattr(request, 'param', True)))
+            OKKI_OUTBOUND_AUTO_ENABLED=getattr(request, 'param', True),
+            PORTAL_OKKI_NAMESPACE='', COMMERCE_SHADOW_ENABLED=False))
         attempt = facts.start(db, invoice, 1, push.capture(db, invoice, payload), payload, None, None)
     facts.record(db, attempt, facts.observation(attempt, 1, 'unknown'))
     db.commit()

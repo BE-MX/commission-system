@@ -15,8 +15,12 @@ from app.invoice import legacy_sending
 
 
 def install_remove(monkeypatch, sender):
-    # Keep the actual persistent gate; replace only its provider transport.
-    monkeypatch.setattr(remote, '_request', lambda token, identity, *, remove=False: sender(token, identity))
+    # Keep the actual persistent gate; replace only its provider DELETE transport.
+    # Detail reads (remove=False) keep the original transport, as in production.
+    original = remote._request
+    def request(token, identity, *, remove=False):
+        return sender(token, identity) if remove else original(token, identity)
+    monkeypatch.setattr(remote, '_request', request)
 
 
 @pytest.fixture

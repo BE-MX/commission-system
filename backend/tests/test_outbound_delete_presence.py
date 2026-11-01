@@ -3,6 +3,7 @@ import httpx
 import pytest
 from sqlalchemy import text
 
+from app.invoice import legacy_sending
 from app.shipping_inspection import outbound_presence as presence
 from app.shipping_inspection import outbound_delete_client as remote, outbound_delete_service as deletion
 from app.shipping_inspection import outbound_reconcile_service as reconciliation, outbound_service
@@ -384,9 +385,12 @@ def test_scheduler_defers_concurrent_business_changes(db, sync_case, monkeypatch
 
 def test_scheduler_finishes_uncertain_receipt_without_sending_again(db, sync_case, monkeypatch):
     user, _, task, state = sync_case
-    def timeout(*args):
-        state['posts'] += 1
-        raise remote.DeleteRemoteError('timeout', uncertain=True)
+    def timeout(token, identity, *, db, ticket):
+        # The removal still runs through the durable claim executor; only the POST times out.
+        def send():
+            state['posts'] += 1
+            raise remote.DeleteRemoteError('timeout', uncertain=True)
+        return legacy_sending.invoke_removal(db, ticket, 'outbound', identity, send)
     monkeypatch.setattr(remote, 'remove', timeout)
     with pytest.raises(deletion.OutboundDeleteError):
         deletion.delete_outbound(db, outbound_service.get_outbound_record(db, 'OB001'), user.id)
@@ -418,9 +422,12 @@ def test_pending_receipt_recovers_even_after_header_sync_removed_it(db, sync_cas
     def read(*args):
         return {**original_read(*args), 'create_time': '2026-09-21 14:16:08'}
     monkeypatch.setattr(remote, 'read', read)
-    def timeout(*args):
-        state['posts'] += 1
-        raise remote.DeleteRemoteError('timeout', uncertain=True)
+    def timeout(token, identity, *, db, ticket):
+        # The removal still runs through the durable claim executor; only the POST times out.
+        def send():
+            state['posts'] += 1
+            raise remote.DeleteRemoteError('timeout', uncertain=True)
+        return legacy_sending.invoke_removal(db, ticket, 'outbound', identity, send)
     monkeypatch.setattr(remote, 'remove', timeout)
     with pytest.raises(deletion.OutboundDeleteError):
         deletion.delete_outbound(db, outbound_service.get_outbound_record(db, 'OB001'), user.id)
