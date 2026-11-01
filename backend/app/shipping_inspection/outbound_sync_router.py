@@ -1,4 +1,6 @@
 """Scoped manual outbound synchronization endpoints."""
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -16,6 +18,11 @@ class SyncRequest(BaseModel):
     check_only: bool = False
     confirm_recheck: bool = False
     repair: bool = False
+    # Administrator manual review of an uncertain task (shipping_inspection:admin
+    # or invoice:admin, checked live in the service): confirm the original sync
+    # created nothing, or bind a verified existing OKKI result (pre-protocol tasks).
+    resolution: Literal['confirm_not_created', 'bind_existing'] | None = None
+    reason: str | None = Field(None, min_length=8, max_length=300)
 
 
 class AllowPrintBeforeRecheckRequest(BaseModel):
@@ -50,7 +57,7 @@ def synchronize(record_id: str, body: SyncRequest, response: Response, db: Sessi
         response.headers['Cache-Control'] = 'private, no-store'
         return ok(outbound_sync_service.synchronize(db, record_id, user, body.expected_version,
             check_only=body.check_only, confirm_recheck=body.confirm_recheck, repair=body.repair,
-            force_authority=True, warehouse=True))
+            force_authority=True, warehouse=True, resolution=body.resolution, reason=body.reason))
     except (ValueError, OkkiApiError) as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc

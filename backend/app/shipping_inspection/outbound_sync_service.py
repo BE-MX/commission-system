@@ -301,9 +301,9 @@ def _repair_missing(db, record, user, invoice, event):
 
 def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=False,
                 desired_serial_id=None, expected_serial_id=None, number_only=False, repair=False, auto_recall=False,
-                source='pc', force_authority=False, warehouse=False):
+                source='pc', force_authority=False, warehouse=False, resolution=None, reason=None):
     from app.shipping_inspection import outbound_execution
     return outbound_execution.synchronize(db, record, user, version, check_only=check_only,
         confirm_recheck=confirm_recheck, desired_serial_id=desired_serial_id, number_only=number_only,
         expected_serial_id=expected_serial_id, repair=repair, auto_recall=auto_recall,
-        source=source, warehouse=warehouse)
+        source=source, warehouse=warehouse, resolution=resolution, reason=reason)

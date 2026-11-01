@@ -385,9 +385,13 @@ from app.invoice.stock_reservations import fenced
 
 @fenced
 def synchronize(db,record,user,version,*,check_only=False,confirm_recheck=False,desired_serial_id=None,expected_serial_id=None,
-                number_only=False,repair=False,auto_recall=False,source='pc',warehouse=False):
+                number_only=False,repair=False,auto_recall=False,source='pc',warehouse=False,resolution=None,reason=None):
     try:
-        from app.shipping_inspection import outbound_sync_service as legacy
+        from app.shipping_inspection import outbound_sync_service as legacy, outbound_manual_review as manual
+        if resolution is not None:
+            return manual.resolve(db,record,user,warehouse,resolution,reason)
+        if manual.legacy_pending(db,record):
+            prepare.reject(409,manual.LEGACY_GUIDANCE)
         # Read trusted prior requirements under current authority before any provider evidence.
         actor,original,_,prior,_,preflight_binding,_=local(db,record,user,warehouse)
         if prior is not None and (prior.payload or {}).get('protocol')==1:

@@ -18,7 +18,8 @@ FACT='outbound-sync-fact'
 READ='outbound-sync-read'
 FINISH='outbound-sync-finish'
 REVIEW='outbound-sync-review'
-SCOPES=(START,SEND,FACT,READ,FINISH,REVIEW)
+LEGACY_REVIEW='outbound-sync-legacy-review'  # Admin review of a pre-protocol task.
+SCOPES=(START,SEND,FACT,READ,FINISH,REVIEW,LEGACY_REVIEW)
 
 
 @event.listens_for(ShippingOperationEvent,'before_update')
@@ -102,7 +103,8 @@ def validate(db,attempt):
 def load(db,current):
     payload=current.payload or {}
     if payload.get('protocol')!=1 or not isinstance(payload.get('send_nonce'),str):
-        reject(409,'历史出库任务缺少可信原发送记录，请由仓库人工核对')
+        from app.shipping_inspection.outbound_manual_review import LEGACY_GUIDANCE
+        reject(409,LEGACY_GUIDANCE)
     row=get(db,START,payload['send_nonce'],lock=True)
     if row is None: reject(409,'原出库发送记录缺失，禁止再次外发')
     attempt=Attempt(row.request_id,deepcopy(row.payload))
