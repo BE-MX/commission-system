@@ -27,6 +27,15 @@
             </el-form-item>
           </el-form>
           <el-checkbox v-if="proof.can_delete" v-model="confirmed" :disabled="busy">确认只删除以上回款单，保留原凭证与审计</el-checkbox>
+          <!-- Timed-out delete whose receipt is still in OKKI: only an administrator can end it. -->
+          <el-form v-if="abandonable" v-permission="'receipt:admin'" label-position="top">
+            <el-alert title="小满原回款仍然存在，原删除未生效。管理员可放弃本次删除，恢复原回款并释放订单锁。"
+              type="info" :closable="false" show-icon />
+            <el-form-item label="放弃删除的核对依据" class="receipt-abandon-reason">
+              <el-input v-model="abandonReason" type="textarea" :rows="2" maxlength="300" show-word-limit :disabled="busy"
+                placeholder="至少 8 个字，例如：已在小满回款列表核实原回款仍在" aria-label="放弃删除的核对依据" />
+            </el-form-item>
+          </el-form>
         </template>
         <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
       </div>
@@ -34,6 +43,10 @@
         <div class="dialog-footer receipt-delete-footer">
           <GlassButton :disabled="busy" @click="close()">关闭</GlassButton>
           <GlassButton :disabled="busy || disabled" left-icon="Refresh" @click="load">重新读取原单</GlassButton>
+          <span v-if="abandonable" v-permission="'receipt:delete'">
+            <GlassButton v-permission="'receipt:admin'" :disabled="disabled || busy || abandonReason.trim().length < 8"
+              @click="abandon">放弃删除并恢复原回款</GlassButton>
+          </span>
           <GlassButton v-permission="'receipt:delete'" :variant="proof?.can_resume ? 'primary' : 'danger'" :loading="busy"
             :disabled="disabled || !canSubmit" @click="submit">{{ proof?.can_resume ? '继续核验' : '确认删除' }}</GlassButton>
         </div>
@@ -57,6 +70,8 @@ const allowed = computed(() => auth.hasPermission('receipt:delete'))
 const eligible = computed(() => props.receipt.status === 'active' && !props.receipt.batch_id
   && (props.receipt.purpose || 'ordinary') === 'ordinary')
 const visible = ref(false), busy = ref(false), proof = ref(null), error = ref(''), reason = ref(''), confirmed = ref(false)
+const abandonReason = ref('')
+const abandonable = computed(() => Boolean(proof.value?.can_resume && proof.value?.remote_state === 'active'))
 const canSubmit = computed(() => Boolean(proof.value?.can_resume
   || proof.value?.can_delete && confirmed.value && reason.value.trim().length >= 2))
 let generation = 0, controller = null, disposed = false
@@ -71,7 +86,7 @@ function current(ctx) {
 }
 function reset() {
   ++generation; controller?.abort(); proof.value = null; error.value = ''; confirmed.value = false
-  reason.value = ''; busy.value = false; visible.value = false
+  reason.value = ''; abandonReason.value = ''; busy.value = false; visible.value = false
 }
 function close(done) {
   if (busy.value) return
@@ -118,6 +133,20 @@ async function submit() {
       proof.value = null; confirmed.value = false
       error.value = e.response?.data?.detail || '删除结果尚未确认，请重新读取原单继续核验；不要重新创建回款'
     }
+  } finally { if (ctx.generation === generation && !disposed) busy.value = false }
+}
+async function abandon() {
+  if (props.disabled || busy.value || !allowed.value || !abandonable.value || abandonReason.value.trim().length < 8) return
+  const ctx = context(), captured = proof.value
+  busy.value = true; error.value = ''
+  try {
+    const result = await deleteReceipt(ctx.id, { expected_version: captured.expected_version, confirmed: true,
+      reason: abandonReason.value.trim(), resolution: 'abandon' }, ctx.signal)
+    if (!current(ctx)) return
+    proof.value = null; busy.value = false; visible.value = false
+    msgSuccessText(result.message); emit('updated', result.receipt)
+  } catch (e) {
+    if (current(ctx)) error.value = e.response?.data?.detail || '放弃删除未完成，请重新读取原单后再核对'
   } finally { if (ctx.generation === generation && !disposed) busy.value = false }
 }
 watch(() => [props.receipt.id, allowed.value, auth.user?.id, auth.user?.sub, auth.accessToken, getAuthEpoch()], reset)
