@@ -37,6 +37,8 @@ def clear(db):
 def legacy_pending(db, record):
     """Unlocked read-only peek used to guide users before the normal sync path."""
     record_id = record['outbound_record_id'] if isinstance(record, dict) else record
+    if db.in_transaction() or db.new or db.dirty or db.deleted:
+        return False  # Never discard a caller's state; the normal path rejects it.
     try:
         event = db.query(ShippingOperationEvent).filter_by(scope=state.SCOPE, request_id=str(record_id)).first()
         return bool(event and event.action in state.ACTIVE and (event.payload or {}).get('protocol') != 1)
@@ -75,6 +77,8 @@ def resolve(db, record, user, warehouse, resolution, reason):
         prepare.reject(400, '人工核对方式只能为确认未生成或绑定已存在的小满结果')
     if len(note) < 8:
         prepare.reject(400, '请填写至少8个字符的人工核对依据')
+    if db.new or db.dirty or db.deleted:
+        prepare.reject(409, '出库人工核对必须从新事务开始，请重新读取')
     clear(db)  # End the request's read-only dependency snapshot; review starts fresh.
     actor, original, invoice, event = _locked(db, record, user, warehouse)
     if (event.payload or {}).get('protocol') == 1:
