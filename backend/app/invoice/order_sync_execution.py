@@ -106,7 +106,10 @@ def claim(db,invoice_id,user,expected,payload,linked_id=None,linked_token=None):
     current_payload,_,issues=xiaoman_service.build_push_payload(db,invoice)
     if issues or capture(db,invoice,current_payload)!=expected[0] or facts.unresolved(db,invoice):
         raise HTTPException(409,"取证期间发票、映射或本地执行资料已变化")
-    if xiaoman_service._screenshot_sync_issue(db,invoice):raise HTTPException(409,"截图订单身份查重未通过")
+    issue=xiaoman_service._screenshot_sync_issue(db,invoice)
+    if issue:  # Keep the concrete reason so the user knows what to check next.
+        reason=str(issue.get("message") or "").strip()
+        raise HTTPException(409,f"截图订单身份查重未通过：{reason}" if reason else "截图订单身份查重未通过")
     if not invoice.xiaoman_order_id and invoice.order_type!='presale' and xiaoman_service.get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
         # Persist original fulfillment intent even if the process dies after
         # the provider accepts; a partial response must never lose enrollment.

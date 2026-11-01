@@ -302,6 +302,7 @@ def test_screenshot_invoice_matched_in_current_okki_is_blocked_when_syncing(db, 
     with pytest.raises(HTTPException) as blocked:
         xiaoman_service.sync_invoice(db, invoice, operator_id=27)
     assert blocked.value.status_code == 409 and "截图订单身份查重" in blocked.value.detail
+    assert "本系统 OKKI" in blocked.value.detail
     db.rollback()
 
     duplicate = _resolve(db)
@@ -611,6 +612,7 @@ def test_screenshot_sync_rechecks_projection_after_invoice_was_saved(db, monkeyp
     with pytest.raises(HTTPException) as blocked:
         xiaoman_service.sync_invoice(db, invoice, operator_id=27)
     assert blocked.value.status_code == 409 and "截图订单身份查重" in blocked.value.detail
+    assert "本系统 OKKI" in blocked.value.detail
     db.rollback()
     assert called is False
 
