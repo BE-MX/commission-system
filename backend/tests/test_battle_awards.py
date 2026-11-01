@@ -199,7 +199,7 @@ def test_pk_uses_per_capita_not_team_total():
 
 
 @pytest.mark.parametrize("stamp,slot", [("2026-10-19T09:00:00+08:00","09:00"), ("2026-10-19T01:00:00+00:00","09:00"),
-    ("2026-10-20T09:00:00+08:00",None),("2026-10-21T16:05:00+08:00","16:00"),
+    ("2026-10-20T09:00:00+08:00","09:00"),("2026-10-21T16:05:00+08:00","16:00"),
     ("2026-10-18T18:00:00-07:00","09:00"),("2026-10-23T16:15:00+08:00","16:00")])
 def test_award_slots_in_beijing(stamp,slot):
     assert poster_delivery.due_slot(datetime.fromisoformat(stamp),campaign())==slot
@@ -210,7 +210,50 @@ def test_push_bounds_and_midnight():
     assert not poster_delivery.eligible(r,datetime(2026,10,16,9))
     assert poster_delivery.eligible(r,datetime(2026,10,19,9))
     assert not poster_delivery.eligible(r,datetime.fromisoformat("2026-12-31T16:01:00+00:00"))
-    assert not poster_delivery.eligible(r,datetime(2026,10,20,9))
+    assert poster_delivery.eligible(r,datetime(2026,10,20,9))
+    assert not poster_delivery.eligible(r,datetime(2026,10,24,9))
+
+
+@pytest.mark.parametrize('day', range(2, 9))
+@pytest.mark.parametrize('hour', [9, 16])
+@pytest.mark.parametrize('minute', [0, 1, 5, 6, 15, 16, 17])
+def test_award_weekday_slots_are_separate(day, hour, minute):
+    now = datetime(2026, 11, day, hour, minute)
+    for kind, offset in [('annual_repurchase', 0), ('new_sign_pk', 1)]:
+        expected = f'{hour:02d}:{offset:02d}' if day < 7 and minute in (offset, offset + 5, offset + 15) else None
+        assert poster_delivery.due_slot(now, campaign(kind)) == expected
+
+
+def test_pk_slot_converts_utc_and_crosses_beijing_midnight():
+    report = campaign('new_sign_pk')
+    assert poster_delivery.due_slot(datetime.fromisoformat('2026-11-01T17:01:00-08:00'), report) == '09:01'
+    assert poster_delivery.due_slot(datetime.fromisoformat('2026-11-02T08:16:00+00:00'), report) == '16:01'
+    assert poster_delivery.due_slot(datetime.fromisoformat('2026-11-06T16:01:00+00:00'), report) is None
+
+
+@pytest.mark.parametrize('status', ['sent', 'uncertain'])
+def test_pk_changed_slot_preserves_old_delivery_without_resending(posters, monkeypatch, status):
+    s = posters
+    report = s.report_obj
+    report.award_kind = 'new_sign_pk'
+    report.award_rules = {'push_start_date': '2026-11-01'}
+    report.start_date, report.end_date = date(2026, 11, 1), date(2026, 11, 30)
+    report.poster_push_enabled = True
+    s.db.commit()
+    now = datetime(2026, 11, 2, 9, 1)
+    monkeypatch.setattr(poster_delivery, 'beijing_now', lambda: now)
+    monkeypatch.setattr(poster_delivery, 'build_snapshot', lambda *a: {'calculated_at': now.isoformat(), 'report': {'name': 'PK'}})
+    mock_render(monkeypatch)
+    poster_delivery.send_slot(s.db, report.id, now, s.sender)
+    row = s.db.query(BattleReportDelivery).one()
+    row.slot = '09:00'
+    row.deliveries = {'team': {'status': status, 'attempts': 1}}
+    s.db.commit()
+    for minute in (1, 6, 16):
+        poster_delivery.send_slot(s.db, report.id, now.replace(minute=minute), s.sender)
+    assert s.sender.send_markdown.await_count == 1
+    assert s.db.query(BattleReportDelivery).count() == 1
+    assert row.slot == '09:00' and row.deliveries['team']['status'] == status
 
 
 def test_templates_escape_names_and_contain_business_annotations():
@@ -341,7 +384,8 @@ def test_award_routes_persist_rules_and_block_usd_targets(setup, monkeypatch):
     assert overview["period_state"]=="upcoming" and len(overview["teams"])==2
     assert s.client.put(url+'/targets',json={"targets":[{"member_id":s.report["members"][0]["id"],"version":1,"target_usd":"1"}]}).status_code==422
     config=s.client.get(url+'/poster-config').json()["data"]
-    assert config["poster_kinds"]==["team"] and config["send_times"]==["09:00","16:00"]
+    assert config["poster_kinds"]==["team"] and config["send_times"]==["09:01","16:01"]
+    assert config["send_weekdays"]==[0,1,2,3,4]
     assert s.client.put(url+'/poster-config',json={"version":config['version'],"work_dates":[],"push_enabled":False}).status_code==200
     become(s,4)
     assert s.client.get(url+'/overview').status_code==403
@@ -385,7 +429,7 @@ def test_presets_require_complete_identity_mapping_and_admin(setup):
     s=setup
     data=s.client.get('/api/battle-reports/award-presets').json()['data']
     assert len(data['items'])==2 and all(not p['ready'] for p in data['items'])
-    assert [len(p['missing']) for p in data['items']]==[17,10]
+    assert [len(p['missing']) for p in data['items']]==[17,9]
     assert s.db.query(BattleReport).count()==1
     become(s,1)
     assert s.client.get('/api/battle-reports/award-presets').status_code==403

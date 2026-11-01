@@ -10,9 +10,9 @@ from app.core.time import beijing_now
 logger = logging.getLogger(__name__)
 
 
-def send_battle_posters_job():
+def send_battle_posters_job(award_kind=None):
     now = beijing_now()
-    if not due_slot(now) and not (now.hour in (9, 16) and now.minute in (0, 5, 15)):
+    if not due_slot(now) and not (now.weekday() < 5 and now.hour in (9, 16) and now.minute in (0, 1, 5, 6, 15, 16)):
         return
     failed = False
     with SessionLocal() as db:
@@ -21,9 +21,12 @@ def send_battle_posters_job():
             if failed:
                 raise RuntimeError("历史战报发送结果待核对，请查看投递记录")
             return
-        ids = [r.id for r in db.query(BattleReport.id).filter(BattleReport.poster_push_enabled.is_(True),
+        query = db.query(BattleReport.id).filter(BattleReport.poster_push_enabled.is_(True),
             BattleReport.status == "published", BattleReport.visibility == "activity",
-            BattleReport.start_date <= now.date(), BattleReport.end_date >= now.date()).all()]
+            BattleReport.start_date <= now.date(), BattleReport.end_date >= now.date())
+        if award_kind is not None:
+            query = query.filter(BattleReport.award_kind == award_kind)
+        ids = [r.id for r in query.all()]
         for report_id in ids:
             try:
                 result = send_slot(db, report_id, now)

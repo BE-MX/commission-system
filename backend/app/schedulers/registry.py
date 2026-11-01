@@ -66,6 +66,7 @@ JOB_DINGTALK_GMV_DAILY = "dingtalk_gmv_daily"
 JOB_BATTLE_POSTERS_NOON = "battle_posters_noon"
 JOB_BATTLE_POSTERS_AFTERNOON = "battle_posters_afternoon"
 JOB_BATTLE_AWARDS = "battle_awards"
+JOB_BATTLE_PK = "battle_pk"
 JOB_PERF_SNAPSHOT_DAILY = "perf_snapshot_daily"
 JOB_PERF_REPORT_PUSH = "perf_report_push"
 JOB_PERF_REPORT_PUSH_RETRY_05 = "perf_report_push_retry_05"
@@ -361,8 +362,13 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
     scheduler.add_job(send_battle_posters_job, trigger="cron", hour=17, minute="1,6,16",
                       timezone="Asia/Shanghai", id=JOB_BATTLE_POSTERS_AFTERNOON, replace_existing=True,
                       max_instances=1, coalesce=True, misfire_grace_time=60)
-    scheduler.add_job(send_battle_posters_job, trigger="cron", day_of_week="mon,wed,fri", hour="9,16", minute="0,5,15",
+    scheduler.add_job(send_battle_posters_job, trigger="cron", day_of_week="mon-fri", hour="9,16", minute="0,5,15",
+                      kwargs={"award_kind": "annual_repurchase"},
                       timezone="Asia/Shanghai", id=JOB_BATTLE_AWARDS, replace_existing=True,
+                      max_instances=1, coalesce=True, misfire_grace_time=60)
+    scheduler.add_job(send_battle_posters_job, trigger="cron", day_of_week="mon-fri", hour="9,16", minute="1,6,16",
+                      kwargs={"award_kind": "new_sign_pk"},
+                      timezone="Asia/Shanghai", id=JOB_BATTLE_PK, replace_existing=True,
                       max_instances=1, coalesce=True, misfire_grace_time=60)
 
     # ── 绩效目标管理：每日快照 + 每月 1/10/20 报告推送（09:00 主发，09:05/09:15 补发重试）──
@@ -710,13 +716,17 @@ def _apply_persisted_job_policies(scheduler: AsyncIOScheduler) -> None:
         from app.operations.db_models import SchedulerJobPolicy
 
         with SessionLocal() as db:
-            paused_ids = {
-                row.job_id
+            policies = {
+                row.job_id: bool(row.paused)
                 for row in db.query(SchedulerJobPolicy).filter(
                     SchedulerJobPolicy.instance_id == socket.gethostname(),
-                    SchedulerJobPolicy.paused == 1,
                 ).all()
             }
+        # The former combined award job's pause also covered PK. Preserve it
+        # until operations explicitly sets a policy for the newly split job.
+        if JOB_BATTLE_PK not in policies and policies.get(JOB_BATTLE_AWARDS):
+            policies[JOB_BATTLE_PK] = True
+        paused_ids = {job_id for job_id, paused in policies.items() if paused}
         for job_id in paused_ids:
             if scheduler.get_job(job_id):
                 scheduler.pause_job(job_id)

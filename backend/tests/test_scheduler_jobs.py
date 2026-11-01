@@ -117,6 +117,8 @@ class TestSchedulerRegistration:
                 "battle_posters_noon",
                 "battle_posters_afternoon",
                 "battle_awards",
+                "battle_pk",
+                "local_trade_projection",
                 "perf_snapshot_daily",
                 "perf_report_push",
                 "perf_report_push_retry_05",
@@ -181,9 +183,18 @@ class TestSchedulerRegistration:
             awards = scheduler.get_job('battle_awards')
             award_fields = {field.name: str(field) for field in awards.trigger.fields}
             assert award_fields['hour'] == '9,16' and award_fields['minute'] == '0,5,15'
-            assert award_fields['day_of_week'] == 'mon,wed,fri'
+            assert award_fields['day_of_week'] == 'mon-fri'
             assert str(awards.trigger.timezone) == 'Asia/Shanghai'
             assert awards.max_instances == 1 and awards.misfire_grace_time == 60
+            assert awards.kwargs == {'award_kind': 'annual_repurchase'}
+            pk = scheduler.get_job('battle_pk')
+            pk_fields = {field.name: str(field) for field in pk.trigger.fields}
+            assert pk_fields['hour'] == '9,16' and pk_fields['minute'] == '1,6,16'
+            assert pk_fields['day_of_week'] == 'mon-fri'
+            assert str(pk.trigger.timezone) == 'Asia/Shanghai'
+            assert pk.max_instances == 1 and pk.misfire_grace_time == 60
+            assert pk.kwargs == {'award_kind': 'new_sign_pk'}
+            assert pk.id != awards.id  # Per-job concurrency limits cannot skip the other award.
             for job_id, hour, minutes in [('battle_posters_noon', '13', '0,5,15'), ('battle_posters_afternoon', '17', '1,6,16')]:
                 poster = scheduler.get_job(job_id)
                 fields = {field.name: str(field) for field in poster.trigger.fields}
