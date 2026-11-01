@@ -411,3 +411,17 @@ def test_own_claim_hold_receipt_bind_closes_its_original_claim(db, receipts, mon
     assert db.get(Receipt, first).sync_status == 'uncertain'
     db.rollback()
     bind_701_then_second_sends(db, monkeypatch, first, receipts)
+
+
+def test_frozen_order_messages_tell_the_user_to_contact_an_admin(db, ready):
+    claim = unknown_claim(db, ready, key='frozen-guidance')
+    db.get(InvoiceAuthority, ready.id).state = 'frozen'; db.commit()
+    with pytest.raises(ValueError) as manual:
+        authority.confirm_not_sent(db, claim.id, operator_id=1, reason='frozen attempt',
+                                   remote_evidence={'x': 1}, source='test')
+    db.rollback()
+    with pytest.raises(ValueError) as sending:
+        gate.start(db, ready, 'frozen-new-send', 'order_push', {'order_id': '2001'}, {}, 1)
+    db.rollback()
+    for error in (manual.value, sending.value):
+        assert '冻结' in str(error) and '联系系统管理员' in str(error), str(error)

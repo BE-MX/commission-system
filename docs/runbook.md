@@ -1748,3 +1748,65 @@ journalctl -u leshine-ark-dsh-worker -n 200 --no-pager
 客户素材新代码以数据库 `storage_provider` 选择读取方式；`COS_ENABLED_DOMAINS` 只决定新增上传的存储。已有 local 记录不能仅凭切开关自动视为 cos。只有文件清单、数据库引用、最终增量、鉴权与下载验证全部通过，并通过统一部署入口发布所有读写实例后，才能执行数据库引用切换。首次复制完成不代表线上迁移完成。回退时必须覆盖切换后新增的 cos 记录，不得只关闭开关或还原旧目录。
 
 LighthouseCOS 无法通过已测桶级 API 配置 CORS。浏览器 fetch/blob 跨域读取、直传 PUT 均须真实浏览器验收；普通 `<img>`、`<video>` 或下载跳转可用不代表 fetch 可用。不得放开私有桶 ACL 解决跨域问题。手机检验的目标链路为局域网可靠落盘、数据库同事务登记持久同步任务、后台校验上传；此机制未实现和验证前保留原上传链路。
+
+## 订单办理权冻结（frozen）的核对与人工解冻
+
+**什么时候会冻结**：原发送请求先被判定为未生成（含管理员「确认未生成」），之后小满又返回或读回了成功结果；或者原请求证据互相矛盾。系统会把 `ark_commerce_invoice_authorities.status` 置为 `frozen`，并写一条 `action='evidence_conflict'` 的事件。冻结后，这张订单的推单、回款、出库同步和人工解除都会被拒，提示「订单办理权已冻结…请联系系统管理员」。系统**没有**解冻入口，只能按本节走维护工单。
+
+### 1. 定位冻结订单（只读）
+
+```sql
+-- 全部冻结订单及最近一条冻结原因
+SELECT a.invoice_id, i.invoice_no, a.route, a.epoch, a.status,
+       e.action, e.payload, e.created_at
+FROM ark_commerce_invoice_authorities a
+JOIN ark_invoices i ON i.id = a.invoice_id
+LEFT JOIN ark_commerce_authority_events e
+  ON e.id = (SELECT MAX(id) FROM ark_commerce_authority_events x
+             WHERE x.invoice_id = a.invoice_id AND x.action = 'evidence_conflict')
+WHERE a.status = 'frozen';
+
+-- 某张订单的发送责任与证据（按时间看清先「未生成」后「成功」的顺序）
+SELECT c.id, c.request_key, c.operation, c.status, c.external_id, c.created_at, c.terminal_at,
+       v.outcome, v.external_id AS evidence_external_id, v.evidence, v.created_at AS evidence_at
+FROM ark_commerce_sending_claims c
+LEFT JOIN ark_commerce_claim_evidence v ON v.claim_id = c.id
+WHERE c.invoice_id = :invoice_id
+ORDER BY c.id, v.id;
+```
+
+### 2. 到小满核对是否重复
+
+- 按冲突 claim 的 `operation` 去小满查对应单据：`order_push` 查订单，`receipt_push` 查回款，`outbound_*` / `shipment_outbound_create` 查出库单，`freight_order_create` 查运费订单。查询条件用发票号、回款金额与日期，或者出库单号。
+- 判断标准：同一业务是否在小满有**两张**单据（例如管理员确认未生成后重发了一张，原请求又迟到生成了一张）。
+- 有重复：先在小满作废或删除多余单据，并留截图或单号作为依据。方舟侧绑定保留的那一张，`evidence_external_id` 与小满一致。
+- 没有重复：只有迟到的那一张，把它的小满 ID 记入工单。
+
+### 3. 人工解冻（仅限维护工单，审计不可省）
+
+前提：已有维护工单号；第 2 步的依据（小满单号、截图）已附在工单上；先停掉调度器写实例，避免并发发送。在**一个事务**里执行，先锁办理权行，再写不可变事件：
+
+```sql
+START TRANSACTION;
+SELECT invoice_id, epoch, status, lock_version
+FROM ark_commerce_invoice_authorities WHERE invoice_id = :invoice_id FOR UPDATE;
+-- 确认 status = 'frozen'，且第 1 步查到的未终局 claim 已核清（status 不在 sending/unknown）
+
+INSERT INTO ark_commerce_authority_events (invoice_id, epoch, action, payload, created_at)
+VALUES (:invoice_id, :epoch, 'manual_unfreeze',
+        JSON_OBJECT('ticket', :ticket_no, 'operator', :operator_name,
+                    'reason', :reason, 'okki_evidence', :okki_refs,
+                    'conflict_claim_ids', :claim_ids),
+        NOW());
+
+UPDATE ark_commerce_invoice_authorities
+SET status = 'active', lock_version = lock_version + 1
+WHERE invoice_id = :invoice_id AND status = 'frozen' AND lock_version = :lock_version;
+-- 必须恰好影响 1 行，否则 ROLLBACK 后重查
+COMMIT;
+```
+
+- `NOW()` 依赖连接 `time_zone='+08:00'`，写入的是北京时间。
+- 不修改、不删除任何 `ark_commerce_sending_claims` 和 `ark_commerce_claim_evidence` 记录，原证据永久保留。
+- 不改 `route` 和 `epoch`。需要换办理路线时走移交流程，不在解冻时顺手改。
+- 解冻后在方舟页面刷新订单，再从原入口继续办理。处理结果记入工单和 `docs/handoff.md`。

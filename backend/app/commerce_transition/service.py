@@ -193,6 +193,8 @@ def require_route(db, invoice, route, expected_epoch=None):
     current = _lock_policy(db)
     _phase_allows(db, current, route)
     row = _lock_authority(db, invoice)
+    if row.state == "frozen":
+        raise TransitionError(frozen_message("继续办理"))
     if row.route != route or row.state != "active":
         raise TransitionError("当前入口无此订单办理权，或订单已冻结")
     if expected_epoch is not None and row.epoch != expected_epoch:
@@ -354,9 +356,11 @@ def lock_recovery_scope(db, invoice_ids):
     return current, {row.invoice_id: row for row in rows}
 
 
+FROZEN_GUIDANCE = "请联系系统管理员按运维手册核对小满是否重复并办理解冻，解冻前不要重复提交"
+
+
 def frozen_message(subject):
-    return (f"订单办理权已冻结（原请求证据冲突或正在移交），不能{subject}；"
-            "请先由管理员核清冻结原因")
+    return f"订单办理权已冻结（原请求证据冲突或正在移交），不能{subject}；{FROZEN_GUIDANCE}"
 
 
 def confirm_not_sent(db, claim_id, *, operator_id, reason, remote_evidence, source):
