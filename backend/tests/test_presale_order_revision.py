@@ -290,3 +290,15 @@ def test_activation_is_audited_with_production_column_lengths_and_refuses_replay
     with pytest.raises(ValueError,match='读取原维护结果'):
         revisions.activate(db,invoice,{str(current.id):[original.id]}, {},actor=0,
             request_id='activate-contract',confirmation='User confirmed whole-order repair')
+
+
+def test_apply_current_keeps_stock_and_production_counters_of_the_persisted_line():
+    from app.invoice.models import InvoiceItem
+    from app.invoice.presale_lines import apply_current
+    original = InvoiceItem(id=7, quantity=3, color="1", stock_reserved_quantity=2,
+                           production_pending_quantity=1, stock_shipped_quantity=1)
+    replacement = InvoiceItem(quantity=5, color="2")  # Unflushed: counters are still None.
+    apply_current(original, replacement)
+    assert (original.id, original.quantity, original.color) == (7, 5, "2")
+    assert (original.stock_reserved_quantity, original.production_pending_quantity,
+            original.stock_shipped_quantity) == (2, 1, 1)

@@ -56,10 +56,17 @@ def prepare_replace(db, invoice):
     return carried
 
 
+# Identity, history and responsibility counters stay with the persisted line:
+# the stock/production counters move only with their own ledgers (228/230),
+# and an unflushed replacement still holds None for them.
+KEEP_ON_REVISION = frozenset({"id", "invoice_id", "xiaoman_unique_id", "created_at", "updated_at", "presale_archived",
+    "presale_shipped_quantity", "presale_shipped_amount",
+    "stock_reserved_quantity", "production_pending_quantity", "stock_shipped_quantity"})
+
+
 def apply_current(original, replacement):
     for column in replacement.__table__.columns:
-        if column.name not in {"id", "invoice_id", "xiaoman_unique_id", "created_at", "updated_at", "presale_archived",
-                "presale_shipped_quantity", "presale_shipped_amount"}:
+        if column.name not in KEEP_ON_REVISION:
             setattr(original, column.name, getattr(replacement, column.name))
 
 
