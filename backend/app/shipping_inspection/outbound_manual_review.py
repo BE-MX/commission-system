@@ -105,8 +105,14 @@ def _resolve_attempt(db, actor, original, invoice, event, resolution, note):
         clear(db)
         prepare.reject(409, '原发送已被小满受理，不能确认未生成；请点「同步」读取原单核对')
     if claim is not None and claim.state in ownership.MANUALLY_RELEASABLE:
-        ownership.confirm_not_sent(db, claim.id, operator_id=int(actor['id']), reason=note,
-                                   source='outbound.sync_review', remote_evidence=remote_evidence)
+        try:
+            ownership.confirm_not_sent(db, claim.id, operator_id=int(actor['id']), reason=note,
+                                       source='outbound.sync_review', remote_evidence=remote_evidence)
+        except ownership.TransitionError as error:
+            logger.warning('Outbound manual review refused by claim gate record=%s', original['outbound_record_id'])
+            print(f"[outbound-manual-review] claim gate refused record={original['outbound_record_id']}", flush=True)
+            clear(db)
+            prepare.reject(409, str(error))
     review = _review(actor, 'confirm_not_created', note, event.action)
     for item in facts.chain(db, attempt):
         if facts.get(db, facts.FINISH, item.nonce) is not None:
