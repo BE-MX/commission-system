@@ -17,6 +17,12 @@ from app.shipping_inspection.models import ShippingOperationEvent
 from tests.authority_helpers import seed_authority
 from tests.test_outbound_delete import case  # noqa: F401  (fixture reuse)
 from tests.test_shipping_inspection import outbound_scope_seed, product_display_source  # noqa: F401
+from tests.claim_helpers import ended_send_lease  # noqa: F401  (fixture)
+
+@pytest.fixture(autouse=True)
+def _ended_send_lease(ended_send_lease):
+    """Releases here happen after the original request window (claim_helpers)."""
+
 
 REVIEW_PERMISSIONS = ('invoice:sync', 'shipping_inspection:write', 'shipping_inspection:admin')
 SOURCE_ITEMS = [{'unique_id': '501', 'model': 'B1', 'size': '20', 'color': '1'}]

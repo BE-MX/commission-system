@@ -12,6 +12,11 @@ from app.shipping_inspection.models import ShippingOperationEvent, ShippingInspe
 from tests.test_shipping_inspection import _user, _pc_client, _bind_okki, outbound_scope_seed, product_display_source
 from tests.test_commerce_legacy_transition_sending import ready
 from app.invoice import legacy_sending
+from tests.claim_helpers import ended_send_lease  # noqa: F401  (fixture)
+
+@pytest.fixture(autouse=True)
+def _ended_send_lease(ended_send_lease):
+    """Releases here happen after the original request window (claim_helpers)."""
 
 
 def install_remove(monkeypatch, sender):

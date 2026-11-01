@@ -35,12 +35,28 @@ def authorize(db, invoice, expected_epoch=None, *, confirm=False):
     return authority
 
 
+def send_lease_until():
+    """Earliest time an original POST may be manually declared unsent.
+
+    httpx applies REQUEST_TIMEOUT per phase (connect, then response), so the
+    worst case is two timeouts; plus a margin for commit and clock skew. Stays
+    below the 5-minute entry thresholds used by the manual review entries.
+    """
+    from datetime import timedelta
+    from app.core.time import beijing_now
+    from app.invoice.okki_client import REQUEST_TIMEOUT
+    return beijing_now() + timedelta(seconds=2 * REQUEST_TIMEOUT + LEASE_MARGIN_SECONDS)
+
+
+LEASE_MARGIN_SECONDS = 60
+
+
 def start(db, invoice, request_key, operation, payload, responsibilities, expected_epoch=None):
     authority = authorize(db, invoice, expected_epoch, confirm=True)
     from app.inventory.legacy_scope import require_legacy_outbound_scope
     require_legacy_outbound_scope(db, operation, payload)
     result = ownership.begin_send(db, authority.invoice_id, request_key, operation, payload,
-        authority.epoch, route='legacy', responsibilities=responsibilities)
+        authority.epoch, route='legacy', responsibilities=responsibilities, lease_until=send_lease_until())
     if not result.created:
         raise ownership.TransitionError('原发送身份已经使用，只能核对原请求，禁止再次外发')
     return SendTicket(request_key, result.claim.id, authority.invoice_id, authority.epoch, result.claim.payload_hash)

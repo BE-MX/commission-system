@@ -20,6 +20,12 @@ from app.invoice import legacy_sending as gate, okki_client, order_sync_executio
 from app.invoice.models import Invoice
 from tests.authority_helpers import seed_authority
 from tests.test_commerce_legacy_transition_sending import pushable  # noqa: F401  (fixture reuse)
+from tests.claim_helpers import ended_send_lease  # noqa: F401  (fixture)
+
+@pytest.fixture(autouse=True)
+def _ended_send_lease(ended_send_lease):
+    """Releases here happen after the original request window (claim_helpers)."""
+
 
 ADMIN = {'id': 1, 'sub': '1', 'roles': ['super_admin'], 'permissions': []}
 CLERK = {'id': 2, 'sub': '2', 'roles': [], 'permissions': ['invoice:read', 'invoice:write', 'invoice:sync']}
@@ -84,6 +90,7 @@ def test_manual_release_closes_unknown_claim_with_audit_and_reopens_sending(db, 
     db.commit()
 
 
+@pytest.mark.real_send_lease
 def test_manual_release_refuses_frozen_terminal_or_leased_claims(db, ready):
     claim = unknown_claim(db, ready)
     held = db.get(InvoiceAuthority, ready.id); held.state = 'frozen'; db.commit()
@@ -91,13 +98,16 @@ def test_manual_release_refuses_frozen_terminal_or_leased_claims(db, ready):
         authority.confirm_not_sent(db, claim.id, operator_id=1, reason='frozen attempt',
                                    remote_evidence={'x': 1}, source='test')
     db.rollback()
-    held = db.get(InvoiceAuthority, ready.id); held.state = 'active'
-    stored = gate.find(db, 'core-original'); stored.lease_until = beijing_now() + timedelta(minutes=5); db.commit()
+    held = db.get(InvoiceAuthority, ready.id); held.state = 'active'; db.commit()
+    # The real start() leases the claim beyond the provider request timeout.
+    stored = gate.find(db, 'core-original')
+    assert stored.lease_until is not None and stored.lease_until > beijing_now() + timedelta(seconds=60)
+    assert stored.lease_until < stored.created_at + timedelta(minutes=5)  # Entry thresholds stay 5 minutes.
     with pytest.raises(ValueError, match='租约'):
         authority.confirm_not_sent(db, claim.id, operator_id=1, reason='leased attempt',
                                    remote_evidence={'x': 1}, source='test')
     db.rollback()
-    stored = gate.find(db, 'core-original'); stored.lease_until = None; db.commit()
+    stored = gate.find(db, 'core-original'); stored.lease_until = beijing_now() - timedelta(seconds=1); db.commit()
     gate.finish(db, 'core-original', 'succeeded', {'original_request_readback': True}, '2001'); db.commit()
     with pytest.raises(ValueError, match='终局'):
         authority.confirm_not_sent(db, claim.id, operator_id=1, reason='terminal attempt',

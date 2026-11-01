@@ -23,3 +23,21 @@ def unknown_claim(db, invoice, request_key, operation, responsibilities=None):
 
 def claim_state(db, claim_id):
     return db.query(SendingClaim.state).filter_by(id=claim_id).scalar()
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture
+def ended_send_lease(request, monkeypatch):
+    """Model a review that happens after the original request window ended.
+
+    Manual unsent confirmations refuse a claim still inside its provider
+    lease (legacy_sending.send_lease_until). Tests of the release itself start
+    claims whose window has already ended; tests marked ``real_send_lease``
+    keep the production lease.
+    """
+    if request.node.get_closest_marker('real_send_lease'):
+        return
+    from app.invoice import legacy_sending
+    monkeypatch.setattr(legacy_sending, 'send_lease_until', lambda: beijing_now() - timedelta(seconds=1))

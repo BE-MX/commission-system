@@ -15,6 +15,12 @@ from app.receipt import remote, sync_service, attachments
 from app.receipt.models import Receipt
 from tests.authority_helpers import seed_authority
 from tests.test_commerce_transition_authority import install
+from tests.claim_helpers import ended_send_lease  # noqa: F401  (fixture)
+
+@pytest.fixture(autouse=True)
+def _ended_send_lease(ended_send_lease):
+    """Releases here happen after the original request window (claim_helpers)."""
+
 
 @pytest.fixture
 def ready(db,monkeypatch):

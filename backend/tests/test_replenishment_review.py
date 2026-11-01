@@ -18,6 +18,12 @@ from app.shipping_inspection import audit_service, outbound_sync_plan as common
 from app.shipping_inspection.models import ShippingOperationEvent
 from app.shipping_inspection.outbound_prepare import row_state
 from tests.test_commerce_manual_unlock import ready  # noqa: F401  (fixture reuse)
+from tests.claim_helpers import ended_send_lease  # noqa: F401  (fixture)
+
+@pytest.fixture(autouse=True)
+def _ended_send_lease(ended_send_lease):
+    """Releases here happen after the original request window (claim_helpers)."""
+
 
 ADMIN = {'id': 1, 'sub': '1', 'roles': ['super_admin'], 'permissions': []}
 CLERK = {'id': 2, 'sub': '2', 'roles': [], 'permissions': ['invoice:sync', 'shipping_inspection:write']}
