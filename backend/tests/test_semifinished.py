@@ -369,7 +369,7 @@ def test_invoice_recovery_requires_success_log_after_current_reservation(db):
     assert db.query(InventoryBalance).filter_by(material_id=material.id).one().on_hand_grams == Decimal("60.000")
 
 
-def test_unsynced_invoice_delete_cleans_zero_allocation_rows(db):
+def test_unsynced_invoice_delete_archives_with_zero_allocation_rows(db):
     invoice, _material_row = _invoice_with_mapping(db)
     operation = invoice_service.prepare_invoice_sync(db, invoice, operator_id=1)
     invoice_service.release_invoice_sync(db, invoice.id, operation, operator_id=1)
@@ -377,8 +377,10 @@ def test_unsynced_invoice_delete_cleans_zero_allocation_rows(db):
 
     invoice_service_core.delete_invoice(db, invoice)
     db.commit()
-    assert db.get(Invoice, invoice.id) is None
-    assert db.query(InvoiceAllocation).filter_by(invoice_id=invoice.id).count() == 0
+    # Drafts are archived, not hard-deleted; zero allocation audit stays with them.
+    assert db.get(Invoice, invoice.id).status == "deleted"
+    rows = db.query(InvoiceAllocation).filter_by(invoice_id=invoice.id).all()
+    assert all(row.status != "pending" and Decimal(row.allocated_qty_grams or 0) == 0 for row in rows)
 
 
 def test_invoice_prepare_blocks_shortage_without_partial_reservation(db):

@@ -17,7 +17,7 @@ def delivery_view(db, access, account=None):
         delivery = account.delivery_json
     if delivery is None:
         row = db.execute(select(Invoice.contact_name, Invoice.contact_phone, Invoice.delivery_address).where(Invoice.customer_id == access.okki_company_id,
-            Invoice.delivery_address.is_not(None), Invoice.delivery_address != "")
+            Invoice.delivery_address.is_not(None), Invoice.delivery_address != "", Invoice.status != "deleted")
             .order_by(Invoice.created_at.desc(), Invoice.id.desc()).limit(1)).first()
         if row is not None:
             # Free-text history cannot reliably be split into city/country fields.

@@ -384,8 +384,31 @@ def delete_invoice(db: Session, invoice: Invoice, *, actor_id=None) -> None:
                 'actor_id': actor_id, 'no_economic_facts_checked_at': beijing_now().isoformat()}
     invoice.status = 'deleted'
     authority.state = 'frozen'
+    audit = {'actor_id': actor_id, 'invoice_no': invoice.invoice_no, **_release_draft_identity(invoice)}
     from app.commerce_transition.service import _event
-    _event(db, authority, 'draft_deleted', {'actor_id': actor_id, 'invoice_no': invoice.invoice_no})
+    _event(db, authority, 'draft_deleted', audit)
+
+
+DELETED_NO_MARK = "~DEL~"
+
+
+def _release_draft_identity(invoice: Invoice) -> dict:
+    """Free the unique number and screenshot keys of an archived draft.
+
+    The archived row keeps its audit/authority, but must not hold the
+    salesperson's number or the screenshot idempotency key. The original
+    values are returned for the immutable deletion event.
+    """
+    width = Invoice.__table__.c.invoice_no.type.length
+    tag = f"{DELETED_NO_MARK}{invoice.id}"
+    released = {'released_invoice_no': f"{invoice.invoice_no[:width - len(tag)]}{tag}"}
+    invoice.invoice_no = released['released_invoice_no']
+    if invoice.source_type == "okki_screenshot":
+        # External-API keys stay: they are the integration's ingest idempotency.
+        released['source_order_id'] = invoice.source_order_id
+        released['source_image_sha256'] = invoice.source_image_sha256
+        invoice.source_order_id = invoice.source_image_sha256 = None
+    return released
 
 
 def get_invoice(db: Session, invoice_id: int, *, for_update: bool = False) -> Invoice | None:
@@ -828,6 +851,7 @@ def suggest_invoice_no(db: Session, user_id: int | None, order_type: str) -> str
         select(Invoice.invoice_no)
         .where(Invoice.invoice_no.like(f"{escaped}%", escape="\\"))
         .where(Invoice.created_at >= month_start)
+        .where(Invoice.status != "deleted")
     ).scalars().all()
     seq = 0
     for no in existing:
@@ -847,6 +871,7 @@ def previous_invoice_no(db: Session, sales_user_id: int | None, order_type: str,
     query = db.query(Invoice.invoice_no).filter(
         Invoice.sales_user_id == sales_user_id,
         Invoice.order_type == order_type,
+        Invoice.status != "deleted",
     )
     if exclude_id is not None:
         query = query.filter(Invoice.id != exclude_id)
@@ -860,6 +885,7 @@ def _next_invoice_no(db: Session) -> str:
     latest = db.execute(
         select(Invoice.invoice_no)
         .where(Invoice.invoice_no.like(f"{prefix}-%"))
+        .where(Invoice.status != "deleted")  # Released ~DEL~ numbers never parse as a sequence.
         # length first so INV...-1000 sorts after INV...-999
         .order_by(func.length(Invoice.invoice_no).desc(), Invoice.invoice_no.desc())
         .limit(1)
