@@ -50,12 +50,28 @@ def successful_reads(monkeypatch):
 
 
 def test_plain_invoice_sync_returns_outbound_followup_separately(db, order, monkeypatch):
-    monkeypatch.setattr(invoice_router, '_ensure_invoice_visible', lambda *a: None)
-    monkeypatch.setattr(sync_coordinator, 'synchronize', lambda *a: {'ok': True, 'message': '已同步到小满'})
-    monkeypatch.setattr(followup, 'safely_run', lambda *a: {'status': 'pending', 'message': '缺货核查已排队'})
-    response = invoice_router.sync_invoice(order.id, db, {'sub': '1', 'permissions': ['invoice:sync']})
+    # The router delegates to the current executor; only its durable steps are
+    # stubbed so the test isolates the outbound follow-up merge into the result.
+    import json
+    from app.invoice import edit_authority, order_sync_execution as execution
+    user = {'sub': '1', 'permissions': ['invoice:sync']}
+    attempt = SimpleNamespace(payload={'product_list': []}, data={})
+    monkeypatch.setattr(execution, 'prepare', lambda *a: (None, attempt.payload))
+    monkeypatch.setattr(execution, 'token', lambda *a, **kw: 'synthetic')
+    monkeypatch.setattr(execution, 'claim', lambda *a: (attempt, None))
+    monkeypatch.setattr(execution, 'send', lambda *a, **kw: ({'result_class': 'accepted', 'provider_reference': '1'}, {}))
+    monkeypatch.setattr(execution, 'persist', lambda *a, **kw: {'ok': True, 'message': '已同步到小满'})
+    monkeypatch.setattr(execution, 'response', lambda *a: a[-1])
+    monkeypatch.setattr(edit_authority, 'prepare_recovery', lambda *a: (order, user))
+    seen = []
+    def followup_run(db_, reference, actor, **kw):
+        seen.append((reference.id, actor, kw))
+        return {'status': 'pending', 'message': '缺货核查已排队'}
+    monkeypatch.setattr(followup, 'safely_run', followup_run)
+    response = json.loads(invoice_router.sync_invoice(order.id, db, user).body)
     assert response['data']['ok'] is True
     assert response['data']['outbound_sync']['status'] == 'pending'
+    assert seen == [(order.id, user, {'force_authority': True})]
 
 
 def test_linked_invoice_sync_stores_outbound_followup_result(db, order, monkeypatch):
@@ -251,13 +267,15 @@ def test_old_runner_cannot_send_after_manual_resolution(db, order):
 
 
 def test_fence_checked_after_auth_refresh(monkeypatch):
-    from app.invoice import okki_client
+    from app.invoice import legacy_sending, okki_client
     calls = []
+    session = SimpleNamespace(commit=lambda: None)  # push_order commits only the credential cache.
     monkeypatch.setattr(okki_client, "ensure_access_token", lambda *a, **kw: "token")
-    monkeypatch.setattr(okki_client, "_post_json", lambda *a, **kw: calls.append("post") or None)
+    # The durable executor's provider POST: an auth rejection returns None.
+    monkeypatch.setattr(legacy_sending, "invoke", lambda *a, **kw: calls.append("post") or None)
     def fence():
         if calls: raise linked.LostExecution("expired")
-    with pytest.raises(linked.LostExecution): okki_client.push_order(None, {}, before_send=fence)
+    with pytest.raises(linked.LostExecution): okki_client.push_order(session, {}, before_send=fence)
     assert calls == ["post"]
 
 def test_migration_preserves_history_on_restart():

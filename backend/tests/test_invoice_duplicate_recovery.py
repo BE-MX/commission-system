@@ -150,10 +150,16 @@ def test_duplicate_readback_preserves_anchored_commercial_line_and_order_amount(
     assert ('product_list' in result) == (fault is None)
 
 
-@pytest.mark.parametrize('fault', [None, 'extra_row', 'missing_amount', 'unavailable', 'token_unavailable'])
+# The current executor obtains one provider token before the claim and reuses it
+# for the accepted-order readback, so the old separate readback-token failure
+# no longer exists; a failed readback is covered by 'unavailable'.
+@pytest.mark.parametrize('fault', [None, 'extra_row', 'missing_amount', 'unavailable'])
 @pytest.mark.parametrize('identical', [False, True])
 @pytest.mark.parametrize('whole_order_revision', [False, True])
 def test_legacy_repeated_push_reads_exact_order_before_completion(db, monkeypatch, fault, identical,whole_order_revision):
+    from fastapi import HTTPException
+    from tests.current_order_sync_helpers import install_transport, sync_current
+    install_transport(db, monkeypatch)
     _seed_settings(db)
     _seed_binding(db)
     invoice = _make_invoice(db)
@@ -185,14 +191,10 @@ def test_legacy_repeated_push_reads_exact_order_before_completion(db, monkeypatc
         if fault == 'missing_amount': rows[0].pop('cost_amount')
         return dict(order_id=401,company_id=payload['company_id'],currency='USD',name=payload['name'],
                     amount=Decimal('45')+(0 if whole_order_revision else second_price),product_list=rows)
-    def token(_db):
-        if fault=='token_unavailable': raise xiaoman_service.okki_client.OkkiApiError('auth unavailable')
-        return 'synthetic'
     monkeypatch.setattr(xiaoman_service.okki_client,'push_order',push)
-    monkeypatch.setattr(xiaoman_service.okki_client,'ensure_access_token',token)
     monkeypatch.setattr(xiaoman_service.okki_client,'_get_json',read)
-    result=xiaoman_service.sync_invoice(db,invoice,operator_id=1)
-    assert len(sends)==1 and len(reads)==(0 if fault=='token_unavailable' else 1)
+    result=sync_current(db,invoice,operator_id=1)
+    assert len(sends)==1 and len(reads)==1
     assert result['ok']==(fault is None)
     if fault is None:
         assert [item.xiaoman_unique_id for item in invoice.items]==(['501'] if whole_order_revision else ['501','502'])
@@ -202,7 +204,10 @@ def test_legacy_repeated_push_reads_exact_order_before_completion(db, monkeypatc
         assert invoice.sync_status=='sync_uncertain' and invoice.xiaoman_order_id=='401'
         assert all(item.xiaoman_unique_id is None for item in invoice.items)
         assert not enqueue
-        assert not xiaoman_service.sync_invoice(db,invoice,operator_id=1)['ok']
+        with pytest.raises(HTTPException) as again:  # The unresolved original blocks a new push.
+            sync_current(db,invoice,operator_id=1)
+        assert again.value.status_code==409
+        db.rollback()
         assert len(sends)==1
         if whole_order_revision:assert 'synced_projection' not in invoice.presale_order_revision
 
@@ -216,8 +221,8 @@ def test_modern_non_repeated_revision_reads_full_amount_before_finalization(db,m
     observation={'result_class':'accepted','provider_reference':'401'}
     monkeypatch.setattr(order_sync_execution,'prepare',lambda *a:(None,attempt.payload))
     monkeypatch.setattr(order_sync_execution,'token',lambda *a:'synthetic')
-    monkeypatch.setattr(order_sync_execution,'claim',lambda *a:attempt)
-    monkeypatch.setattr(order_sync_execution,'send',lambda *a:(observation,post))
+    monkeypatch.setattr(order_sync_execution,'claim',lambda *a:(attempt,None))  # (attempt, send ticket)
+    monkeypatch.setattr(order_sync_execution,'send',lambda *a,**kw:(observation,post))
     calls=[]
     def read(*a):
         calls.append('GET')
