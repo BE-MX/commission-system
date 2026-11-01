@@ -10,6 +10,7 @@ from app.invoice.settlement_models import SettlementApplication, ShipmentSettlem
 from app.invoice.settlement_schemas import ShipmentQuote, ShipmentCreate, BatchAllocation
 from app.receipt import balance, remote
 from app.receipt.models import Receipt
+from tests.authority_helpers import seed_authority
 
 USER = {"sub": "1", "roles": ["super_admin"], "permissions": []}
 
@@ -17,6 +18,8 @@ USER = {"sub": "1", "roles": ["super_admin"], "permissions": []}
 @pytest.fixture
 def order(db, monkeypatch):
     monkeypatch.setattr(shipments, "require_enabled", lambda: None)
+    # Delivery re-reads the sender's live grants; user 1 is the active super admin.
+    seed_authority(db, 1, "receipt:write", roles=("super_admin",))
     invoice = Invoice(invoice_no="FUNDING", order_type="presale", customer_id="C1", customer_name="Veronika",
         sales_user_id=1, invoice_date=date(2026, 10, 9), currency="USD", product_amount=627,
         total_amount=627, surcharge_amount=0, shipping_fee=0, internal_accessory=0,

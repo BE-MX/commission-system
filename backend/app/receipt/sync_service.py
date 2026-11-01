@@ -87,18 +87,12 @@ def recover_expired(db):
     recovery.recover_expired(db)
 
 
-def _current_sender(db, invoice, actor_id):
-    """Only a new POST needs the original human's current grants and scope."""
-    from fastapi import HTTPException
-    from app.portal.access_policy import employee_principal
-    from app.portal.errors import PortalError
-    from app.receipt import access
-    try:
-        actor = employee_principal(db, int(actor_id), 'receipt:write')
-        access.ensure_invoice(db, invoice, actor)
-    except (PortalError, HTTPException, TypeError, ValueError) as exc:
-        raise ValueError('原回款操作人已停用、撤权或不再具有原订单范围，禁止新发送') from exc
-    return actor
+def _current_sender(db, invoice, row):
+    """Only a new POST needs the resolved sender's current grants and scope."""
+    from app.receipt import sender
+    actor_id = sender.current(db, row)
+    sender.principal(db, invoice, actor_id)
+    return actor_id
 
 
 def deliver(db, receipt_id):
@@ -109,7 +103,6 @@ def deliver(db, receipt_id):
         db.rollback()
         return  # Original evidence/recovery remains read-only, without a new human grant.
     invoice_id = row.invoice_id
-    original_actor = row.created_by
     db.commit()  # End the lookup snapshot before the invoice locking read.
     # Portal -> platform -> authority -> invoice -> receipt.
     ownership = legacy_sending.authorize(db, invoice_id)
@@ -160,9 +153,8 @@ def deliver(db, receipt_id):
         db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
         db.refresh(invoice)
         db.refresh(row, with_for_update=True)
-        if row.created_by != original_actor:
-            raise ValueError('原回款操作人关联已变化，禁止新发送')
-        _current_sender(db, invoice, original_actor)
+        if _current_sender(db, invoice, row) != sending_actor:
+            raise ValueError('回款发送人在准备期间已变化，停止发送，请重新核验')
         service.ensure_order_ready(db, invoice)
         ensure_receipt_sendable(db, row, current=True)
         if db.query(ReceiptAttempt.token).filter(ReceiptAttempt.receipt_id == receipt_id,
@@ -194,7 +186,7 @@ def deliver(db, receipt_id):
         send_round += 1
         from app.commerce_shadow.hooks import capture_legacy_receipt
         ticket = legacy_sending.start(db, invoice, f'legacy:receipt:{receipt_id}:{token}:{send_round}', 'receipt_push', payload,
-            {'actor_id': row.created_by, 'receipt_id': receipt_id, 'attempt_token': token, 'batch_id': row.batch_id,
+            {'actor_id': sending_actor, 'receipt_id': receipt_id, 'attempt_token': token, 'batch_id': row.batch_id,
              'receivable_id': row.receivable_id, 'order_id': row.xiaoman_order_id,
              'amount': str(row.amount), 'bank_charge': str(row.bank_charge), 'currency': row.currency,
              'purpose': row.purpose, 'bank_identity_status': 'unmapped_legacy',
@@ -208,7 +200,7 @@ def deliver(db, receipt_id):
         legacy_sending.authorize(db, invoice_id, expected_epoch)
         invoice = db.query(Invoice).filter_by(id=invoice_id).populate_existing().with_for_update().one()
         row = db.query(Receipt).filter_by(id=receipt_id).populate_existing().with_for_update().one()
-        _current_sender(db, invoice, original_actor)
+        sending_actor = _current_sender(db, invoice, row)
         db.commit()  # Authorization/capture only; release locks before provider preparation.
         row = db.get(Receipt, receipt_id)
         invoice = db.get(Invoice, row.invoice_id)

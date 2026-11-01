@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.invoice import okki_client
 from app.invoice.settlement_models import SettlementApplication, ShipmentSettlement
 from app.invoice import shipment_payment_policy as payment_policy
-from app.receipt import access, authority, fees, remote, service
+from app.receipt import access, authority, fees, remote, sender, service
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +94,8 @@ def retry(db, identity, user):
         settlement = _settlement(db, row)
         if _binding(row, invoice, batch, children, settlement) != expected:
             raise HTTPException(409, "回款在手续费核对期间已变化，请重新读取")
+    # A registrant who left or lost scope hands the send to this authorized retrier.
+    sender.take_over_if_needed(db, row, invoice, current)
     service._retry(db, row, invoice, access.user_id(current), evidence)
     return row, invoice
 
