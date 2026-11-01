@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import create_engine, inspect, text
@@ -45,6 +45,35 @@ def test_screenshot_zero_price_is_explicit_and_totals_are_valid():
     })
     assert extraction.items[0].unit_price == Decimal("0")
     assert screenshot_import_service._validate_totals(extraction)["blockers"] == []
+
+
+def _grant_current_sync(db, *codes):
+    """The current order executor re-reads live grants; seed Katy's role (commits setup)."""
+    from tests.authority_helpers import seed_authority
+    seed_authority(db, 27, "invoice:read", "invoice:write", "invoice:sync", *codes)
+
+
+def _ready_to_push(db, monkeypatch):
+    """Everything but the screenshot identity is pushable, so only that check can refuse."""
+    db.add(XiaomanSettings(id=1, default_order_status="13972831654"))
+    monkeypatch.setattr(product_service, "reconcile_custom_products", lambda _db: {"checked": 0, "linked": 0})
+    monkeypatch.setattr(okki_client, "ensure_access_token", lambda *a, **kw: "isolated-order-token")
+    monkeypatch.setattr(okki_client, "_post_json", lambda *a, **kw: pytest.fail("unexpected OKKI POST"))
+    _grant_current_sync(db)
+
+
+def _remote_order_matches(monkeypatch):
+    """bind_order reads the original order back before binding; simulate a matching readback.
+
+    Line-level readback verification has its own tests; these cover the local guards.
+    """
+    from app.invoice import lifecycle_remote, uncertain_recovery
+    def read(_db, kind, identity):
+        assert kind == "order"
+        name = _db.scalar(text("SELECT name FROM lsordertest.okki_orders WHERE order_id = :id"), {"id": identity})
+        return {"order_id": identity, "name": name}
+    monkeypatch.setattr(lifecycle_remote, "read", read)
+    monkeypatch.setattr(uncertain_recovery, "verify_existing", lambda *a, **kw: None)
 
 
 @contextmanager
@@ -268,9 +297,12 @@ def test_screenshot_invoice_matched_in_current_okki_is_blocked_when_syncing(db, 
 
     assert invoice.source_order_no == "25278"
     assert invoice.total_amount == Decimal("90.14")
-    sync_result = xiaoman_service.sync_invoice(db, invoice, operator_id=27)
-    assert sync_result["ok"] is False
-    assert "本系统 OKKI" in sync_result["issues"][0]["message"]
+    _ready_to_push(db, monkeypatch)
+    # The current executor refuses before any claim or POST (screenshot identity check).
+    with pytest.raises(HTTPException) as blocked:
+        xiaoman_service.sync_invoice(db, invoice, operator_id=27)
+    assert blocked.value.status_code == 409 and "截图订单身份查重" in blocked.value.detail
+    db.rollback()
 
     duplicate = _resolve(db)
     assert duplicate["ready"] is False
@@ -575,10 +607,11 @@ def test_screenshot_sync_rechecks_projection_after_invoice_was_saved(db, monkeyp
         return {}
 
     monkeypatch.setattr(okki_client, "push_order", unexpected_push)
-    result = xiaoman_service.sync_invoice(db, invoice, operator_id=27)
-
-    assert result["ok"] is False
-    assert "本系统 OKKI" in result["issues"][0]["message"]
+    _ready_to_push(db, monkeypatch)
+    with pytest.raises(HTTPException) as blocked:
+        xiaoman_service.sync_invoice(db, invoice, operator_id=27)
+    assert blocked.value.status_code == 409 and "截图订单身份查重" in blocked.value.detail
+    db.rollback()
     assert called is False
 
 
@@ -607,21 +640,21 @@ def test_external_screenshot_syncs_when_current_okki_has_no_same_order(db, monke
     def push_order(_db, payload, *, before_send=None):
         if before_send:
             before_send()
+        # Provider identities are numeric; the executor rejects any other order reference.
         return {
-            "order_id": "created-in-current-okki",
-            "product_list": [{
-                "unique_id": "line-1",
-                "product_id": payload["product_list"][0]["product_id"],
-                "sku_id": payload["product_list"][0]["sku_id"],
-            }],
+            "order_id": "424243",
+            "product_list": [{**payload["product_list"][0], "unique_id": 601}],
         }
 
+    from tests.current_order_sync_helpers import install_transport
+    install_transport(db, monkeypatch)  # Only the provider HTTP response is simulated.
     monkeypatch.setattr(okki_client, "push_order", push_order)
+    _grant_current_sync(db)
 
     result = xiaoman_service.sync_invoice(db, invoice, operator_id=27)
 
-    assert result["ok"] is True
-    assert invoice.xiaoman_order_id == "created-in-current-okki"
+    assert result["ok"] is True, result
+    assert invoice.xiaoman_order_id == "424243"
     assert invoice.sync_status == "synced"
 
 
@@ -711,7 +744,7 @@ def test_external_source_key_blocks_a_second_saved_invoice(db):
         )
 
 
-def test_admin_resolves_uncertain_sync_with_audit_log(db):
+def test_admin_resolves_uncertain_sync_with_audit_log(db, monkeypatch):
     _seed_example(db)
     invoice = Invoice(
         invoice_no="uncertain-resolution",
@@ -730,22 +763,26 @@ def test_admin_resolves_uncertain_sync_with_audit_log(db):
         created_by=27,
     )
     db.add(invoice)
-    db.commit()
+    db.flush()
+    identity = invoice.id  # Requests start a fresh transaction; never lazy-load inside them.
+    _grant_current_sync(db, "invoice:admin")  # Recovery re-reads live grants; commits the setup.
+    _remote_order_matches(monkeypatch)
 
     with _api_client(db, ["invoice:sync"]) as client:
         denied = client.post(
-            f"/api/invoice/invoices/{invoice.id}/sync-uncertain/resolve",
+            f"/api/invoice/invoices/{identity}/sync-uncertain/resolve",
             json={"resolution": "confirm_not_created", "reason": "人工确认未生成"},
         )
     assert denied.status_code == 403
 
     with _api_client(db, ["invoice:admin"]) as client:
         cleared = client.post(
-            f"/api/invoice/invoices/{invoice.id}/sync-uncertain/resolve",
+            f"/api/invoice/invoices/{identity}/sync-uncertain/resolve",
             json={"resolution": "confirm_not_created", "reason": "人工确认未生成"},
         )
-    assert cleared.status_code == 200
+    assert cleared.status_code == 200, cleared.text
     assert invoice.sync_status == "not_synced"
+    db.rollback()
 
     invoice.sync_status = "sync_uncertain"
     invoice.status = "sync_uncertain"
@@ -759,9 +796,10 @@ def test_admin_resolves_uncertain_sync_with_audit_log(db):
              '105720449849411', 90.14, '57130855', '2026-08-25',
              '已完成(已确认)', NULL)
     """))
+    db.commit()
     with _api_client(db, ["invoice:admin"]) as client:
         bound = client.post(
-            f"/api/invoice/invoices/{invoice.id}/sync-uncertain/resolve",
+            f"/api/invoice/invoices/{identity}/sync-uncertain/resolve",
             json={
                 "resolution": "bind_order",
                 "xiaoman_order_no": " 260825 ",
@@ -783,7 +821,7 @@ def test_admin_resolves_uncertain_sync_with_audit_log(db):
     assert all(len(action) <= InvoiceSyncLog.__table__.c.action.type.length for action in actions)
 
 
-def test_admin_uncertain_binding_rejects_missing_wrong_customer_and_wrong_name(db):
+def test_admin_uncertain_binding_rejects_missing_wrong_customer_and_wrong_name(db, monkeypatch):
     _seed_example(db)
     invoice = Invoice(
         invoice_no="expected-invoice-name",
@@ -809,12 +847,15 @@ def test_admin_uncertain_binding_rejects_missing_wrong_customer_and_wrong_name(d
             ('700001', 'wrong-customer', 'expected-invoice-name', 'another-customer'),
             ('700002', 'wrong-name', 'another-invoice-name', '105720449849411')
     """))
-    db.commit()
+    db.flush()
+    identity = invoice.id  # Requests start a fresh transaction; never lazy-load inside them.
+    _grant_current_sync(db, "invoice:admin")  # Recovery re-reads live grants; commits the setup.
+    _remote_order_matches(monkeypatch)
 
     def bind(order_no):
         with _api_client(db, ["invoice:admin"]) as client:
             return client.post(
-                f"/api/invoice/invoices/{invoice.id}/sync-uncertain/resolve",
+                f"/api/invoice/invoices/{identity}/sync-uncertain/resolve",
                 json={
                     "resolution": "bind_order",
                     "xiaoman_order_no": order_no,
@@ -822,14 +863,15 @@ def test_admin_uncertain_binding_rejects_missing_wrong_customer_and_wrong_name(d
                 },
             )
 
+    # Recovery refusals are current-state conflicts (409) carrying the concrete reason.
     missing = bind("missing-order-number")
-    assert missing.status_code == 400
+    assert missing.status_code == 409
     assert "查不到" in missing.json()["detail"]
     wrong_customer = bind("wrong-customer")
-    assert wrong_customer.status_code == 400
+    assert wrong_customer.status_code == 409
     assert "不属于" in wrong_customer.json()["detail"]
     wrong_name = bind("wrong-name")
-    assert wrong_name.status_code == 400
+    assert wrong_name.status_code == 409
     assert "名称" in wrong_name.json()["detail"]
     assert invoice.xiaoman_order_id is None
 
@@ -841,7 +883,7 @@ def test_admin_uncertain_binding_rejects_missing_wrong_customer_and_wrong_name(d
     ("700001", "查不到"),
     ("   ", "订单号"),
 ])
-def test_uncertain_binding_uses_unique_order_number_not_internal_id(db, order_no, expected):
+def test_uncertain_binding_uses_unique_order_number_not_internal_id(db, monkeypatch, order_no, expected):
     _seed_example(db)
     invoice = Invoice(invoice_no="binding-guards", customer_id="105720449849411",
         customer_name="hair_madebymads", invoice_date=date(2026, 10, 8),
@@ -855,11 +897,14 @@ def test_uncertain_binding_uses_unique_order_number_not_internal_id(db, order_no
                ('700002', 'duplicate-no', 'different-name', 'another-customer'),
                ('700003', 'already-bound', 'binding-guards', '105720449849411')
     """))
-    db.commit()
+    db.flush()
+    identity = invoice.id  # Requests start a fresh transaction; never lazy-load inside them.
+    _grant_current_sync(db, "invoice:admin")  # Recovery re-reads live grants; commits the setup.
+    _remote_order_matches(monkeypatch)
     with _api_client(db, ["invoice:admin"]) as client:
-        response = client.post(f"/api/invoice/invoices/{invoice.id}/sync-uncertain/resolve",
+        response = client.post(f"/api/invoice/invoices/{identity}/sync-uncertain/resolve",
             json={"resolution": "bind_order", "xiaoman_order_no": order_no, "reason": "已核对原小满订单号"})
-    assert response.status_code == 400
+    assert response.status_code == 409, response.text
     assert expected in response.json()["detail"]
     assert invoice.xiaoman_order_id is None
     assert not invoice.outbound_auto_requested
@@ -1129,7 +1174,7 @@ def test_screenshot_preview_rejects_oversized_upload_before_ai(db, monkeypatch):
             files={"image": ("order.png", b"x" * (10 * 1024 * 1024 + 1), "image/png")},
         )
 
-    assert response.status_code == 400
+    assert response.status_code == 400, response.text
     assert "10MB" in response.text
     assert called is False
 
@@ -1140,6 +1185,7 @@ def test_dedicated_screenshot_create_endpoint_accepts_signed_preview(db):
     payload = InvoiceCreate.model_validate({
         **preview["invoice_patch"],
         "invoice_no": "KATY-KC-0804",
+        "inspection_requirement": "single",  # The editor now requires an explicit choice.
     }).model_dump(mode="json")
 
     with _api_client(db, ["invoice:write"]) as client:
@@ -1148,7 +1194,7 @@ def test_dedicated_screenshot_create_endpoint_accepts_signed_preview(db):
             json=payload,
         )
 
-    assert response.status_code == 201
+    assert response.status_code == 201, response.text
     assert response.json()["data"]["source_type"] == "okki_screenshot"
 
 
@@ -1169,7 +1215,7 @@ def test_dedicated_screenshot_create_endpoint_rejects_manual_payload(db):
             },
         )
 
-    assert response.status_code == 400
+    assert response.status_code == 400, response.text
     assert "只接受" in response.text
 
 

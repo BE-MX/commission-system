@@ -242,7 +242,9 @@ def test_resave_does_not_inflate_use_count(db):
     row = db.query(CustomProduct).one()
     assert row.use_count == 1
 
-    update = InvoiceUpdate(**{**body.model_dump(), "items": body.model_dump()["items"]})
+    # A saved editor document always carries the explicit inspection choice.
+    update = InvoiceUpdate(**{**body.model_dump(), "inspection_requirement": "single",
+                              "items": body.model_dump()["items"]})
     for _ in range(3):
         invoice = service.update_invoice(db, invoice, update, user_id=1)
         db.flush()
