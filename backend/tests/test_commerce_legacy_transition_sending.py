@@ -191,9 +191,12 @@ def test_real_original_get_recovery_closes_same_claim_without_post(db,pushable,m
     invoice.sync_attempt={**invoice.sync_attempt,'lease_until':(beijing_now()-timedelta(minutes=1)).isoformat()}
     db.commit();db.rollback()
     if not bound:
+        # Manual unlock stays an invoice:admin decision; the admin path itself
+        # is covered by test_admin_confirm_not_created_releases_unknown_with_audit.
+        seed_authority(db,2,'invoice:read','invoice:write','invoice:sync');db.rollback()
         with pytest.raises(HTTPException) as rejected:
-            sync_recovery.resolve(db,pushable,{'id':1},resolution='confirm_not_created',reason='An operator note cannot prove no remote create')
-        assert rejected.value.status_code==409
+            sync_recovery.resolve(db,pushable,{'id':2},resolution='confirm_not_created',reason='A clerk cannot release the original request')
+        assert rejected.value.status_code==403
         assert db.scalar(select(SendingClaim)).state=='unknown'
         db.rollback()
         monkeypatch.setattr(xiaoman_service,'binding_order',lambda *a,**k:{'order_id':'2001','order_no':'REMOTE2001','company_id':'101','name':'legacy-gated'})
@@ -211,6 +214,30 @@ def test_real_original_get_recovery_closes_same_claim_without_post(db,pushable,m
     assert claim.responsibilities['task_key']==original_key and len(payloads)==1 and len(reads)==1
     assert result['xiaoman_order_id']=='2001'
     assert any(row.evidence.get('original_request_readback') for row in db.query(ClaimEvidence).filter_by(claim_id=claim.id))
+
+
+def test_admin_confirm_not_created_releases_unknown_with_audit(db,pushable,monkeypatch):
+    from app.commerce_transition.models import AuthorityEvent
+    from app.invoice import sync_recovery
+    invoice=db.get(Invoice,pushable)
+    invoice.xiaoman_order_id=None;invoice.status='ready';invoice.sync_status='not_synced'
+    invoice.items[0].xiaoman_unique_id=None
+    db.commit();db.rollback();posts=[]
+    def timeout(*a,**k):posts.append(1);raise httpx.ReadTimeout('original response lost')
+    monkeypatch.setattr(httpx,'post',timeout)
+    assert not order_sync_execution.run(db,pushable,{'id':1},follow_outbound=False)['ok']
+    invoice=db.get(Invoice,pushable)
+    invoice.sync_attempt={**invoice.sync_attempt,'lease_until':(beijing_now()-timedelta(minutes=1)).isoformat()}
+    db.commit();db.rollback()
+    result=sync_recovery.resolve(db,pushable,{'id':1},resolution='confirm_not_created',
+        reason='Administrator checked OKKI: the order was not created')
+    claim=db.scalar(select(SendingClaim))
+    assert result['sync_status']=='not_synced' and claim.state=='not_sent' and claim.active_invoice_key is None
+    proof=[row.evidence for row in db.query(ClaimEvidence).filter_by(claim_id=claim.id) if row.outcome=='not_sent']
+    assert proof and proof[0]['manual_confirm_not_created'] and proof[0]['operator_id']==1 and proof[0]['prior_state']=='unknown'
+    audit=db.query(AuthorityEvent).filter_by(invoice_id=pushable,action='manual_not_created').one()
+    assert audit.payload['claim_id']==claim.id and audit.payload['reason'].startswith('Administrator')
+    assert len(posts)==1
 
 
 @pytest.fixture

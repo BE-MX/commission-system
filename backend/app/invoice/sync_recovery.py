@@ -9,7 +9,8 @@ from sqlalchemy import select
 from app.core.time import beijing_now
 from app.invoice import edit_authority, linked_sync_service as linked, lifecycle_remote, okki_client
 from app.invoice import service, uncertain_recovery, xiaoman_service, order_push_facts, legacy_sending
-from app.commerce_transition.models import SendingClaim, ClaimEvidence
+from app.commerce_transition.models import SendingClaim
+from app.commerce_transition import service as ownership
 from app.commerce_transition.service import digest
 from app.invoice.lifecycle_guard import ensure_active
 from app.invoice.models import InvoiceLinkedSync
@@ -18,6 +19,14 @@ from app.receipt import remote
 from app.semifinished.models import InvoiceAllocation
 
 logger = logging.getLogger(__name__)
+
+
+def rejection_detail(error):
+    """Show the concrete Chinese business reason; internal English parser faults stay generic."""
+    message = str(error).strip()
+    if message and any("一" <= char <= "鿿" for char in message):
+        return f"{message}。请按提示处理后重新核对"
+    return "当前订单、原任务或远端证据不允许解除保护，请刷新后重新核对"
 
 
 def original_claims(db, invoice, key):
@@ -35,19 +44,24 @@ def claim_binding(db, invoice, key):
         for claim in original_claims(db,invoice,key))
 
 
-def settle_original_claims(db, invoice, key, resolution, evidence=None, target=None, *, formal=False):
+def settle_original_claims(db, invoice, key, resolution, evidence=None, target=None, *, formal=False,
+                           actor_id=None, reason=None):
     claims=original_claims(db,invoice,key)
     if resolution=='confirm_not_created':
-        # Neither an operator note nor an empty mirror can prove a POST absent.
-        # Only immutable, definitive ORIGINAL results can permit a fresh create.
-        if not claims:
-            raise ValueError('没有原请求确定未发送凭证，历史单只能凭真实原单读回核对')
+        # Restored manual recovery: an invoice:admin confirms OKKI has no order.
+        # Pre-install uncertain pushes have no claim and follow the original
+        # manual flow; an unknown/sending claim is closed as not_sent with an
+        # immutable operator audit. Accepted observations were rejected by
+        # require_state before reaching here.
         for claim in claims:
-            proof=db.scalars(select(ClaimEvidence).where(ClaimEvidence.claim_id==claim.id)).all()
-            if claim.state not in {'failed','not_sent'} or claim.external_id or not any(
-                row.outcome==claim.state and row.external_id is None and
-                (row.evidence or {}).get('definitive_original_request_result') is True for row in proof):
-                raise ValueError('原发送结果未知，禁止以租约过期或查无记录解除保护')
+            if claim.state in {'failed','not_sent'}:
+                continue  # A conclusively rejected or released round is already closed.
+            if claim.state=='succeeded' or claim.external_id:
+                raise ValueError('原推单已被小满受理，不能确认未生成；请改用「绑定已生成订单」核对原单')
+            ownership.confirm_not_sent(db,claim.id,operator_id=int(actor_id),reason=reason,source='invoice.sync_recovery',
+                remote_evidence={'remote_readback':'operator_checked_okki','original_attempt_key':key,
+                    'observation_fingerprint':order_push_facts.observation_fingerprint(db,invoice.id,key) if key else None,
+                    'sync_error':invoice.sync_error})
         return
     for claim in claims:
         if claim.state in {'failed','not_sent'}:
@@ -230,7 +244,7 @@ def resolve(db, invoice_id, user, *, resolution, reason, xiaoman_order_id=None, 
                 order_push_facts.check_review(db, invoice, (invoice.sync_attempt or {}).get("attempt_key"), resolution, xiaoman_order_id)
             require_state(db, invoice, resolution, reason, target=xiaoman_order_id)
             original_key=(invoice.sync_attempt or {}).get("attempt_key")
-            settle_original_claims(db,invoice,original_key,resolution)
+            settle_original_claims(db,invoice,original_key,resolution,actor_id=int(actor["id"]),reason=reason)
             xiaoman_service.resolve_sync_uncertain(db, invoice, resolution=resolution, reason=reason,
                 xiaoman_order_id=xiaoman_order_id, operator_id=int(actor["id"]))
             order_push_facts.review(db,invoice,original_key,resolution)
@@ -261,11 +275,11 @@ def resolve(db, invoice_id, user, *, resolution, reason, xiaoman_order_id=None, 
         order_push_facts.review(db,invoice,original_key,resolution)
         db.commit()
         return current_response(db, invoice_id, user)
-    except ValueError:
+    except ValueError as error:
         db.rollback()
         logger.warning("Uncertain order recovery rejected by current state or evidence")
         print("[invoice-sync] recovery rejected by current state or evidence", flush=True)
-        raise HTTPException(409, "当前订单、原任务或远端证据不允许解除保护，请重新核对", headers={"Cache-Control":"private, no-store"}) from None
+        raise HTTPException(409, rejection_detail(error), headers={"Cache-Control":"private, no-store"}) from None
     except HTTPException as error:
         error.headers = {**(error.headers or {}), "Cache-Control":"private, no-store"}
         raise
