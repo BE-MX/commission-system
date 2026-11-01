@@ -158,7 +158,7 @@ Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务�
 
 创建/编辑产品明细只显示「自由可用」一列。缺货筛选按同 SKU 未发货量合计与本单可分配量比较，避免扣掉自己的保留后误报，以及重复 SKU 逐行通过却合计超额。未知数据不计入已确认缺货。筛选先于排序与分页，不改变表单、金额或保存明细；更换 SKU 不转移旧 SKU 的发货量。
 
-`POST /api/shipping-inspection/outbound-records/{record_id}/replenishment-sync`：仅 `task:<id>` 缺货任务，要求 `shipping_inspection:write` 与 `invoice:sync`，服务端重新检查当前数据库权限、出库范围和发票可见性。请求体为空，`private, no-store`；返回 `status/message/shortages/posted`（busy 或已完成回放不保证 posted 字段）。即时核目标仓库与前序整单保留，调用原发送事实/独立回读协议；支持 legacy 与 worker 模式但不切换模式。结果为 done / waiting_stock / processing / uncertain / skipped / busy；不得仅凭客户端超时重发。只明确未发送的库存等待可发起新代次，原补货执行恢复只核原事实。
+`POST /api/shipping-inspection/outbound-records/{record_id}/replenishment-sync`：仅 `task:<id>` 缺货任务，要求 `shipping_inspection:write` 与 `invoice:sync`，服务端重新检查当前数据库权限、出库范围和发票可见性。请求体为空，或为管理员人工核对 `{resolution:'confirm_not_created', reason(8–300)}`：仅 `shipping_inspection:admin`/`invoice:admin`（或 super_admin），原补货提交已发出、5分钟租约结束、无小满接受回执时，以 `confirm_not_sent` 关闭原 `outbound_create` 发送责任，写 `outbound-create-review` 审计，任务回到 waiting_stock，返回 `{status:'waiting_stock', message}`，不外发。`private, no-store`；返回 `status/message/shortages/posted`（busy 或已完成回放不保证 posted 字段）。即时核目标仓库与前序整单保留，调用原发送事实/独立回读协议；支持 legacy 与 worker 模式但不切换模式。结果为 done / waiting_stock / processing / uncertain / skipped / busy；不得仅凭客户端超时重发。只明确未发送的库存等待可发起新代次，原补货执行恢复只核原事实。
 
 ## 订单发票关联详情与异常概要（2026-10-08）
 
@@ -2640,7 +2640,7 @@ not_found只观察，原POST可能锁外取证或仍执行，不能证明失败/
 
 ## 实施增量：原运费与出库失败重试（v1.51）
 
-员工接口 POST /api/shipments/{id}/retry-freight、POST /api/shipments/{id}/retry-outbound 使用既有 SettlementAction body（version、reason），返回 ok 信封的当前 Settlement DTO。始终当前 shipment:write 和原实际 Invoice 财务范围；并非客户前缀 API，也不新增权限动作或 body 字段。预售主单、原主运费为零及原 active 规则保持；仅原目标明确 failed、无远端 ID，原编号/冻结载荷有效及对应原结算状态可以重新排队，uncertain/sending/已绑定不能按此流程重发。
+员工接口 POST /api/shipments/{id}/retry-freight、POST /api/shipments/{id}/retry-outbound 使用既有 SettlementAction body（version、reason），返回 ok 信封的当前 Settlement DTO。始终当前 shipment:write 和原实际 Invoice 财务范围；并非客户前缀 API，也不新增权限动作或 body 字段。预售主单、原主运费为零及原 active 规则保持；仅原目标明确 failed、无远端 ID，原编号/冻结载荷有效及对应原结算状态可以重新排队，sending/已绑定不能按此流程重发。例外（2026-11）：运费目标为 uncertain 时，当前 `shipment:admin`（或 super_admin）在小满按名称核实不存在后可重试，同时以 `confirm_not_sent` 关闭原 `freight_order_create` 发送责任（受发送租约约束）。
 
 当前停用/缺动作 403、范围不可见 404，原版本/关联变化及当前授权后查到同名运费或同 serial 出库为 409。坏形状、列表不完整/变化、供应商技术错误和数据库结果不明固定 503，不泄露 provider/SQL 细节，也不能降为“不存在”。所有正常、依赖错误及固定 422 均 private, no-store 和 Pragma: no-cache。
 
@@ -2704,7 +2704,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 
 ## 预售原出库任务的人工终态恢复（2026-10-23）
 
-`POST /api/shipments/{identity}/recover-outbound`：需要当前员工同时具备 `shipment:write`、`shipment:admin` 和原实际Invoice范围；权限来自服务端实时数据，不能用旧JWT权限代替。body含原 `version`、`reason`，以及动作事实中的 `recovery_version`（64位小写hex）、严格布尔 `original_request_closed=true`（必填无默认值）、去首尾空白后4~200字符的 `resolution_reference`。后者是员工核实“小满原请求已结束且未生成、不会随后生成”的外部记录引用；不是GET404推导的事实。
+`POST /api/shipments/{identity}/recover-outbound`：需要当前员工同时具备 `shipment:write`、`shipment:admin` 和原实际Invoice范围；权限来自服务端实时数据，不能用旧JWT权限代替。body含原 `version`、`reason`，以及动作事实中的 `recovery_version`（64位小写hex）、严格布尔 `original_request_closed=true`（必填无默认值）、去首尾空白后4~200字符的 `resolution_reference`。后者是员工核实“小满原请求已结束且未生成、不会随后生成”的外部记录引用；不是GET404推导的事实。恢复时同时以 `confirm_not_sent` 关闭该出库的原 `shipment_outbound_create` 发送责任，否则会挡住整张订单。运费/出库读回核验或绑定原单成功时，原发送责任按 succeeded 关闭。
 
 列表/详情的 `actions.recover_outbound` 返回 `allowed`、`reason`、`requires_terminal_confirmation`，符合条件时附 `version` 挑战。挑战绑定原结算、任务版本、尝试token、编号及载荷。命令全程持有共享出库执行器fence；解锁业务行后按原编号GET，最终重新当前授权、完整图及确认/创建事实校验，只有canonical缺失且人工终态声明一致时恢复原 `pending/outbound_pending`。保留原编号、明细、报价、回款及资金分配；命令不调用供应商POST。
 
