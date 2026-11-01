@@ -338,8 +338,18 @@ def abandon_pending(db, record, actor, reason):
     event.action='delete_abandoned'
     event.result={'status':'delete_abandoned','message':reason,'operator_id':actor,
         'checked_at':str(beijing_now()),'remote_status':current.get('status')}
+    # The original outbound is verifiably still present, so the original DELETE
+    # did not take effect: release its unknown claim(s) with the admin audit.
+    for key in (event.payload or {}).get('sending_claims',[]):
+        claim=legacy_sending.find(db,key)
+        if claim is not None and claim.state in legacy_sending.ownership.MANUALLY_RELEASABLE:
+            legacy_sending.ownership.confirm_not_sent(db,claim.id,operator_id=int(actor),reason=reason,
+                source='outbound.delete_recovery',remote_evidence={'remote_still_exists':True,
+                    'outbound_invoice_id':identity,'remote_status':current.get('status'),
+                    'readback_sha256':legacy_sending.ownership.digest(current)})
     for saved in event.payload.get('tasks',[]):
         task=db.query(OkkiOutboundTask).filter_by(id=saved['id']).with_for_update().first()
         if task and task.reason==f'delete_pending:{identity}':task.reason=f'delete_abandoned:{identity}'
     _commit(db)
-    return {'deleted':False,'message':'已保留小满原单并终止本地删除流程；原发送责任继续待核对，不会重发或自动重建'}
+    return {'deleted':False,'message':'已保留小满原单并终止本地删除流程；原删除请求已确认未生效并释放订单锁，'
+            '订单可继续推单、回款与出库；如仍需删除请在小满核对后处理'}

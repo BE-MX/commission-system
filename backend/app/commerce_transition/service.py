@@ -377,7 +377,9 @@ def confirm_not_sent(db, claim_id, *, operator_id, reason, remote_evidence, sour
     claim = db.query(SendingClaim).filter_by(id=claim_id).populate_existing().with_for_update().one()
     if claim.state not in MANUALLY_RELEASABLE:
         raise TransitionError(f"原请求已有终局结果（{claim.state}），不能再确认未生成；请按原结果核对")
-    if claim.external_id:
+    # A removal records its TARGET identity even when unknown; only a create/
+    # update reference is evidence that the original request produced a document.
+    if claim.external_id and not claim.operation.endswith("_remove"):
         raise TransitionError("原请求已取得远端单据身份，不能确认未生成；请按已有单据绑定")
     if held.state != "active":
         raise TransitionError(frozen_message("人工解除原请求"))

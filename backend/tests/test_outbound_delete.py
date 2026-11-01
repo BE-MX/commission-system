@@ -248,3 +248,36 @@ def test_outbound_recovery_abandons_expired_intent_without_replay(db, case, monk
     assert task.reason=='delete_abandoned:77'
     with pytest.raises(deletion.OutboundDeleteError): deletion.delete_outbound(db,record,user.id)
     assert state['posts']==1
+
+
+def test_abandon_releases_original_delete_claim_and_unlocks_order(db, case, monkeypatch):
+    from datetime import timedelta
+    from app.commerce_transition.models import AuthorityEvent, ClaimEvidence, SendingClaim
+    user, inv, task, state = case
+    now = deletion.beijing_now()
+    monkeypatch.setattr(deletion, 'beijing_now', lambda: now)
+    def timeout(*args):
+        state['posts'] += 1
+        raise remote.DeleteRemoteError('timeout', uncertain=True)
+    install_remove(monkeypatch, timeout)
+    record = outbound_service.get_outbound_record(db, 'OB001')
+    with pytest.raises(deletion.OutboundDeleteError): deletion.delete_outbound(db, record, user.id)
+    claim = db.query(SendingClaim).filter_by(operation='outbound_remove').one()
+    assert claim.state == 'unknown'
+    db.rollback()
+    with pytest.raises(ValueError, match='正在发送或结果未知'):
+        legacy_sending.start(db, inv.id, 'blocked-by-delete', 'order_push', {'order_id': '123'}, {})
+    db.rollback()
+    now += timedelta(minutes=6)
+    result = deletion.abandon_pending(db, record, user.id, '已核实小满原单仍存在，终止删除')
+    assert not result['deleted'] and '释放' in result['message']
+    claim = db.query(SendingClaim).filter_by(operation='outbound_remove').one()
+    assert claim.state == 'not_sent' and claim.active_invoice_key is None
+    proof = [row.evidence for row in db.query(ClaimEvidence).filter_by(claim_id=claim.id) if row.outcome == 'not_sent']
+    assert proof[0]['manual_confirm_not_created'] and proof[0]['operator_id'] == user.id
+    assert proof[0]['remote_evidence']['remote_still_exists'] is True
+    assert db.query(AuthorityEvent).filter_by(invoice_id=inv.id, action='manual_not_created').count() == 1
+    db.rollback()
+    legacy_sending.start(db, inv.id, 'after-abandon', 'order_push', {'order_id': '123'}, {})
+    db.commit()
+    assert state['posts'] == 1
