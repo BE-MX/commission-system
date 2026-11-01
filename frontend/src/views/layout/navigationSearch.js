@@ -24,8 +24,8 @@ export function filterNavigationSections(topLevelItems, groups, query) {
 
 
 // One authorized source for sidebar, favorites and the command panel.
-export function accessibleNavigationSections(entries, groups, auth) {
-  const allowed = entries.filter(entry => canConfigureNavigation(entry, groups, auth))
+export function accessibleNavigationSections(entries, groups, auth, context = {}) {
+  const allowed = entries.filter(entry => canConfigureNavigation(entry, groups, auth, context))
   const items = group => allowed.filter(entry => (entry.menu.group || '') === group)
     .sort((a, b) => (a.menu.order ?? 999) - (b.menu.order ?? 999))
     .map(entry => ({ path: entry.path, name: entry.name, title: entry.menu.title ?? entry.title, icon: entry.menu.icon, external: entry.external === true, badge: entry.menu.badge, anomalyDomain: entry.menu.anomalyDomain }))

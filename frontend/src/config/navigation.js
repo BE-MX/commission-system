@@ -222,12 +222,17 @@ export const MENU_GROUPS = {
  *   hideInMenu     : true 时仅作为路由存在 (详情/上传子页),不在侧边栏出现
  *   menu           : 在侧边栏中的呈现 (group/title/icon/order/permission/anyPermission)
  *                    menu.title 缺省回退到 entry.title; menu 内权限独立于路由级权限
+ *   menu.commercePhases : 仅在这些交易阶段显示菜单 (平台 /commerce-transition/status 的 phase;
+ *                    阶段未知时隐藏)。只控菜单显隐,不改路由权限
  *   external       : true 时不进 vue-router (router/index.js 会过滤),菜单渲染成
  *                    新标签页打开的 <a> (静态页/外链)。仅支持放在分组内——
  *                    顶级菜单折叠态没有 popup 兜底,文字会溢出 68px 侧栏
  */
+// Ark-native trading menus only make sense once local trading may run.
+const NATIVE_PHASES = ['transition', 'local_only']
+
 export const NAV_ENTRIES = [
-  { path: '/shipping/native', name: 'NativeOutbound', component: () => import('@/views/shipping/NativeOutbound.vue'), title: '出库管理（方舟独立）', permission: 'shipment:read', menu: { group: 'invoice', icon: Box, order: 16 } },
+  { path: '/shipping/native', name: 'NativeOutbound', component: () => import('@/views/shipping/NativeOutbound.vue'), title: '出库管理（方舟独立）', permission: 'shipment:read', menu: { group: 'invoice', icon: Box, order: 16, commercePhases: NATIVE_PHASES } },
   { path: '/commerce/shadow', name: 'CommerceShadow', component: () => import('@/views/commerce-transition/ShadowWorkbench.vue'), title: '双路线核对', permission: 'commerce_shadow:read', menu: { group: 'invoice', icon: DataAnalysis, order: 17 } },
   { path: '/commerce/transition', name: 'CommerceTransition', component: () => import('@/views/commerce-transition/TransitionSettings.vue'), title: '交易试点配置', permission: 'commerce_transition:admin', menu: { group: 'system', icon: Setting, order: 95 } },
   { path: '/portal/customers/:accessId/preview', name: 'PortalCustomerPreview', component: () => import('@/views/portal/CustomerPreview.vue'), title: '客户目录预览', permission: 'portal_mapping:read' },
@@ -237,9 +242,9 @@ export const NAV_ENTRIES = [
   { path: '/portal/access-requests', name: 'PortalAccessRequests', component: () => import('@/views/portal/AccessRequestPanel.vue'), title: '客户账号申请', permission: 'portal_access:read', menu: { group: 'customerPortal', title: '账号申请', icon: User, order: 25, permission: 'portal_access:read' } },
   { path: '/portal/orders', name: 'PortalOrders', component: () => import('@/views/portal/PortalOrders.vue'), title: '客户下单请求', permission: 'portal_order:read', menu: { group: 'customerPortal', title: '下单请求', icon: Document, order: 10, permission: 'portal_order:read' } },
   { path: '/commerce-migration', name: 'CommerceMigration', component: () => import('@/views/commerce-migration/MigrationWorkbench.vue'), title: '交易历史承接', permission: 'commerce_migration:admin', menu: { group: 'invoice', icon: Document, order: 14 } },
-  { path: '/invoice/native', name: 'NativeOrders', component: () => import('@/views/invoice/native/NativeOrders.vue'), title: '订单履约（方舟独立）', permission: 'invoice:read', menu: { group: 'invoice', icon: Document, order: 11 } },
-  { path: '/finance/native', name: 'NativeFinance', component: () => import('@/views/finance/native/NativeFinance.vue'), title: '本地资金与应收', permission: 'receipt:read', menu: { group: 'invoice', icon: Money, order: 12 } },
-  { path: '/finance/reference', name: 'FinanceReference', component: () => import('@/views/finance/native/FinanceReference.vue'), title: '本地资金配置', permission: 'receipt:admin', menu: { group: 'invoice', icon: Setting, order: 13 } },
+  { path: '/invoice/native', name: 'NativeOrders', component: () => import('@/views/invoice/native/NativeOrders.vue'), title: '订单履约（方舟独立）', permission: 'invoice:read', menu: { group: 'invoice', icon: Document, order: 11, commercePhases: NATIVE_PHASES } },
+  { path: '/finance/native', name: 'NativeFinance', component: () => import('@/views/finance/native/NativeFinance.vue'), title: '本地资金与应收', permission: 'receipt:read', menu: { group: 'invoice', icon: Money, order: 12, commercePhases: NATIVE_PHASES } },
+  { path: '/finance/reference', name: 'FinanceReference', component: () => import('@/views/finance/native/FinanceReference.vue'), title: '本地资金配置', permission: 'receipt:admin', menu: { group: 'invoice', icon: Setting, order: 13, commercePhases: NATIVE_PHASES } },
   { path: '/catalog/products', name: 'CatalogProducts', component: () => import('@/views/catalog/CatalogProducts.vue'), title: '产品与 SKU', permission: 'catalog:read', menu: { group: 'stock', icon: Goods, order: 1 } },
   { path: '/inventory', name: 'InventoryLedger', component: () => import('@/views/inventory/InventoryPage.vue'), title: '本地成品库存账', permission: 'inventory:read', menu: { group: 'stock', icon: Box, order: 2 } },
   { path: '/trade/roster', name: 'TradeRoster', component: () => import('@/views/trade/SalesRoster.vue'), title: '本地业务员名册', anyPermission: ['employee:read', 'employee:write'], menu: { group: 'personnel', icon: User, order: 3 } },

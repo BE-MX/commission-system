@@ -452,7 +452,7 @@ poster-config增加 `send_weekdays/push_start_date/poster_kinds`，奖项周一�
 | GET `/{id}` | 单据、凭证元数据和审计日志 | read/write/admin 任一 |
 | PATCH `/{id}` | version + 回款字段；仅有效、无远端 ID 的待发送/明确失败普通单；订单须已同步且无活动关联任务。自动回款按新金额重新分摊手续费，排除原单；保存后明确重试，保留原 ID 并记录前后值 | receipt:write |
 | PUT `/{id}/attachments` | version + attachment_ids（1–5 个不重复 ID）；仅订单自动生成的有效回款可更新当前截图，处理中的回款不可改；同步更新发票回款意图并记录审计 | receipt:write，且须在回款数据范围内 |
-| POST `/{id}/retry` | 明确失败的原单重新排队 | receipt:write |
+| POST `/{id}/retry` | 明确失败的原单重新排队；原发送人（登记人或最近接手人）已停用/撤权/无订单范围时，当前有权重试人接手发送，追加不可变 `sender_takeover` 回款日志（原/新actor、时间、原因），不改写 created_by | receipt:write |
 | POST `/{id}/void` | reason；仅本地待同步/明确失败单作废 | receipt:write |
 | POST `/{id}/reconcile` | 读取小满结果，不创建；返回候选或已核验单 | receipt:write/admin |
 | POST `/{id}/resolve` | resolution=bind_receipt/confirm_not_created、reason、可选 xiaoman_receipt_id；已知远端 ID 不允许换绑或确认未创建 | receipt:admin |
@@ -2992,7 +2992,7 @@ stock条目含external_id、mode、warehouse_id、local_sku_id、quality、整�
 
 | 方法/路径 | 权限与用途 |
 | --- | --- |
-| GET `/api/commerce-transition/status` | invoice read/write或transition read/admin；返回phase/version/readiness/capabilities |
+| GET `/api/commerce-transition/status` | invoice read/write、transition read/admin、shipment:read或receipt:read/admin；返回phase/version/readiness/capabilities（主站侧栏据phase只在transition/local_only显示方舟独立出库/履约/本地资金菜单） |
 | POST `/api/commerce-transition/policy` | transition:admin；phase、expected_version、真实inventory_evidence；不代替现场撤权 |
 | GET/POST `/api/commerce-transition/writers` | transition:admin；writer_key/protocol_version/state/evidence |
 | GET/POST `/api/commerce-transition/resources` | 读取transition:read、写入admin；route/resource_kind/resource_key/warehouse_key/完整checkpoint与排他证据 |

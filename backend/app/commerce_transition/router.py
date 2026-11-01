@@ -75,10 +75,15 @@ def _write(db, function, **kwargs):
         raise
 
 
+# Non-sensitive phase/capabilities. Holders of the Ark-native outbound and
+# finance menus read it too, because those menus show only in transition/local_only.
+STATUS_READERS = ("commerce_transition:read", "commerce_transition:admin", "invoice:read", "invoice:write",
+                  "shipment:read", "receipt:read", "receipt:admin")
+
+
 @router.get("/status")
-def status(db: Session = Depends(get_db), user=Depends(require_any_permission(
-        "commerce_transition:read", "commerce_transition:admin", "invoice:read", "invoice:write"))):
-    read_authority.current_user(db, user, "commerce_transition:read", "commerce_transition:admin", "invoice:read", "invoice:write")
+def status(db: Session = Depends(get_db), user=Depends(require_any_permission(*STATUS_READERS))):
+    read_authority.current_user(db, user, *STATUS_READERS)
     current = service.policy(db)
     writers = db.query(WriterReceipt).order_by(WriterReceipt.writer_key).all()
     blockers = []

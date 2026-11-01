@@ -28,6 +28,7 @@ import GlassButton from '@/components/GlassButton.vue'
 import { useAuthStore } from '@/stores/auth'
 import { MENU_GROUPS, NAV_ENTRIES } from '@/config/navigation'
 import { msgError } from '@/utils/feedback'
+import { useCommercePhase } from './useCommercePhase'
 import { accessibleNavigationSections, isQuickNavigationShortcut, quickNavigationItems } from './navigationSearch'
 
 const auth = useAuthStore(), router = useRouter(), route = useRoute()
@@ -35,7 +36,8 @@ const open = ref(false), query = ref(''), active = ref(0), input = ref(null), li
 const listId = `quick-navigation-${getCurrentInstance().uid}`
 const shortcut = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || '') ? '⌘ K' : 'Ctrl K'
 let trigger = null
-const sections = computed(() => accessibleNavigationSections(NAV_ENTRIES, MENU_GROUPS, auth))
+const commercePhase = useCommercePhase()
+const sections = computed(() => accessibleNavigationSections(NAV_ENTRIES, MENU_GROUPS, auth, { commercePhase: commercePhase.value }))
 const matches = computed(() => quickNavigationItems(sections.value, query.value))
 watch(matches, () => { active.value = 0 })
 watch(() => auth.user?.id, () => { open.value = false; query.value = '' })

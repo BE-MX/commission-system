@@ -144,6 +144,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { MENU_GROUPS, NAV_ENTRIES } from '@/config/navigation'
 import { useQuickTask } from '@/composables/useQuickTask'
+import { useCommercePhase } from './useCommercePhase'
 import { accessibleNavigationSections, filterNavigationSections, normalizeNavigationQuery } from './navigationSearch'
 import FavoriteNavigation from './FavoriteNavigation.vue'
 
@@ -179,7 +180,8 @@ watch(() => props.collapsed, value => {
   if (value) searchQuery.value = ''
 })
 
-const accessibleNavigation = computed(() => accessibleNavigationSections(NAV_ENTRIES, MENU_GROUPS, authStore))
+const commercePhase = useCommercePhase()
+const accessibleNavigation = computed(() => accessibleNavigationSections(NAV_ENTRIES, MENU_GROUPS, authStore, { commercePhase: commercePhase.value }))
 const accessibleTopLevelItems = computed(() => accessibleNavigation.value.topLevelItems)
 const accessibleGroups = computed(() => accessibleNavigation.value.groups)
 

@@ -2,8 +2,12 @@ export function normalizeFavoriteKeys(keys) {
   return Array.isArray(keys) ? [...new Set(keys.filter(key => typeof key === 'string' && key.length > 0))] : []
 }
 
-export function canConfigureNavigation(entry, groups, auth) {
+// context.commercePhase: the platform trading phase (null while unknown). Callers that
+// only check permissions (manifest parity, role tooling) omit it and skip the phase rule.
+export function canConfigureNavigation(entry, groups, auth, context = {}) {
   if (!auth.user || !entry?.menu || entry.hideInMenu) return false
+  const phases = entry.menu.commercePhases
+  if (phases && 'commercePhase' in context && !phases.includes(context.commercePhase)) return false
   const group = entry.menu.group ? groups[entry.menu.group] : null
   if (entry.menu.group && !group) return false
   // Route guards check both declarations; a permissive menu must not widen them.

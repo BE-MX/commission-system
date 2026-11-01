@@ -47,6 +47,21 @@ def test_invoice_writer_can_read_non_sensitive_status(db):
     assert client.get("/api/commerce-transition/writers").status_code == 403
 
 
+@pytest.mark.parametrize("permission", ["shipment:read", "receipt:read", "receipt:admin"])
+def test_native_menu_holders_can_read_the_phase(db, permission):
+    # The sidebar shows Ark-native outbound/finance menus only in transition/local_only.
+    install(db)
+    client, _actor = client_for(db, [permission], role_name=f"phase_{permission.replace(':', '_')}")
+    response = client.get("/api/commerce-transition/status")
+    assert response.status_code == 200 and response.json()["data"]["phase"] == "transition"
+
+
+def test_unrelated_user_cannot_read_status(db):
+    install(db)
+    client, _actor = client_for(db, ["announcement:read"])
+    assert client.get("/api/commerce-transition/status").status_code == 403
+
+
 def test_stale_jwt_admin_cannot_read_management_evidence(db):
     install(db)
     client, _actor = client_for(db, ["invoice:write"], stale_permissions=["commerce_transition:admin"])
