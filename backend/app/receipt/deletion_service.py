@@ -16,6 +16,7 @@ from app.receipt.models import ReceiptIntent, ReceiptLog
 
 logger = logging.getLogger(__name__)
 STARTED = "delete_started"
+ABANDONED = "delete_abandoned"
 EVIDENCE_FIELDS = ("cash_collection_id", "cash_collection_no", "order_id", "currency", "amount",
     "bank_charge", "real_amount", "bank_charge_rmb", "bank_charge_usd", "collection_date",
     "collect_status", "update_time")
@@ -23,10 +24,10 @@ EVIDENCE_FIELDS = ("cash_collection_id", "cash_collection_no", "order_id", "curr
 
 def workflow(db, row):
     record = db.scalar(select(ReceiptLog).where(ReceiptLog.receipt_id == row.id,
-        ReceiptLog.action == STARTED).order_by(ReceiptLog.id.desc())
+        ReceiptLog.action.in_([STARTED, ABANDONED])).order_by(ReceiptLog.id.desc())
         .execution_options(populate_existing=True).limit(1))
-    if record is None:
-        return None
+    if record is None or record.action == ABANDONED:
+        return None  # An administrator ended the original deletion; the receipt stayed in OKKI.
     try:
         value = json.loads(record.message)
         if (not isinstance(value, dict) or not value.get("token") or not value.get("target")
@@ -50,8 +51,8 @@ def _values(row):
     return None if row is None else {column.name: getattr(row, column.name) for column in row.__table__.columns}
 
 
-def _capture(db, identity, user):
-    row, invoice, current, _, _ = authority.local_group(db, identity, user, "receipt:delete")
+def _capture(db, identity, user, *, recovery=False):
+    row, invoice, current, _, _ = authority.local_group(db, identity, user, "receipt:delete", recovery=recovery)
     flow = workflow(db, row)
     if row.status not in {"active", "voided", "remote_deleted"}:
         raise ValueError("当前回款状态不能删除")
@@ -138,6 +139,7 @@ def preview(db, identity, user):
 def _result(db, row, invoice, status):
     return {"status": status, "message": (
         "原回款已删除，凭证与审计保留；刷新资金汇总后可重新登记回款" if status == "deleted" else
+        "管理员已确认原删除未生效，小满原回款保留，订单锁已释放；如仍需删除请重新预览" if status == "abandoned" else
         "原删除结果仍待核对，登记额度继续冻结；请继续核验，系统不会重复发送删除"),
         "receipt": service.describe(db, row, invoice, detail=True)}
 
@@ -175,7 +177,64 @@ def _finish(db, identity, user):
     return _result(db, row, invoice, "deleted")
 
 
+ADMIN_PERMISSIONS = ("receipt:admin",)
+
+
+def abandon(db, identity, body, user):
+    """Administrator ends a timed-out deletion whose original receipt is still in OKKI.
+
+    Canonical readback must show the receipt active: the original removal did
+    not take effect, so its unknown claim closes as not_sent with audit and the
+    receipt returns to its pre-delete synced state. Never sends.
+    """
+    note = str(body.reason or "").strip()
+    if not 8 <= len(note) <= 300:
+        raise ValueError("请填写8到300个字符的人工核对依据")
+    row, invoice, current, flow, expected, target = _capture(db, identity, user)
+    if "super_admin" not in current["roles"] and not set(ADMIN_PERMISSIONS).intersection(current["permissions"]):
+        raise HTTPException(403, "仅回款管理员可放弃原回款删除")
+    if row.status != "active" or flow is None:
+        raise HTTPException(409, "该回款没有待核对的删除，无需放弃；请刷新后查看")
+    db.commit()  # Authorization and business locks never span evidence I/O.
+    try:
+        proof = _read(db, target)
+        db.commit()
+    except (ValueError, okki_client.OkkiApiError, SQLAlchemyError, HTTPException, OSError) as error:
+        _warn(error)
+        proof = None
+    finally:
+        _rollback(db)
+    # portal -> policy -> authority -> lineage -> invoice -> receipt: may close the original claim.
+    row, invoice, current, actual_flow, actual, _ = _capture(db, identity, user, recovery=True)
+    if actual != expected or actual_flow != flow:
+        raise HTTPException(409, "回款或删除记录已变化，请重新读取原单再核对")
+    if not proof or proof["status"] != "active":
+        raise HTTPException(409, "未能核实小满原回款仍然存在，不能放弃删除；请点「继续核验」确认删除结果")
+    from app.core.time import beijing_now
+    if row.lease_until and row.lease_until > beijing_now():
+        raise HTTPException(409, "原回款任务租约尚未结束，请稍后再核对")
+    claim = legacy_sending.find(db, f'legacy:delete-receipt:{identity}:{flow["token"]}')
+    if claim is not None and claim.state == "succeeded":
+        raise HTTPException(409, "原删除已被小满受理，不能放弃；请点「继续核验」")
+    if claim is not None and claim.state in legacy_sending.ownership.MANUALLY_RELEASABLE:
+        legacy_sending.ownership.confirm_not_sent(db, claim.id, operator_id=access.user_id(current), reason=note,
+            source="receipt.delete_abandon", remote_evidence={"remote_still_exists": True,
+                "receipt_id": row.id, "xiaoman_receipt_id": str(row.xiaoman_receipt_id),
+                "readback_sha256": _hash(_audit_proof(proof))})
+    row.sync_status, row.last_error = "synced", None
+    row.recovery_kind = "verify" if row.collect_status == 0 else None
+    row.next_attempt_at = None
+    row.version += 1
+    service.log(db, row, ABANDONED, json.dumps({"token": flow["token"], "target": row.xiaoman_receipt_id,
+        "reason": note, "remote_after": _audit_proof(proof),
+        "message": "管理员核实小满原回款仍存在，原删除未生效，已恢复原回款"}, ensure_ascii=False, default=str),
+        access.user_id(current))
+    return _result(db, row, invoice, "abandoned")
+
+
 def remove(db, identity, body, user):
+    if getattr(body, "resolution", None) == "abandon":
+        return abandon(db, identity, body, user)
     if not body.confirmed or len(body.reason.strip()) < 2:
         raise ValueError("请确认删除范围并填写删除原因")
     row, invoice, current, flow, expected, target = _capture(db, identity, user)

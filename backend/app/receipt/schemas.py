@@ -84,6 +84,8 @@ class ReceiptDeletion(BaseModel):
     expected_version: str = Field(pattern=r"^[a-f0-9]{64}$")
     reason: str = Field(min_length=2, max_length=500)
     confirmed: bool
+    # Administrator ends a timed-out deletion whose receipt is verified still present (receipt:admin).
+    resolution: Literal["abandon"] | None = None
 
 
 class PresalePurposeUpdate(BaseModel):
