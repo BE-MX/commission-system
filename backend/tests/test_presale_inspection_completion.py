@@ -165,12 +165,10 @@ def test_removed_confirmation_route_and_writer_cannot_send_supplier_status_two()
 
 
 def test_admin_binding_reads_submitted_inspection_and_funds_from_proposed_remote_id(db, order, batch, monkeypatch):
-    from app.auth.models import ArkUser, ArkRole
+    from app.auth.models import ArkUser
     from app.invoice.settlement_schemas import SettlementRemoteReview
     row, outbound, inspection = batch
-    actor = ArkUser(id=1, username='inspection-admin', password_hash='x', real_name='Admin', is_active=True)
-    actor.roles = [ArkRole(name='super_admin', label='Admin')]
-    db.add(actor)
+    assert db.get(ArkUser, 1).is_active  # The shared order fixture seeds user 1 as active super admin.
     inspection.status = 'submitted'
     outbound.remote_id = None; outbound.status = 'uncertain'; row.state = 'outbound_uncertain'
     db.commit()
