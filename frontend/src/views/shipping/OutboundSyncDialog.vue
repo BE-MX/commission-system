@@ -37,8 +37,13 @@
     </template>
     <template #footer>
       <GlassButton :disabled="busy" @click="$emit('update:visible', false)">取消</GlassButton>
-      <GlassButton v-if="reviewable" v-any-permission="['shipping_inspection:admin', 'invoice:admin']" :disabled="busy"
-        @click="$emit('review')">人工核对</GlassButton>
+      <!-- Same gates as the API: route needs invoice:sync + shipping_inspection:write, the service an admin grant. -->
+      <span v-if="reviewable" v-permission="'invoice:sync'">
+        <span v-permission="'shipping_inspection:write'">
+          <GlassButton v-any-permission="['shipping_inspection:admin', 'invoice:admin']" :disabled="busy"
+            @click="$emit('review')">人工核对</GlassButton>
+        </span>
+      </span>
       <GlassButton v-if="!preview?.manual_review" variant="primary" :loading="busy" :disabled="preview?.requires_recheck && preview?.inspection_status === 'submitted'" @click="$emit('apply')">
         {{ busy ? '正在核对并补齐明细…' : preview?.recover ? '继续核对并补齐缺失明细' : preview?.requires_recheck ? '同步并重验' : preview?.changed ? '确认同步' : '刷新打印资料' }}
       </GlassButton>
