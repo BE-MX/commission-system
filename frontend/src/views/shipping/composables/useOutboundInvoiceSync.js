@@ -1,4 +1,4 @@
-import { msgSuccessText } from '@/utils/feedback'
+import { msgError, msgSuccessText } from '@/utils/feedback'
 import { ref } from 'vue'
 
 import { previewOutboundInvoiceSync, syncOutboundInvoice } from '@/api/shipping'
@@ -50,7 +50,8 @@ export function useOutboundInvoiceSync(refresh) {
     syncPreview.value = null
     syncRow.value = row
     try {
-      const response = await previewOutboundInvoiceSync(row.outbound_record_id)
+      // The first preview reports its own errors, so a review hint is not toasted twice.
+      const response = await previewOutboundInvoiceSync(row.outbound_record_id, { suppressToast: true })
       syncPreview.value = response.data
       syncVisible.value = true
       if (response.data.recover) await resumeSync()
@@ -62,7 +63,10 @@ export function useOutboundInvoiceSync(refresh) {
         syncVisible.value = true
         return
       }
-      if (!syncVisible.value) throw error
+      if (!syncVisible.value) {
+        msgError(typeof detail === 'string' && detail ? detail : '同步预览暂不可用，请稍后重试', error)
+        throw error
+      }
       if (error?.response?.status === 409) {
         syncPreview.value = (await previewOutboundInvoiceSync(row.outbound_record_id)).data
       } else {

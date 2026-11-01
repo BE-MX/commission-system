@@ -5,7 +5,9 @@ import { ref } from 'vue'
 
 const source = readFileSync(new URL('../src/views/shipping/composables/useOutboundInvoiceSync.js', import.meta.url), 'utf8')
   .replace(/^import .*\r?\n/gm, '').replace('export function', 'function')
-const factory = new Function('ref', 'msgSuccessText', 'previewOutboundInvoiceSync', 'syncOutboundInvoice', `${source}; return useOutboundInvoiceSync`)
+const errors = []
+const build = new Function('ref', 'msgError', 'msgSuccessText', 'previewOutboundInvoiceSync', 'syncOutboundInvoice', `${source}; return useOutboundInvoiceSync`)
+const factory = (ref, ...rest) => build(ref, text => errors.push(text), ...rest)
 const row = {record_source:'okki', outbound_invoice_id:'77', outbound_record_id:'1'}
 const preview = {version:'a'.repeat(64), changed:true, changes:[]}
 
@@ -117,4 +119,16 @@ test('manual review sends resolution and reason once, then returns to a fresh pr
   assert.equal(api.reviewVisible.value, false)
   assert.equal(api.reviewing.value, false)
   assert.deepEqual(api.syncPreview.value, preview)
+})
+
+test('the first preview suppresses the global toast and reports its own error once', async () => {
+  const configs = []
+  errors.length = 0
+  const api = factory(ref, () => {}, async (id, config) => {
+    configs.push(config)
+    throw Object.assign(Error('down'), { response: { status: 503, data: { detail: '小满暂不可用' } } })
+  }, async () => assert.fail('unexpected sync'))(async () => {})
+  await assert.rejects(api.previewSync(row))
+  assert.deepEqual(configs, [{ suppressToast: true }])
+  assert.deepEqual(errors, ['小满暂不可用'])
 })
