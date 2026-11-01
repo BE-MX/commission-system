@@ -95,6 +95,50 @@ def _current_sender(db, invoice, row):
     return actor_id
 
 
+CLAIM_SUBJECTS = {"order_push": "订单推送", "freight_order_create": "运费订单", "outbound_create": "出库单",
+                  "outbound_update": "出库同步", "shipment_outbound_create": "发货出库单",
+                  "order_remove": "订单删除", "receipt_remove": "回款删除", "outbound_remove": "出库删除"}
+OWN_CLAIM_MESSAGE = ("本回款上次发送小满的结果未知，已转待核对，禁止重新创建；"
+                     "请管理员在小满核验后选择「确认未生成」或「绑定原单」")
+
+
+def _claim_block(db, row):
+    """('own'|'other', claim) for the unresolved claim that refuses a new POST."""
+    from app.commerce_transition.models import SendingClaim
+    claims = db.scalars(select(SendingClaim).where(SendingClaim.invoice_id == row.invoice_id,
+        SendingClaim.state.in_(["sending", "unknown"])).order_by(SendingClaim.id)
+        .execution_options(populate_existing=True)).all()
+    own = [claim for claim in claims if claim.operation == "receipt_push"
+           and (claim.responsibilities or {}).get("receipt_id") == row.id]
+    if own:
+        return "own", own[0]
+    return ("other", claims[0]) if claims else (None, None)
+
+
+def _other_claim_message(db, claim):
+    detail = claim.responsibilities or {}
+    if claim.operation == "receipt_push" and detail.get("receipt_id"):
+        number = db.scalar(select(Receipt.receipt_no).where(Receipt.id == detail["receipt_id"]))
+        subject = f"回款 {number or detail['receipt_id']}"
+    else:
+        subject = CLAIM_SUBJECTS.get(claim.operation, claim.operation)
+    return (f"同订单的{subject}发送小满结果未决（{claim.state}），暂不能发送本回款；"
+            f"请先核对该{subject.split(' ')[0]}后再重试本回款")[:500]
+
+
+def _hold_for_claim(db, row, kind, claim):
+    """Park a row behind an unresolved claim instead of a misleading plain failure."""
+    if kind == "own":
+        row.sync_status, row.send_phase, row.recovery_kind = "uncertain", "sending", "unknown"
+        row.last_error = OWN_CLAIM_MESSAGE
+    else:
+        row.sync_status, row.send_phase, row.recovery_kind = "failed", None, "blocked"
+        row.last_error = _other_claim_message(db, claim)
+    row.next_attempt_at = None
+    row.version += 1
+    service.log(db, row, row.sync_status, row.last_error)
+
+
 def deliver(db, receipt_id):
     row = db.get(Receipt, receipt_id)
     if row is None:
@@ -117,6 +161,12 @@ def deliver(db, receipt_id):
         settlement = ensure_receipt_sendable(db, row, current=True)
     except ValueError:
         db.rollback()
+        return
+    kind, claim = _claim_block(db, row)
+    if kind:
+        # begin_send would refuse; its own unknown POST must reach manual resolve.
+        _hold_for_claim(db, row, kind, claim)
+        db.commit()
         return
     target = None
     if invoice.order_type == "presale" and row.batch_id:
@@ -261,6 +311,17 @@ def deliver(db, receipt_id):
                    else "小满拒绝回款请求，请检查应用权限和回款字段后重试")
         values = recovery.retry_values(current.recovery_attempts, "prepare_retry") if retryable else dict(
             recovery_kind="unknown" if uncertain else "blocked", next_attempt_at=None)
+        kind = None
+        if not sent and isinstance(exc, legacy_sending.ownership.TransitionError):
+            kind, claim = _claim_block(db, current)  # A claim that appeared after the pre-check.
+        if kind:
+            count = db.execute(update(Receipt).where(Receipt.id == receipt_id, Receipt.attempt_token == token,
+                Receipt.sync_status == "syncing").values(sync_status="pending")).rowcount
+            if count:
+                db.refresh(current)
+                _hold_for_claim(db, current, kind, claim)
+            db.commit()
+            return
         count = db.execute(update(Receipt).where(Receipt.id == receipt_id, Receipt.attempt_token == token,
             Receipt.sync_status == "syncing").values(sync_status=state, last_error=message,
             send_phase="sending" if uncertain else "preparing" if not sent else "rejected", **values,

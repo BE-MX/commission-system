@@ -284,3 +284,64 @@ def test_receipt_bind_original_closes_unknown_claim_and_order_can_send_again(db,
     deliver_with(db, monkeypatch, second, '702')
     assert db.get(Receipt, second).xiaoman_receipt_id == '702', db.get(Receipt, second).last_error
     assert [c.state for c in receipt_claims(db)] == ['succeeded', 'succeeded']
+
+
+# ------------------------------------------- receipt stuck behind own claim
+
+def stale_pending(db, identity, status='pending'):
+    """Pre-batch-A state: the row went back to pending/failed, its claim stayed unknown."""
+    from app.receipt.models import Receipt
+    db.query(Receipt).filter_by(id=identity).update({'sync_status': status, 'send_phase': None,
+                                                    'recovery_kind': None, 'last_error': None})
+    db.commit()
+
+
+@pytest.mark.parametrize('stale', ['pending', 'failed'])
+def test_receipt_behind_its_own_unknown_claim_becomes_uncertain_and_resolvable(db, receipts, monkeypatch, stale):
+    from app.receipt import remote, retry_service
+    from app.receipt.models import Receipt
+    first = new_receipt(db, receipts.id, f'receipt-stuck-{stale}')
+    deliver_with(db, monkeypatch, first, 'timeout')
+    assert receipt_claims(db)[0].state == 'unknown'
+    stale_pending(db, first, stale)
+    if stale == 'failed':
+        db.rollback(); retry_service.retry(db, first, ADMIN); db.commit()
+    deliver_with(db, monkeypatch, first, 'must-not-send')
+    row = db.get(Receipt, first)
+    assert row.sync_status == 'uncertain' and row.recovery_kind == 'unknown', row.last_error
+    assert '确认未生成' in row.last_error and '绑定' in row.last_error
+    assert len(receipt_claims(db)) == 1 and receipt_claims(db)[0].state == 'unknown'
+    monkeypatch.setattr(remote, 'order_receipts', lambda db, order_id: [])
+    resolve_receipt(db, first, ADMIN, 'confirm_not_created')
+    assert_manual_release(db, receipt_claims(db)[0], operator_id=1)
+    deliver_with(db, monkeypatch, first, '711')
+    assert db.get(Receipt, first).xiaoman_receipt_id == '711'
+
+
+def test_receipt_behind_another_objects_unknown_claim_stays_failed_and_names_it(db, receipts, monkeypatch):
+    from app.receipt.models import Receipt
+    first = new_receipt(db, receipts.id, 'receipt-holder')
+    deliver_with(db, monkeypatch, first, 'timeout')
+    second = new_receipt(db, receipts.id, 'receipt-waiting')
+    deliver_with(db, monkeypatch, second, 'must-not-send')
+    row = db.get(Receipt, second)
+    assert row.sync_status == 'failed', row.last_error
+    assert 'receipt-holder' in row.last_error and '回款' in row.last_error
+    assert len(receipt_claims(db)) == 1
+
+
+def test_receipt_claim_refusal_after_precheck_is_classified_not_plain_failed(db, receipts, monkeypatch):
+    from app.receipt import sync_service
+    from app.receipt.models import Receipt
+    first = new_receipt(db, receipts.id, 'receipt-race')
+    deliver_with(db, monkeypatch, first, 'timeout')
+    stale_pending(db, first)
+    real, calls = sync_service._claim_block, []
+    def late(db, row):  # The claim is invisible to the pre-check, then refuses begin_send.
+        calls.append(row.id)
+        return (None, None) if len(calls) == 1 else real(db, row)
+    monkeypatch.setattr(sync_service, '_claim_block', late)
+    deliver_with(db, monkeypatch, first, 'must-not-send')
+    row = db.get(Receipt, first)
+    assert len(calls) == 2 and row.sync_status == 'uncertain' and row.recovery_kind == 'unknown', row.last_error
+    assert len(receipt_claims(db)) == 1
