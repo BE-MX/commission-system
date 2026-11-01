@@ -48,6 +48,8 @@ def _capture(db, identity, body, user):
         current=authority.current_user(db,user,*rights)
         invoice_id=db.scalar(select(ShipmentSettlement.invoice_id).where(ShipmentSettlement.id==identity))
         if invoice_id is None:raise HTTPException(404,'订单或发货结算不存在')
+        from app.commerce_transition.service import lock_recovery_scope
+        lock_recovery_scope(db,[invoice_id])  # Claim closure: portal -> policy -> authority before invoice.
         invoice=edit_authority.lock_document(db,invoice_id,force=True)
         if invoice is None:raise HTTPException(404,'订单或发货结算不存在')
         db.refresh(invoice,with_for_update=True);access.ensure_invoice(db,invoice,current)
@@ -96,13 +98,17 @@ def _read_evidence(db, lookup):
         raise okki_client.OkkiApiError('运费原单详情或活动列表不可验证') from error
 
 
-def _apply(target, body, evidence):
+def _apply(target, body, evidence, db):
     valid=evidence.active and evidence.matches
     if body.remote_id and not valid:
         raise ValueError('小满订单与冻结的运费目标不匹配，不能绑定')
     if body.remote_id:target.remote_order_id=body.remote_id
     target.remote_status='bound' if valid else 'uncertain'
     target.last_error=None if valid else '小满运费订单身份或金额与冻结目标不一致，请核对原单'
+    if valid:
+        from app.invoice import claim_settlement
+        claim_settlement.settle_verified(db,target.invoice_id,claim_settlement.FREIGHT,target.id,
+            target.remote_order_id,{'source':'freight.reconcile','target_id':target.id})
     # Preserve both original bind and refresh version advances atomically.
     target.version+=2 if body.remote_id else 1
 
@@ -123,7 +129,7 @@ def reconcile(db, identity, body, user):
     row,target,current,actual,final_lookup=_capture(db,identity,body,user)
     if actual!=expected or final_lookup!=evidence.target:
         raise HTTPException(409,'原运费目标或资金在核验期间已变化，请核对原单')
-    _apply(target,body,evidence)
+    _apply(target,body,evidence,db)
     db.add(SettlementEvent(settlement_id=row.id,action='reconcile_freight',actor_id=access.user_id(current),reason=body.reason))
     db.flush()
     return shipments.describe(db,row,current=True)

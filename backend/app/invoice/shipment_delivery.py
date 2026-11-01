@@ -279,7 +279,13 @@ def refresh(db, outbound_id, *, confirmation_token=None):
             db.rollback()
             funding_ok = False
     db.commit()
-    invoice = db.query(Invoice).filter(Invoice.id == outbound.invoice_id).populate_existing().with_for_update().one()
+    invoice_id = outbound.invoice_id
+    # A verified outbound closes its original claims: portal -> policy -> authority -> invoice.
+    from app.portal.authority import lock_authority
+    from app.commerce_transition.service import lock_recovery_scope
+    lock_authority(db, force=True)
+    lock_recovery_scope(db, [invoice_id])
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).populate_existing().with_for_update().one()
     db.refresh(outbound, with_for_update=True)
     settlement = db.get(ShipmentSettlement, outbound.settlement_id)
     db.refresh(settlement, with_for_update=True)
@@ -304,6 +310,9 @@ def refresh(db, outbound_id, *, confirmation_token=None):
         if (proof, complete) != inspection_before:
             db.rollback()
             raise ValueError('检验状态在核验期间已变化，请刷新原批次')
+        from app.invoice import claim_settlement
+        claim_settlement.settle_verified(db, invoice_id, claim_settlement.SHIPMENT, outbound.id,
+            outbound.remote_id, {'source': 'shipment.refresh', 'outbound_id': outbound.id})
         if complete:
             funding_ok = funding_ok and _dispatchable(db, settlement, current=True)
         inspection_completion.apply(db, outbound, settlement, complete,

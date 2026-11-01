@@ -36,7 +36,9 @@ def _check(row, target, kind, version):
     if row.version != version:
         raise ValueError('结算已变化，请刷新后核对原单')
     if kind == 'freight':
-        if (target is None or target.kind != 'freight' or target.remote_status != 'failed'
+        # An uncertain target is retried only by an administrator after canonical
+        # absence, which also releases the original unknown POST (see retry()).
+        if (target is None or target.kind != 'freight' or target.remote_status not in {'failed', 'uncertain'}
                 or target.remote_order_id or row.state not in {'awaiting_payment','awaiting_verification','ready'}):
             raise ValueError('运费目标不是可重试的明确失败状态')
         if not target.remote_order_name or not target.created_at:
@@ -87,6 +89,8 @@ def _capture(db, identity, user, kind, version):
         current=authority.current_user(db,user,'shipment:write')
         invoice_id=db.scalar(select(ShipmentSettlement.invoice_id).where(ShipmentSettlement.id==identity))
         if invoice_id is None:raise HTTPException(404,'订单或发货结算不存在')
+        from app.commerce_transition.service import lock_recovery_scope
+        lock_recovery_scope(db,[invoice_id])  # May release the original claim: policy/authority first.
         invoice=edit_authority.lock_document(db,invoice_id,force=True)
         if invoice is None:raise HTTPException(404,'订单或发货结算不存在')
         db.refresh(invoice,with_for_update=True);access.ensure_invoice(db,invoice,current)
@@ -138,6 +142,16 @@ def _apply(row, target, kind):
     target.attempt_token=None;target.lease_until=None;target.last_error=None;target.version+=1
 
 
+def _release_uncertain_freight(db, row, target, current, body):
+    """Canonical absence plus an administrator's attestation closes the original POST."""
+    if 'super_admin' not in current.get('roles', []) and 'shipment:admin' not in current.get('permissions', []):
+        raise HTTPException(403, '运费订单结果待核对，仅发货管理员可在核实小满未生成后重试')
+    from app.invoice import claim_settlement
+    claim_settlement.release_unsent(db, row.invoice_id, claim_settlement.FREIGHT, target.id,
+        operator_id=access.user_id(current), reason=body.reason, source='freight.retry_review',
+        remote_evidence={'remote_order_name': target.remote_order_name, 'result': 'canonical_not_found'})
+
+
 def retry(db, identity, body, user, *, kind):
     row,target,current,expected,lookup=_capture(db,identity,user,kind,body.version)
     db.commit()
@@ -155,6 +169,8 @@ def retry(db, identity, body, user, *, kind):
     if actual != expected or final_lookup != evidence.target:
         raise HTTPException(409,'原发货目标或资金在核验期间已变化，请核对原单')
     _require_absent(evidence)
+    if kind == 'freight' and target.remote_status == 'uncertain':
+        _release_uncertain_freight(db, row, target, current, body)
     _apply(row,target,kind)
     db.add(SettlementEvent(settlement_id=row.id,action='retry_'+kind,actor_id=access.user_id(current),reason=body.reason))
     db.flush()  # Production autoflush=False; don't overwrite our pending state.

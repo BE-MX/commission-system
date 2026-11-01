@@ -235,11 +235,20 @@ def refresh(db, target_id):
         raise ValueError("运费目标尚无小满订单 ID")
     detail = remote.read(db, "/v1/invoices/order/info", {"order_id": target.remote_order_id})
     active = remote.order_active(db, detail)
-    db.query(Invoice.id).filter(Invoice.id == target.invoice_id).with_for_update().one()
+    invoice_id = target.invoice_id
+    # A verified bind closes the original claims: portal -> policy -> authority -> invoice.
+    from app.portal.authority import lock_authority
+    from app.commerce_transition.service import lock_recovery_scope
+    lock_authority(db, force=True)
+    lock_recovery_scope(db, [invoice_id])
+    db.query(Invoice.id).filter(Invoice.id == invoice_id).with_for_update().one()
     db.refresh(target, with_for_update=True)
     if active and _verify(target, detail):
         target.remote_status = "bound"
         target.last_error = None
+        from app.invoice import claim_settlement
+        claim_settlement.settle_verified(db, invoice_id, claim_settlement.FREIGHT, target.id,
+            target.remote_order_id, {'source': 'freight.refresh', 'target_id': target.id})
     else:
         target.remote_status = "uncertain"
         target.last_error = "小满运费订单身份或金额与冻结目标不一致，请核对原单"

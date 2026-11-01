@@ -79,6 +79,8 @@ def _capture(db, identity, body, user):
         invoice_id = db.scalar(select(ShipmentSettlement.invoice_id).where(ShipmentSettlement.id == identity))
         if invoice_id is None:
             raise HTTPException(404, '订单或发货结算不存在')
+        from app.commerce_transition.service import lock_recovery_scope
+        lock_recovery_scope(db, [invoice_id])  # Releases the original claim: policy/authority before invoice.
         invoice = edit_authority.lock_document(db, invoice_id, force=True)
         if invoice is None:
             raise HTTPException(404, '订单或发货结算不存在')
@@ -146,6 +148,11 @@ def _recover(db, identity, body, user):
         'remote_observation': {'serial_id': original.serial_id, 'result': 'canonical_not_found',
             'observed_at': observed_at},
     }, actor_id=access.user_id(current), reason=body.reason)
+    from app.invoice import claim_settlement
+    claim_settlement.release_unsent(db, row.invoice_id, claim_settlement.SHIPMENT, target.id,
+        operator_id=access.user_id(current), reason=body.reason, source='shipment.absence_recovery',
+        remote_evidence={'serial_id': original.serial_id, 'result': 'canonical_not_found',
+                         'observed_at': observed_at, 'resolution_reference': body.resolution_reference})
     target.status = 'pending'
     target.attempt_token = None
     target.lease_until = None

@@ -236,3 +236,14 @@ def test_recovery_observation_uses_beijing_date_across_midnight_on_a_western_hos
     audit = facts.rows(db, target.id)[0]
     assert audit.safe_diff_json['remote_observation']['observed_at'] == expected
     assert audit.created_at.isoformat() == expected
+
+
+def test_attested_absence_releases_the_original_shipment_claim(db, command, monkeypatch):
+    from tests.claim_helpers import claim_state, unknown_claim
+    invoice, row, target, _, body, _ = command
+    claim = unknown_claim(db, db.get(Invoice, invoice.id), f'legacy:shipment:{target.id}:tok:1',
+                          'shipment_outbound_create', {'outbound_id': target.id})
+    db.rollback()
+    monkeypatch.setattr(recovery.okki_client, 'find_outbound_by_serial', lambda *_: None)
+    recovery.recover(db, inspect(row).identity[0], body, USER)
+    assert claim_state(db, claim) == 'not_sent'  # The order is no longer blocked by the original POST.

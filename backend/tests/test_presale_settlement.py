@@ -561,13 +561,16 @@ def test_unknown_freight_target_only_binds_exact_active_existing_order(db,presal
     monkeypatch.setattr(freight_delivery.remote,"order_active",lambda *_args:active["value"])
     evidence=freight_reconciliation_service._read_evidence(db,lookup)
     with pytest.raises(ValueError,match="不匹配"):
-        freight_reconciliation_service._apply(target,body,evidence)
+        freight_reconciliation_service._apply(target,body,evidence,db)
     db.rollback(); db.refresh(target)
     assert target.remote_order_id is None
     active["value"]=True
     evidence=freight_reconciliation_service._read_evidence(db,lookup)
-    freight_reconciliation_service._apply(target,body,evidence); db.commit()
+    from tests.claim_helpers import claim_state, unknown_claim
+    claim=unknown_claim(db,presale,f"legacy:freight:{target.id}:tok:1","freight_order_create",{"target_id":target.id})
+    freight_reconciliation_service._apply(target,body,evidence,db); db.commit()
     assert target.remote_order_id=="301" and target.remote_status=="bound"
+    assert claim_state(db,claim)=="succeeded"  # The verified original closes its unknown POST.
     assert (target.version,row.version,target.amount,target.handling_amount)==(before[0]+2,before[1],before[2],before[3])
 
 

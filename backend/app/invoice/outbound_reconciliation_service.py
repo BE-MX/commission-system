@@ -156,6 +156,9 @@ def _apply(db, invoice, row, graph, body, evidence):
         target.status='uncertain';target.last_error='小满分批出库身份或数量与冻结任务不一致，请核对原单';row.state='outbound_uncertain'
     else:
         if target.remote_line_snapshot is None:target.remote_line_snapshot=json.loads(evidence.lines_json)
+        from app.invoice import claim_settlement
+        claim_settlement.settle_verified(db,invoice.id,claim_settlement.SHIPMENT,target.id,target.remote_id,
+            {'source':'shipment.reconcile','outbound_id':target.id})
         proof,complete=inspection_completion.snapshot(db,target,current=True)
         funded=funding.apply(db,invoice,row,graph,evidence.funds) if complete and evidence.funds else not complete
         inspection_completion.apply(db,target,row,complete,funded=funded,basis='inspection:'+proof,bump=False)

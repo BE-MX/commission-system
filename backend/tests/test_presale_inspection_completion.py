@@ -197,3 +197,14 @@ def test_resolving_unsent_historical_confirmation_keeps_inspection_completion(db
     recovery.apply(db,outbound,row,journal,observed,previous_status='shipped',inspection_basis=True)
     assert finishes == ['not_sent']
     assert (row.state,outbound.status) == ('shipped','shipped')
+
+
+def test_verified_background_readback_closes_the_original_shipment_claim(db, order, batch, monkeypatch):
+    from tests.claim_helpers import claim_state, unknown_claim
+    row, outbound, inspection = batch
+    claim = unknown_claim(db, order, f'legacy:shipment:{outbound.id}:tok:1', 'shipment_outbound_create',
+                          {'outbound_id': outbound.id})
+    inspection.status = 'submitted'; db.commit()
+    remote_reads(monkeypatch, outbound)
+    assert shipment_delivery.refresh(db, outbound.id) == 'shipped'
+    assert claim_state(db, claim) == 'succeeded'
