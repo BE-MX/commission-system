@@ -1,3 +1,12 @@
+## 2026-11-02 commerce-transition 合入后旧流程修复 B/C/D 批（Claude Code，分支 claude/commerce-legacy-fixes，未合并，未部署）
+
+- 范围：回款发送人放宽与重试接手、超时锁死的人工解锁（开票/回款/出库同步/补货出库/预售运费与出库/回款删除放弃）、发送 claim 租约（180 秒）、软删除草稿释放发票号与截图、native 菜单按交易阶段显示、冻结订单的运维解冻流程（`docs/runbook.md`「订单办理权冻结」）。
+- 已知风险：
+  - 订单删除（order_remove）与取消订单（cancel-order）超时未决时，没有「放弃并释放」入口。订单在发出删除前已置为 `cancel_pending`，生产版本里该状态本来就挡住同一订单的推单、回款和出库，所以影响范围与改造前相同：只影响这一张订单，不扩散。需要恢复时按原删除/取消入口继续核验。
+  - 预售运费 uncertain 的管理员重试只开放了 API（`POST /api/shipments/{id}/retry-freight`），生产版本里也没有前端入口，目前只能由管理员通过 API 或 Codex 操作。
+  - 冻结订单只能按运维手册走维护工单解冻，系统没有解冻入口。
+- 状态：未合并到 main，未部署；部署前请看分支最新报告里的测试基线。
+
 ## 2026-10-31 内贸客户跟进一期（Claude Code，待部署）
 
 - 工作区 `D:/MyProgram/commission-system-followup`，分支 `claude/domestic-followup`；迁移 `246_domestic_followup`，接在 `245_commerce_transition` 之后，仅新建 8 张表（见 database.md）并种三个 `sys_dict` type 初值，不改既有表，非破坏性，不需要冻结写实例。部署只走 `deploy\deploy.bat`，由它统一执行迁移；Scheduler 单活，3 个新任务（每日汇总 + 两次补发、紧急异常推送、每日维护）只在办公室 scheduler 实例上跑。

@@ -43,7 +43,7 @@
 ## 单笔回款删除（2026-10-14）
 
 - `GET /api/receipts/{identity}/deletion`：读取删除预览。返回回款及订单编号、原币含费金额/手续费/净额、远端状态、`expected_version`、`can_delete/can_resume`；已归档返回真实原记录，不执行删除。
-- `POST /api/receipts/{identity}/deletion`：body `{expected_version, reason, confirmed:true}`，原因2～500字；响应统一信封，data含 `status=deleted|uncertain`、下一步提示和完整 `receipt`。有效回款详情/列表新增 `deletion_pending`。
+- `POST /api/receipts/{identity}/deletion`：body `{expected_version, reason, confirmed:true}`，原因2～500字；响应统一信封，data含 `status=deleted|uncertain`、下一步提示和完整 `receipt`。有效回款详情/列表新增 `deletion_pending`。可选 `resolution:'abandon'`（2026-11）：放弃超时未决的原删除。条件：当前有 `receipt:admin`（或 super_admin）；原因 8～300 字；规范读回核实小满原回款仍有效；原删除发送租约和回款行租约都已结束。动作：以 `confirm_not_sent`（source=`receipt.delete_abandon`）关闭原 `receipt_remove` 发送责任，回款恢复为删除前的 synced，追加 `delete_abandoned` 回款日志，返回 `status=abandoned`，不外发。读回未显示仍存在、或原删除已受理时返回 409；还在租约内返回 409 并附可读原因。
 
 两端点使用既有 `receipt:delete` 独立动作权限；每次从当前数据库复查员工状态、权限及原订单归属，其他人的回款需现有 `receipt:read_all` 数据范围。`receipt:write/admin` 不隐含删除权；本次不自动分配角色权限。未发送/明确失败且无小满结果的本地普通回款作废；已绑定回款需金额、日期、客户/币种、原订单及稳定有效/已删除列表证据。Not Found 必须核验完整全局有效索引无原ID。
 
