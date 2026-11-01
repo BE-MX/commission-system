@@ -55,6 +55,10 @@ def _capture(db, identity, body, user):
         current=authority.current_user(db,user,*rights)
         invoice_id=db.scalar(select(ShipmentSettlement.invoice_id).where(ShipmentSettlement.id==identity))
         if invoice_id is None:raise HTTPException(404,'订单或发货结算不存在')
+        # funding.apply may bind receipts and close their original claims
+        # (legacy_sending.finish): portal -> policy -> authority before invoice.
+        from app.commerce_transition.service import lock_recovery_scope
+        lock_recovery_scope(db,[invoice_id])
         invoice=edit_authority.lock_document(db,invoice_id,force=True)
         if invoice is None:raise HTTPException(404,'订单或发货结算不存在')
         db.refresh(invoice,with_for_update=True);access.ensure_invoice(db,invoice,current)
