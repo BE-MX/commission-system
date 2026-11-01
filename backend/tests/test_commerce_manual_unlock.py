@@ -425,3 +425,22 @@ def test_frozen_order_messages_tell_the_user_to_contact_an_admin(db, ready):
     db.rollback()
     for error in (manual.value, sending.value):
         assert '冻结' in str(error) and '联系系统管理员' in str(error), str(error)
+
+
+@pytest.mark.real_send_lease
+def test_receipt_resolve_within_the_real_send_lease_is_a_readable_409(db, receipts, monkeypatch):
+    from app.receipt import reconciliation_service, remote
+    from app.receipt.models import Receipt
+    from app.receipt.router import execute
+    from app.receipt.schemas import Resolution
+    first = new_receipt(db, receipts.id, 'receipt-inside-lease')
+    deliver_with(db, monkeypatch, first, 'timeout')
+    assert db.get(Receipt, first).sync_status == 'uncertain'
+    monkeypatch.setattr(remote, 'order_receipts', lambda db, order_id: [])
+    db.rollback()
+    body = Resolution(resolution='confirm_not_created', reason='Checked OKKI receipt list manually')
+    with pytest.raises(HTTPException) as refused:
+        execute(db, lambda: reconciliation_service.recover(db, first, ADMIN, body))
+    assert refused.value.status_code == 409 and '租约' in refused.value.detail
+    db.rollback()
+    assert receipt_claims(db)[0].state == 'unknown' and db.get(Receipt, first).sync_status == 'uncertain'
