@@ -31,7 +31,7 @@ def test_leading_background_and_correct_bonus(left,right,mode,background):
     data=sample(left,right)
     html=html_for(data)
     assert f'data-background="{mode}"' in html and f'src="{background}"' in html
-    assert '团队奖金 ¥1,050' in html and '目标奖 ¥550 + PK奖 ¥500' in html
+    assert f'团队奖金 ¥{"940" if mode == "one" else "1,050"}' in html and f'目标奖 ¥{"440" if mode == "one" else "550"} + PK奖 ¥500' in html
     assert '官网询盘 10个' in html and '奖励预测' in html
     assert '¥2,000' not in html and '当前领先' in html
 
@@ -53,17 +53,17 @@ def test_shuffled_teams_and_people_keep_name_count_and_captain_positions():
     for team in data['teams']:team['people'].reverse()
     html=html_for(data)
     sections=re.findall(r'<section aria-label="([^"]+)">(.*?)</section>',html,re.S)
-    assert [name for name,_ in sections]==['罗馨瑜','胡宁宁','张心茹 队长','韩玥','刘婷',
+    assert [name for name,_ in sections]==['罗馨瑜','胡宁宁','张心茹 队长','韩玥',
                                            '高瑞杰','刘也','凯丽 队长','栾奕','李秀玉']
-    assert [re.search(r'class="pk-count[^>]+>([^<]+)',body).group(1) for _,body in sections]==['12','10','18','9','11','8','7','13','6','9']
+    assert [re.search(r'class="pk-count[^>]+>([^<]+)',body).group(1) for _,body in sections]==['12','10','18','9','8','7','13','6','9']
     assert '凯丽比努尔' not in html
 
 
 def test_lead_before_both_teams_reach_targets_does_not_grant_pk_reward():
-    data=sample((8,7,6,5,5),(5,4,3,3,2))
+    data=sample((6,6,6,6),(5,4,3,3,2))
     assert not data['pk_eligible'] and data['winner'] is None
     html=html_for(data)
-    assert 'data-background="one"' in html and '团队奖金 ¥500' in html
+    assert 'data-background="one"' in html and '团队奖金 ¥400' in html
     assert '双方达标后再评PK胜利奖' in html
     assert 'PK奖 ¥500' not in html and '官网询盘 10个' not in html
 
@@ -89,7 +89,7 @@ def test_incomplete_data_hides_all_formal_counts_progress_and_bonuses():
     data=sample(complete=False)
     html=html_for(data)
     assert 'data-background="neutral"' in html and '正式数据待填' in html
-    assert html.count('>—</div>')==10 and html.count('>—</strong>')==2
+    assert html.count('>—</div>')==9 and html.count('>—</strong>')==2
     assert '200.0%' not in html and '团队奖金 ¥' not in html
     assert '目标奖金、PK奖金及队长询盘均待核对' in html
 
@@ -102,13 +102,13 @@ def test_mock_label_and_completed_period_reward_status():
     assert '一组胜出 · 计算结果' in html and '尚未发放' in html
 
 
-@pytest.mark.parametrize('one,two', [((0,0,0,0,0),(0,0,0,0,0)),((8,7,6,5,5),(5,4,3,3,2)),((6,6,6,6,5),(6,6,6,5,5))])
+@pytest.mark.parametrize('one,two', [((0,0,0,0,0),(0,0,0,0,0)),((8,7,6,5,5),(5,4,3,3,2)),((6,6,6,5),(6,6,6,5,5))])
 def test_ended_campaign_without_both_targets_does_not_promise_future_pk_rewards(one,two):
     html=html_for(sample(one,two,period='ended'))
     assert 'PK胜利奖不予发放' in html and '队长询盘不予发放' in html
     assert '队长询盘待评' not in html and 'PK胜利奖待决出' not in html
     assert '目标奖金待达标' not in html
-    if sum(one)==29:assert '未获目标奖' in html
+    if sum(one)==23:assert '未获目标奖' in html
 
 
 def test_upcoming_period_never_uses_a_crowned_artwork():
@@ -121,3 +121,19 @@ def test_renderer_integrates_fixed_art_and_blocks_conflicting_leader_flags():
     assert 'class="pk-sheet"' in poster_renderer.render_html(data,'team')
     for team in data['teams']:team['leading']=True
     with pytest.raises(RuntimeError,match='领先状态冲突'):html_for(data)
+
+
+@pytest.mark.parametrize('counts,bonus', [((6,6,6,6),'400.00'), ((7,7,6,6),'400.00'), ((7,7,7,6),'440.00')])
+def test_four_person_team_targets_and_bonus(counts, bonus):
+    data = sample(counts, (6,6,6,6,6))
+    one = next(t for t in data['teams'] if t['team'] == '一组')
+    assert one['member_count'] == 4 and one['target'] == 24
+    assert one['target_bonus'] == bonus
+    assert '刘婷' not in html_for(data)
+    assert pk_poster.matches_roster(data)
+
+
+def test_former_five_person_roster_uses_generic_layout():
+    data = sample()
+    data['teams'][0]['people'].append(dict(user_name='刘婷', is_captain=False))
+    assert not pk_poster.matches_roster(data)

@@ -1,3 +1,10 @@
+## 2026-11-01 战报推送时段与 PK 名单（Codex，名单已保存，代码未部署）
+
+- 用户确认年度奖周一至周五09:00/16:00、PK奖09:01/16:01（北京时间）；刘婷退出PK，一组4人/目标24/基础400。线上战报ID3通过设置保存，版本2→3，22:26:44审计核对其余9人及规则不变；未外发消息。
+- 工作区 `D:/MyProgram/commission-system-codex-battle-awards-nov`，分支 `codex/battle-awards-nov`，本轮已获合并与推送授权，仅交付本需求 Git 变更、不部署；最终引用读回为准。实现独立调度及重试、旧账本去重、暂停策略继承、配置文案、4人预设、两张去除刘婷的底图及姓名数字覆盖层；按后续反馈修正罗馨瑜的头型、五官/眼镜比例和过度倾斜。
+- 225项奖项/海报测试通过；最终调度及运营中心52项通过，合计277项不同测试；前端构建、增量约定、diff检查通过；独立审查已修复问题。三种完整海报以合成数据离线渲染、9人对位无溢出/外部请求。Python环境缺Playwright，图像验收使用同一HTML+Node Playwright。
+- 线上新时间和底图仍待授权发布；办公室入口未登录，cloud页面配置状态不能代表单活调度器。详见 [交付记录](reports/2026-11-01-battle-awards-schedule-roster.md)。
+
 ## 2026-10-31 内贸客户跟进一期（Claude Code，待部署）
 
 - 工作区 `D:/MyProgram/commission-system-followup`，分支 `claude/domestic-followup`；迁移 `246_domestic_followup`，接在 `245_commerce_transition` 之后，仅新建 8 张表（见 database.md）并种三个 `sys_dict` type 初值，不改既有表，非破坏性，不需要冻结写实例。部署只走 `deploy\deploy.bat`，由它统一执行迁移；Scheduler 单活，3 个新任务（每日汇总 + 两次补发、紧急异常推送、每日维护）只在办公室 scheduler 实例上跑。

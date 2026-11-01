@@ -4,7 +4,7 @@
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-form label-position="top" v-loading="loading" @submit.prevent="save">
       <div v-if="!report" class="battle-actions"><GlassButton v-for="preset in presets" :key="preset.payload.award_kind" :disabled="!preset.ready" @click="applyPreset(preset)">{{ preset.payload.name }}{{ preset.ready ? '' : ' · 名单绑定待核对' }}</GlassButton></div>
-      <p v-if="form.award_kind !== 'gmv'" class="battle-muted">{{ form.award_kind === 'annual_repurchase' ? '美元目标直接引用附件“评比需满足最低门槛”列；2026年美元GMV直接比较，复购成果归原新签人。' : '两队PK：每人6个新签目标，队长与参赛人数按活动名单计算。' }} 推送从 {{ form.award_rules?.push_start_date }} 起，每周一、三、五09:00 / 16:00。</p>
+      <p v-if="form.award_kind !== 'gmv'" class="battle-muted">{{ form.award_kind === 'annual_repurchase' ? '美元目标直接引用附件“评比需满足最低门槛”列；2026年美元GMV直接比较，复购成果归原新签人。' : '两队PK：每人6个新签目标，队长与参赛人数按活动名单计算。' }} 推送从 {{ form.award_rules?.push_start_date }} 起，每周一至周五北京时间 {{ form.award_kind === 'new_sign_pk' ? '09:01 / 16:01' : '09:00 / 16:00' }}。</p>
       <p v-if="form.award_rules?.order_decisions?.length" class="battle-muted">已人工确认 {{ form.award_rules.order_decisions.length }} 笔订单，保存设置将保留这些裁定。</p>
       <div class="battle-form-grid">
         <el-form-item label="战报名"><el-input v-model="form.name" maxlength="100" placeholder="例如：九月冲刺战报" /></el-form-item>

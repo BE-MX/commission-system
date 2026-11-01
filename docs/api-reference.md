@@ -416,7 +416,7 @@ cancelled_keep_freight 不占商品数量或活动批次，仅保留原运费应
 
 2026-10-19年度金额更正（本地实现，待发布）：`amount_rule=annual_new_customer_orders_v1` 时，`people[].repeat_amount` 为该原新签人全部2026新签客户的2026有效新签订单＋首签之后有效复购订单总金额，尚未复购也计新签金额；多笔新签订单按订单ID去重累计。`repeat_count/repeat_orders` 仍仅实际复购客户/订单数；积分金额项使用新的合计金额。客户转交不改变该金额归属；GMV、Excel门槛、11月PK的 `new_amount/repeat_amount` 均不改变。人工 `exclude_metrics` 仍只计GMV。旧投递快照保持原金额及积分，新标识仅随新计算写入快照，旧快照海报不套用新口径说明。
 
-poster-config增加 `send_weekdays/push_start_date/poster_kinds`，奖项周一三五09:00/16:00；年度仅personal，PK仅team，原GMV仍两图和旧时段。奖项work_dates可空；GMV不可空。年度personal使用用户提供17人底图；数据不完整时不填正式姓名和数值，仅展示待填及异常提示，席位编号不代表排名。PK确认10人/两位队长的固定名单使用双底图，按leading而非winner切换；按姓名映射数值，其他自定义名单仍通用PK布局。固定底图在持平/未开赛/异常时无皇冠，异常时计数/进度/奖金均待填；调度生成仍严格阻止异常数据或缺同步时间的推送。模拟版式仅为本地生成证据，不是活动实绩或推送内容。详见[奖项说明](requirements/2026-10-14-battle-awards.md)。
+poster-config增加 `send_weekdays/push_start_date/poster_kinds`，奖项周一至周五，年度09:00/16:00、PK09:01/16:01（北京时间）；年度仅personal，PK仅team，原GMV仍两图和旧时段。奖项work_dates可空；GMV不可空。年度personal使用用户提供17人底图；数据不完整时不填正式姓名和数值，仅展示待填及异常提示，席位编号不代表排名。PK确认9人（一组4人、二组5人）/两位队长的固定名单使用双底图，按leading而非winner切换；按姓名映射数值，其他自定义名单仍通用PK布局。固定底图在持平/未开赛/异常时无皇冠，异常时计数/进度/奖金均待填；调度生成仍严格阻止异常数据或缺同步时间的推送。模拟版式仅为本地生成证据，不是活动实绩或推送内容。详见[奖项说明](requirements/2026-10-14-battle-awards.md)。
 
 ## 云存储接口行为（本地实现，尚未切换生产）
 

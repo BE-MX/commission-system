@@ -5,7 +5,7 @@ from pathlib import Path
 from app.battle_report.access import bound_accounts
 
 BASELINES = Path(__file__).resolve().parent / "assets" / "annual_baselines_2025.json"
-PK_TEAMS = {"一组": ["张心茹", "罗馨瑜", "胡宁宁", "韩玥", "刘婷"],
+PK_TEAMS = {"一组": ["张心茹", "罗馨瑜", "胡宁宁", "韩玥"],
             "二组": ["凯丽", "高瑞杰", "刘也", "栾奕", "李秀玉"]}
 ALIASES = {"凯丽": "凯丽比努尔·阿伍提"}
 

@@ -31,8 +31,9 @@ def get_config(db, report_id, user):
     return {"version": report.version, "work_dates": work_dates(report),
             "push_enabled": bool(report.poster_push_enabled), "push_ready": bool(push_ready(settings)),
             "group_name": settings.BATTLE_REPORT_GROUP_NAME,
-            "send_times": ["13:00", "17:01"] if report.award_kind == "gmv" else ["09:00", "16:00"],
-            "send_weekdays": list(range(7)) if report.award_kind == "gmv" else [0, 2, 4],
+            "send_times": (["13:00", "17:01"] if report.award_kind == "gmv" else
+                           ["09:01", "16:01"] if report.award_kind == "new_sign_pk" else ["09:00", "16:00"]),
+            "send_weekdays": list(range(7)) if report.award_kind == "gmv" else list(range(5)),
             "push_start_date": report.start_date.isoformat() if report.award_kind == "gmv" else report.award_rules["push_start_date"],
             "poster_kinds": poster_kinds(report),
             "history": [{"id": row.id, "date": row.report_date.isoformat(), "slot": row.slot,

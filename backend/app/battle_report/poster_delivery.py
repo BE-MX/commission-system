@@ -25,8 +25,9 @@ _LOCAL_LOCK = Lock()
 def due_slot(now, report=None):
     now = to_beijing_naive(now)
     if report is not None and report.award_kind != "gmv":
-        if now.weekday() in (0, 2, 4) and now.hour in (9, 16) and now.minute in (0, 5, 15):
-            return f"{now.hour:02d}:00"
+        minute = 1 if report.award_kind == "new_sign_pk" else 0
+        if now.weekday() < 5 and now.hour in (9, 16) and now.minute in (minute, minute + 5, minute + 15):
+            return f"{now.hour:02d}:{minute:02d}"
         return None
     if now.hour == 13 and now.minute in (0, 5, 15):
         return "13:00"
@@ -38,7 +39,7 @@ def due_slot(now, report=None):
 def eligible(report, now):
     now = to_beijing_naive(now)
     if report and report.award_kind != "gmv":
-        if now.weekday() not in (0, 2, 4) or now.date().isoformat() < report.award_rules["push_start_date"]:
+        if now.weekday() >= 5 or now.date().isoformat() < report.award_rules["push_start_date"]:
             return False
     return bool(report and report.poster_push_enabled and report.status == "published"
                 and report.visibility == "activity" and report.start_date <= now.date() <= report.end_date)
@@ -103,6 +104,10 @@ def send_slot(db, report_id, now=None, sender=None):
         settings = get_settings()
         destination = sha256(settings.BATTLE_REPORT_WEBHOOK_URL.encode()).hexdigest()
         delivery = db.query(BattleReportDelivery).filter_by(report_id=report_id, report_date=now.date(), slot=slot).first()
+        if delivery is None and report.award_kind == "new_sign_pk":
+            # Preserve the same day's old ledger when changing PK from :00 to :01.
+            delivery = db.query(BattleReportDelivery).filter_by(
+                report_id=report_id, report_date=now.date(), slot=f"{now.hour:02d}:00").first()
         if delivery is None and slot == "17:01":
             # A release after the old 17:00 run must reuse its delivery instead of sending both posters again.
             delivery = db.query(BattleReportDelivery).filter_by(
