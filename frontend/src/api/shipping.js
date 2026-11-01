@@ -1,12 +1,13 @@
 // 发货检验 API（响应拦截器已解包信封，调用方取数用 res.data）
 import { shippingClient } from './clients'
 
-export const previewOutboundInvoiceSync = id => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/invoice-sync/preview`, {}, { timeout: 180000 })
+export const previewOutboundInvoiceSync = (id, config = {}) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/invoice-sync/preview`, {}, { timeout: 180000, ...config })
 // review: optional administrator manual review { resolution: 'confirm_not_created' | 'bind_existing', reason }.
 export const syncOutboundInvoice = (id, expected_version, check_only = false, confirm_recheck = false, repair = false, review = null) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/invoice-sync`,
   { expected_version, check_only, confirm_recheck, repair, ...(review ? { resolution: review.resolution, reason: review.reason } : {}) }, { timeout: 180000 })
 export const allowOutboundPrintBeforeRecheck = (id, reason) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/allow-print-before-recheck`, { reason })
-export const syncOutboundReplenishment = id => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/replenishment-sync`, {}, { timeout: 180000, suppressToast: true })
+// review: optional administrator { resolution: 'confirm_not_created', reason } for an uncertain submission.
+export const syncOutboundReplenishment = (id, review = null) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/replenishment-sync`, review ? { resolution: review.resolution, reason: review.reason } : {}, { timeout: 180000, suppressToast: true })
 
 // 出库单检验状态（与后端 shipping_inspection 同一套口径）
 export const INSPECTION_STATUS_LABELS = { none: '未检验', draft: '检验中', submitted: '已提交' }

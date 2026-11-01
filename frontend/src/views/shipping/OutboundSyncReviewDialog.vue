@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :model-value="visible" title="人工核对出库同步" width="480px" append-to-body
+  <el-dialog :model-value="visible" :title="title" width="480px" append-to-body
     :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy"
     @update:model-value="$emit('update:visible', $event)" @open="reset">
     <p class="review-target">出库单：{{ row?.outbound_no || row?.outbound_record_id }}</p>
@@ -7,7 +7,8 @@
       <el-form-item label="处理方式" prop="resolution">
         <el-radio-group v-model="form.resolution" class="review-options">
           <el-radio value="confirm_not_created">确认未生成</el-radio>
-          <el-radio value="bind_existing">绑定已存在的小满出库单</el-radio>
+          <!-- Only pre-protocol tasks can be bound here; complete records verify through 同步. -->
+          <el-radio v-if="allowBind" value="bind_existing">绑定已存在的小满出库单</el-radio>
         </el-radio-group>
         <p class="review-hint">{{ hint }}</p>
       </el-form-item>
@@ -28,7 +29,11 @@ import { computed, reactive, ref } from 'vue'
 
 import GlassButton from '@/components/GlassButton.vue'
 
-defineProps({ visible: Boolean, busy: Boolean, row: Object })
+defineProps({
+  visible: Boolean, busy: Boolean, row: Object,
+  title: { type: String, default: '人工核对出库同步' },
+  allowBind: { type: Boolean, default: true },
+})
 const emit = defineEmits(['update:visible', 'submit'])
 
 const formRef = ref(null)
@@ -41,7 +46,7 @@ const rules = {
   }, trigger: 'blur' }],
 }
 const hint = computed(() => form.resolution === 'confirm_not_created'
-  ? '小满出库单没有被本次同步改动时选择。提交后释放订单锁，再重新预览并同步。'
+  ? '小满没有生成或改动这张出库单时选择。提交后释放订单锁，再按页面提示重新同步。'
   : '小满出库单已按本次同步改好时选择。系统会读取小满原单核对，一致才完成。')
 
 function reset() {

@@ -102,6 +102,12 @@
                 :loading="replenishingId === row.outbound_record_id" :disabled="replenishingId !== null"
                 @click="replenish(row)">补货同步</GlassButton>
             </span>
+            <span v-if="row.record_source === 'ark_task' && row.outbound_state === 'uncertain'" v-permission="'invoice:sync'">
+              <span v-permission="'shipping_inspection:write'">
+                <GlassButton v-any-permission="['shipping_inspection:admin', 'invoice:admin']" variant="link" left-icon="CircleCheck"
+                  :disabled="replenishingId !== null" @click="replenishReviewRow = row">确认未生成</GlassButton>
+              </span>
+            </span>
             <GlassButton v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" variant="link" left-icon="Printer"
               :loading="printingId === row.outbound_record_id" @click="openPrint(row)">打印出库单</GlassButton>
             <span v-if="!row.can_print || row.recheck_status" class="queue-note">{{ row.recheck_status === 'pending_sync' ? '待同步并重验' : row.recheck_status === 'pending_inspection' ? '待补验' : outboundPendingHint(row.outbound_state) }}</span>
@@ -143,7 +149,11 @@
     <ShippingPrintDialog v-if="printPreviewVisible" v-model:visible="printPreviewVisible" mode="outbound" :record-id="printPreviewRow?.outbound_record_id" />
     <OutboundSyncDialog v-model:visible="syncVisible" :busy="syncingId !== null || reviewing" :preview="syncPreview" :row="syncRow"
       @apply="applySync" @review="reviewVisible = true" />
-    <OutboundSyncReviewDialog v-if="reviewVisible" v-model:visible="reviewVisible" :busy="reviewing" :row="syncRow" @submit="submitReview" />
+    <OutboundSyncReviewDialog v-if="reviewVisible" v-model:visible="reviewVisible" :busy="reviewing" :row="syncRow"
+      :allow-bind="syncPreview?.manual_review === true" @submit="submitReview" />
+    <OutboundSyncReviewDialog v-if="replenishReviewRow" :visible="!!replenishReviewRow" :busy="replenishingId !== null"
+      :row="replenishReviewRow" :allow-bind="false" title="确认补货出库未生成"
+      @update:visible="value => { if (!value) replenishReviewRow = null }" @submit="confirmNotCreated" />
     <OutboundProblemsDrawer v-if="problemsVisible" v-model="problemsVisible" />
     <OutboundInventoryDrawer v-if="inventoryVisible" v-model="inventoryVisible" :row="inventoryRow" />
   </div>
@@ -196,7 +206,7 @@ const {
 } = listPageState
 const { syncingId, syncVisible, syncPreview, syncRow, previewSync, applySync,
   reviewVisible, reviewing, submitReview } = useOutboundInvoiceSync(fetchList)
-const { replenishingId, replenish } = useOutboundReplenishment(fetchList)
+const { replenishingId, replenish, reviewRow: replenishReviewRow, confirmNotCreated } = useOutboundReplenishment(fetchList)
 const auth = useAuthStore()
 
 // 列配置数组：TableTools 列显隐的数据源；模板列保持静态 + v-if（推广期约定，不做配置化渲染）
@@ -214,7 +224,7 @@ const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullsc
   useTableView('outbound-records', columnDefs)
 const advancedFilterCount = computed(() => Number(Boolean(listPageState.appliedSearchForm.value.orderId)))
 const hasActiveFilters = computed(() => appliedFilters.value.length > 0)
-onDeactivated(() => { printPreviewVisible.value = false; problemsVisible.value = false; inventoryVisible.value = false; syncVisible.value = false; reviewVisible.value = false; listPageState.cancel(); listPageState.cancelMediaReads() })
+onDeactivated(() => { printPreviewVisible.value = false; problemsVisible.value = false; inventoryVisible.value = false; syncVisible.value = false; reviewVisible.value = false; replenishReviewRow.value = null; listPageState.cancel(); listPageState.cancelMediaReads() })
 function canShowMore(row) {
   if (row.can_print && (!row.recheck_status || row.print_before_recheck)) return true
   if (row.record_source !== 'okki') return false

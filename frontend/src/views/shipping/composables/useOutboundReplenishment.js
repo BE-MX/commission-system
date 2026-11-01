@@ -19,5 +19,21 @@ export function useOutboundReplenishment(refresh) {
       try { await refresh({ silent: true }) } finally { replenishingId.value = null }
     }
   }
-  return { replenishingId, replenish }
+  const reviewRow = ref(null)
+  // Administrator confirmation that an uncertain submission created nothing in OKKI.
+  async function confirmNotCreated(review) {
+    const row = reviewRow.value
+    if (!row || replenishingId.value !== null) return
+    replenishingId.value = row.outbound_record_id
+    try {
+      const result = (await syncOutboundReplenishment(row.outbound_record_id, review)).data
+      reviewRow.value = null
+      msgSuccessText(result.message)
+    } catch (error) {
+      msgError(error?.response?.data?.detail || error?.response?.data?.message || '人工核对未完成，请刷新后重试', error)
+    } finally {
+      try { await refresh({ silent: true }) } finally { replenishingId.value = null }
+    }
+  }
+  return { replenishingId, replenish, reviewRow, confirmNotCreated }
 }
