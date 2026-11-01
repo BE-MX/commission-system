@@ -1784,21 +1784,49 @@ ORDER BY c.id, v.id;
 
 ### 3. 人工解冻（仅限维护工单，审计不可省）
 
-前提：已有维护工单号；第 2 步的依据（小满单号、截图）已附在工单上；先停掉调度器写实例，避免并发发送。在**一个事务**里执行，先锁办理权行，再写不可变事件：
+冻结时系统除了把办理权置为 `frozen`，还会把冲突的那条发送责任改回 `status='unknown'`，且 `active_invoice_key` 为 NULL。只要这张订单还有一条 `sending`/`unknown` 的责任，新发送就会被拒（「原请求正在发送或结果未知」）。所以**只改办理权状态解不开订单**，必须在同一个事务里把这一条冲突责任落到终局。
+
+前提：
+- 已有维护工单号；第 2 步的依据（小满单号、截图）已附在工单上；
+- 先停掉调度器写实例，避免并发发送；
+- 第 1 步已确认：这张订单处于 `sending`/`unknown` 的只有本次冲突的这一条（`:claim_id`）。如果还有别的未终局责任，先按各自入口核对，不在本流程里处理。
+
+终局怎么选：
+- `succeeded`：小满上保留的是迟到生成的那一张，`:external_id` 填它的小满 ID。
+- `not_sent`：迟到生成的那一张已在小满作废或删除，方舟侧不认领它，`:external_id` 填 NULL。
 
 ```sql
 START TRANSACTION;
 SELECT invoice_id, epoch, status, lock_version
 FROM ark_commerce_invoice_authorities WHERE invoice_id = :invoice_id FOR UPDATE;
--- 确认 status = 'frozen'，且第 1 步查到的未终局 claim 已核清（status 不在 sending/unknown）
+-- 确认 status = 'frozen'；记下 epoch 与 lock_version
 
+SELECT id, status, external_id, active_invoice_key
+FROM ark_commerce_sending_claims WHERE id = :claim_id AND invoice_id = :invoice_id FOR UPDATE;
+-- 确认 status = 'unknown'（或 'sending'），active_invoice_key 为 NULL
+
+-- ① 先追加证据（只追加，不改旧证据）
+INSERT INTO ark_commerce_claim_evidence (claim_id, outcome, evidence, external_id, created_at)
+VALUES (:claim_id, :terminal_status,
+        JSON_OBJECT('manual_unfreeze', TRUE, 'ticket', :ticket_no, 'operator', :operator_name,
+                    'reason', :reason, 'okki_evidence', :okki_refs),
+        :external_id, NOW());
+
+-- ② 只把这一条冲突责任落到终局（:terminal_status 只能是 'succeeded' 或 'not_sent'）
+UPDATE ark_commerce_sending_claims
+SET status = :terminal_status, external_id = :external_id, active_invoice_key = NULL, terminal_at = NOW()
+WHERE id = :claim_id AND invoice_id = :invoice_id AND status IN ('sending', 'unknown');
+-- 必须恰好影响 1 行，否则 ROLLBACK 后重查
+
+-- ③ 写不可变办理权事件，记录责任 ID 与终局
 INSERT INTO ark_commerce_authority_events (invoice_id, epoch, action, payload, created_at)
 VALUES (:invoice_id, :epoch, 'manual_unfreeze',
-        JSON_OBJECT('ticket', :ticket_no, 'operator', :operator_name,
-                    'reason', :reason, 'okki_evidence', :okki_refs,
-                    'conflict_claim_ids', :claim_ids),
+        JSON_OBJECT('ticket', :ticket_no, 'operator', :operator_name, 'reason', :reason,
+                    'okki_evidence', :okki_refs, 'claim_id', :claim_id,
+                    'claim_terminal_status', :terminal_status, 'claim_external_id', :external_id),
         NOW());
 
+-- ④ 解冻
 UPDATE ark_commerce_invoice_authorities
 SET status = 'active', lock_version = lock_version + 1
 WHERE invoice_id = :invoice_id AND status = 'frozen' AND lock_version = :lock_version;
@@ -1807,6 +1835,7 @@ COMMIT;
 ```
 
 - `NOW()` 依赖连接 `time_zone='+08:00'`，写入的是北京时间。
-- 不修改、不删除任何 `ark_commerce_sending_claims` 和 `ark_commerce_claim_evidence` 记录，原证据永久保留。
+- 已有的证据记录一律不删除、不修改，只能追加证据，并只把这一条冲突责任落到终局；其他责任行不动。
 - 不改 `route` 和 `epoch`。需要换办理路线时走移交流程，不在解冻时顺手改。
+- 列名以 `app/commerce_transition/models.py` 为准（ORM 里的 `state` 属性对应数据库的 `status` 列）。本流程的语句由 `backend/tests/test_runbook_unfreeze.py` 在 SQLite 上演练：去掉锁语句、换用 SQLite 的函数名，验证解冻后能立即新发送。
 - 解冻后在方舟页面刷新订单，再从原入口继续办理。处理结果记入工单和 `docs/handoff.md`。
