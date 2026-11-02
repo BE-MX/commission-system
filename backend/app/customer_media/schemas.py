@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 
 
 def _email(value: str) -> str:
@@ -36,6 +36,10 @@ class BatchReviewIn(BaseModel):
 
 class BatchSubmitIn(BaseModel):
     lock_version: int = Field(gt=0)
+
+
+class BatchClearIn(BaseModel):
+    asset_ids: list[PositiveInt] = Field(min_length=1)
 
 
 class DirectoryNameIn(BaseModel):

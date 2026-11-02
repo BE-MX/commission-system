@@ -1333,6 +1333,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | PATCH | `/customers/{customer_id}/tag-values/{value_id}` | 同上 | body 为 `{"value":"新名称"}`；只修改当前客户看到的名称，不改其他客户或历史素材 ID。 |
 | GET / DELETE | `/customers/{customer_id}/tag-values/{value_id}/usage`、`/customers/{customer_id}/tag-values/{value_id}` | GET 同上；DELETE 仅客户归属写权限、可维护全部关联批次的任务设计师或管理员，不接受审核批次上下文 | GET 返回当前客户关联素材数；DELETE 删除客户标签及该客户全部素材关联。有素材时须传 `confirm_associated=true`，服务端仍会重验数量，否则返回 409。 |
 | POST | `/batches/{batch_id}/assets` | `customer_media:write/admin` + 当前任务维护权限 | 上传图片或视频；multipart `tags_json` 至少包含一个已归属当前客户的标签，上传落库前再次验证。 |
+| DELETE | `/batches/{batch_id}/assets` | `customer_media:write/admin` + 当前任务维护权限 | 清空当前批次全部已上传素材，仅限 `draft/changes_requested`；body `{"asset_ids":[1,2]}` 必须包含确认时本批全部素材 ID（包含筛选隐藏项）。锁批次后复核集合，列表变化返回 409，空批次重复请求不重复删除或写审计。原子软删除、递增 `lock_version` 并记录 `clear_assets`，提交后清理原件/播放版/海报；保留客户标签、共享目录与其他批次。返回完整当前批次。 |
 | GET | `/sales-portal/customers?search=` | `customer_media_portal:read` 或 `customer_media:admin` | 返回调用者范围内已配置门户的客户摘要、门户状态、图片/视频/交付批次数和最近更新时间。 |
 | GET | `/sales-portal/customers/{customer_id}` | 同上 | 返回客户摘要及其实际可见的已发布批次；批次标题与拍摄类型也由客户公开门户返回。停用账号不签发素材 URL。 |
 | GET | `/sales-portal/customers/{customer_id}/tags` | 同上 | 仅返回该客户已发布素材实际用到的标签维度与标签；每个维度包含稳定的 `name`（客户产品类型维度如 `customer_product_type`）、`dimension_id`、`label` 和 `values`。停用账号返回空列表。业务预览按产品类型分组，并在组内按其他维度筛选。 |

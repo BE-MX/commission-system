@@ -14,8 +14,8 @@
       </div>
       <div class="header-actions">
         <StatusBadge v-if="batch" :type="statusMeta.type" effect="plain">{{ statusMeta.label }}</StatusBadge>
-        <GlassButton v-if="editable" variant="primary" left-icon="Upload" @click="uploadDialog = true">上传素材</GlassButton>
-        <GlassButton v-if="batch?.directories?.length" variant="secondary" left-icon="FolderOpened" @click="showDirectoryDialog = true">管理旧目录</GlassButton>
+        <GlassButton v-if="editable" variant="primary" left-icon="Upload" :disabled="busy || submitting" @click="uploadDialog = true">上传素材</GlassButton>
+        <GlassButton v-if="batch?.directories?.length" variant="secondary" left-icon="FolderOpened" :disabled="busy || submitting" @click="showDirectoryDialog = true">管理旧目录</GlassButton>
       </div>
     </header>
 
@@ -140,6 +140,9 @@
       <div class="section-heading">
         <div><h3>本批素材</h3><span>{{ assets.length }} 个文件 · {{ totalSize }}</span></div>
         <div class="batch-actions">
+        <GlassButton v-if="editable" v-any-permission="['customer_media:write', 'customer_media:admin']"
+          variant="link" link-tone="danger" left-icon="Delete" :loading="clearing"
+          :disabled="!assets.length || busy || submitting" @click="clearAssets">一键清空</GlassButton>
         <GlassButton variant="secondary" left-icon="View" :disabled="!assets.length" @click="openCustomerPreview">客户效果预览</GlassButton>
         <GlassButton
           variant="warning"
@@ -174,7 +177,7 @@
             <span>{{ formatSize(asset.file_size) }}</span>
             <StatusBadge v-if="asset.directory_id" size="small" effect="plain" type="warning">旧目录：{{ directoryLabel(asset) }}</StatusBadge>
           </div>
-          <GlassButton v-if="editable" variant="link" link-tone="danger" left-icon="Delete" @click="removeAsset(asset)">删除</GlassButton>
+          <GlassButton v-if="editable" variant="link" link-tone="danger" left-icon="Delete" :disabled="busy || submitting" @click="removeAsset(asset)">删除</GlassButton>
         </article>
             </div>
           </div>
@@ -230,6 +233,7 @@ import { createCustomerMediaPreviewPayload } from './customer-media/customerMedi
 import { useCustomerMediaUpload } from './customer-media/composables/useCustomerMediaUpload'
 import { useCustomerMediaFolderUpload } from './customer-media/composables/useCustomerMediaFolderUpload'
 import { useCustomerMediaTagSelection } from './customer-media/composables/useCustomerMediaTagSelection'
+import { useCustomerMediaClear } from './customer-media/composables/useCustomerMediaClear'
 
 const route = useRoute()
 const router = useRouter()
@@ -300,7 +304,19 @@ const { preparingFolders, queueFile, onDropFolders, onFolderSelected } = useCust
   addFiles,
   isBlocked: () => !editable.value || uploading.value || tagSaving.value,
 })
-const busy = computed(() => uploading.value || preparingFolders.value || tagSaving.value)
+const { clearing, clearAssets } = useCustomerMediaClear({
+  getBatch: () => batch.value,
+  onBatch: data => { batch.value = data },
+  isBlocked: () => uploading.value || preparingFolders.value || tagSaving.value || submitting.value,
+  refreshBatch: loadBatch,
+  onCleared: () => {
+    selectedProductTypeIds.value = []
+    groupSelections.value = {}
+    previewUrl.value = ''
+    customerPreviewVisible.value = false
+  },
+})
+const busy = computed(() => uploading.value || preparingFolders.value || tagSaving.value || clearing.value)
 
 function formatSize(bytes) {
   if (!bytes) return '0 B'
@@ -383,6 +399,7 @@ function beforeUploadClose(done) {
 }
 
 async function removeAsset(asset) {
+  if (busy.value || submitting.value) return
   try { await confirmAction(`删除 ${asset.file_name}？`, '删除素材', { type: 'warning' }) } catch { return }
   batch.value = (await deleteMediaAsset(batch.value.id, asset.id)).data
   msgSuccessText('已删除')

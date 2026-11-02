@@ -11,7 +11,7 @@ from app.core.response import ok
 from app.core.storage.cos import StorageError
 from app.customer_media import service
 from app.customer_media.schemas import (
-    AssetTagsUpdateIn, BatchReviewIn, BatchSubmitIn, CustomerMediaTagItem,
+    AssetTagsUpdateIn, BatchClearIn, BatchReviewIn, BatchSubmitIn, CustomerMediaTagItem,
     DirectoryNameIn, PortalAccountCreate, PortalAccountUpdate, TagValueCreateIn,
     TagValueRenameIn,
 )
@@ -461,6 +461,17 @@ def remove_batch_directory(
 ):
     row = _call(service.delete_directory, db, batch_id, directory_id, payload)
     return ok(_batch_full(db, row), "目录及素材已删除")
+
+
+@router.delete("/batches/{batch_id}/assets")
+def clear_batch_assets(
+    batch_id: int,
+    data: BatchClearIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
+):
+    row = _call(service.clear_batch_assets, db, batch_id, payload, data.asset_ids)
+    return ok(_batch_full(db, row), "本批素材已清空")
 
 
 @router.delete("/batches/{batch_id}/assets/{asset_id}")

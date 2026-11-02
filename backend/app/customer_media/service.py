@@ -664,6 +664,57 @@ def delete_asset(db: Session, batch_id: int, asset_id: int, payload: dict) -> Cu
     return get_batch(db, batch.id)
 
 
+def clear_batch_assets(db: Session, batch_id: int, payload: dict, asset_ids: list[int]) -> CustomerMediaBatch:
+    """Clear the confirmed batch snapshot atomically; keep customer labels/directories."""
+    files = []
+    try:
+        batch = db.scalar(select(CustomerMediaBatch).where(
+            CustomerMediaBatch.id == batch_id,
+        ).with_for_update().execution_options(populate_existing=True))
+        if not batch:
+            raise CustomerMediaNotFound("素材批次不存在")
+        task, _ = _load_task(db, batch.task_id)
+        _assert_writer(db, payload, task)
+        if batch.status not in EDITABLE_STATUSES:
+            raise CustomerMediaConflict("当前状态不能清空素材")
+        assets = list(db.scalars(select(CustomerMediaAsset).where(
+            CustomerMediaAsset.batch_id == batch_id,
+            CustomerMediaAsset.deleted_at.is_(None),
+        ).order_by(CustomerMediaAsset.id).with_for_update().execution_options(populate_existing=True)))
+        # The same batch lock serializes uploads/submit. Never delete files added
+        # since the user confirmed, including a retry after an uncertain response.
+        if assets and {asset.id for asset in assets} != set(asset_ids):
+            raise CustomerMediaConflict("本批素材已变化，请刷新后重新确认清空")
+        if assets:
+            now = beijing_now()
+            files = [
+                (asset.id, asset.storage_provider, key)
+                for asset in assets
+                for key in (asset.object_key, asset.playback_key, asset.thumbnail_key) if key
+            ]
+            for asset in assets:
+                asset.deleted_at = now
+            batch.updated_at = now
+            batch.lock_version += 1
+            user_id, _, _ = user_identity(db, payload)
+            db.add(CustomerMediaReview(
+                batch_id=batch_id, revision=batch.revision, action="clear_assets",
+                remark=f"清空本批 {len(assets)} 个素材", actor_user_id=user_id,
+            ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    # Match single-file deletion: physical cleanup only follows a confirmed commit.
+    for asset_id, provider, key in files:
+        try:
+            storage_for(provider).delete(key)
+        except Exception as exc:
+            logger.warning("[customer-media] orphan after batch clear asset=%s: %s", asset_id, exc)
+            print(f"[customer-media] orphan after batch clear asset={asset_id}: {exc}", flush=True)
+    return get_batch(db, batch_id)
+
+
 def submit_batch(db: Session, batch_id: int, payload: dict, lock_version: int) -> CustomerMediaBatch:
     user_id, _, _ = user_identity(db, payload)
     batch = db.scalar(select(CustomerMediaBatch).where(CustomerMediaBatch.id == batch_id).with_for_update())

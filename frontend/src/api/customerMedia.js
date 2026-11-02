@@ -51,6 +51,9 @@ export const uploadMediaAsset = (batchId, file, onUploadProgress, { directoryId,
   })
 }
 export const deleteMediaAsset = (batchId, assetId) => customerMediaClient.delete(`/batches/${batchId}/assets/${assetId}`)
+export const clearMediaAssets = (batchId, assetIds) => customerMediaClient.delete(`/batches/${batchId}/assets`, {
+  data: { asset_ids: assetIds }, timeout: 0, showLoading: false,
+})
 export const deleteMediaDirectory = (batchId, directoryId) => customerMediaClient.delete(`/batches/${batchId}/directories/${directoryId}`)
 export const submitMediaBatch = (batchId, lockVersion) => customerMediaClient.post(`/batches/${batchId}/submit`, { lock_version: lockVersion })
 export const getMediaReviews = (status = 'pending_review', config = {}) => customerMediaClient.get('/reviews', { showLoading: false, ...config, params: { status } })
