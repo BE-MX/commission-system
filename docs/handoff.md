@@ -2,7 +2,7 @@
 
 - 工作区 `D:/MyProgram/commission-system-codex-outbound-return-menu`，分支 `codex/outbound-return-menu`。将出库单列表的“退货退款”移入每行“更多”菜单；保留原单据条件、权限指令和跳转，补齐仅有退货权限时的菜单显示条件。
 - 验证：前端构建、增量约定检查及 diff 检查通过；出库列表/队列 13 项与退货 19 项既有回归通过（退货测试须启用 `--experimental-vm-modules`）；菜单结构及 6 种显示场景检查通过。未进行浏览器实点验收。
-- Git 巡检 `--no-fetch` 已执行。本轮用户已授权本次调整的提交、合并与推送；远端 main 比本地落后 70 个既有提交，推送范围待确认，最终交付以 Git 引用读回为准。本次不部署。
+- Git 巡检 `--no-fetch` 已执行。本轮用户已授权本次调整的提交、合并与推送，并明确确认将 main 的 70 个既有未推送提交一并推送 origin。按钮调整提交 `f032c84a` 已合入本地 main，最终远端状态以 Git 引用读回为准。本次不部署。
 
 ## 2026-11-02 commerce-transition 合入后旧流程修复 B/C/D 批（Claude Code，分支 claude/commerce-legacy-fixes，已合入 main，未部署）
 
