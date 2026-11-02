@@ -49,7 +49,17 @@ def combined(db, user, ordinary, page, page_size, keyword, sync_status, source, 
         local = local.where(ReturnReceipt.collection_date >= date_from)
     if date_to:
         local = local.where(ReturnReceipt.collection_date <= date_to)
-    merged = union_all(original.statement, local).subquery()
+    branches = [original.statement, local]
+    if db.get_bind().dialect.name == "mysql":
+        # Historical receipt tables use 0900_ai_ci while invoice/return tables
+        # use unicode_ci. UNION needs one explicit collation for every text
+        # projection, including literals, cast IDs and the coalesced order ID.
+        branches = [branch.with_only_columns(*(
+            column.collate("utf8mb4_unicode_ci").label(column.key)
+            if isinstance(column.type, String) else column
+            for column in branch.selected_columns
+        )) for branch in branches]
+    merged = union_all(*branches).subquery()
     field = sort_field if sort_field in FIELDS else "created_at"
     direction = "asc" if sort_order == "asc" and sort_field in FIELDS else "desc"
     column = getattr(merged.c, field)

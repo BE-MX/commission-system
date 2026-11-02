@@ -1,3 +1,9 @@
+## 2026-11-02 回款列表排序规则冲突与 1030 差额（Codex，本地修复，未部署）
+
+- 工作区 `D:/MyProgram/commission-system-codex-receipt-list-collation`，分支 `codex/receipt-list-collation`，基于 `a5b144a8`。MySQL 1271 的 UNION 文本排序规则冲突导致回款列表显示“数据库连接失败”；仅统一查询文本投影，不迁移、不修改金额或权限。
+- 21 项隔离测试通过，新增编译回归先失败后通过；生产强制 READ ONLY 下候选列表、搜索、订单筛选、来源及排序查询通过。待合并部署，业务数据未修改。
+- 1030 有效含费 422.15、手续费 13.99、净额 408.16；订单手续费 20.10、净额 402.05，差 6.11。更正前须核实费用事实及生产写入授权。详见 [核对与验证](reports/2026-11-02-receipt-list-collation-and-1030.md)。
+
 ## 2026-11-02 退货单订单名称与回款取证（Codex，本地完成，未部署）
 
 - 工作区 `D:/MyProgram/commission-system-codex-return-order-name`，分支 `codex/return-order-name`。原订单选项显示小满订单名称，空名称回退编号；搜索同时匹配名称和编号，保留客户、业务员及实际出库范围。候选与明细提供 `order_name`，用于草稿重开和预填回显；展示名称不参与既有 `binding_hash`。
