@@ -21,6 +21,8 @@ REVIEWED_CHECKPOINTS = {
 }
 # One inspected failure before timer activation; immutable bytes are archived before retry.
 REVIEWED_RETRIES = {
+    ('78a9c76db020bedb03c40b51901f6c06feb747fb86144d869a35e4c43eaa098d',
+     'ef0db01dd8fe25afe533c395ff8d8eab13a9da2b74d09ae294a3f4745738f9b9'),
     ('b7db2d80e052a0676f6dc5eb2b2b1ab2c7dca4026004692ea0fd248b530c197f',
      '74b17012960bbfae6d1343a5f37b89acced0af2fd36da83443efc4dcbe66c206'),
 }
@@ -66,7 +68,8 @@ def inspect_previous_attempt(raw, receipt_raw, journal, migration):
     prior = json.loads(receipt_raw)
     recovery = journal.get('recovery', {})
     without_recovery = {key: value for key, value in journal.items() if key != 'recovery'}
-    if (prior.get('status') != 'started' or prior.get('original') != without_recovery
+    original = {key: value for key, value in prior.get('original', {}).items() if key != 'recovery'}
+    if (prior.get('status') != 'started' or original != without_recovery
             or prior.get('migration') != migration
             or recovery.get('phase') != 'outbound-activate' or recovery.get('status') != 'running'
             or prior.get('remote', {}).get('outbound', {}).get('status') != 'installed_paused'):
@@ -206,6 +209,9 @@ def execute(plan_path, prepare_only=False):
         if any(context['receipt'][key] != original[key] for key in ('digest', 'mode', 'database_fingerprint')):
             raise RuntimeError('Actual outbound target or mode changed')
         context['_baseline'], context['_mode_floor'] = dict(original['baseline']), original['mode']
+        # Use the reviewed controller's diagnostics; installed worker artifacts
+        # above must still equal the original application candidate exactly.
+        context['root'] = Path(__file__).parent
         verify_static(p, inventory, static, live)
         if prepare_only:
             return {'status': 'prepared', 'revision': revision, 'release_id': release_id}

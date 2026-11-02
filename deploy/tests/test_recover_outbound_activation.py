@@ -234,3 +234,15 @@ def test_retry_archives_both_bytes_without_overwriting_evidence(tmp_path):
 def test_reviewed_retry_preserves_only_resumed_original_tracking_writer(reviewed, before, kind, service, expected):
     row = {'writer': {'service': service, 'kind': kind}, 'before': before}
     assert recovery.expected_writer_state(row, reviewed_retry=reviewed) == expected
+
+
+
+def test_next_inspected_attempt_retains_prior_recovery_metadata(monkeypatch):
+    journal, migration, prior, _, _ = attempted_checkpoint(monkeypatch)
+    prior['original']['recovery'] = {'phase':'outbound-activate','status':'running','controller':'prior'}
+    prior['previous_receipt_sha256'] = 'f'*64
+    raw, receipt = json.dumps(journal).encode(), json.dumps(prior).encode()
+    pair = (hashlib.sha256(raw).hexdigest(), hashlib.sha256(receipt).hexdigest())
+    monkeypatch.setattr(recovery, 'REVIEWED_RETRIES', {pair})
+    assert recovery.inspect_previous_attempt(raw, receipt, journal, migration) == pair[1]
+    assert prior['original']['recovery']['controller'] == 'prior'

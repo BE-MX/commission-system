@@ -31,7 +31,9 @@ try {
   await c.query('SET SESSION autocommit=1');
   await serveDeploymentFence(c,process.argv[2]);
   await c.end();c=null;
-} catch {
+} catch (error) {
+  const code=error?.message==='Another outbound executor owns the fence'?'lock_busy':'unavailable';
+  console.log(JSON.stringify({fence_error:code}));
   if(c)c.destroy();
   console.error('Outbound mode control is unavailable');process.exitCode=1;
 }"""
@@ -96,6 +98,14 @@ def observe_mode(stage, config):
         raise RuntimeError('Outbound mode observation cannot be confirmed') from None
 
 
+class ModeFenceError(RuntimeError):
+    pass
+
+
+class ModeFenceBusy(ModeFenceError):
+    pass
+
+
 class ModeFence:
     """Keep a dedicated Node/MySQL connection live through the scheduling/journal window."""
     def __init__(self, stage, config):
@@ -103,19 +113,23 @@ class ModeFence:
         self.child = None
         self.observation = None
 
-    def _read(self, phase):
+    def _read(self, phase, *, timeout=30):
         result = queue.Queue(maxsize=1)
         def read():
             try: result.put(self.child.stdout.readline(8193))
             except Exception: result.put(None)
         threading.Thread(target=read, daemon=True).start()
         try:
-            line = result.get(timeout=30)
+            line = result.get(timeout=timeout)
             if not line or len(line) > 8192 or not line.endswith('\n'):
                 raise ValueError('Incomplete mode control response')
+            if phase == 'ready' and line.strip() == '{"fence_error":"lock_busy"}':
+                raise ModeFenceBusy('Outbound mode control ready: another executor owns the lock')
             return parse_observation(line, phase)
+        except ModeFenceBusy:
+            raise
         except (queue.Empty, ValueError, RuntimeError):
-            raise RuntimeError('Outbound mode control cannot be confirmed') from None
+            raise ModeFenceError('Outbound mode control cannot be confirmed at ' + phase) from None
 
     def _command(self, command, phase):
         try:
@@ -124,8 +138,10 @@ class ModeFence:
             if value != self.observation:
                 raise ValueError('Mode control changed')
             return value
+        except ModeFenceError:
+            raise
         except Exception:
-            raise RuntimeError('Outbound mode control cannot be confirmed') from None
+            raise ModeFenceError('Outbound mode control command cannot be confirmed at ' + phase) from None
 
     def _abort(self):
         if self.child is None: return
@@ -139,14 +155,31 @@ class ModeFence:
                     pass
 
     def __enter__(self):
-        try:
-            self.child = subprocess.Popen(self.command, cwd=ROOT, stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
-            self.observation = self._read('ready')
-            return self
-        except BaseException:
-            self._abort()
-            raise
+        deadline = time.monotonic() + 30
+        while True:
+            if time.monotonic() >= deadline:
+                raise ModeFenceError('Outbound mode control ready: acquisition deadline expired')
+            try:
+                self.child = subprocess.Popen(self.command, cwd=ROOT, stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ModeFenceError('Outbound mode control ready: acquisition deadline expired')
+                self.observation = self._read('ready', timeout=remaining)
+                if time.monotonic() >= deadline:
+                    raise ModeFenceError('Outbound mode control ready: acquisition deadline expired')
+                return self
+            except ModeFenceBusy:
+                self._abort()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ModeFenceError('Outbound mode control ready: executor remained busy') from None
+                # Only a confirmed acquisition conflict may retry. No scheduling
+                # has occurred, and each failed dedicated connection is closed.
+                time.sleep(min(0.5, remaining))
+            except BaseException:
+                self._abort()
+                raise
 
     def check(self):
         return self._command('check', 'checked')
