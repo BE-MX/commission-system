@@ -165,3 +165,58 @@ def test_freight_plan_cannot_mix_reviewed_releases_or_ignore_journal_hash():
                   {'journal_sha256': '0' * 64}, {'force': True}):
         with pytest.raises(ValueError):
             validate_freight(journal, migration, patch)
+
+
+def attempted_checkpoint(monkeypatch):
+    journal, migration = freight_checkpoint()
+    original = copy.deepcopy(journal)
+    journal['recovery'] = {'phase': 'outbound-activate', 'status': 'running', 'controller': 'owned'}
+    prior = {'status': 'started', 'original': original, 'migration': copy.deepcopy(migration),
+             'remote': {'outbound': {'status': 'installed_paused'}}}
+    raw, receipt = json.dumps(journal).encode(), json.dumps(prior).encode()
+    pair = (hashlib.sha256(raw).hexdigest(), hashlib.sha256(receipt).hexdigest())
+    monkeypatch.setattr(recovery, 'REVIEWED_RETRIES', {pair})
+    return journal, migration, prior, raw, receipt
+
+
+def test_first_attempt_rejects_missing_recovery_receipt():
+    journal, migration = freight_checkpoint()
+    assert recovery.inspect_previous_attempt(b'initial', None, journal, migration) is None
+    journal['recovery'] = {'status': 'running'}
+    with pytest.raises(RuntimeError, match='missing'):
+        recovery.inspect_previous_attempt(b'initial', None, journal, migration)
+
+
+def test_retry_requires_both_exact_immutable_snapshots(monkeypatch):
+    journal, migration, _, raw, receipt = attempted_checkpoint(monkeypatch)
+    assert recovery.inspect_previous_attempt(raw, receipt, journal, migration) == hashlib.sha256(receipt).hexdigest()
+    for changed_raw, changed_receipt in [(raw+b' ', receipt), (raw, receipt+b' ')]:
+        with pytest.raises(RuntimeError, match='inspected'):
+            recovery.inspect_previous_attempt(changed_raw, changed_receipt, journal, migration)
+
+
+@pytest.mark.parametrize('change', ['phase', 'status', 'migration', 'original', 'remote'])
+def test_retry_rejects_progress_even_if_hash_was_reviewed(monkeypatch, change):
+    journal, migration, prior, raw, receipt = attempted_checkpoint(monkeypatch)
+    if change == 'phase': journal['recovery']['phase'] = 'writers-resume'
+    elif change == 'status': prior['status'] = 'succeeded'
+    elif change == 'migration': prior['migration']['status'] = 'completed'
+    elif change == 'original': prior['original']['completed'] = []
+    else: prior['remote']['outbound']['status'] = 'activated'
+    raw, receipt = json.dumps(journal).encode(), json.dumps(prior).encode()
+    monkeypatch.setattr(recovery, 'REVIEWED_RETRIES', {(hashlib.sha256(raw).hexdigest(), hashlib.sha256(receipt).hexdigest())})
+    with pytest.raises(RuntimeError, match='progressed'):
+        recovery.inspect_previous_attempt(raw, receipt, journal, migration)
+
+
+def test_retry_archives_both_bytes_without_overwriting_evidence(tmp_path):
+    receipt = tmp_path/'attempt.json'
+    receipt.write_bytes(b'old receipt')
+    recovery.archive_previous_attempt(receipt, b'old journal', b'old receipt', 'a'*64)
+    assert receipt.read_bytes() == b'old receipt'
+    archive = receipt.with_name('attempt-'+'a'*64+'-journal.json')
+    assert archive.read_bytes() == b'old journal'
+    recovery.archive_previous_attempt(receipt, b'old journal', b'old receipt', 'a'*64)
+    with pytest.raises(RuntimeError, match='differs'):
+        recovery.archive_previous_attempt(receipt, b'changed journal', b'old receipt', 'a'*64)
+    assert archive.read_bytes() == b'old journal'

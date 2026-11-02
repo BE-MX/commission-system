@@ -19,6 +19,11 @@ REVIEWED_CHECKPOINTS = {
         'schema': '247_sales_return_freight', 'database': '246_domestic_followup',
         'pending': ['247_sales_return_freight']},
 }
+# One inspected failure before timer activation; immutable bytes are archived before retry.
+REVIEWED_RETRIES = {
+    ('b7db2d80e052a0676f6dc5eb2b2b1ab2c7dca4026004692ea0fd248b530c197f',
+     '74b17012960bbfae6d1343a5f37b89acced0af2fd36da83443efc4dcbe66c206'),
+}
 COMPLETED = [
     'office', 'beijing-backend', 'colorwork-routing:cloud', 'colorwork-routing:office',
     'root@119.28.107.92:/var/www/ark/dist',
@@ -48,6 +53,38 @@ def validate(plan, raw, migration):
             or outbound.get('target_schedule') != {'active': False, 'enabled': False}):
         raise RuntimeError('Release is not at the inspected paused activation checkpoint')
     return journal
+
+
+def inspect_previous_attempt(raw, receipt_raw, journal, migration):
+    if receipt_raw is None:
+        if journal.get('recovery') is not None:
+            raise RuntimeError('Recovery receipt is missing')
+        return None
+    pair = (hashlib.sha256(raw).hexdigest(), hashlib.sha256(receipt_raw).hexdigest())
+    if pair not in REVIEWED_RETRIES:
+        raise RuntimeError('Recovery already attempted; inspected journal and receipt are required')
+    prior = json.loads(receipt_raw)
+    recovery = journal.get('recovery', {})
+    without_recovery = {key: value for key, value in journal.items() if key != 'recovery'}
+    if (prior.get('status') != 'started' or prior.get('original') != without_recovery
+            or prior.get('migration') != migration
+            or recovery.get('phase') != 'outbound-activate' or recovery.get('status') != 'running'
+            or prior.get('remote', {}).get('outbound', {}).get('status') != 'installed_paused'):
+        raise RuntimeError('Previous recovery progressed beyond the inspected activation failure')
+    return pair[1]
+
+
+def archive_previous_attempt(receipt, raw, receipt_raw, digest):
+    for name, body in [('receipt', receipt_raw), ('journal', raw)]:
+        path = receipt.with_name(receipt.stem + '-' + digest + '-' + name + '.json')
+        if path.is_symlink():
+            raise RuntimeError('Recovery archive symlink rejected')
+        if path.exists():
+            if path.read_bytes() != body:
+                raise RuntimeError('Recovery archive differs from inspected evidence')
+        else:
+            with path.open('xb') as stream:
+                stream.write(body)
 
 
 def remote_state(p, options, revision=REVISION):
@@ -117,8 +154,10 @@ def execute(plan_path, prepare_only=False):
         target_schema = migration['schema']
         source = state / 'sources' / revision
         receipt = state / ('outbound-activation-recovery-' + release_id + '.json')
-        if receipt.exists():
-            raise RuntimeError('Recovery already attempted; inspect its actual outcome before retry')
+        if receipt.is_symlink():
+            raise RuntimeError('Recovery receipt symlink rejected')
+        receipt_raw = receipt.read_bytes() if receipt.exists() else None
+        previous_digest = inspect_previous_attempt(raw, receipt_raw, journal, migration)
         for folder in (live, source):
             if (p.run(['git', 'rev-parse', 'HEAD'], cwd=folder, capture=True) != revision
                     or p.run(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=folder, capture=True)):
@@ -157,7 +196,10 @@ def execute(plan_path, prepare_only=False):
         verify_static(p, inventory, static, live)
         if prepare_only:
             return {'status': 'prepared', 'revision': revision, 'release_id': release_id}
-        p.atomic_json(receipt, {'status': 'started', 'original': journal, 'migration': migration, 'remote': remote})
+        if previous_digest:
+            archive_previous_attempt(receipt, raw, receipt_raw, previous_digest)
+        p.atomic_json(receipt, {'status': 'started', 'original': journal, 'migration': migration, 'remote': remote,
+                                **({'previous_receipt_sha256': previous_digest} if previous_digest else {})})
         prepared = runtime_context(python, nssm, migration)
         def phase(name):
             journal['recovery'] = {'status': 'running', 'phase': name, 'controller': str(Path(__file__).parent)}
