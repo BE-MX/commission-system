@@ -137,3 +137,58 @@ def test_former_five_person_roster_uses_generic_layout():
     data = sample()
     data['teams'][0]['people'].append(dict(user_name='刘婷', is_captain=False))
     assert not pk_poster.matches_roster(data)
+
+
+def test_average_explains_lower_total_winning_with_four_people():
+    data = sample((7,6,6,6), (6,6,6,6,6))
+    assert data['winner'] == '一组'
+    html = html_for(data)
+    assert 'data-background="one"' in html
+    assert '>25</strong>' in html and '>30</strong>' in html
+    assert '>6.25<small> 个/人</small>' in html
+    assert '>6.00<small> 个/人</small>' in html
+    assert '新签总数 25 个 ÷ 4 人' in html and '新签总数 30 个 ÷ 5 人' in html
+    assert '一组人均领先' in html
+    assert '双方已达标 · 奖励暂为预测' in html
+    assert '双方达标后评选PK胜利奖' not in html
+
+
+def test_equal_averages_show_tie_despite_different_totals():
+    data = sample((6,6,6,6), (6,6,6,6,6))
+    html = html_for(data)
+    assert data['winner'] is None and 'data-background="neutral"' in html
+    assert html.count('>6.00<small> 个/人</small>') == 2
+    assert '三项人均指标均相同' in html
+
+
+@pytest.mark.parametrize('field,label', [('new_amount', '人均新签金额'), ('gmv', '人均月GMV')])
+def test_average_tie_labels_actual_secondary_decider(field, label):
+    data = sample((6,6,6,6), (6,6,6,6,6))
+    data['people'][-1][field] = str(int(data['people'][-1][field]) + 1)
+    award_statistics.pk(data)
+    html = html_for(data)
+    assert data['winner'] == '二组' and 'data-background="two"' in html
+    assert '人均新签持平' in html and f'按{label}，二组领先' in html
+
+
+def test_incomplete_average_band_never_leaks_partial_comparison():
+    data = sample((7,6,6,6), (6,6,6,6,6), complete=False)
+    html = html_for(data)
+    band = html.split('<section class="pk-averages"', 1)[1].split('</section>', 1)[0]
+    assert band.count('>—<small> 个/人</small>') == 2
+    assert '6.25' not in band and '新签总数 25' not in band and '领先' not in band.replace('人均数与领先状态待确认', '')
+    assert '4人参赛' in band and '5人参赛' in band
+
+
+def test_upcoming_average_band_does_not_declare_leader():
+    html = html_for(sample(period='upcoming'))
+    band = html.split('<section class="pk-averages"', 1)[1].split('</section>', 1)[0]
+    assert '活动未开始' in band and '领先' not in band
+    assert band.count('>—<small> 个/人</small>') == 2
+    assert '开赛后更新' in band and '新签总数' not in band
+
+
+def test_ended_average_band_does_not_promise_later_award_selection():
+    html = html_for(sample(period='ended'))
+    assert '活动已结束 · 奖励尚未发放' in html
+    assert '双方达标后评选PK胜利奖' not in html

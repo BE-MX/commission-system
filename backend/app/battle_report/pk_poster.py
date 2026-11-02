@@ -1,5 +1,5 @@
 """Name-matched overlays on the four-versus-five PK artworks."""
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -55,6 +55,33 @@ def currency(value):
     return format(Decimal(value), ",.0f")
 
 
+def average_comparison(snapshot, teams):
+    """Display the existing per-person decision order without rounding the comparison."""
+    rows = []
+    for name in PK_TEAMS:
+        team = teams[name]
+        average = Decimal(team["new_count"]) / team["member_count"]
+        rows.append(dict(team=name, members=team["member_count"], count=team["new_count"],
+                         average=format(average.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), ".2f"),
+                         tone="pink" if name == "一组" else "blue"))
+    if not snapshot["data_complete"]:
+        return rows, "数据待核对", "人均数与领先状态待确认"
+    if snapshot["period_state"] == "upcoming":
+        return rows, "活动未开始", "开赛后按参赛人数计算"
+    left, right = (teams[name] for name in PK_TEAMS)
+    for field, label in (("new_count", "人均新签"), ("new_amount", "人均新签金额"), ("gmv", "人均月GMV")):
+        a = Decimal(left[field]) / left["member_count"]
+        b = Decimal(right[field]) / right["member_count"]
+        if a != b:
+            leader = left if a > b else right
+            if field == "new_count":
+                detail = ("活动已结束 · 奖励尚未发放" if snapshot["period_state"] == "ended" else
+                          "双方已达标 · 奖励暂为预测" if snapshot["pk_eligible"] else "双方达标后评选PK胜利奖")
+                return rows, f"{leader['team']}人均领先", detail
+            return rows, "人均新签持平", f"按{label}，{leader['team']}领先"
+    return rows, "双方持平", "三项人均指标均相同"
+
+
 def render_html(snapshot, assets, background_one, background_two):
     teams = {t["team"]: t for t in snapshot["teams"]}
     visible = snapshot["data_complete"]
@@ -64,6 +91,7 @@ def render_html(snapshot, assets, background_one, background_two):
         raise RuntimeError("PK领先状态冲突，请核对后生成")
     lead = leaders[0] if leaders else None
     mode = "one" if lead and lead["team"] == "一组" else "two" if lead else "neutral"
+    averages, comparison_status, comparison_detail = average_comparison(snapshot, teams)
     people, totals = [], []
     for team_name in PK_TEAMS:
         team = teams[team_name]
@@ -105,6 +133,8 @@ def render_html(snapshot, assets, background_one, background_two):
         css=(assets/"pk_ranking.css").read_text(encoding="utf-8"), mode=mode,
         background_one=background_one, background_two=background_two,
         people=people, totals=totals, demo=demo, visible=visible,
+        averages=averages, comparison_status=comparison_status, comparison_detail=comparison_detail,
+        averages_visible=visible and snapshot["period_state"] != "upcoming",
         heading=heading, amount=amount, detail=detail,
         calculated_at=snapshot["calculated_at"].replace("T"," ")[:19],
         source_synced_at=(snapshot.get("source_synced_at") or "活动未开始 / 未知").replace("T"," ")[:19],
