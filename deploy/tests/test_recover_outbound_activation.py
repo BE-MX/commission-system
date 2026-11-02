@@ -103,3 +103,65 @@ def test_actual_maintenance_resume_request_retains_original_pending_chain(tmp_pa
     monkeypatch.setattr(schema.subprocess, 'run', run)
     schema.resume_maintenance(recovery.runtime_context('owned-python', 'owned-nssm', migration))
     assert len(calls) == 1
+
+
+FREIGHT_REVISION = 'b817650a69a6865886c9f4d7a0c61bc1ec9ec807'
+FREIGHT_RELEASE_ID = '6d6683095e704b818c90d3db43b1c57d'
+
+
+def freight_checkpoint():
+    journal, migration = checkpoint()
+    for record in (journal, journal['outbound']):
+        record.update(revision=FREIGHT_REVISION, release_id=FREIGHT_RELEASE_ID)
+    migration.update(schema='247_sales_return_freight', database='246_domestic_followup',
+                     pending=['247_sales_return_freight'])
+    return journal, migration
+
+
+def validate_freight(journal, migration, patch=None):
+    raw = json.dumps(journal).encode()
+    plan = {'revision': FREIGHT_REVISION, 'release_id': FREIGHT_RELEASE_ID,
+            'journal_sha256': hashlib.sha256(raw).hexdigest(), **(patch or {})}
+    return recovery.validate(plan, raw, migration)
+
+
+def test_freight_checkpoint_retains_exact_original_application_and_migration():
+    journal, migration = freight_checkpoint()
+    before = copy.deepcopy((journal, migration))
+    assert validate_freight(journal, migration) == journal
+    assert (journal, migration) == before
+    context = recovery.runtime_context('owned-python', 'owned-nssm', migration)
+    assert context['schema'] == '247_sales_return_freight'
+    assert context['pending'] == ['247_sales_return_freight']
+    context['pending'].clear()
+    assert migration['pending'] == ['247_sales_return_freight']
+
+
+@pytest.mark.parametrize('section,field,value', [
+    ('journal', 'revision', recovery.REVISION),
+    ('journal', 'release_id', recovery.RELEASE_ID),
+    ('journal', 'completed', recovery.COMPLETED[:-1]),
+    ('journal', 'status', 'succeeded'),
+    ('outbound', 'status', 'enabled'),
+    ('outbound', 'release_confirmed', True),
+    ('outbound', 'revision', recovery.REVISION),
+    ('outbound', 'target_schedule', {'active': True, 'enabled': True}),
+    ('migration', 'schema', recovery.SCHEMA),
+    ('migration', 'database', '245_commerce_transition'),
+    ('migration', 'pending', []),
+    ('migration', 'status', 'completed'),
+])
+def test_freight_recovery_rejects_changed_checkpoint(section, field, value):
+    journal, migration = freight_checkpoint()
+    target = {'journal': journal, 'outbound': journal['outbound'], 'migration': migration}[section]
+    target[field] = value
+    with pytest.raises(RuntimeError):
+        validate_freight(journal, migration)
+
+
+def test_freight_plan_cannot_mix_reviewed_releases_or_ignore_journal_hash():
+    journal, migration = freight_checkpoint()
+    for patch in ({'revision': recovery.REVISION}, {'release_id': recovery.RELEASE_ID},
+                  {'journal_sha256': '0' * 64}, {'force': True}):
+        with pytest.raises(ValueError):
+            validate_freight(journal, migration, patch)
