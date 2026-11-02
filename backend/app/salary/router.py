@@ -607,6 +607,11 @@ async def sync_period_attendance(
             detail="发薪名单里没有任何人绑定了钉钉 userid，请先在员工档案里补齐绑定",
         )
 
+    try:
+        op_userid = attendance_service.resolve_sync_operator(db, _operator_id(current_user))
+    except attendance_service.AttendanceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     from_date, to_date = attendance_source.month_range(year, month, natural_days)
     try:
         results, missing_leave = await attendance_source.fetch_many(
@@ -623,7 +628,12 @@ async def sync_period_attendance(
     to_ms = _beijing_epoch_ms(to_date) + 999
     leave_map: dict[str, dict] = {}
     leave_meta: dict = {"degraded": None, "unknown_types": [], "failed_userids": []}
-    type_map = await attendance_source.fetch_leave_types()
+    try:
+        type_map = await attendance_source.fetch_leave_types(op_userid=op_userid)
+    except attendance_source.AttendanceSourceError as exc:
+        logger.warning("薪资同步读取假期类型失败 period=%s: %s", period_id, exc)
+        print(f"[salary.attendance] leave types failed period={period_id}: {exc}", flush=True)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     if not type_map:
         leave_meta["degraded"] = (
             "假期类型接口权限未开通（qyapi_holiday_readonly），请假仍为人工录入"
@@ -647,7 +657,8 @@ async def sync_period_attendance(
              if m["name"] == attendance_source.LEAVE_TYPE_ANNUAL),
             None,
         )
-        if annual_code:
+        # 余额接口返回当前额度，不能将本年度余额写进跨年度补算的历史批次。
+        if annual_code and year == beijing_today().year:
             import asyncio
 
             sem = asyncio.Semaphore(4)  # 与 fetch_many 同理由：快了会撞限流
@@ -655,7 +666,7 @@ async def sync_period_attendance(
             async def _quota(uid: str):
                 async with sem:
                     return uid, await attendance_source.fetch_annual_quota(
-                        uid, annual_code)
+                        uid, annual_code, op_userid=op_userid)
 
             for uid, remain in await asyncio.gather(*(_quota(u) for u in userids)):
                 if remain is not None and uid in leave_map:

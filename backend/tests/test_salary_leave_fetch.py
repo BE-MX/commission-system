@@ -11,12 +11,14 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
+import httpx
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import get_settings
 from app.core.database import Base
+from app.core.time import beijing_today
 from app.dingtalk.client import DingTalkError
 from app.salary import attendance_service as ats
 from app.salary import attendance_source as asrc
@@ -82,17 +84,32 @@ def ms(y, m, d, h=0, minute=0):
 async def test_leave_types_parse_and_permission_degrade():
     client = FakeClient({
         "topapi/attendance/vacation/type/list": {
-            "result": [{"leave_code": "c1", "leave_name": "事假", "unit": "percent_hour"}]
+            "result": [{"leave_code": "c1", "leave_name": "事假", "leave_view_unit": "hour"}]
         },
     })
-    assert await asrc.fetch_leave_types(client) == {
-        "c1": {"name": "事假", "unit": "percent_hour"}}
+    assert await asrc.fetch_leave_types(client, op_userid="OPERATOR") == {
+        "c1": {"name": "事假"}}
+    assert client.calls[0][1] == {"op_userid": "OPERATOR", "vacation_source": "all"}
 
     denied = FakeClient({
         "topapi/attendance/vacation/type/list":
             DingTalkError(88, "subcode=60011 应用尚未开通所需的权限"),
     })
-    assert await asrc.fetch_leave_types(denied) == {}, "权限未开必须降级成 {} 而不是炸掉同步"
+    assert await asrc.fetch_leave_types(denied, op_userid="OPERATOR") == {}, "权限未开必须降级成 {} 而不是炸掉同步"
+
+
+@pytest.mark.asyncio
+async def test_leave_records_respects_remote_page_limit():
+    def respond(payload):
+        if payload["size"] > 20:
+            raise DingTalkError(200003, "invalid size")
+        return {"result": {"has_more": payload["offset"] == 0,
+                           "leave_status": [{"userid": "U1", "duration_percent": 100}]}}
+    client = FakeClient({"topapi/attendance/getleavestatus": respond})
+    records, failed = await asrc.fetch_leave_records(["U1"], FROM_MS, TO_MS, client=client)
+    assert failed == []
+    assert len(records["U1"]) == 2
+    assert [payload["offset"] for _, payload in client.calls] == [0, 20]
 
 
 @pytest.mark.asyncio
@@ -126,15 +143,67 @@ async def test_leave_records_batching_pagination_and_isolation():
 @pytest.mark.asyncio
 async def test_annual_quota_parse_and_bad_shape():
     ok = FakeClient({"topapi/attendance/vacation/quota/list": {
-        "result": {"leave_quota": {"remain_quota": 550}}}})
-    assert await asrc.fetch_annual_quota("U1", "code-annual", client=ok) == D("5.5")
+        "result": {"has_more": False, "leave_quotas": [{
+            "userid": "U1", "leave_code": "code-annual", "quota_cycle": str(beijing_today().year),
+            "quota_num_per_day": 1000, "used_num_per_day": 450,
+            "start_time": 0, "end_time": 4102444800000,
+        }]}}})
+    assert await asrc.fetch_annual_quota("U1", "code-annual", op_userid="OPERATOR", client=ok) == D("5.5")
+    assert ok.calls[0][1] == {"op_userid": "OPERATOR", "userids": "U1",
+                              "leave_code": "code-annual", "offset": 0, "size": 20}
 
     weird = FakeClient({"topapi/attendance/vacation/quota/list": {"result": {}}})
-    assert await asrc.fetch_annual_quota("U1", "code-annual", client=weird) is None
+    assert await asrc.fetch_annual_quota("U1", "code-annual", op_userid="OPERATOR", client=weird) is None
 
     denied = FakeClient({"topapi/attendance/vacation/quota/list":
                          DingTalkError(88, "60011")})
-    assert await asrc.fetch_annual_quota("U1", "code-annual", client=denied) is None
+    assert await asrc.fetch_annual_quota("U1", "code-annual", op_userid="OPERATOR", client=denied) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("overrides", [
+    {"userid": "OTHER"}, {"leave_code": "OTHER"}, {"quota_cycle": "2000"},
+    {"quota_num_per_day": None}, {"used_num_per_day": "NaN"}, {"used_num_per_day": 1100},
+    {"end_time": 1}, {"start_time": 4102444800000}, {"start_time": None},
+    {"quota_num_per_hour": 800},
+])
+async def test_annual_quota_does_not_guess_other_or_invalid_balance(overrides):
+    quota = {"userid": "U1", "leave_code": "annual", "quota_cycle": str(beijing_today().year),
+             "quota_num_per_day": 1000, "used_num_per_day": 200,
+             "start_time": 0, "end_time": 4102444800000, **overrides}
+    client = FakeClient({"topapi/attendance/vacation/quota/list": {
+        "result": {"has_more": False, "leave_quotas": [quota]}}})
+    assert await asrc.fetch_annual_quota("U1", "annual", op_userid="OPERATOR", client=client) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("has_more,count", [(True, 1), (False, 2)])
+async def test_annual_quota_requires_one_complete_unambiguous_balance(has_more, count):
+    quota = {"userid": "U1", "leave_code": "annual", "quota_cycle": str(beijing_today().year),
+             "quota_num_per_day": 1000, "used_num_per_day": 200,
+             "start_time": 0, "end_time": 4102444800000}
+    client = FakeClient({"topapi/attendance/vacation/quota/list": {
+        "result": {"has_more": has_more, "leave_quotas": [quota] * count}}})
+    assert await asrc.fetch_annual_quota("U1", "annual", op_userid="OPERATOR", client=client) is None
+
+
+@pytest.mark.asyncio
+async def test_leave_network_failure_is_safe_and_does_not_clear_partial_batch():
+    error = httpx.ReadTimeout("https://example.invalid/?access_token=secret")
+    client = FakeClient({"topapi/attendance/vacation/type/list": error})
+    with pytest.raises(asrc.AttendanceSourceError) as caught:
+        await asrc.fetch_leave_types(client, op_userid="OPERATOR")
+    assert "access_token" not in str(caught.value)
+    assert "ReadTimeout" in str(caught.value)
+
+    def records(payload):
+        if payload["offset"]:
+            raise error
+        return {"result": {"has_more": True, "leave_status": [{"userid": "U1"}]}}
+    client = FakeClient({"topapi/attendance/getleavestatus": records})
+    data, failed = await asrc.fetch_leave_records(["U1"], FROM_MS, TO_MS, client=client)
+    assert data == {}
+    assert failed == ["U1"]
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +319,45 @@ def _leave(personal="0", sick="0", annual="0", remain=None):
 def _sync(db, period, fetched):
     return ats.sync_from_dingtalk(
         db, period, fetched, expected_version=period.status_version)
+
+
+@pytest.mark.parametrize("previous_source", [None, "dingtalk", "manual"])
+def test_unmapped_leave_remains_pending_and_preserves_manual_values(db, previous_source):
+    period = _period(db)
+    profile = _profile(db, "测试", "1", "U1")
+    if previous_source == "dingtalk":
+        _sync(db, period, {"results": [_person("U1")], "leave": {"U1": _leave()}})
+    elif previous_source == "manual":
+        ats.manual_upsert(db, period, profile.id, {"personal_leave_hours": D("8"),
+                                                  "sick_leave_hours": D("0")})
+    unknown = asrc.split_leave(
+        [leave_rec("U1", "missing-code", FROM_MS, FROM_MS + 3600000 * 8, 800, "percent_hour")],
+        TYPE_MAP, FROM_MS, TO_MS, D("7.83"),
+    )
+    summary = _sync(db, period, {"results": [_person("U1")], "leave": {"U1": unknown}})
+    row = db.query(SalaryAttendance).filter_by(employee_id=profile.id).one()
+    assert summary["leave_filled"] == 0
+    assert row.full_attendance == 0
+    if previous_source == "manual":
+        assert row.personal_leave_hours == D("8")
+        assert row.sick_leave_hours == D("0")
+        assert summary["leave_kept_manual"] == 1
+    else:
+        assert row.personal_leave_hours is None
+        assert row.sick_leave_hours is None
+        assert row.actual_days is None
+        assert summary["leave_pending_names"] == ["测试"]
+
+
+@pytest.mark.parametrize("overrides", [
+    {"duration_percent": "NaN"}, {"duration_percent": -100},
+    {"duration_percent": None}, {"duration_unit": "unknown"}, {"start_time": None},
+])
+def test_unparseable_leave_is_not_confirmed_as_zero(overrides):
+    record = leave_rec("U1", "code-personal", FROM_MS, FROM_MS + 3600000, 100, "percent_hour")
+    record.update(overrides)
+    result = asrc.split_leave([record], TYPE_MAP, FROM_MS, TO_MS, D("7.83"))
+    assert result["unknown"]
 
 
 def test_sync_fills_leave_and_recomputes_actual_days(db):

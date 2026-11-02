@@ -118,7 +118,7 @@
     <div class="salary-panel section">
       <el-tabs v-model="activeTab">
         <!-- 明细放最前：算完薪之后 HR 的活儿都在这张表上 -->
-        <el-tab-pane label="工资明细" name="records">
+        <el-tab-pane label="工资明细" name="records" class="table-card salary-list-pane">
           <FilterBar :loading="recordsLoading" :pending="recordsPending" @search="searchRecords" @reset="resetRecords">
             <el-input v-model="recordsKeyword" placeholder="按姓名/工号搜索" clearable class="filter-w-md" />
             <template #summary><span v-if="records.truncated" class="section-hint">结果过多只显示了前一部分，请用搜索缩小范围</span></template>
@@ -130,7 +130,7 @@
                              :save-manual="saveManual" />
         </el-tab-pane>
 
-        <el-tab-pane label="考勤" name="attendance">
+        <el-tab-pane label="考勤" name="attendance" class="table-card salary-list-pane">
           <FilterBar :loading="attendanceResource.loading.value" :pending="attendancePending" @search="searchAttendance" @reset="resetAttendance">
             <el-input v-model="attendanceKeyword" placeholder="按姓名搜索" clearable class="filter-w-md" />
             <el-checkbox v-model="attendanceOnlyPending">只看请假小时没录的</el-checkbox>
@@ -146,13 +146,20 @@
             请假自动拉取未生效：{{ lastSync.leave_degraded }}。请假小时在下表人工录入——
             留空会被当成「还没录」，那一行的实出天数和全勤都算不出来。
           </el-alert>
-          <el-alert v-else-if="lastSync?.leave_filled !== undefined" type="success"
+          <el-alert v-else-if="lastSync?.leave_filled !== undefined"
+                    :type="lastSync.leave_pending_names?.length || lastSync.leave_failed_userids?.length || lastSync.leave_unknown_types?.length ? 'warning' : 'success'"
                     :closable="false" class="tab-alert">
             请假已自动拉取 {{ lastSync.leave_filled }} 人<template v-if="lastSync.leave_kept_manual">
               （{{ lastSync.leave_kept_manual }} 人人工改过，保留人工值）</template>。
             <template v-if="lastSync.leave_unknown_types?.length">
               有未识别的请假类型 {{ lastSync.leave_unknown_types.join('、') }}——
-              不会计入任何扣款，请核对后人工录入。
+              未自动填写相关员工的请假，请核对后人工录入。
+            </template>
+            <template v-if="lastSync.leave_pending_names?.length">
+              待核对：{{ lastSync.leave_pending_names.join('、') }}。
+            </template>
+            <template v-if="lastSync.leave_failed_userids?.length">
+              {{ lastSync.leave_failed_userids.length }} 人的请假明细未能读取，请重试或人工核对。
             </template>
           </el-alert>
           <!-- 兼容旧响应（没有请假管线字段时）才回退到这段说明 -->
@@ -472,6 +479,14 @@ async function runImport(kind, file) {
 
 .kind-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .kind-chip { cursor: pointer; }
+
+.salary-list-pane {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
 
 .tab-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .grow { flex: 1; }

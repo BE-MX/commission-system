@@ -38,6 +38,9 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
+import httpx
+
+from app.core.time import BEIJING_TIMEZONE, beijing_now, beijing_today
 from app.dingtalk.client import DingTalkError, get_dingtalk_client
 
 logger = logging.getLogger("commission")
@@ -315,8 +318,8 @@ async def fetch_many(
 #   （调休、无薪事假……）一律进 unknown 清单报出来，绝不静默归入某个扣款项——
 #    归错了就是算错钱。
 
-LEAVE_STATUS_BATCH = 20   # getleavestatus 的 userid_list 上限
-LEAVE_STATUS_PAGE = 50    # size 上限未见诸文档，50 是实测安全值
+LEAVE_STATUS_BATCH = 20   # 按 20 人分批，限制单次失败影响范围。
+LEAVE_STATUS_PAGE = 20    # 2026-11-02 实测：50 返回 200003；20 可正常分页。
 
 # 类型名 → 我们的字段语义。精确匹配，别加模糊包含——名字像不等于规则同。
 LEAVE_TYPE_PERSONAL = "事假"
@@ -324,22 +327,29 @@ LEAVE_TYPE_SICK = "病假"
 LEAVE_TYPE_ANNUAL = "年假"
 
 
-async def fetch_leave_types(client=None) -> dict[str, dict[str, str]]:
-    """leave_code → {'name', 'unit'}。权限未开通返回 {}（降级信号，不抛）。"""
+async def fetch_leave_types(client=None, *, op_userid: str) -> dict[str, dict[str, str]]:
+    """leave_code → {'name'}。时长单位来自明细；无权限返回 {}（降级信号）。"""
     client = client or get_dingtalk_client()
     try:
-        data = await client.post("topapi/attendance/vacation/type/list", json_data={})
+        data = await client.post("topapi/attendance/vacation/type/list", json_data={
+            "op_userid": op_userid, "vacation_source": "all",
+        })
     except DingTalkError as exc:
         if exc.code in _SCOPE_ERROR_CODES or "60011" in str(exc):
             logger.warning("假期类型接口权限未开通（qyapi_holiday_readonly），请假自动拉取降级")
+            print("[salary.attendance_source] leave types permission denied", flush=True)
             return {}
         raise AttendanceSourceError(f"读取钉钉假期类型失败：{exc}") from exc
+    except httpx.HTTPError as exc:
+        # HTTP 异常文本可能带含 access_token 的 URL，用户提示和日志只保留异常类型。
+        raise AttendanceSourceError(
+            f"读取钉钉假期类型时网络异常（{type(exc).__name__}），请稍后重试"
+        ) from exc
     out: dict[str, dict[str, str]] = {}
     for t in data.get("result") or []:
         code = t.get("leave_code")
         if code:
-            out[str(code)] = {"name": str(t.get("leave_name") or ""),
-                              "unit": str(t.get("unit") or "")}
+            out[str(code)] = {"name": str(t.get("leave_name") or "")}
     return out
 
 
@@ -382,8 +392,10 @@ async def fetch_leave_records(
                 if not result.get("has_more"):
                     break
                 offset += LEAVE_STATUS_PAGE
-        except DingTalkError as exc:
-            logger.warning("请假记录批次拉取失败（%d 人）: %s", len(batch), exc)
+        except (DingTalkError, httpx.HTTPError) as exc:
+            detail = str(exc) if isinstance(exc, DingTalkError) else type(exc).__name__
+            logger.warning("请假记录批次拉取失败（%d 人）: %s", len(batch), detail)
+            print(f"[salary.attendance_source] leave records failed count={len(batch)}: {detail}", flush=True)
             failed.extend(batch)
             continue
         out.update(batch_records)
@@ -394,30 +406,46 @@ async def fetch_annual_quota(
     userid: str,
     annual_leave_code: str,
     *,
+    op_userid: str,
     client=None,
 ) -> Optional[Decimal]:
     """年假剩余天数。解析不出来返回 None——宁可不填也不填错。
 
-    注意：该接口的响应形状在权限开通前无法实测（qyapi_holiday_readonly），
-    按文档 `result.leave_quota` 解析；形状对不上就降级 None，年假余额留人工。
+    只认本年度、当前有效、本人、指定假期的一条天数额度；多额度或小时制不猜测合并/换算，
+    留人工核对。2026-11-02 实测响应为 result.leave_quotas。
     """
     client = client or get_dingtalk_client()
     try:
         data = await client.post(
             "topapi/attendance/vacation/quota/list",
-            json_data={"userid": userid, "leave_code": annual_leave_code},
+            json_data={"op_userid": op_userid, "userids": userid,
+                       "leave_code": annual_leave_code, "offset": 0, "size": 20},
         )
-    except DingTalkError as exc:
-        logger.warning("年假额度拉取失败 userid=%s: %s", userid, exc)
+    except (DingTalkError, httpx.HTTPError) as exc:
+        detail = str(exc) if isinstance(exc, DingTalkError) else type(exc).__name__
+        logger.warning("年假额度拉取失败 userid=%s: %s", userid, detail)
+        print(f"[salary.attendance_source] annual quota failed: {detail}", flush=True)
         return None
-    quota = (data.get("result") or {}).get("leave_quota") or {}
-    raw = quota.get("remain_quota") if isinstance(quota, dict) else None
-    if raw is None:
+    result = data.get("result") or {}
+    quotas = [q for q in result.get("leave_quotas", [])
+              if q.get("userid") == userid and q.get("leave_code") == annual_leave_code
+              and str(q.get("quota_cycle")) == str(beijing_today().year)]
+    if result.get("has_more") or len(quotas) != 1:
         return None
     try:
-        # remain_quota 按类型单位给百分数（percent_day 下 550 = 5.5 天）
-        return Decimal(str(raw)) / Decimal("100")
-    except (InvalidOperation, ValueError):
+        row = quotas[0]
+        now_ms = int(beijing_now().replace(tzinfo=BEIJING_TIMEZONE).timestamp() * 1000)
+        if not int(row["start_time"]) <= now_ms < int(row["end_time"]):
+            return None
+        if any(Decimal(str(row.get(key) or 0)) != 0
+               for key in ("quota_num_per_hour", "used_num_per_hour")):
+            return None
+        quota = Decimal(str(quotas[0].get("quota_num_per_day")))
+        used = Decimal(str(quotas[0].get("used_num_per_day")))
+        if not quota.is_finite() or not used.is_finite() or quota < 0 or used < 0 or used > quota:
+            return None
+        return (quota - used) / Decimal("100")
+    except (InvalidOperation, ValueError, TypeError, KeyError):
         return None
 
 
@@ -437,24 +465,31 @@ def split_leave(
     sick_h = Decimal("0")
     annual_d = Decimal("0")
     unknown: list[dict[str, str]] = []
-    window = max(to_ms - from_ms, 1)
-
     for rec in records or []:
         meta = type_map.get(str(rec.get("leave_code") or ""))
         try:
-            duration = Decimal(str(rec.get("duration_percent") or "0")) / Decimal("100")
-            start = int(rec.get("start_time") or 0)
-            end = int(rec.get("end_time") or 0)
+            duration = Decimal(str(rec.get("duration_percent"))) / Decimal("100")
+            start = int(rec.get("start_time"))
+            end = int(rec.get("end_time"))
+            if not duration.is_finite() or duration < 0 or end <= start:
+                raise ValueError("invalid leave duration or interval")
         except (InvalidOperation, ValueError, TypeError):
+            logger.warning("钉钉请假时长或时间区间无效，保留待人工核对")
+            print("[salary.attendance_source] invalid leave duration/interval", flush=True)
+            unknown.append({"leave_name": "请假时长或时间区间异常", "hours": "待核对"})
             continue
         # 跨月折算：只取与当月窗口重叠的时间占比
         overlap = max(0, min(end, to_ms) - max(start, from_ms))
-        if end <= start or overlap <= 0:
+        if overlap <= 0:
             continue
         duration = duration * Decimal(overlap) / Decimal(end - start)
 
-        unit = (meta or {}).get("unit") or str(rec.get("duration_unit") or "")
+        # 假期定义中的显示单位不等于这条记录的时长单位，以明细为准。
+        unit = str(rec.get("duration_unit") or "")
         name = (meta or {}).get("name") or ""
+        if unit not in ("percent_day", "percent_hour"):
+            unknown.append({"leave_name": "请假时长单位异常", "hours": "待核对"})
+            continue
         if name == LEAVE_TYPE_ANNUAL:
             annual_d += duration if unit == "percent_day" else duration / day_hours
         elif name == LEAVE_TYPE_PERSONAL:
