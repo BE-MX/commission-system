@@ -95,7 +95,6 @@
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="260" fixed="right">
           <template #default="{ row }">
-            <GlassButton v-if="row.record_source !== 'ark_task' && row.order_id" v-permission="'sales_return:write'" variant="link" @click="openSalesReturn(row)">退货退款</GlassButton>
             <GlassButton variant="link" left-icon="Box" @click="inventoryRow = row; inventoryVisible = true">库存详情</GlassButton>
             <span v-if="row.record_source === 'ark_task' && row.outbound_state === 'waiting_stock'" v-permission="'invoice:sync'">
               <GlassButton v-permission="'shipping_inspection:write'" variant="link" left-icon="Refresh"
@@ -115,6 +114,9 @@
               <GlassButton left-icon="MoreFilled" variant="link" right-icon="ArrowDown">更多</GlassButton>
               <template #dropdown>
                 <el-dropdown-menu>
+                  <div v-if="row.record_source !== 'ark_task' && row.order_id" v-permission="'sales_return:write'" role="none">
+                    <el-dropdown-item @click="openSalesReturn(row)">退货退款</el-dropdown-item>
+                  </div>
                         <el-dropdown-item v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" icon="View" @click="printPreviewRow = row; printPreviewVisible = true">打印预览</el-dropdown-item>
                   <el-dropdown-item v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" icon="Download"
                     :disabled="downloadingId !== null" @click="downloadWord(row)">下载 Word</el-dropdown-item>
@@ -226,6 +228,7 @@ const advancedFilterCount = computed(() => Number(Boolean(listPageState.appliedS
 const hasActiveFilters = computed(() => appliedFilters.value.length > 0)
 onDeactivated(() => { printPreviewVisible.value = false; problemsVisible.value = false; inventoryVisible.value = false; syncVisible.value = false; reviewVisible.value = false; replenishReviewRow.value = null; listPageState.cancel(); listPageState.cancelMediaReads() })
 function canShowMore(row) {
+  if (row.record_source !== 'ark_task' && row.order_id && auth.hasPermission('sales_return:write')) return true
   if (row.can_print && (!row.recheck_status || row.print_before_recheck)) return true
   if (row.record_source !== 'okki') return false
   if (auth.hasPermission('shipping_inspection:admin')) return true
