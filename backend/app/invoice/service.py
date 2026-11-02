@@ -46,6 +46,8 @@ def list_invoices(
     order_id: str | None = None,
     status: str | None = None,
     order_type: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
     created_by: int | None = None,
     viewer_user_id: int | None = None,
     sort_field: str = "",
@@ -66,6 +68,10 @@ def list_invoices(
         query = query.filter(Invoice.status == status)
     if order_type:
         query = query.filter(Invoice.order_type == order_type)
+    if date_from:
+        query = query.filter(Invoice.invoice_date >= date_from)
+    if date_to:
+        query = query.filter(Invoice.invoice_date <= date_to)
     total = query.count()
     sort_columns = {**{name: getattr(Invoice, name) for name in ("invoice_no", "customer_name", "order_type", "invoice_date", "total_amount", "status", "sync_status", "created_at")}, "item_count": func.count(InvoiceItem.id), "created_by_name": db.query(ArkUser.real_name).filter(ArkUser.id == Invoice.created_by).correlate(Invoice).scalar_subquery()}
     rows = (

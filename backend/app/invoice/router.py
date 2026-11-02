@@ -782,6 +782,8 @@ def list_invoices(
     order_id: str | None = Query(None, pattern=r"^[1-9][0-9]*$", max_length=64),
     status: str | None = Query(None),
     order_type: str | None = Query(None, pattern="^(stock|production|presale)$"),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     sort_field: str = "",
     sort_order: str = "",
     db: Session = Depends(get_db),
@@ -796,11 +798,13 @@ def list_invoices(
         if viewer_user_id is None:
             # fail-closed：身份解析不出时宁可拒绝，不能落到"不过滤=全量"
             raise HTTPException(403, "无法确认用户身份，禁止访问发票列表")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(422, "开始日期不能晚于结束日期")
     items, total = service.list_invoices(
         db, sort_field=sort_field, sort_order=sort_order, page=page, page_size=page_size, keyword=keyword, order_id=order_id, status=status, order_type=order_type,
         created_by=created_by if _can_read_all(current_user) else None,
         viewer_user_id=None if _can_read_all(current_user) else viewer_user_id,
-        user=current_user,
+        user=current_user, date_from=date_from, date_to=date_to,
     )
     from app.invoice.document_anomalies import annotate
     annotate(db, current_user, items)

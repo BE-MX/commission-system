@@ -14,7 +14,7 @@
         start-placeholder="开始日期"
         end-placeholder="结束日期"
         :clearable="false"
-        aria-label="订单概览统计日期范围"
+        aria-label="订单概览与列表日期范围"
         @change="$emit('range-change')"
       />
       <div class="summary-view-options" role="group" aria-label="订单概览显示方式">

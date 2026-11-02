@@ -28,6 +28,9 @@ export function useInvoiceManagePage() {
     if (params.order_id) params.order_id = params.order_id.trim()
     if (!params.order_id) delete params.order_id
     if (!params.order_type) delete params.order_type
+    const [dateFrom, dateTo] = summaryDateRange.value
+    params.date_from = dateFrom
+    params.date_to = dateTo
     return listInvoices(params, { signal, suppressToast: true })
   }, { searchForm: { keyword: '', order_id: '', status: '', order_type: '' } })
   const {
@@ -152,6 +155,11 @@ export function useInvoiceManagePage() {
 
   function handleSearch() {
     return listPage.handleSearch()
+  }
+
+  function handleDateRangeChange() {
+    page.value = 1
+    return loadInvoices()
   }
 
   async function refreshUpdate() {
@@ -329,7 +337,7 @@ export function useInvoiceManagePage() {
     loading, money, openSyncLogs, page, pageSize, total, removeInvoice, statusText, statusType,
     listErrorMessage, hasLoaded, hasData, dataPage, hasPendingSearch,
     handleSearch, handlePageChange, handleSaved, refreshUpdate,
-    summary, summaryDateRange, summaryError, summaryLoading, loadSummary,
+    summary, summaryDateRange, summaryError, summaryLoading, loadSummary, handleDateRangeChange,
     syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
     isInvoiceSyncing, resolveUncertain, validateAndSync,
     isInvoiceDeleting, usesRelatedInvoiceDeletion,

@@ -115,3 +115,32 @@ def test_summary_rejects_invalid_range_and_requires_read_permission(db):
             "date_from": "2026-09-01", "date_to": "2026-09-30",
         })
         assert result.status_code == 403
+
+
+def test_list_date_range_filters_before_count_and_pagination_without_changing_scope(db):
+    seed_authority(db, 5, "invoice:read")
+    seed_authority(db, 6, "invoice:read")
+    seed_authority(db, 8, "invoice:read", "invoice:read_all")
+    _invoice(db, "BEFORE", day=date(2026, 8, 31))
+    _invoice(db, "START", day=date(2026, 9, 1))
+    _invoice(db, "END", day=date(2026, 9, 30), sync_status="not_synced", status="draft")
+    _invoice(db, "AFTER", day=date(2026, 10, 1))
+    _invoice(db, "OTHER", salesperson=6, creator=6)
+    db.commit()
+    params = {"date_from": "2026-09-01", "date_to": "2026-09-30", "sort_field": "invoice_date", "sort_order": "asc"}
+    with _client(db) as client:
+        first = client.get("/api/invoice/invoices", params={**params, "page_size": 1}).json()["data"]
+        second = client.get("/api/invoice/invoices", params={**params, "page_size": 1, "page": 2}).json()["data"]
+        assert first["total"] == second["total"] == 2
+        assert first["items"][0]["invoice_no"] == "START"
+        assert second["items"][0]["invoice_no"] == "END"
+        filtered = client.get("/api/invoice/invoices", params={**params, "keyword": "END", "status": "draft", "order_type": "stock"}).json()["data"]
+        assert filtered["total"] == 1
+        assert filtered["items"][0]["invoice_no"] == "END"
+        assert client.get("/api/invoice/invoices").json()["data"]["total"] == 4
+        assert client.get("/api/invoice/invoices", params={"date_from": "2026-09-30"}).json()["data"]["total"] == 2
+        assert client.get("/api/invoice/invoices", params={"date_to": "2026-09-01"}).json()["data"]["total"] == 2
+        assert client.get("/api/invoice/invoices", params={"date_from": "2026-10-01", "date_to": "2026-09-30"}).status_code == 422
+        assert client.get("/api/invoice/invoices", params={"date_from": "invalid"}).status_code == 422
+    with _client(db, user_id=8, permissions=("invoice:read", "invoice:read_all")) as client:
+        assert client.get("/api/invoice/invoices", params=params).json()["data"]["total"] == 3

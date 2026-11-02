@@ -20,7 +20,7 @@
       :loading="summaryLoading"
       :error="summaryError"
       :money="money"
-      @range-change="loadSummary"
+      @range-change="handleDateRangeChange"
     />
 
     <section ref="panelRef" class="table-card invoice-panel">
@@ -479,7 +479,7 @@ const {
   handleTableSort, actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
   loading, money, openSyncLogs, page, pageSize, total, removeInvoice, statusText, statusType,
   listErrorMessage, hasLoaded, hasData, dataPage, hasPendingSearch, handleSearch, handlePageChange, handleSaved, refreshUpdate,
-  summary, summaryDateRange, summaryError, summaryLoading, loadSummary,
+  summary, summaryDateRange, summaryError, summaryLoading, handleDateRangeChange,
   syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
   isInvoiceSyncing, resolveUncertain, validateAndSync,
   isInvoiceDeleting, usesRelatedInvoiceDeletion,
