@@ -324,7 +324,7 @@ def test_persisted_pause_policy_reapplied(monkeypatch):
 
         def query(self, _model):
             return SimpleNamespace(filter=lambda *_args: SimpleNamespace(
-                all=lambda: [SimpleNamespace(job_id="staging_scan")],
+                all=lambda: [SimpleNamespace(job_id="staging_scan", paused=1)],
             ))
 
     fake_db = FakeDb()
@@ -341,6 +341,27 @@ def test_safe_endpoint_strips_credentials_and_query():
     assert _safe_endpoint("https://user:secret@example.com:8443/secret-path?token=secret") == (
         "https://example.com:8443"
     )
+
+
+@pytest.mark.parametrize('pk_policy,expected', [
+    (None, {'battle_awards', 'battle_pk'}),
+    (0, {'battle_awards'}),
+    (1, {'battle_awards', 'battle_pk'}),
+])
+def test_split_pk_job_respects_existing_pause_policy(monkeypatch, pk_policy, expected):
+    from contextlib import nullcontext
+    from unittest.mock import Mock
+    from app.schedulers import registry
+
+    rows = [SimpleNamespace(job_id='battle_awards', paused=1)]
+    if pk_policy is not None:
+        rows.append(SimpleNamespace(job_id='battle_pk', paused=pk_policy))
+    db = Mock()
+    db.query.return_value.filter.return_value.all.return_value = rows
+    monkeypatch.setattr(registry, 'SessionLocal', lambda: nullcontext(db))
+    scheduler = Mock()
+    registry._apply_persisted_job_policies(scheduler)
+    assert {call.args[0] for call in scheduler.pause_job.call_args_list} == expected
 
 
 def test_safe_endpoint_rejects_invalid_port():

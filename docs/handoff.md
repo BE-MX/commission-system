@@ -1,11 +1,18 @@
-## 2026-11-02 commerce-transition 合入后旧流程修复 B/C/D 批（Claude Code，分支 claude/commerce-legacy-fixes，未合并，未部署）
+## 2026-11-02 commerce-transition 合入后旧流程修复 B/C/D 批（Claude Code，分支 claude/commerce-legacy-fixes，已合入 main，未部署）
 
 - 范围：回款发送人放宽与重试接手、超时锁死的人工解锁（开票/回款/出库同步/补货出库/预售运费与出库/回款删除放弃）、发送 claim 租约（180 秒）、软删除草稿释放发票号与截图、native 菜单按交易阶段显示、冻结订单的运维解冻流程（`docs/runbook.md`「订单办理权冻结」）。
 - 已知风险：
   - 订单删除（order_remove）与取消订单（cancel-order）超时未决时，没有「放弃并释放」入口。订单在发出删除前已置为 `cancel_pending`，生产版本里该状态本来就挡住同一订单的推单、回款和出库，所以影响范围与改造前相同：只影响这一张订单，不扩散。需要恢复时按原删除/取消入口继续核验。
   - 预售运费 uncertain 的管理员重试只开放了 API（`POST /api/shipments/{id}/retry-freight`），生产版本里也没有前端入口，目前只能由管理员通过 API 或 Codex 操作。
   - 冻结订单只能按运维手册走维护工单解冻，系统没有解冻入口。
-- 状态：未合并到 main，未部署；部署前请看分支最新报告里的测试基线。
+- 状态：已合入本地 main（未推送），未部署。回归基线：`-k "commerce or receipt or invoice or outbound or presale or shipping" --ignore=tests/portal_mysql` 21 failed / 48 errors（portal 测试元数据），均为 main 既有失败，零新增。
+
+## 2026-11-01 战报推送时段与 PK 名单（Codex，名单已保存，代码未部署）
+
+- 用户确认年度奖周一至周五09:00/16:00、PK奖09:01/16:01（北京时间）；刘婷退出PK，一组4人/目标24/基础400。线上战报ID3通过设置保存，版本2→3，22:26:44审计核对其余9人及规则不变；未外发消息。
+- 工作区 `D:/MyProgram/commission-system-codex-battle-awards-nov`，分支 `codex/battle-awards-nov`，本轮已获合并与推送授权，仅交付本需求 Git 变更、不部署；最终引用读回为准。实现独立调度及重试、旧账本去重、暂停策略继承、配置文案、4人预设、两张去除刘婷的底图及姓名数字覆盖层；按后续反馈修正罗馨瑜的头型、五官/眼镜比例和过度倾斜。
+- 225项奖项/海报测试通过；最终调度及运营中心52项通过，合计277项不同测试；前端构建、增量约定、diff检查通过；独立审查已修复问题。三种完整海报以合成数据离线渲染、9人对位无溢出/外部请求。Python环境缺Playwright，图像验收使用同一HTML+Node Playwright。
+- 线上新时间和底图仍待授权发布；办公室入口未登录，cloud页面配置状态不能代表单活调度器。详见 [交付记录](reports/2026-11-01-battle-awards-schedule-roster.md)。
 
 ## 2026-10-31 内贸客户跟进一期（Claude Code，待部署）
 

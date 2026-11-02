@@ -1,4 +1,4 @@
-"""Name-matched overlays on the two approved, unchanged PK artworks."""
+"""Name-matched overlays on the four-versus-five PK artworks."""
 from decimal import Decimal, ROUND_DOWN
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -7,21 +7,19 @@ from app.battle_report.award_presets import ALIASES, PK_TEAMS
 
 WIDTH, HEIGHT = 1672, 941
 # Left to right in the supplied portraits; captains remain at the center.
-NAMES = {team: [names[1], names[2], names[0], names[3], names[4]]
+NAMES = {team: [names[1], names[2], names[0], *names[3:]]
          for team, names in PK_TEAMS.items()}
 LAYOUT = {
     "one": {
         "一组": [(88,435,109,27,139,466,55,46),(236,435,123,27,291,466,60,46),
-                 (400,415,156,44,446,466,107,46),(594,436,112,26,642,467,62,45),
-                 (752,435,105,28,804,467,58,45)],
+                 (400,415,156,44,446,466,107,46),(594,436,112,26,642,467,62,45)],
         "二组": [(970,451,89,23,1005,479,54,39),(1095,451,84,23,1124,478,54,40),
                  (1209,437,121,32,1244,478,79,39),(1366,452,89,23,1396,479,55,38),
                  (1482,452,89,23,1513,479,52,38)],
     },
     "two": {
         "一组": [(101,430,85,24,129,455,54,45),(222,430,90,24,252,455,56,45),
-                 (352,415,120,31,396,454,85,46),(515,431,78,24,540,456,57,44),
-                 (640,430,80,24,669,455,55,44)],
+                 (352,415,120,31,396,454,85,46),(515,431,78,24,540,456,57,44)],
         "二组": [(842,452,102,28,883,485,59,48),(990,453,106,27,1037,486,59,47),
                  (1135,438,143,36,1181,479,105,49),(1332,453,113,27,1381,486,64,47),
                  (1481,451,105,28,1529,485,56,47)],
@@ -40,7 +38,7 @@ def matches_roster(snapshot):
         return False
     for team in teams:
         people = team["people"]
-        if len(people) != 5 or {display_name(p["user_name"]) for p in people} != set(PK_TEAMS[team["team"]]):
+        if len(people) != len(PK_TEAMS[team["team"]]) or {display_name(p["user_name"]) for p in people} != set(PK_TEAMS[team["team"]]):
             return False
         captains = [display_name(p["user_name"]) for p in people if p["is_captain"]]
         if captains != [PK_TEAMS[team["team"]][0]]:
@@ -86,7 +84,8 @@ def render_html(snapshot, assets, background_one, background_two):
     if not visible:
         heading, amount, detail = "数据待核对", "正式数据待填", "目标奖金、PK奖金及队长询盘均待核对"
     elif snapshot["period_state"] == "upcoming":
-        heading, amount, detail = "11月1日开赛 · 暂无领先", "活动未开始", "每队目标30个新签 · 双方达标后再评PK胜利奖"
+        heading, amount = "11月1日开赛 · 暂无领先", "活动未开始"
+        detail = " / ".join(f"{name}目标{team['target']}个" for name, team in teams.items()) + " · 双方达标后再评PK"
     elif lead:
         decided = snapshot["period_state"] == "ended"
         lead_label = "胜出" if decided and snapshot["pk_eligible"] else "领先" if decided else "暂领先"
