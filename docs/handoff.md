@@ -1,3 +1,12 @@
+## 2026-11-02 客户跟进 UI 与截图粘贴（Codex，Git 交付，未部署）
+
+- 工作区 `D:/MyProgram/commission-system-codex-customer-followup`，分支 `codex/customer-followup-ui`，基于 `d4a6d3ff`；主目录既有未提交改动未触碰。
+- 客户跟进改用统一 OverviewMetricCard、Liquid Glass 面板、卡片内操作行与带图标的轻量任务操作；我的记录和异常意见接入 TableTools 的刷新、列显示、行密度与全屏。首次加载失败显示错误和重试，刷新失败保留旧数据；空态区分分类无待办与全部完成。
+- 沟通截图接入 AppUpload：点击区域后 Ctrl+V、拖拽或选图上传，PNG/JPG/WebP、最多 9 张、每张 10MB；区域内允许带文字格式的截图，文本框继续正常粘贴文字。附件仍由 composer 管理，同步占位防连续上传超过上限，上传失败释放名额并明确反馈，关闭重开后旧响应不进入新记录。
+- 验证：跟进/上传及表格视图 24 项测试通过，表格偏好断言通过；前端构建、增量约定和 diff 检查通过。构建保留既有包体积及 auth 静态/动态导入提示。Git 巡检 `--no-fetch` 已运行，仅代表本地远端引用快照。
+- 浏览器只验证了模拟数据下的桌面统计筛选、操作栏、待办卡和跟进抽屉。真实 Ctrl+V 验收先遇虚拟剪贴板无数据，随后原生浏览器控制因无法可靠确定 URL 被工具安全检查终止；未绕过。系统剪贴板、窄屏、拖拽及表格工具实点仍未完成；上传和拖拽事件通过组件方法与 composable 组合测试覆盖，不等同于浏览器实测。模拟验收入口备份在下述截图目录的 `recovery/frontend/tmp/followup-preview/`，复验时复制到前端同名 tmp 路径即可；所有 API 为模拟，无真实业务写入。
+- 桌面和抽屉截图：`C:/Users/windb/.codex/visualizations/2026/11/02/01a19aaa-65c7-7a92-bce4-03ce443f219b/followup-ui/`。用户已明确授权本次提交、合并到 main 并推送 origin；暂不部署。合并后清理本任务 worktree，保留模拟验收恢复材料与构建日志。
+
 ## 2026-11-02 PK海报突出人均新签（Codex，Git交付，未部署）
 
 - 工作区 `D:/MyProgram/commission-system-codex-pk-average`，分支 `codex/pk-average-poster`，基于 `eecd47c8`。用户要求4人对5人时按平均新签优胜，并查看海报如何在总数之外展示平均值。

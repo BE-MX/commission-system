@@ -1337,6 +1337,8 @@ Agent 委派只允许现有 customer_order_copilot 的只读准备型工具。re
 - **AI 输出宽进**：解析结果走 schema 校验，坏字段只丢弃该字段，不整条拒绝；业务员确认前可见原始 `ai_result` 供核对/手改。
 - 隐私：AI 调用 `snapshot_mode="metadata"`，日志不落聊天原文和截图；截图存 domestic 存储，读取走鉴权端点 `GET /attachments/{id}/file`。验收和演示**不得使用真实客户聊天截图**。
 
+**前端录入与展示**：统计筛选使用 `OverviewMetricCard`；记录/异常表使用 `TableTools` 保存列显示与密度偏好。截图通过 `AppUpload` 选择、拖拽或点击区域后 Ctrl+V 上传（PNG/JPG/WebP，9 张，单张 10MB）；上传区以图片为准，文本框遇文字与图片混合剪贴板时保留正常文字粘贴。`useFollowupComposer.uploadAttachment` 是附件状态唯一写入入口，上传前同步占位，关闭/重开以代际令牌隔离旧响应；不使用 AppUpload 的 v-model 回写附件，避免并发完成覆盖状态。
+
 **已知未做 / 一期简化**（二期评估前不要求补齐）：
 - 列表与时间线有 N+1 查询（100 条约 400 次查询），一期数据量可接受。
 - 未绑定（上传后未确认）的附件对应物理文件不清理，靠每人 24 小时 30 张上传上限兜底。

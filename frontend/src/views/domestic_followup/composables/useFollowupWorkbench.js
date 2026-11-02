@@ -9,8 +9,10 @@ export function useFollowupWorkbench() {
   const dueTasks = ref([])
   const upcomingTasks = ref([])
   const drafts = ref([])
-  const records = reactive({ items: [], total: 0, page: 1, pageSize: 20, loading: false })
+  const records = reactive({ items: [], total: 0, page: 1, pageSize: 20, loading: false, error: '', loaded: false })
   const loading = ref(false)
+  const error = ref('')
+  const loaded = ref(false)
 
   const filtered = computed(() => ({
     due: typeFilter.value ? dueTasks.value.filter(t => matchType(t, typeFilter.value)) : dueTasks.value,
@@ -23,6 +25,7 @@ export function useFollowupWorkbench() {
 
   async function loadTasks() {
     loading.value = true
+    error.value = ''
     try {
       const [s, due, upcoming, d] = await Promise.all([
         followupApi.summary(), followupApi.tasks({ due: 'today', page_size: 200 }),
@@ -32,15 +35,17 @@ export function useFollowupWorkbench() {
       dueTasks.value = due.items
       upcomingTasks.value = upcoming.items
       drafts.value = d
-    } catch (e) { msgError(apiError(e, '待办加载失败'), e) } finally { loading.value = false }
+      loaded.value = true
+    } catch (e) { error.value = apiError(e, '待办加载失败') } finally { loading.value = false }
   }
 
   async function loadRecords(page = 1) {
     records.loading = true
+    records.error = ''
     try {
       const res = await followupApi.followups({ mine: true, page, page_size: records.pageSize })
-      Object.assign(records, { items: res.items, total: res.total, page })
-    } catch (e) { msgError(apiError(e, '记录加载失败'), e) } finally { records.loading = false }
+      Object.assign(records, { items: res.items, total: res.total, page, loaded: true })
+    } catch (e) { records.error = apiError(e, '记录加载失败') } finally { records.loading = false }
   }
 
   async function snooze(task, days) {
@@ -66,5 +71,5 @@ export function useFollowupWorkbench() {
     }
   }
 
-  return { summary, typeFilter, filtered, drafts, records, loading, loadTasks, loadRecords, snooze, receiptOk }
+  return { summary, typeFilter, filtered, drafts, records, loading, loaded, error, loadTasks, loadRecords, snooze, receiptOk }
 }

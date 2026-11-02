@@ -10,18 +10,18 @@
       {{ (task.payload.shipments || []).map(s => s.shipment_no).join('、') }}
     </p>
     <footer class="task-actions">
-      <GlassButton v-permission="'domestic_followup:write'" variant="primary" @click="$emit('record', task)">记跟进</GlassButton>
+      <GlassButton v-permission="'domestic_followup:write'" variant="link" left-icon="EditPen" @click="$emit('record', task)">记跟进</GlassButton>
       <GlassButton v-if="task.task_type === 'receipt'" v-permission="'domestic_followup:write'"
-                   :loading="busy" @click="onReceiptOk">已回访无问题</GlassButton>
+                   variant="link" link-tone="success" left-icon="CircleCheck" :loading="busy" @click="onReceiptOk">已回访无问题</GlassButton>
       <el-dropdown v-permission="'domestic_followup:write'" trigger="click" @command="days => $emit('snooze', task, days)">
-        <GlassButton variant="link" right-icon="ArrowDown">顺延</GlassButton>
+        <GlassButton variant="link" left-icon="Clock" right-icon="ArrowDown">顺延</GlassButton>
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item v-for="d in [1, 3, 7]" :key="d" :command="d">{{ d }} 天</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
-      <GlassButton variant="link" @click="$emit('timeline', task)">时间线</GlassButton>
+      <GlassButton variant="link" left-icon="View" @click="$emit('timeline', task)">时间线</GlassButton>
     </footer>
   </article>
 </template>
@@ -47,14 +47,14 @@ async function onReceiptOk() {
 </script>
 
 <style scoped>
-.task-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--card-bg); }
+.task-card { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--dash-card-radius); background: var(--dash-glass-bg); }
 .task-card.is-overdue { border-left: 3px solid var(--color-warning-text); }
 .task-card.is-urgent { border-left: 3px solid var(--color-danger); }
-.task-head { display: flex; align-items: center; gap: 8px; }
+.task-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .task-due { font-size: 12px; color: var(--text-secondary); }
 .is-overdue .task-due { color: var(--color-warning-text); }
-.task-title { margin: 0; font-weight: 600; }
-.task-sub { margin: 0; font-size: 12px; color: var(--text-secondary); }
-.task-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.task-title { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.task-sub { margin: 0; font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.task-actions { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin-top: auto; }
 @media (max-width: 768px) { .task-actions :deep(button) { min-height: 44px; } }
 </style>

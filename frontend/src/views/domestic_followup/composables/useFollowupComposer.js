@@ -71,35 +71,48 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     if (form.value.customer_id) await loadCustomerContext(form.value.customer_id, gen)
   }
 
-  async function addFiles(files) {
-    const room = MAX_ATTACHMENTS - attachments.value.length
-    if (files.length > room) msgWarning(`一次最多 ${MAX_ATTACHMENTS} 张截图，多出的已忽略`)
-    for (const file of files.slice(0, Math.max(room, 0))) {
-      const row = reactive({ id: null, file_name: file.name, previewUrl: URL.createObjectURL(file), uploading: true, ocr_status: 'pending' })
-      attachments.value.push(row)
-      try {
-        Object.assign(row, await followupApi.upload(file), { uploading: false })
-      } catch (e) {
-        attachments.value = attachments.value.filter(a => a !== row)
-        URL.revokeObjectURL(row.previewUrl)
-        msgError(apiError(e, `${file.name} 上传失败`), e)
-      }
+  async function uploadAttachment(file) {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) throw new Error('请上传 PNG / JPG / WebP 图片')
+    if (file.size > 10 * 1024 * 1024) throw new Error('文件超过 10MB 限制')
+    if (attachments.value.length >= MAX_ATTACHMENTS) throw new Error(`最多上传 ${MAX_ATTACHMENTS} 张截图`)
+    const gen = pollGen
+    // 请求前同步占位，连续粘贴和选图共用同一个数量上限。
+    const row = reactive({ id: null, file_name: file.name, previewUrl: URL.createObjectURL(file), uploading: true, ocr_status: 'pending' })
+    attachments.value.push(row)
+    try {
+      const result = await followupApi.upload(file)
+      if (gen === pollGen && attachments.value.includes(row)) Object.assign(row, result, { uploading: false })
+      return result
+    } catch (e) {
+      attachments.value = attachments.value.filter(a => a !== row)
+      URL.revokeObjectURL(row.previewUrl)
+      // 本域请求 suppressToast，AppUpload 也不会替 Axios 错误提示；在这里统一反馈一次。
+      msgError(apiError(e, `${file.name} 上传失败，请重试`), e)
+      throw e
     }
   }
 
+  async function addFiles(files) {
+    await Promise.all(files.map(async file => {
+      try { await uploadAttachment(file) }
+      catch (e) { msgError(apiError(e, e.message || `${file.name} 上传失败`), e) }
+    }))
+  }
+
   function onPaste(event) {
+    if (event.defaultPrevented) return
     // 剪贴板同时有文字（如从 Word / 网页复制）时只放行文字，不顺带塞一张截图
     if (clipboardHasText(event)) return
     const files = imageFilesFromClipboard(event)
     if (files.length) {
       event.preventDefault()
-      addFiles(files)
+      return addFiles(files)
     }
   }
 
   function onDrop(event) {
     const files = imageFilesFromDrop(event)
-    if (files.length) addFiles(files)
+    if (files.length) return addFiles(files)
   }
 
   function removeAttachment(row) {
@@ -323,7 +336,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   return {
     visible, step, saving, uploading, canSubmit, customerWritable, dicts, loadDicts, form, attachments,
     customerOptions, searching, openTasks, openItems, aiFailed,
-    reviewDirty, open, resume, close, handleClosed, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, createProspect,
+    reviewDirty, open, resume, close, handleClosed, uploadAttachment, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, createProspect,
     loadCustomerContext, saveDirect, startAi, confirm, discard, addRow, toggleResolved,
   }
 }

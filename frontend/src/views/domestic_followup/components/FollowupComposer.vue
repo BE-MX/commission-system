@@ -44,7 +44,15 @@
              @dragenter="onDragEnter" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
           <el-form-item label="跟进内容">
             <el-input v-model="c.form.value.raw_text" type="textarea" :autosize="{ minRows: 5, maxRows: 12 }"
-                      placeholder="随手写，Ctrl+V 粘贴或直接拖进微信截图" />
+                      placeholder="记录沟通内容，也可粘贴或拖入微信截图" />
+          </el-form-item>
+          <el-form-item label="沟通截图" class="screenshot-field">
+            <AppUpload :model-value="uploadedAttachments" :upload-fn="c.uploadAttachment"
+                       accept="image/png,image/jpeg,image/webp" :max-size-mb="10" :limit="9"
+                       multiple transfer :show-list="false" @paste.stop @drop.stop="dragDepth = 0">
+              <GlassButton variant="outline" left-icon="Upload">选择截图</GlassButton>
+            </AppUpload>
+            <p class="hint">最多 9 张，每张不超过 10MB</p>
           </el-form-item>
           <div class="shots">
             <div v-for="a in c.attachments.value" :key="a.id || a.previewUrl" class="shot">
@@ -55,10 +63,6 @@
                 <span class="shot-remove-dot" aria-hidden="true">×</span>
               </button>
             </div>
-            <label v-if="c.attachments.value.length < 9" class="shot shot-add">
-              <input type="file" accept="image/*" multiple hidden @change="onPick">
-              <span>＋ 截图</span>
-            </label>
           </div>
         </div>
         <div class="row-2">
@@ -176,7 +180,7 @@
     </section>
 
     <template #footer>
-      <div class="composer-footer">
+      <div class="dialog-footer composer-footer">
         <template v-if="c.step.value === 'input'">
           <GlassButton :disabled="!c.canSubmit.value" :loading="c.saving.value" @click="c.saveDirect">直接保存</GlassButton>
           <GlassButton variant="primary" left-icon="MagicStick" :disabled="!c.canSubmit.value" :loading="c.saving.value" @click="c.startAi">AI 整理</GlassButton>
@@ -194,6 +198,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
+import AppUpload from '@/components/AppUpload.vue'
 import { currentBeijingDate, formatCalendarDate } from '@/utils/datetime'
 import { confirmAction, isFeedbackCancelled, promptAction } from '@/utils/feedback'
 import { nextBasisHint, taskDueLabel, weekdayLabel } from '../followupDraft'
@@ -201,6 +206,8 @@ import FollowupItemList from './FollowupItemList.vue'
 
 const props = defineProps({ composer: { type: Object, required: true } })
 const c = props.composer
+// AppUpload 单独计算在途数量，传入已完成项避免重复占用名额；附件状态仍由 composer 管理。
+const uploadedAttachments = computed(() => c.attachments.value.filter(a => !a.uploading))
 
 const media = window.matchMedia('(max-width: 768px)')
 const isMobile = ref(media.matches)
@@ -247,11 +254,6 @@ function onDrop(event) {
 // 抽屉任何位置松手放图都不让浏览器在当前页打开图片（会丢掉正在写的内容）；真正添加只在 drop-zone 里
 function blockFileDrop(event) {
   if (hasFiles(event)) event.preventDefault()
-}
-
-function onPick(event) {
-  c.addFiles(Array.from(event.target.files || []))
-  event.target.value = ''
 }
 
 function toggleState(value) {
@@ -307,7 +309,7 @@ async function discardWithConfirm() {
 .shot-remove-dot { display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; color: var(--text-on-dark); background: var(--overlay-scrim); transition: transform 160ms var(--ease-out-strong); }
 .shot-remove:active .shot-remove-dot { transform: scale(0.95); }
 .shot-name { display: block; padding: 6px; font-size: 11px; word-break: break-all; color: var(--text-secondary); }
-.shot-add { display: flex; align-items: center; justify-content: center; color: var(--text-secondary); cursor: pointer; border-style: dashed; }
+.screenshot-field { margin-bottom: 0; }
 .parsing-tip { margin: 0 0 12px; color: var(--text-secondary); }
 .state-tag { margin: 0 6px 6px 0; }
 .stack { display: flex; flex-direction: column; align-items: flex-start; }

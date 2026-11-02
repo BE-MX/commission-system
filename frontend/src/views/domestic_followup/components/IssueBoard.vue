@@ -1,5 +1,5 @@
 <template>
-  <div class="issue-board table-card">
+  <div ref="panelRef" class="issue-board table-card">
     <div class="toolbar">
       <el-segmented v-model="query.status" :options="STATE_OPTIONS" @change="load(1)" />
       <el-select v-model="query.kind" clearable placeholder="类型" class="filter-w-sm" @change="load(1)">
@@ -10,18 +10,23 @@
       </el-select>
       <el-checkbox v-model="query.mine" @change="load(1)">只看我处理的</el-checkbox>
     </div>
-    <el-table v-loading="loading" :data="rows" row-key="id" border class="list-table" v-sticky-scrollbar>
-      <el-table-column label="客户" prop="shop_name" min-width="140" show-overflow-tooltip>
+    <div class="action-bar">
+      <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columns"
+                  :fullscreen="isFullscreen" :loading="loading" @refresh="load()" @fullscreen="toggleFullscreen" />
+    </div>
+    <ListPageStatus v-if="error" :error="error" :loading="loading" :has-data="loaded" :data-page="dataPage" @retry="load()" />
+    <el-table v-loading="loading" :data="rows" row-key="id" border class="list-table" :class="densityClass" v-sticky-scrollbar>
+      <el-table-column v-if="visibleKeys.includes('shop_name')" label="客户" prop="shop_name" min-width="140" show-overflow-tooltip>
         <template #default="{ row }"><GlassButton variant="link" @click="$emit('timeline', row.customer_id)">{{ row.shop_name }}</GlassButton></template>
       </el-table-column>
-      <el-table-column label="类型" min-width="80"><template #default="{ row }">{{ row.kind === 'issue' ? '异常' : '意见' }}</template></el-table-column>
-      <el-table-column label="分类" prop="category" min-width="100" />
-      <el-table-column label="内容" prop="text" min-width="240" show-overflow-tooltip />
-      <el-table-column label="紧急" min-width="80">
+      <el-table-column v-if="visibleKeys.includes('kind')" label="类型" min-width="80"><template #default="{ row }">{{ row.kind === 'issue' ? '异常' : '意见' }}</template></el-table-column>
+      <el-table-column v-if="visibleKeys.includes('category')" label="分类" prop="category" min-width="100" />
+      <el-table-column v-if="visibleKeys.includes('text')" label="内容" prop="text" min-width="240" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('severity')" label="紧急" min-width="80">
         <template #default="{ row }"><StatusBadge v-if="row.severity === '紧急'" :value="row.severity" :dictionary="SEVERITY_STATUS" size="small" /></template>
       </el-table-column>
-      <el-table-column label="处理人" prop="handler_name" min-width="100" />
-      <el-table-column label="记录日" min-width="110"><template #default="{ row }">{{ formatBeijingDate(row.created_at) }}</template></el-table-column>
+      <el-table-column v-if="visibleKeys.includes('handler_name')" label="处理人" prop="handler_name" min-width="100" />
+      <el-table-column v-if="visibleKeys.includes('created_at')" label="记录日" min-width="110"><template #default="{ row }">{{ formatBeijingDate(row.created_at) }}</template></el-table-column>
       <el-table-column v-if="query.status === 'open'" class-name="table-action-column" label="操作" min-width="160" fixed="right">
         <template #default="{ row }">
           <GlassButton v-permission="'domestic_followup:write'" variant="link" left-icon="Check" @click="resolve(row)">处理</GlassButton>
@@ -41,8 +46,10 @@
       </el-select>
       <el-input v-model="transfer.note" placeholder="交代一句（可选）" maxlength="200" class="transfer-field transfer-note" />
       <template #footer>
-        <GlassButton @click="transfer.visible = false">取消</GlassButton>
-        <GlassButton variant="primary" :disabled="!transfer.toUserId" :loading="transfer.saving" @click="submitTransfer">转交</GlassButton>
+        <div class="dialog-footer">
+          <GlassButton @click="transfer.visible = false">取消</GlassButton>
+          <GlassButton variant="primary" :disabled="!transfer.toUserId" :loading="transfer.saving" @click="submitTransfer">转交</GlassButton>
+        </div>
       </template>
     </el-dialog>
   </div>
@@ -51,6 +58,8 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { apiError, followupApi } from '@/api/domesticFollowup'
 import { formatBeijingDate } from '@/utils/datetime'
 import { isFeedbackCancelled, msgError, msgSuccessText, promptAction } from '@/utils/feedback'
@@ -60,22 +69,34 @@ defineProps({ categories: { type: Array, default: () => [] } })
 const emit = defineEmits(['timeline', 'changed'])
 const STATE_OPTIONS = [{ label: '未处理', value: 'open' }, { label: '已解决', value: 'resolved' }, { label: '不处理', value: 'closed_no_action' }]
 const query = reactive({ status: 'open', kind: '', category: '', mine: false })
+const columns = [
+  { key: 'shop_name', label: '客户' }, { key: 'kind', label: '类型' }, { key: 'category', label: '分类' },
+  { key: 'text', label: '内容' }, { key: 'severity', label: '紧急' },
+  { key: 'handler_name', label: '处理人' }, { key: 'created_at', label: '记录日' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('domestic-followup-issues', columns)
 const rows = ref([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
+const error = ref('')
+const loaded = ref(false)
+const dataPage = ref(1)
 const users = ref([])
 const transfer = reactive({ visible: false, item: null, toUserId: null, note: '', saving: false })
 
 async function load(p = page.value) {
   page.value = p
   loading.value = true
+  error.value = ''
   try {
     const res = await followupApi.items({ ...query, kind: query.kind || undefined, category: query.category || undefined, page: p, page_size: pageSize.value })
     rows.value = res.items
     total.value = res.total
-  } catch (e) { msgError(apiError(e, '加载失败'), e) } finally { loading.value = false }
+    loaded.value = true
+    dataPage.value = p
+  } catch (e) { error.value = apiError(e, '异常意见加载失败') } finally { loading.value = false }
 }
 
 async function resolve(row) {

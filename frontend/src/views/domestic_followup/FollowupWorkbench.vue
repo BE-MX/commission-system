@@ -1,18 +1,16 @@
 <template>
   <div class="followup-workbench">
-    <header class="wb-head">
-      <div class="wb-stats">
-        <button v-for="s in STATS" :key="s.key" type="button" class="wb-stat" :class="{ active: isStatActive(s.key) }"
-                @click="toggleFilter(s.key)">
-          <span class="wb-stat-num">{{ w.summary[s.key] }}</span>
-          <span class="wb-stat-label">{{ s.label }}<em v-if="s.key === 'issue' && w.summary.urgent">紧急 {{ w.summary.urgent }}</em></span>
-        </button>
-      </div>
-      <div class="wb-actions">
-        <GlassButton v-permission="'domestic_followup:admin'" variant="link" left-icon="Setting" @click="configRef.open()">跟进设置</GlassButton>
-        <GlassButton v-permission="'domestic_followup:write'" variant="primary" left-icon="EditPen" @click="composer.open()">记一条跟进</GlassButton>
-      </div>
-    </header>
+    <div class="wb-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+    <div class="wb-stats">
+      <OverviewMetricCard v-for="s in STATS" :key="s.key" :label="s.label"
+                          :value="w.loaded.value ? w.summary[s.key] : '—'" :icon="s.icon" :tone="s.tone"
+                          :hint="s.key === 'issue' && w.summary.urgent ? `紧急 ${w.summary.urgent}` : ''"
+                          interactive :selected="isStatActive(s.key)" @click="toggleFilter(s.key)" />
+    </div>
 
     <el-alert v-if="w.drafts.value.length" type="info" :closable="false" class="wb-drafts">
       你有 {{ w.drafts.value.length }} 份草稿未确认：
@@ -21,44 +19,63 @@
       </GlassButton>
     </el-alert>
 
-    <el-tabs v-model="tab">
-      <el-tab-pane label="待办" name="tasks">
-        <div v-loading="w.loading.value" class="wb-cards">
-          <FollowupTaskCard v-for="t in w.filtered.value.due" :key="t.id" :task="t" :on-receipt-ok="w.receiptOk"
-                            @record="recordFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" />
-          <el-empty v-if="!w.loading.value && !w.filtered.value.due.length" description="今天的跟进都完成了" />
+    <div class="wb-panel lg-card is-static">
+      <div class="action-bar">
+        <div class="wb-actions">
+          <GlassButton v-permission="'domestic_followup:write'" variant="primary" left-icon="EditPen" @click="composer.open()">记一条跟进</GlassButton>
+          <GlassButton v-permission="'domestic_followup:admin'" variant="outline" left-icon="Setting" @click="configRef.open()">跟进设置</GlassButton>
         </div>
-        <el-collapse v-if="w.filtered.value.upcoming.length" v-model="upcomingOpen" class="wb-upcoming">
-          <el-collapse-item name="upcoming" :title="`即将到期（${w.filtered.value.upcoming.length}）`">
-            <div class="wb-cards">
-              <FollowupTaskCard v-for="t in w.filtered.value.upcoming" :key="t.id" :task="t" :on-receipt-ok="w.receiptOk"
-                                @record="recordFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" />
+        <GlassButton v-if="tab === 'tasks'" variant="ghost" left-icon="Refresh" :loading="w.loading.value" @click="w.loadTasks">刷新</GlassButton>
+      </div>
+      <el-tabs v-model="tab" class="wb-tabs">
+        <el-tab-pane label="待办" name="tasks">
+          <ListPageStatus :error="w.error.value" :has-data="w.loaded.value" :loading="w.loading.value" :paged="false" @retry="w.loadTasks" />
+          <div v-loading="w.loading.value" class="wb-cards">
+            <FollowupTaskCard v-for="t in w.filtered.value.due" :key="t.id" :task="t" :on-receipt-ok="w.receiptOk"
+                              @record="recordFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" />
+            <el-empty v-if="!w.loading.value && !w.error.value && !w.filtered.value.due.length"
+                      class="wb-empty" :description="w.typeFilter.value ? '当前分类暂无待办' : '今天的跟进都完成了'">
+              <GlassButton v-if="w.typeFilter.value" variant="outline" @click="w.typeFilter.value = ''">查看全部待办</GlassButton>
+            </el-empty>
+          </div>
+          <el-collapse v-if="w.filtered.value.upcoming.length" v-model="upcomingOpen" class="wb-upcoming">
+            <el-collapse-item name="upcoming" :title="`即将到期（${w.filtered.value.upcoming.length}）`">
+              <div class="wb-cards">
+                <FollowupTaskCard v-for="t in w.filtered.value.upcoming" :key="t.id" :task="t" :on-receipt-ok="w.receiptOk"
+                                  @record="recordFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" />
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+        </el-tab-pane>
+        <el-tab-pane label="异常意见" name="items" lazy>
+          <IssueBoard :categories="composer.dicts.domestic_followup_category" @timeline="id => timelineRef.open(id)" @changed="w.loadTasks" />
+        </el-tab-pane>
+        <el-tab-pane label="我的记录" name="records" lazy>
+          <div ref="recordsPanel" class="table-card">
+            <div class="action-bar">
+              <TableTools v-model:visible-keys="visibleRecordKeys" v-model:density="recordDensity"
+                          :columns="recordColumns" :fullscreen="recordsFullscreen" :loading="w.records.loading"
+                          @refresh="w.loadRecords(w.records.page)" @fullscreen="toggleRecordsFullscreen" />
             </div>
-          </el-collapse-item>
-        </el-collapse>
-      </el-tab-pane>
-      <el-tab-pane label="异常意见" name="items" lazy>
-        <IssueBoard :categories="composer.dicts.domestic_followup_category" @timeline="id => timelineRef.open(id)" @changed="w.loadTasks" />
-      </el-tab-pane>
-      <el-tab-pane label="我的记录" name="records" lazy>
-        <div class="table-card">
-          <el-table v-loading="w.records.loading" :data="w.records.items" border class="list-table wb-records" v-sticky-scrollbar
-                    @row-click="r => timelineRef.open(r.customer_id)">
-            <el-table-column label="日期" prop="followup_date" min-width="110" />
-            <el-table-column label="客户" prop="shop_name" min-width="140" show-overflow-tooltip />
-            <el-table-column label="摘要" min-width="260" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.summary || row.raw_text }}</template>
-            </el-table-column>
-            <el-table-column label="下次" prop="next_date" min-width="110" />
-          </el-table>
-          <el-pagination
-            v-model:page-size="w.records.pageSize" :current-page="w.records.page" :total="w.records.total"
-            :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next"
-            class="pager" @current-change="w.loadRecords" @size-change="w.loadRecords(1)"
-          />
-        </div>
-      </el-tab-pane>
-    </el-tabs>
+            <ListPageStatus v-if="w.records.error" :error="w.records.error" :has-data="w.records.loaded" :loading="w.records.loading" :data-page="w.records.page" @retry="w.loadRecords(w.records.page)" />
+            <el-table v-loading="w.records.loading" :data="w.records.items" border class="list-table wb-records" :class="recordDensityClass" v-sticky-scrollbar
+                      @row-click="r => timelineRef.open(r.customer_id)">
+              <el-table-column v-if="visibleRecordKeys.includes('followup_date')" label="日期" prop="followup_date" min-width="110" />
+              <el-table-column v-if="visibleRecordKeys.includes('shop_name')" label="客户" prop="shop_name" min-width="140" show-overflow-tooltip />
+              <el-table-column v-if="visibleRecordKeys.includes('summary')" label="摘要" min-width="260" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.summary || row.raw_text }}</template>
+              </el-table-column>
+              <el-table-column v-if="visibleRecordKeys.includes('next_date')" label="下次" prop="next_date" min-width="110" />
+            </el-table>
+            <el-pagination
+              v-model:page-size="w.records.pageSize" :current-page="w.records.page" :total="w.records.total"
+              :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next"
+              class="pager" @current-change="w.loadRecords" @size-change="w.loadRecords(1)"
+            />
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </div>
 
     <FollowupComposer :composer="composer" />
     <CustomerTimelineDrawer ref="timelineRef" @record="customer => composer.open({ customer })" />
@@ -68,8 +85,12 @@
 
 <script setup>
 import { onMounted, ref, watch } from 'vue'
+import { Box, Calendar, ChatDotRound, Warning } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import GlassButton from '@/components/GlassButton.vue'
+import OverviewMetricCard from '@/components/OverviewMetricCard.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { apiError } from '@/api/domesticFollowup'
 import { msgError } from '@/utils/feedback'
 import CustomerTimelineDrawer from './components/CustomerTimelineDrawer.vue'
@@ -81,10 +102,18 @@ import { useFollowupComposer } from './composables/useFollowupComposer'
 import { useFollowupWorkbench } from './composables/useFollowupWorkbench'
 
 const STATS = [
-  { key: 'receipt', label: '收货回访' }, { key: 'plan', label: '约定跟进' },
-  { key: 'issue', label: '异常意见' }, { key: 'upcoming', label: '即将到期' },
+  { key: 'receipt', label: '收货回访', icon: Box, tone: 'gold' },
+  { key: 'plan', label: '约定跟进', icon: ChatDotRound, tone: 'info' },
+  { key: 'issue', label: '异常意见', icon: Warning, tone: 'warning' },
+  { key: 'upcoming', label: '即将到期', icon: Calendar, tone: 'violet' },
 ]
 const route = useRoute()
+const recordColumns = [
+  { key: 'followup_date', label: '日期' }, { key: 'shop_name', label: '客户' },
+  { key: 'summary', label: '摘要' }, { key: 'next_date', label: '下次' },
+]
+const { density: recordDensity, densityClass: recordDensityClass, visibleKeys: visibleRecordKeys,
+  panelRef: recordsPanel, isFullscreen: recordsFullscreen, toggleFullscreen: toggleRecordsFullscreen } = useTableView('domestic-followup-records', recordColumns)
 const tab = ref('tasks')
 const timelineRef = ref(null)
 const configRef = ref(null)
@@ -96,6 +125,7 @@ const composer = useFollowupComposer({
 })
 
 function toggleFilter(key) {
+  tab.value = 'tasks'
   if (key === 'upcoming') {
     upcomingOpen.value = upcomingOpen.value.includes('upcoming') ? [] : ['upcoming']
     return
@@ -129,21 +159,23 @@ onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // �
 </script>
 
 <style scoped>
-.followup-workbench { display: flex; flex-direction: column; gap: 12px; }
-.wb-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.wb-stats { display: flex; gap: 10px; flex-wrap: wrap; }
-.wb-actions { display: flex; align-items: center; gap: 8px; }
+.followup-workbench { position: relative; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.wb-aurora { inset: -24px -28px; }
+.wb-stats, .wb-panel, .wb-drafts { position: relative; z-index: 1; }
+.wb-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.wb-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wb-panel { min-width: 0; --el-table-bg-color: transparent; --el-table-tr-bg-color: transparent; }
+.wb-panel > .action-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border-color); }
+.wb-tabs { padding: 0 20px 20px; }
+.wb-panel :deep(.table-card:not(.table-card--fullscreen)) { border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.wb-empty { grid-column: 1 / -1; }
 .wb-records { cursor: pointer; }
-.wb-stat { display: flex; flex-direction: column; align-items: flex-start; min-width: 96px; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--card-bg); cursor: pointer; transition: transform 160ms var(--ease-out-strong), border-color 160ms ease; }
-.wb-stat:active { transform: scale(0.97); }
-.wb-stat.active { border-color: var(--color-primary); }
-.wb-stat-num { font-size: 22px; font-weight: 700; }
-.wb-stat-label { font-size: 12px; color: var(--text-secondary); }
-.wb-stat-label em { margin-left: 4px; font-style: normal; color: var(--color-danger); }
-.wb-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.wb-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 16px; }
 .wb-upcoming { margin-top: 12px; }
 @media (max-width: 768px) {
   .wb-cards { grid-template-columns: 1fr; }
-  .wb-stat { flex: 1 1 calc(50% - 10px); }
+  .wb-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .wb-panel > .action-bar { padding: 12px; }
+  .wb-tabs { padding: 0 12px 12px; }
 }
 </style>
