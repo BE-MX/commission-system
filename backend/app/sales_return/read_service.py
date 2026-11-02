@@ -117,9 +117,9 @@ def list_rows(db, user, *, page=1, page_size=20, keyword="", status="", return_t
     return {"items": [describe(db, row, detail=False) for row in rows], "total": total}
 
 
-def order_lines(db, order_id, user):
+def order_lines(db, order_id, user, *, receipt_evidence=None):
     from app.sales_return import sources
-    snapshot = sources.snapshot(db, order_id, user)
+    snapshot = sources.snapshot(db, order_id, user, receipt_evidence=receipt_evidence)
     current = history(db, order_id)
     for item in snapshot["lines"]:
         key = item["source_key"]

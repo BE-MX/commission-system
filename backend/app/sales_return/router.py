@@ -10,16 +10,19 @@ from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok
 from app.portal.errors import PortalError
-from app.sales_return import access, read_service, receiving_service, schemas, service, sources
+from app.sales_return import access, read_service, receiving_service, receipt_sources, schemas, service, sources
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def execute(db, user, permission, function, *, write=False):
+def execute(db, user, permission, function, *, write=False, receipt_target=None):
     try:
+        if receipt_target is not None:
+            current = access.authorize(db, user, permission)
+            evidence = receipt_sources.prepare(db, current, **receipt_target)
         current = access.authorize(db, user, permission, write=write)
-        result = function(current)
+        result = function(current, evidence) if receipt_target is not None else function(current)
         if write:
             db.flush()
             db.commit()
@@ -61,12 +64,14 @@ def orders(customer_id: str = "", keyword: str = Query("", max_length=100), page
 
 @router.get("/orders/{order_id}/lines", summary="Verified original lines and remaining return quotas")
 def lines(order_id: str, db: Session = Depends(get_db), user=Depends(require_permission("sales_return:read"))):
-    return execute(db, user, "sales_return:read", lambda current: read_service.order_lines(db, order_id, current))
+    return execute(db, user, "sales_return:read", lambda current, evidence: read_service.order_lines(
+        db, order_id, current, receipt_evidence=evidence), receipt_target={"order_id": order_id})
 
 
 @router.post("/preview", summary="Price goods credit, cash refund and outstanding waiver")
 def preview(body: schemas.Draft, db: Session = Depends(get_db), user=Depends(require_permission("sales_return:write"))):
-    return execute(db, user, "sales_return:write", lambda current: service.preview(db, body, current))
+    return execute(db, user, "sales_return:write", lambda current, evidence: service.preview(
+        db, body, current, receipt_evidence=evidence), receipt_target={"order_id": body.order_id})
 
 
 @router.get("", summary="List sales returns within original order ownership")
@@ -81,7 +86,9 @@ def list_rows(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=10
 
 @router.post("", summary="Save a return draft with a stable submission identity")
 def create(body: schemas.Create, db: Session = Depends(get_db), user=Depends(require_permission("sales_return:write"))):
-    return execute(db, user, "sales_return:write", lambda current: read_service.describe(db, service.create(db, body, current)), write=True)
+    return execute(db, user, "sales_return:write", lambda current, evidence: read_service.describe(db,
+        service.create(db, body, current, receipt_evidence=evidence)), write=True,
+        receipt_target={"order_id": body.order_id, "request_key": body.request_key})
 
 
 @router.get("/{identity}", summary="Read a return and its local financial documents")
@@ -91,7 +98,9 @@ def detail(identity: int, db: Session = Depends(get_db), user=Depends(require_pe
 
 @router.put("/{identity}", summary="Edit the current draft version")
 def update(identity: int, body: schemas.Update, db: Session = Depends(get_db), user=Depends(require_permission("sales_return:write"))):
-    return execute(db, user, "sales_return:write", lambda current: read_service.describe(db, service.update(db, identity, body, current)), write=True)
+    return execute(db, user, "sales_return:write", lambda current, evidence: read_service.describe(db,
+        service.update(db, identity, body, current, receipt_evidence=evidence)), write=True,
+        receipt_target={"return_id": identity})
 
 
 @router.delete("/{identity}", summary="Delete a draft while retaining its request and audit")
@@ -102,7 +111,9 @@ def delete(identity: int, version: int = Query(..., ge=1), db: Session = Depends
 
 @router.post("/{identity}/activate", summary="Atomically activate goods credit and local negative receipt")
 def activate(identity: int, body: schemas.Activate, db: Session = Depends(get_db), user=Depends(require_permission("sales_return:write"))):
-    return execute(db, user, "sales_return:write", lambda current: read_service.describe(db, service.activate(db, identity, body, current)), write=True)
+    return execute(db, user, "sales_return:write", lambda current, evidence: read_service.describe(db,
+        service.activate(db, identity, body, current, receipt_evidence=evidence)), write=True,
+        receipt_target={"return_id": identity})
 
 
 @router.post("/{identity}/reverse", summary="Reverse an effective return with money and inventory safeguards")

@@ -6,10 +6,14 @@
 
 前缀 `/api/sales-returns`，统一 `ok()` 信封。服务端重新读取实时角色权限；数据范围按原订单业务员的有效 OKKI 绑定，`sales_return:read_all` 显式放开。生效、冲销和收货均有版本/幂等保护。仅方舟记账，不调用小满退款接口或银行付款接口。
 
+原款取数按精确远端 ID 和订单/客户/币种排除方舟已核实删除的镜像残留。镜像交易服务费缺失时，从小满回款详情的 `order_info.service_fee_amount_usd` 取证，不把空值或银行手续费当成交易服务费；取证在业务写锁外，最终事务重新授权并检查来源指纹，远端暂不可用返回 503。`/orders/{order_id}/lines`、预览、保存和生效使用同一规则，成功请求的幂等重试不重复依赖远端。
+
+可退 `payments[].principal/principal_usd` 是商品本金。含运费/附加费的 USD 现货单，只有单笔全额回款、发票分项总额及本地/远端金额均精确核验后才分离费用；额外冻结 `cash_principal/cash_principal_usd` 和 `non_goods_amount/non_goods_amount_usd`，原 `commission_basis_usd` 不变。分笔、部分付款、非 USD 或金额无法对齐的含费场景仍要求核对，不能直接把超收截断到商品额。
+
 | 方法与路径 | 权限 | 用途 |
 | --- | --- | --- |
-| `GET /customers`、`GET /orders` | `sales_return:read` | 范围内客户和已实际出库订单候选 |
-| `GET /orders/{order_id}/lines` | `sales_return:read` | 精确出库行、原币、剩余数量和货款额度 |
+| `GET /customers`、`GET /orders` | `sales_return:read` | 范围内客户和已实际出库订单候选；订单返回 `order_name`（名称）与 `order_no`（编号），`keyword` 同时匹配名称和编号 |
+| `GET /orders/{order_id}/lines` | `sales_return:read` | 精确出库行、原币、剩余数量和货款额度；包含用于选中项回显的 `order_name`，名称不参与财务绑定哈希 |
 | `POST /preview` | `sales_return:write` | 计算货款冲减、实际退款、未收减免及原款分摊，返回 `quote_version` |
 | `GET /`、`GET /{id}` | `sales_return:read` | 列表及含关联财务事实的详情 |
 | `POST /`、`PUT /{id}` | `sales_return:write` | 幂等建草稿及版本化编辑 |

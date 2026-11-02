@@ -26,10 +26,10 @@ def get(db, identity, user, *, lock=False):
     return row
 
 
-def preview(db, body, user, *, exclude=None):
+def preview(db, body, user, *, exclude=None, receipt_evidence=None):
     from app.sales_return import funding, source_consistency, sources
     guards.require_legacy_order(db, body.order_id)
-    snapshot = sources.snapshot(db, body.order_id, user)
+    snapshot = sources.snapshot(db, body.order_id, user, receipt_evidence=receipt_evidence)
     source_consistency.verify(db, snapshot)
     previous = read_service.history(db, body.order_id, exclude=exclude)
     snapshot = funding.constrain(db, snapshot, body, previous)
@@ -61,14 +61,14 @@ def _set_draft(db, row, body, quote):
     db.flush()
 
 
-def create(db, body, user):
+def create(db, body, user, *, receipt_evidence=None):
     existing = db.scalar(select(SalesReturn).where(SalesReturn.request_key == body.request_key))
     if existing:
         access.ensure(db, existing, user)
         if existing.created_by != access.actor(user) or existing.request_hash != _body_hash(body):
             raise HTTPException(409, "提交标识已用于不同的退货单内容")
         return existing
-    quote = preview(db, body, user)
+    quote = preview(db, body, user, receipt_evidence=receipt_evidence)
     row = SalesReturn(return_no=f"TH{beijing_now():%Y%m%d}{uuid4().hex[:12].upper()}",
                       request_key=body.request_key, created_by=access.actor(user), status="draft", version=1)
     db.add(row)
@@ -79,7 +79,7 @@ def create(db, body, user):
     return row
 
 
-def update(db, identity, body, user):
+def update(db, identity, body, user, *, receipt_evidence=None):
     row = get(db, identity, user, lock=True)
     if row.status != "draft":
         raise HTTPException(409, "已生效退货单不能编辑，请通过反向更正处理")
@@ -89,14 +89,14 @@ def update(db, identity, body, user):
         raise HTTPException(409, "草稿已被修改，请刷新后重试")
     if row.order_id != body.order_id:
         raise HTTPException(409, "已保存草稿不能更换原订单，请重新建单")
-    quote = preview(db, body, user, exclude=row.id)
+    quote = preview(db, body, user, exclude=row.id, receipt_evidence=receipt_evidence)
     _set_draft(db, row, body, quote)
     row.version += 1
     log(db, row, "updated", user)
     return row
 
 
-def activate(db, identity, body, user):
+def activate(db, identity, body, user, *, receipt_evidence=None):
     from app.sales_return import commission
     row = get(db, identity, user, lock=True)
     fingerprint = policy.digest(body.model_dump(exclude={"version"}))
@@ -106,7 +106,7 @@ def activate(db, identity, body, user):
         raise HTTPException(409, "该退货单已经提交，请核对原生效结果")
     if row.status != "draft" or row.version != body.version:
         raise HTTPException(409, "退货单状态或版本已变化，请刷新后重试")
-    quote = preview(db, read_service.draft_body(db, row), user, exclude=row.id)
+    quote = preview(db, read_service.draft_body(db, row), user, exclude=row.id, receipt_evidence=receipt_evidence)
     from app.sales_return.activation_checks import ensure_idle
     ensure_idle(db, quote["order"])
     if quote["quote_version"] != body.quote_version:

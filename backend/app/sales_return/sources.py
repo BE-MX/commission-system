@@ -197,10 +197,11 @@ def _original_lines(db, order, invoice, currency, documents):
     return result
 
 
-def _payments(db, order, currency):
-    _require(db, 'okki_receipts', {'cash_collection_id', 'order_id', 'company_id', 'amount', 'real_amount',
-        'amount_usd', 'real_amount_usd', 'bank_charge', 'bank_charge_usd', 'service_fee_amount_usd', 'collection_date'})
-    rows = _rows(db, 'okki_receipts', 'order_id=:oid', {'oid': order['order_id']})
+def _payments(db, order, currency, receipt_evidence=None, *, invoice=None, goods=None):
+    from app.sales_return import receipt_sources
+    rows, binding = receipt_sources.read(db, order)
+    if receipt_evidence is not None and receipt_evidence.binding != binding:
+        _conflict('原回款或删除状态在取证期间发生变化，请重新读取')
     result, seen = [], set()
     for row in rows:
         identity = _identity(row.get('cash_collection_id'), '原回款 ID')
@@ -214,7 +215,7 @@ def _payments(db, order, currency):
         if row.get('currency') != currency:
             _conflict('原回款币种缺失或与订单不一致，请核对原单')
         amount_usd = _decimal(row.get('amount_usd'), '原回款美元金额')
-        fee_usd = _decimal(row.get('service_fee_amount_usd'), '原回款美元手续费')
+        fee_usd = receipt_sources.fee(row, receipt_evidence)
         amount = _decimal(row.get('amount'), '原币回款金额', positive=True)
         actual = _decimal(row.get('real_amount'), '原币实际到账金额')
         actual_usd = _decimal(row.get('real_amount_usd'), '美元实际到账金额')
@@ -251,17 +252,23 @@ def _payments(db, order, currency):
             'commission_basis_usd': _money(amount_usd - fee_usd),
             'bank_charge': _money(bank_charge), 'bank_charge_usd': _money(bank_charge_usd),
             'service_fee_usd': _money(fee_usd)})
+    result = receipt_sources.goods_payments(db, invoice, goods, rows, result)
     return sorted(result, key=lambda row: (row['collection_date'], row['payment_id']))
 
 
 @_guard
-def snapshot(db, order_id, user):
+def order_row(db, order_id, user):
     scope = _scope(db, user)
     _require(db, 'okki_orders', {'order_id', 'company_id', 'user_id', 'order_no', 'name', 'account_date', 'status', 'status_name', 'trail', 'custom_fields', 'departments'})
     matches = _rows(db, 'okki_orders', 'order_id=:oid', {'oid': str(order_id)})
     if not matches or (scope is not None and str(matches[0].get('user_id')) != scope):
         raise HTTPException(404, '原订单不存在或无权查看')
-    order = matches[0]
+    return matches[0]
+
+
+@_guard
+def snapshot(db, order_id, user, *, receipt_evidence=None):
+    order = order_row(db, order_id, user)
     owner = _identity(order.get('user_id'), '原业务员 ID')
     if '个人' in str(order.get('trail') or ''):
         _conflict('个人订单不属于外贸退货范围')
@@ -364,9 +371,12 @@ def snapshot(db, order_id, user):
         'goods_amount': _money(goods), 'goods_amount_usd': _money(goods_usd),
         'gmv_eligible': is_valid_business_order(order['status'], order['status_name'], order['trail']),
         'account_date': original_day.isoformat(), 'raw_new_deal': raw_new_deal,
-        'departments': departments, 'lines': lines, 'payments': _payments(db, order, currency)}
+        'departments': departments, 'lines': lines,
+        'payments': _payments(db, order, currency, receipt_evidence, invoice=invoice, goods=goods)}
     result['order_role'] = source_role(result, {})[0]
     result['binding_hash'] = hashlib.sha256(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    # Display metadata must not invalidate an existing financial source binding.
+    result['order_name'] = order.get('name')
     return result
 
 
@@ -396,12 +406,11 @@ def _options(db, user, customer_id='', keyword=''):
         clauses.append('o.company_id=:cid')
         params['cid'] = str(customer_id)
     if keyword:
-        clauses.append('o.order_no LIKE :keyword')
+        clauses.append("(o.order_no LIKE :keyword ESCAPE '!' OR o.name LIKE :keyword ESCAPE '!')")
         params['keyword'] = '%' + keyword.replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%'
-        clauses[-1] += " ESCAPE '!'"
     # Group once in SQL: pickers must not issue one shipment/customer query per
     # historical order or re-read every order for each page of customers.
-    rows = db.execute(text(f'''SELECT DISTINCT o.order_id, o.order_no,
+    rows = db.execute(text(f'''SELECT DISTINCT o.order_id, o.order_no, o.name AS order_name,
         o.company_id AS customer_id, c.company_name AS customer_name,
         o.user_id AS owner_okki_user_id
         FROM `{_schema()}`.okki_orders o

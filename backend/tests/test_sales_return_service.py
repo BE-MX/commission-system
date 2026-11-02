@@ -262,7 +262,9 @@ def test_receipt_union_uses_single_pagination_and_original_owner_scope(env):
 
 
 def test_http_create_preview_activate_and_live_permission_revocation(env):
-    db,snapshot,_=env
+    db,snapshot,monkeypatch=env
+    from app.sales_return import receipt_sources
+    monkeypatch.setattr(receipt_sources, 'prepare', lambda *_args, **_kwargs: None)
     app=FastAPI()
     app.include_router(router,prefix='/api/sales-returns')
     app.dependency_overrides[get_db]=lambda:db

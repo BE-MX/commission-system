@@ -125,6 +125,33 @@ def test_picker_scope_and_literal_keyword(source_db):
     assert sources.orders(source_db, USER, keyword='%')['total'] == 0
 
 
+def test_picker_searches_order_name_and_number_with_original_scope(source_db):
+    source_db.execute(text("UPDATE lsordertest.okki_orders SET name=:name, order_no='26008'"),
+                      {'name': '翟 #260960'})
+    for keyword in ('翟 #260960', '260960', '26008'):
+        result = sources.orders(source_db, USER, customer_id='C1', keyword=keyword)
+        assert result['total'] == 1
+        assert result['items'][0]['order_name'] == '翟 #260960'
+        assert result['items'][0]['order_no'] == '26008'
+    assert sources.orders(source_db, USER, customer_id='OTHER', keyword='260960')['total'] == 0
+    source_db.execute(text("UPDATE lsordertest.okki_orders SET user_id='OTHER'"))
+    assert sources.orders(source_db, USER, keyword='260960')['total'] == 0
+
+
+def test_order_name_is_display_metadata_not_financial_binding(source_db):
+    before = sources.snapshot(source_db, '101', USER)['binding_hash']
+    source_db.execute(text("UPDATE lsordertest.okki_orders SET name=:name"), {'name': '翟 #260960'})
+    result = sources.snapshot(source_db, '101', USER)
+    assert result['order_name'] == '翟 #260960'
+    assert result['binding_hash'] == before
+
+
+@pytest.mark.parametrize('keyword,expected', [('%', 1), ('_', 1), ('!', 1), ('%_', 0)])
+def test_order_name_search_treats_wildcards_literally(source_db, keyword, expected):
+    source_db.execute(text("UPDATE lsordertest.okki_orders SET name='Sale 10% off_A!'"))
+    assert sources.orders(source_db, USER, keyword=keyword)['total'] == expected
+
+
 def test_non_usd_freezes_verified_original_conversion_and_both_fees(source_db):
     source_db.execute(text("UPDATE lsordertest.okki_outbound_records SET currency='EUR',product_total_amount=100,product_total_amount_usd=120"))
     source_db.execute(text("UPDATE lsordertest.okki_outbound_record_items SET outbound_count=4,product_amount=100"))

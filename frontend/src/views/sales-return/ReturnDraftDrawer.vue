@@ -5,7 +5,7 @@
     <el-form label-position="top" class="return-form" :disabled="busy || !!pending || loading">
       <div class="return-form-grid">
         <el-form-item label="客户"><el-select v-model="customerId" :disabled="!!record" filterable remote :remote-method="searchCustomers" :loading="customersLoading" placeholder="搜索权限内客户" clearable @change="changeCustomer"><el-option v-for="c in customers" :key="c.id || c.customer_id" :label="c.customer_name || c.name" :value="c.id || c.customer_id" /></el-select></el-form-item>
-        <el-form-item label="原订单" required><el-select v-model="form.order_id" :disabled="!!record" filterable remote :remote-method="searchOrders" :loading="ordersLoading" placeholder="搜索已实际出库订单" @change="loadLines"><el-option v-for="o in orders" :key="o.id" :label="`${o.order_no} · ${o.customer_name || ''}`" :value="o.id" /></el-select></el-form-item>
+        <el-form-item label="原订单" required><el-select v-model="form.order_id" :disabled="!!record" filterable remote :remote-method="searchOrders" :loading="ordersLoading" placeholder="搜索订单名称或编号" @change="loadLines"><el-option v-for="o in orders" :key="o.id" :label="`${o.order_name?.trim() || o.order_no} · ${o.customer_name || ''}`" :value="o.id" /></el-select></el-form-item>
         <el-form-item label="处理方式"><el-radio-group v-model="form.return_type"><el-radio-button value="return_refund">退货退款</el-radio-button><el-radio-button value="refund_only">仅退款</el-radio-button></el-radio-group></el-form-item>
         <el-form-item label="原因" required><el-select v-model="form.reason_code" placeholder="选择原因"><el-option v-for="(name, code) in REASONS" :key="code" :label="name" :value="code" /></el-select></el-form-item>
       </div>
