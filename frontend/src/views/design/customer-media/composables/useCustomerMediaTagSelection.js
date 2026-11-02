@@ -1,6 +1,6 @@
 import { computed, ref, watch } from 'vue'
 
-// Locks are local to the open upload dialog. Asset queue entries keep their own snapshots.
+// Selections and locks are local to the open dialog. Queue entries keep their own snapshots.
 export function useCustomerMediaTagSelection({ customerTags, tagDimensions, isBlocked, onConflict }) {
   const selectedTagIds = ref([])
   const lockedTagIds = ref([])
@@ -53,7 +53,10 @@ export function useCustomerMediaTagSelection({ customerTags, tagDimensions, isBl
     return tags
   }
 
-  function clearTagLocks() { lockedTagIds.value = [] }
+  function resetTagSelection() {
+    selectedTagIds.value = []
+    lockedTagIds.value = []
+  }
 
-  return { selectedTagIds, selectedTags, lockedTagIds, toggleTag, toggleTagLock, selectFolderTag, clearTagLocks }
+  return { selectedTagIds, selectedTags, lockedTagIds, toggleTag, toggleTagLock, selectFolderTag, resetTagSelection }
 }

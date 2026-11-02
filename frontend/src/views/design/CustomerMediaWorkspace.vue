@@ -28,7 +28,7 @@
       class="review-alert"
     />
 
-    <el-dialog v-model="uploadDialog" title="上传客户拍摄素材" width="760px" :before-close="beforeUploadClose" @close="clearTagLocks">
+    <el-dialog v-model="uploadDialog" title="上传客户拍摄素材" width="760px" :before-close="beforeUploadClose" @open="resetTagSelection" @close="resetTagSelection">
       <CustomerTagBoard
         :dimensions="tagDimensions"
         :tags="customerTags"
@@ -43,7 +43,7 @@
         @toggle-lock="toggleTagLock"
         @delete="removeCustomerTag"
       />
-      <p class="upload-selection-hint">已选 {{ selectedTagIds.length }} 个标签，已锁定 {{ lockedTagIds.length }} 个。点击标签旁的锁图标可锁定选择；文件夹识别时保留锁定标签，仅替换未锁定项。关闭此窗口后锁定失效。</p>
+      <p class="upload-selection-hint">已选 {{ selectedTagIds.length }} 个标签，已锁定 {{ lockedTagIds.length }} 个。点击标签旁的锁图标可锁定选择；文件夹识别时保留锁定标签，仅替换未锁定项。每次打开窗口都会重置选择和锁定，已加入清单的文件标签不变。</p>
       <p v-if="preparingFolders" role="status" class="upload-selection-hint">正在读取文件夹并匹配客户标签，请稍候…</p>
     <section class="upload-panel lg-card">
       <div class="upload-entries">
@@ -254,7 +254,7 @@ const customerPreviewFrame = ref(null)
 const assets = computed(() => batch.value?.assets || [])
 const directories = computed(() => batch.value?.directories || [])
 const editable = computed(() => ['draft', 'changes_requested'].includes(batch.value?.status))
-const { selectedTagIds, selectedTags, lockedTagIds, toggleTag, toggleTagLock, selectFolderTag, clearTagLocks } = useCustomerMediaTagSelection({
+const { selectedTagIds, selectedTags, lockedTagIds, toggleTag, toggleTagLock, selectFolderTag, resetTagSelection } = useCustomerMediaTagSelection({
   customerTags, tagDimensions,
   isBlocked: () => uploading.value || preparingFolders.value,
   onConflict: msgWarning,
