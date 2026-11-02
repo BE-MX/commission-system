@@ -52,16 +52,35 @@ test('unlocking keeps current selection but the next folder can replace it', () 
   assert.deepEqual(state.selectedTagIds.value, [12])
 })
 
-test('closing the upload dialog clears locks without rewriting queued label snapshots', () => {
+test('resetting the upload dialog clears selections and locks without rewriting queued labels', () => {
   const state = setup()
   state.toggleTag(baseTag)
   state.toggleTagLock(baseTag)
   const queuedTags = state.selectFolderTag(folderTag)
-  state.clearTagLocks()
+  state.resetTagSelection()
+  assert.deepEqual(state.selectedTagIds.value, [])
+  assert.deepEqual(state.selectedTags.value, [])
+  assert.deepEqual(state.lockedTagIds.value, [])
   state.selectFolderTag(otherTag)
   assert.deepEqual(state.lockedTagIds.value, [])
   assert.deepEqual(state.selectedTagIds.value, [13])
   assert.deepEqual(queuedTags.map(tag => tag.tag_value_id), [11, 12])
+})
+
+test('reopening starts empty even after a tag refresh, and only newly locked tags survive folders', () => {
+  const state = setup()
+  state.toggleTag(singleA)
+  state.toggleTagLock(singleA)
+  state.toggleTag(baseTag)
+  state.resetTagSelection()
+  state.customerTags.value = state.customerTags.value.map(tag => ({ ...tag }))
+  state.resetTagSelection() // Opening also resets the retained dialog instance.
+  assert.deepEqual(state.selectedTagIds.value, [])
+  assert.deepEqual(state.lockedTagIds.value, [])
+  assert.deepEqual(state.selectFolderTag(folderTag).map(tag => tag.tag_value_id), [12])
+  state.toggleTag(singleA)
+  state.toggleTagLock(singleA)
+  assert.deepEqual(state.selectFolderTag(otherTag).map(tag => tag.tag_value_id), [21, 13])
 })
 
 test('customer tag refresh retains locks by ID and prunes removed labels', () => {
