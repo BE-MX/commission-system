@@ -1442,18 +1442,20 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 | 方法 | 路径 | 权限 | 契约 |
 |---|---|---|---|
-| POST | `/periods/{id}/attendance/sync` | write | 从钉钉智能报表拉当月列值并落库。**取数在路由层做**（async HTTP），落库在 service 层（同步、不发网络请求）。名单 = 在职 + `payroll_included` + 已绑 `dingtalk_userid`；一个都没有直接 400 |
+| POST | `/periods/{id}/attendance/sync` | write | 从钉钉智能报表拉当月列值并落库。**取数在路由层做**（async HTTP），落库在 service 层（同步、不发网络请求）。名单 = 在职 + `payroll_included` + 已绑 `dingtalk_userid`；一个都没有直接 400。当前操作账号必须有效且已绑定钉钉，缺失时取数前返回 400；假期类型上游错误返回 502，不写入半批数据 |
 | GET | `/periods/{id}/attendance` | read | 明细列表，`keyword`（姓名）/ `only_pending`（只看请假小时未录）/ `limit`(≤2000) |
-| PUT | `/periods/{id}/attendance/{employee_id}` | write | 人工录入/修正。**事假与病假小时的唯一入口**——钉钉给不了这两列 |
+| PUT | `/periods/{id}/attendance/{employee_id}` | write | 人工录入/修正；自动请假取数失败或无法分类时，在此补齐。仅更新显式提供的字段，人工请假值不被同步覆盖 |
 
 **钉钉侧四条经验约束**（在真实租户上探出来的，不是文档里写的；细节见 `attendance_source.py` 模块 docstring）：
 
 1. `getcolumnval` 单次最多 **20 个 column id**，第 21 个起返回 `errcode=41`。本租户 38 列 → 必须分片，一个人 2 次调用。官方文档未记载。
 2. **五个请假列（年假/事假/病假/产假/产检）全部只有 `alias: "leave_"`、没有 `id` 键**，`getcolumnval` 从原理上就取不到。→ 请假改走 `getleavestatus` 明细路（见下）。
-3. **2026-08-07 权限已开通**：`attendance/list`（打卡明细）与 `getleavestatus`（请假明细）实测可用。请假四列同步自动填充：跨月记录按时间重叠比例折算、`percent_day` 按 `day_hours=7.83` 折小时、类型名只精确匹配事假/病假/年假（HR 自建类型进 `leave_unknown_types` 不扣款）。假期类型/年假额度还需 `qyapi_holiday_readonly`，未开则请假管线整体降级为人工录入（`leave_degraded` 写明原因）。
+3. **请假明细**：跨月记录按时间重叠比例折算，按每条明细的 `duration_unit` 取单位，`percent_day` 按批次 `day_hours` 折小时，类型名只精确匹配事假/病假/年假。未知类型或无效时长、单位进入 `leave_unknown_types`；相关员工的自动请假值保持/退回 NULL 待核对，`leave_pending_names` 列出姓名，不能当作零请假判全勤；人工归属值不动。假期类型/年假额度需要 `qyapi_holiday_readonly`，未开时请假管线降级为人工录入（`leave_degraded`）。
 4. 钉钉的「应出勤天数」是工作日语义（3 月 = 22），**绝不可赋给 `due_days`**——满月员工按决策 B1 用 `full_month_days=31`。
 
 **请假四列的归属（098 `leave_source`）**：`NULL`=从没写过（同步可填）/ `dingtalk`=同步在管（重同步刷新）/ `manual`=人工改过（同步永远让路——红线 1 从「整列禁写」精确化为「按归属让路」）。「本月无请假记录」会显式填 0 并判全勤，与「还没录」的 NULL 严格区分。
+
+**2026-11-02 调用契约修复**：假期类型查询传当前账号 `ArkUser.dingtalk_id` 作为 `op_userid`，并传 `vacation_source=all`，不借用其他员工身份。`getleavestatus` 每页 20 条（实测 50 返回 200003），翻页失败整个人员批次的部分结果丢弃，失败人员列入 `leave_failed_userids`。年假额度查询使用 `op_userid/userids/leave_code/offset/size`，解析 `result.leave_quotas`；只自动接受当前年度批次、本年度当前有效且唯一的一条本人天数额度，按 `(quota_num_per_day-used_num_per_day)/100` 得余额。历史年度、分页未完整、多额度、小时制及坏值均不猜测换算，保留原值或待人工补录。接口依据：[假期类型](https://developer.alibaba.com/docs/api.htm?apiId=43093)、[假期额度](https://developer.alibaba.com/docs/api.htm?apiId=43050)。
 
 列映射一律按 `alias`，**不按 column id**：id 是租户级的（本租户从 340771676 起），换租户全错。
 

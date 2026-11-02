@@ -235,6 +235,19 @@ def assert_syncable(period: SalaryPeriod) -> None:
     assert_attendance_writable(period, "重新同步考勤")
 
 
+def resolve_sync_operator(db: Session, operator_id: Optional[int]) -> str:
+    """假期接口操作人取当前账号绑定，不能借用发薪名单中的其他员工身份。"""
+    from app.auth.models import ArkUser
+
+    userid = db.query(ArkUser.dingtalk_id).filter(
+        ArkUser.id == operator_id, ArkUser.is_active.is_(True),
+        ArkUser.deleted_at.is_(None),
+    ).scalar()
+    if not userid or not userid.strip():
+        raise AttendanceError("当前账号未绑定钉钉用户，请先在用户管理中完成钉钉绑定后再同步考勤")
+    return userid.strip()
+
+
 def _apply_dingtalk(row: SalaryAttendance, values: dict[str, Decimal]) -> None:
     """把钉钉值写进行对象。**只动钉钉能给的字段**，人工字段一律不碰（红线 1）。
 
@@ -319,6 +332,7 @@ def sync_from_dingtalk(
     counts = {SYNC_OK: 0, SYNC_FAILED: 0}
     leave_filled = 0
     leave_kept_manual = 0
+    leave_pending_names: list[str] = []
     failures: list[dict[str, str]] = []
     dirty_people: list[dict[str, Any]] = []
     now = beijing_now()
@@ -335,6 +349,7 @@ def sync_from_dingtalk(
             continue
 
         row = existing.get(profile.id)
+        leave_needs_review = False
         try:
             with db.begin_nested():
                 if row is None:
@@ -347,8 +362,17 @@ def sync_from_dingtalk(
                 leave = leave_map.get(person.userid)
                 if leave is not None:
                     if _leave_writable(row):
-                        _apply_leave(row, leave)
-                        leave_filled += 1
+                        if leave.get("unknown"):
+                            # 已发现无法分类的请假，旧自动值也不能继续当本次确认值。
+                            # NULL 让异常清单持续阻断算薪；人工值由外层归属门保护。
+                            row.personal_leave_hours = None
+                            row.sick_leave_hours = None
+                            row.annual_leave_days = None
+                            row.leave_source = SOURCE_DINGTALK
+                            leave_needs_review = True
+                        else:
+                            _apply_leave(row, leave)
+                            leave_filled += 1
                     else:
                         leave_kept_manual += 1
                 row.due_days = due_days
@@ -381,6 +405,8 @@ def sync_from_dingtalk(
                              "reason": f"落库失败：{type(exc).__name__}"})
             continue
         counts[SYNC_OK] += 1
+        if leave_needs_review:
+            leave_pending_names.append(profile.name)
         if getattr(person, "dirty", None):
             # 脏值不算失败：数落进去了，只是某几列偏小。但必须让人看见——
             # 31 天里坏 11 天会聚合出一个「看起来很正常」的 20.0。
@@ -424,6 +450,7 @@ def sync_from_dingtalk(
         # degraded 非空说明权限没开全（qyapi_holiday_readonly），前端要明说
         "leave_filled": leave_filled,
         "leave_kept_manual": leave_kept_manual,
+        "leave_pending_names": leave_pending_names,
         "leave_degraded": leave_meta.get("degraded"),
         "leave_unknown_types": leave_meta.get("unknown_types") or [],
         "leave_failed_userids": leave_meta.get("failed_userids") or [],

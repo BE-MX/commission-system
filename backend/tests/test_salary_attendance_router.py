@@ -27,7 +27,9 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.auth.dependencies import get_current_user
+from app.auth.models import ArkUser
 from app.core.database import Base, get_db
+from app.core.time import beijing_today
 from app.salary import attendance_source
 from app.salary import router as salary_router
 from app.salary import period_service as ps
@@ -43,6 +45,7 @@ from app.salary.models import (
 from app.salary.seed import seed_rule_params
 
 _TABLES = [
+    ArkUser.__table__,
     SalaryPeriod.__table__,
     SalaryPeriodEvent.__table__,
     SalaryRuleParam.__table__,
@@ -63,6 +66,8 @@ def db():
     )
     Base.metadata.create_all(engine, tables=_TABLES)
     session = sessionmaker(bind=engine, autoflush=False)()
+    session.add(ArkUser(id=7, username="attendance-test", real_name="Operator",
+                        password_hash="unused", dingtalk_id="OPERATOR"))
     seed_rule_params(session)
     # **flush 不能省。** session 是 autoflush=False，seed 出来的 14 行还在 identity
     # map 里没进库，紧跟的 bulk UPDATE 是直发 SQL——打在空表上，一行都没改到，
@@ -286,6 +291,79 @@ def test_sync_maps_source_error_to_502_not_500(db):
                              json={"expected_version": period.status_version})
     assert r.status_code == 502
     assert "报表列不见了" in r.json()["detail"]
+
+
+def test_sync_passes_authenticated_operator_to_leave_source(db):
+    _profile(db)
+    period = _period(db)
+    with (
+        patch.object(attendance_source, "fetch_many", side_effect=_ok_fetch([])),
+        patch.object(attendance_source, "fetch_leave_types", return_value={}) as types,
+    ):
+        response = _client(db).post(f"/api/salary/periods/{period.id}/attendance/sync",
+                                    json={"expected_version": period.status_version})
+    assert response.status_code == 200, response.text
+    types.assert_awaited_once_with(op_userid="OPERATOR")
+
+
+def test_sync_leave_type_failure_is_502_without_partial_write(db):
+    profile = _profile(db)
+    period = _period(db)
+    version = period.status_version
+    person = attendance_source.PersonAttendance(userid=profile.dingtalk_userid,
+                                                values={"late_count": Decimal("2")})
+    with (
+        patch.object(attendance_source, "fetch_many", side_effect=_ok_fetch([person])),
+        patch.object(attendance_source, "fetch_leave_types",
+                     side_effect=attendance_source.AttendanceSourceError("读取假期类型失败")),
+    ):
+        response = _client(db).post(f"/api/salary/periods/{period.id}/attendance/sync",
+                                    json={"expected_version": version})
+    assert response.status_code == 502, response.text
+    assert "假期类型" in response.json()["detail"]
+    assert db.query(SalaryAttendance).count() == 0
+    db.refresh(period)
+    assert period.status_version == version
+
+
+def test_sync_without_operator_binding_explains_before_remote_fetch(db):
+    _profile(db)
+    db.query(ArkUser).filter(ArkUser.id == 7).update({ArkUser.dingtalk_id: None})
+    db.commit()
+    period = _period(db)
+    with patch.object(attendance_source, "fetch_many") as fetch:
+        response = _client(db).post(f"/api/salary/periods/{period.id}/attendance/sync",
+                                    json={"expected_version": period.status_version})
+    assert response.status_code == 400, response.text
+    assert "当前账号" in response.json()["detail"]
+    fetch.assert_not_awaited()
+
+
+@pytest.mark.parametrize("current_year", [True, False])
+def test_sync_annual_quota_uses_operator_only_for_current_year(db, current_year):
+    profile = _profile(db)
+    year = beijing_today().year if current_year else beijing_today().year - 1
+    period = _period(db, ym=f"{year}-03")
+    period.param_snapshot = {"day_hours": "7.83", "full_month_days": "31"}
+    db.commit()
+    person = attendance_source.PersonAttendance(userid=profile.dingtalk_userid,
+                                                values={"late_count": Decimal("0")})
+    with (
+        patch.object(attendance_source, "fetch_many", side_effect=_ok_fetch([person])),
+        patch.object(attendance_source, "fetch_leave_types", return_value={"annual": {"name": "年假"}}),
+        patch.object(attendance_source, "fetch_leave_records", return_value=({"U01": []}, [])),
+        patch.object(attendance_source, "fetch_annual_quota", return_value=Decimal("5.5")) as quota,
+    ):
+        response = _client(db).post(f"/api/salary/periods/{period.id}/attendance/sync",
+                                    json={"expected_version": period.status_version})
+    assert response.status_code == 200, response.text
+    attendance = db.query(SalaryAttendance).filter_by(employee_id=profile.id).one()
+    if current_year:
+        quota.assert_awaited_once_with("U01", "annual", op_userid="OPERATOR")
+        assert attendance.annual_leave_remain == Decimal("5.5")
+    else:
+        quota.assert_not_awaited()
+        assert attendance.annual_leave_remain is None
 
 
 def test_sync_only_requests_payroll_included_actives(db):
