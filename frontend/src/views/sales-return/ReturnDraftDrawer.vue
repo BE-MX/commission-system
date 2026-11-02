@@ -22,7 +22,10 @@
           <el-table-column label="涉及数量" min-width="115"><template #default="{ row }"><el-input v-model="row.quantity" :disabled="!row.selected" inputmode="decimal" :aria-label="`${row.product_name || row.source_key} 涉及数量`" /></template></el-table-column>
           <el-table-column label="本次货款冲减" min-width="140"><template #default="{ row }"><el-input v-model="row.reduction_amount" :disabled="!row.selected" inputmode="decimal" :aria-label="`${row.product_name || row.source_key} 货款冲减`" /></template></el-table-column>
         </el-table></div>
-        <el-form-item label="现金退款金额" class="return-refund-input"><el-input v-model="form.refund_amount" inputmode="decimal" placeholder="留空，由服务端计算默认退款" /><small class="return-hint">现金退款与货款冲减分别核算；金额和原回款分摊以预览结果为准。</small></el-form-item>
+        <div class="return-form-grid">
+          <el-form-item label="本次运费退款"><el-input v-model="form.freight_refund_amount" :disabled="!snapshot.freight_refund_supported" inputmode="decimal" placeholder="不退运费填 0" /><small class="return-hint">{{ snapshot.freight_refund_supported ? `剩余可退运费 ${snapshot.order?.currency} ${amount(snapshot.freight_refund_available)}；不包含附加费。` : '原单运费尚无可退款核验依据，当前仅支持商品退款。' }}</small></el-form-item>
+          <el-form-item label="现金退款合计"><el-input v-model="form.refund_amount" inputmode="decimal" placeholder="留空，自动计算商品与运费退款合计" /><small class="return-hint">包含商品退款和本次运费退款。商品行只填写货款冲减。</small></el-form-item>
+        </div>
       </template>
     </el-form>
     <section v-if="quote" class="return-quote" aria-label="财务影响预览">
@@ -30,7 +33,7 @@
       <ReturnAmounts :value="quote" :currency="quote.order?.currency || snapshot?.order?.currency" />
       <p class="return-hint">可退现金范围 {{ amount(quote.refund_min) }} 至 {{ amount(quote.refund_max) }} · GMV 冲减 USD {{ amount(quote.reduction_usd) }} · 退款本金 USD {{ amount(quote.refund_usd) }}</p>
       <el-table v-if="quote.allocations?.length" :data="quote.allocations" border class="list-table" v-sticky-scrollbar size="small"><el-table-column prop="original_payment_id" label="原回款" /><el-table-column prop="refund_amount" label="本次退款本金" /><el-table-column prop="refund_amount_usd" label="对应美元本金" /></el-table>
-      <p v-if="quote.balance" class="return-hint">生效后：净应收 {{ amount(quote.balance.net_receivable) }} · 净已收 {{ amount(quote.balance.net_received) }} · 未收 {{ amount(quote.balance.net_outstanding) }}</p>
+      <p v-if="quote.balance" class="return-hint">生效后商品货款：净应收 {{ amount(quote.balance.net_receivable) }} · 净已收 {{ amount(quote.balance.net_received) }} · 未收 {{ amount(quote.balance.net_outstanding) }}；剩余可退运费 {{ amount(quote.freight_remaining) }}</p>
     </section>
     <template #footer>
       <GlassButton :disabled="busy || !!pending" @click="close(false)">取消</GlassButton>
@@ -49,7 +52,7 @@ import { errorMessage } from '@/utils/errors'
 import { REASONS, amount, draftPayload, validateDraft, fingerprint, draftComparison, requestKey, isUncertain } from './returnState'
 const props = defineProps({ modelValue: Boolean, record: Object, prefill: Object })
 const emit = defineEmits(['update:modelValue', 'saved'])
-const fresh = () => ({ order_id: null, return_type: 'return_refund', reason_code: '', reason: '', refund_amount: '', lines: [] })
+const fresh = () => ({ order_id: null, return_type: 'return_refund', reason_code: '', reason: '', refund_amount: '', freight_refund_amount: '0', lines: [] })
 const form = reactive(fresh())
 const customerId = ref(null), customers = ref([]), orders = ref([]), snapshot = ref(null), error = ref('')
 const loading = ref(false), customersLoading = ref(false), ordersLoading = ref(false), saving = ref(false), previewing = ref(false)
@@ -78,9 +81,10 @@ async function searchOrders(keyword = '') {
   catch (failure) { if (id === orderRead) error.value = errorMessage(failure) }
   finally { if (id === orderRead) ordersLoading.value = false }
 }
-function changeCustomer() { form.order_id = null; form.lines = []; snapshot.value = null; quote.value = null; ++lineRead; loading.value = false; searchOrders() }
+function changeCustomer() { form.order_id = null; form.lines = []; form.freight_refund_amount = '0'; form.refund_amount = ''; snapshot.value = null; quote.value = null; ++lineRead; loading.value = false; searchOrders() }
 async function loadLines(orderId, savedItems = []) {
   const id = ++lineRead
+  if (!props.record) { form.freight_refund_amount = '0'; form.refund_amount = '' }
   snapshot.value = null; form.lines = []; quote.value = null; error.value = ''; loading.value = true
   try {
     const result = await getReturnOrderLines(orderId)
@@ -99,7 +103,7 @@ watch(() => props.modelValue, async open => {
   saving.value = false; previewing.value = false
   Object.assign(form, fresh()); snapshot.value = null; quote.value = null; error.value = ''; pending.value = null
   customerId.value = props.record?.customer_id || props.prefill?.customer_id || null
-  if (props.record) Object.assign(form, { order_id: props.record.order_id, return_type: props.record.return_type, reason_code: props.record.reason_code, reason: props.record.reason, refund_amount: props.record.refund_amount ?? '' })
+  if (props.record) Object.assign(form, { order_id: props.record.order_id, return_type: props.record.return_type, reason_code: props.record.reason_code, reason: props.record.reason, refund_amount: props.record.refund_amount ?? '', freight_refund_amount: props.record.freight_refund_amount ?? '0' })
   else form.order_id = props.prefill?.order_id || null
   await Promise.all([searchCustomers(), searchOrders(), form.order_id ? loadLines(form.order_id, props.record?.items || []) : Promise.resolve()])
   if (current === session) cleanFingerprint = fingerprint(draftPayload(form))

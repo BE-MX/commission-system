@@ -2,6 +2,12 @@
 
 本文维护表结构与迁移说明；源码依据为 `backend/alembic/versions/` 与对应模型。迁移编号代表结构依赖，不代表当前生产 head。部署、开关和真实业务验收统一见[交接文档](handoff.md)。 本轮 2026-10-31 核对本地迁移链至 `214_sales_return_ledger`；这不是实时生产查询。
 
+## 外贸退货运费扩展（247_sales_return_freight）
+
+迁移接 `246_domestic_followup`，只增加五个 `Numeric(14,2) NOT NULL DEFAULT 0` 字段：`ark_sales_returns.freight_refund_amount`；`ark_sales_return_allocations.freight_refund_amount/freight_refund_amount_usd`；`ark_sales_return_effects.freight_amount/freight_amount_usd`。旧单运费为零，原商品和现金事实不变。退款单及原款分摊的现金金额包含运费，effect 的原 `amount/amount_usd` 仍仅表示商品调整，运费列独立记录正负方向。
+
+升级支持 MySQL 加列中断后的再次执行，已存在列须核验精度、非空和零默认值；任何运费事实非零时拒绝 downgrade，不能以降级删除已记录金额。生产迁移仍仅由部署入口执行，候选验证与发布状态见[交接文档](handoff.md)。
+
 ## 外贸退货与本地负数回款（214_sales_return_ledger）
 
 迁移继承 `213_salary_snap_export_cols`；只在方舟写库建账，不修改小满镜像。生产迁移与结构回读证据见交接文档及对应发布报告。金额 `Numeric(14,2)`、所有业务日期/审计时间为北京时间。

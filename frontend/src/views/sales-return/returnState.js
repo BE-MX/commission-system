@@ -21,6 +21,7 @@ export function draftPayload(form) {
       reduction_amount: String(line.reduction_amount ?? '0').trim(),
     })),
     refund_amount: form.refund_amount === '' || form.refund_amount === null ? null : String(form.refund_amount).trim(),
+    freight_refund_amount: String(form.freight_refund_amount ?? '0').trim() || '0',
   }
 }
 
@@ -32,6 +33,7 @@ export function validateDraft(body) {
   if (body.lines.some(line => !decimal.test(line.reduction_amount))) return '货款冲减请输入非负金额，最多两位小数'
   if (body.lines.some(line => !Number.isSafeInteger(line.quantity) || line.quantity <= 0 || line.quantity > 1000000)) return '涉及数量必须是 1 至 1000000 的整数'
   if (body.refund_amount !== null && !decimal.test(body.refund_amount)) return '现金退款请输入非负金额，最多两位小数'
+  if (!decimal.test(body.freight_refund_amount)) return '运费退款请输入非负金额，最多两位小数'
   return ''
 }
 
@@ -45,7 +47,7 @@ const decimalKey = value => {
   return significant ? `${whole}.${significant}` : whole
 }
 export function draftComparison(body) {
-  return fingerprint({ ...body, refund_amount: decimalKey(body.refund_amount), lines: body.lines.map(line => ({ ...line, reduction_amount: decimalKey(line.reduction_amount) })).sort((a, b) => a.source_key.localeCompare(b.source_key)) })
+  return fingerprint({ ...body, refund_amount: decimalKey(body.refund_amount), freight_refund_amount: decimalKey(body.freight_refund_amount), lines: body.lines.map(line => ({ ...line, reduction_amount: decimalKey(line.reduction_amount) })).sort((a, b) => a.source_key.localeCompare(b.source_key)) })
 }
 
 /** Reuse the exact immutable body and key until an uncertain write is reconciled. */

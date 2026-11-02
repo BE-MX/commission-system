@@ -27,6 +27,9 @@ from app.invoice.settlement_models import Receivable
 from app.models.commission import CommissionBatch, CommissionDetail, SyncedPayment, PaymentCommissionStatus
 from app.models.customer import CustomerCommissionSnapshot
 from app.portal.models import AuthorityBarrier
+from app.commerce_transition.models import PlatformPolicy, InvoiceAuthority, AuthorityEvent
+from app.finance.models import FinanceBook, FinanceEvent
+from app.commission.models import CommissionBasis, CommissionEventProjection
 from app.sales_return import access, read_service, schemas, service, sources
 from app.sales_return.models import SalesReturn, ReturnAllocation, ReturnEffect, ReturnReceipt
 from app.sales_return.router import execute
@@ -40,7 +43,8 @@ BACKEND = Path(__file__).resolve().parents[2]
 def return_mysql_schema(mysql_engine):
     metadata=MetaData()
     upstream=(ArkUser,ArkRole,ArkPermission,ArkUserRole,ArkRolePermission,ArkUserExternalBinding,Invoice,
-        SyncedPayment,CommissionBatch,CommissionDetail,PaymentCommissionStatus,CustomerCommissionSnapshot,AuthorityBarrier,Receivable)
+        SyncedPayment,CommissionBatch,CommissionDetail,PaymentCommissionStatus,CustomerCommissionSnapshot,AuthorityBarrier,Receivable,
+        PlatformPolicy,InvoiceAuthority,AuthorityEvent,FinanceBook,FinanceEvent,CommissionBasis,CommissionEventProjection)
     for model in upstream:
         Table(model.__tablename__,metadata,*(Column(c.name,c.type,primary_key=c.primary_key,nullable=c.nullable,
             default=c.default,server_default=c.server_default) for c in model.__table__.columns
@@ -53,8 +57,16 @@ def return_mysql_schema(mysql_engine):
         with mysql_engine.begin() as connection:
             migration.op=Operations(MigrationContext.configure(connection))
             migration.upgrade()
+    spec=spec_from_file_location('owned_freight_migration',BACKEND/'alembic/versions/247_sales_return_freight.py')
+    freight_migration=module_from_spec(spec)
+    spec.loader.exec_module(freight_migration)
+    for _ in range(2):
+        with mysql_engine.begin() as connection:
+            freight_migration.op=Operations(MigrationContext.configure(connection))
+            freight_migration.upgrade()
     with Session(mysql_engine) as db:
         db.add(AuthorityBarrier(code='authority',version=1))
+        db.add(PlatformPolicy(id=1,phase='legacy_only'))
         role=ArkRole(name='super_admin',label='Owned isolated admin')
         users=[ArkUser(username=f'owned-admin-{number}',password_hash='test-only',real_name=f'Owned Admin {number}',roles=[role]) for number in (1,2)]
         db.add_all(users)
@@ -156,7 +168,7 @@ def test_migration_214_is_repeatable_and_fk_types_match(return_mysql_schema):
     engine,_=return_mysql_schema
     config=Config()
     config.set_main_option('script_location',str(BACKEND/'alembic'))
-    assert ScriptDirectory.from_config(config).get_heads()==['214_sales_return_ledger']
+    assert ScriptDirectory.from_config(config).get_heads()==['247_sales_return_freight']
     with engine.connect() as connection:
         columns={column['name'] for column in inspect(connection).get_columns('synced_payment')}
         assert 'source' in columns
@@ -182,6 +194,36 @@ def test_two_people_cannot_return_the_same_last_shipped_quantity(scenario):
         assert db.get(SalesReturn,first_id).status=='effective'
         assert db.get(SalesReturn,second_id).status=='draft'
         assert db.scalar(select(func.sum(ReturnReceipt.amount)).where(ReturnReceipt.order_id==snapshot['order_id']))==Decimal('-100')
+
+
+def test_two_people_cannot_refund_the_same_paid_freight(scenario):
+    engine, actors, snapshot = scenario
+    snapshot.update(goods_amount='200.00', goods_amount_usd='200.00')
+    snapshot['lines'][0].update(quantity=2, net_amount='200.00', net_amount_usd='200.00')
+    snapshot['payments'][0].update(principal='200.00', principal_usd='200.00',
+        cash_principal='248.11', cash_principal_usd='248.11', non_goods_amount='48.11',
+        non_goods_amount_usd='48.11', freight_principal='48.11', freight_principal_usd='48.11',
+        commission_basis_usd='248.11')
+    documents = []
+    for actor in actors:
+        with Session(engine) as db:
+            body = _draft(snapshot, uuid4().hex).model_copy(update={'freight_refund_amount': Decimal('30.00')})
+            quote = service.preview(db, body, _user(actor))
+            row = service.create(db, body, _user(actor))
+            db.flush()
+            documents.append((row.id, schemas.Activate(version=1, quote_version=quote['quote_version'], request_key=uuid4().hex)))
+            db.commit()
+    (first_id, first_body), (second_id, second_body) = documents
+    _, loser = _compete(scenario,
+        lambda db: _uncommitted_activation(db, actors[0], first_id, first_body),
+        lambda db: _activate(db, actors[1], second_id, second_body))
+    assert loser.get('status') == 409 and '运费' in loser['detail'], loser
+    with Session(engine) as db:
+        assert db.get(SalesReturn, second_id).status == 'draft'
+        history = read_service.history(db, snapshot['order_id'])
+        identity = snapshot['payments'][0]['payment_id']
+        assert history['refunds'][identity] == Decimal('100.00')
+        assert history['freight_refunds'][identity] == Decimal('30.00')
 
 
 def test_concurrent_same_key_and_lost_ack_replay_one_financial_group(scenario):

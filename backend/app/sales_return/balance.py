@@ -11,8 +11,9 @@ def totals(db, order_id):
     effects = db.scalars(select(ReturnEffect).where(ReturnEffect.order_id == str(order_id))).all()
     receipts = db.scalars(select(ReturnReceipt).where(ReturnReceipt.order_id == str(order_id))).all()
     return {"goods_adjustment": sum((row.amount for row in effects), Decimal(0)),
+            "freight_adjustment": sum((row.freight_amount for row in effects), Decimal(0)),
             "cash_adjustment": sum((row.amount for row in receipts), Decimal(0)),
-            "version": digest([[row.id, str(row.amount)] for row in effects] +
+            "version": digest([[row.id, str(row.amount), str(row.freight_amount)] for row in effects] +
                               [[row.id, str(row.amount)] for row in receipts])}
 
 
@@ -20,13 +21,14 @@ def overlay(db, order_id, summary):
     if not order_id:
         return summary
     changes = totals(db, order_id)
-    if not changes["goods_adjustment"] and not changes["cash_adjustment"]:
+    if not changes["goods_adjustment"] and not changes['freight_adjustment'] and not changes["cash_adjustment"]:
         return summary
     result = dict(summary)
     result["original_total_amount"] = summary["total_amount"]
     result["return_reduction_amount"] = str(-changes["goods_adjustment"])
+    result['return_freight_refund_amount'] = str(-changes['freight_adjustment'])
     result["local_refund_amount"] = str(-changes["cash_adjustment"])
-    result["total_amount"] = str(money(summary["total_amount"]) + changes["goods_adjustment"])
+    result["total_amount"] = str(money(summary["total_amount"]) + changes["goods_adjustment"] + changes['freight_adjustment'])
     result["registered_amount"] = str(money(summary["registered_amount"]) + changes["cash_adjustment"])
     result["effective_amount"] = str(money(summary["effective_amount"]) + changes["cash_adjustment"])
     result["remaining_amount"] = str(money(result["total_amount"]) - money(result["registered_amount"]))

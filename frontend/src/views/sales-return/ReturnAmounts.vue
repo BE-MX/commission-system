@@ -1,7 +1,8 @@
 <template>
   <div class="return-amounts">
     <div><span>货款冲减 · {{ currency }}</span><strong>{{ amount(value.reduction_amount) }}</strong></div>
-    <div><span>现金退款 · {{ currency }}</span><strong>{{ amount(value.refund_amount) }}</strong></div>
+    <div><span>运费退款 · {{ currency }}</span><strong>{{ amount(value.freight_refund_amount ?? '0.00') }}</strong></div>
+    <div><span>现金退款合计 · {{ currency }}</span><strong>{{ amount(value.refund_amount) }}</strong></div>
     <div><span>未收货款减免 · {{ currency }}</span><strong>{{ amount(value.waived_amount) }}</strong></div>
   </div>
 </template>

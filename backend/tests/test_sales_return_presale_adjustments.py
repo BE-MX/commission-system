@@ -442,7 +442,8 @@ def test_activation_rolls_back_when_fifo_refund_would_spend_already_borrowed_cre
              "invoice_id":invoice.id, "sales_user_id":None, "gmv_eligible":True, "order_role":"repeat", "departments":[],
              "payments":[{"payment_id":"P2", "commission_basis_usd":"200"}]}
     priced = {"order":order, "lines":[line], "quote_version":"a"*64, "reduction_amount":"100", "reduction_usd":"100",
-              "refund_amount":"100", "refund_usd":"100", "waived_amount":"0", "allocations":[{
+              "refund_amount":"100", "refund_usd":"100", "waived_amount":"0",
+              "freight_refund_amount":"0", "freight_refund_usd":"0", "allocations":[{
                   "original_payment_id":"P2", "original_principal":"200", "original_principal_usd":"200",
                   "refund_amount":"100", "refund_amount_usd":"100", "funding":[{"settlement_id":original.id, "amount":"100"}]}]}
     # Freeze an upstream FIFO decision as a replacement for provider evidence;

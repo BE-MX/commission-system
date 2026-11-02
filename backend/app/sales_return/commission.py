@@ -178,7 +178,17 @@ def return_rows(db, payment):
             raise PendingCommissionBasis(f"原回款 {allocation.original_payment_id}: {basis['reason']}")
         # Recover a pending allocation after verified original details become available.
         allocation.basis = basis
-        cash_principal = _decimal(allocation.original_principal_usd)
+        # A later verified freight refund extends older goods-only cash caps.
+        # Keep activated facts after reversal so historical recalculation cannot
+        # shrink the cap. This never changes the original commission denominator.
+        caps = db.query(ReturnAllocation, ReturnReceipt).join(ReturnReceipt,
+            ReturnReceipt.return_id == ReturnAllocation.return_id).filter(
+                ReturnAllocation.original_payment_id == allocation.original_payment_id,
+                ReturnReceipt.effect_kind == 'activate').with_for_update().all()
+        if any((original.order_id, original.customer_id, original.currency) !=
+               (receipt.order_id, receipt.customer_id, receipt.currency) for _, original in caps):
+            raise PendingCommissionBasis('原回款退款记录的订单、客户或币种不一致')
+        cash_principal = max((_decimal(row.original_principal_usd) for row, _ in caps), default=Decimal(0))
         principal = _decimal(basis.get("principal_usd"))
         if cash_principal <= 0 or principal <= 0:
             raise PendingCommissionBasis("原回款可退本金依据必须大于零")

@@ -22,6 +22,23 @@ test('blank refund delegates default to server while explicit zero is preserved'
   assert.equal(state.draftPayload({ ...fixture(), refund_amount: '' }).refund_amount, null)
   assert.equal(state.draftPayload({ ...fixture(), refund_amount: '0' }).refund_amount, '0')
 })
+
+test('freight is a separate exact decimal and blank cash still delegates the combined total', () => {
+  const form = { ...fixture(), freight_refund_amount: '11.18', refund_amount: '', lines: [
+    { source_key: 'line-2', selected: true, quantity: '100', reduction_amount: '192.00' },
+    { source_key: 'line-3', selected: true, quantity: '50', reduction_amount: '94.50' },
+  ] }
+  const body = state.draftPayload(form)
+  assert.equal(body.freight_refund_amount, '11.18')
+  assert.equal(body.refund_amount, null)
+  assert.deepEqual(body.lines.map(line => line.reduction_amount), ['192.00', '94.50'])
+  assert.equal(state.validateDraft(body), '')
+  for (const value of ['-1', '11.181', '1e2', 'Infinity']) {
+    assert.match(state.validateDraft({ ...body, freight_refund_amount: value }), /运费/)
+  }
+  assert.equal(state.draftPayload({ ...form, freight_refund_amount: '' }).freight_refund_amount, '0')
+  assert.equal(state.draftPayload(fixture()).freight_refund_amount, '0')
+})
 test('response-loss comparison preserves decimal meaning across server normalization and line ordering', () => {
   const first = state.draftPayload(fixture())
   first.refund_amount = '0.00'
@@ -81,6 +98,35 @@ test('editing any money field invalidates an earlier preview; save cannot use st
   assert.equal(h.page.quoteCurrent.value, false)
   await h.page.save()
   assert.equal(h.calls.some(call => call.name === 'createSalesReturn'), false)
+}))
+
+test('editing freight invalidates the quote and save never sends the old preview', () => run('ReturnDraftDrawer', async h => {
+  Object.assign(h.page.form, fixture(), { freight_refund_amount: '11.18' })
+  await h.page.preview()
+  assert.equal(h.calls.find(call => call.name === 'previewSalesReturn').args[0].freight_refund_amount, '11.18')
+  h.page.form.freight_refund_amount = '11.19'
+  assert.equal(h.page.quoteCurrent.value, false)
+  await h.page.save()
+  assert.equal(h.calls.some(call => call.name === 'createSalesReturn'), false)
+}))
+
+test('reopening a saved draft retains freight and uncertain comparisons distinguish its amount', async () => {
+  const h = await harness('ReturnDraftDrawer', { record: { ...fixture(), id: 5, version: 1, freight_refund_amount: '11.18', items: [] } })
+  try {
+    h.props.modelValue = true
+    await vue.nextTick()
+    assert.equal(h.page.form.freight_refund_amount, '11.18')
+    const first = state.draftPayload({ ...fixture(), freight_refund_amount: '11.18' })
+    assert.equal(state.draftComparison(first), state.draftComparison({ ...first, freight_refund_amount: '11.1800' }))
+    assert.notEqual(state.draftComparison(first), state.draftComparison({ ...first, freight_refund_amount: '0' }))
+  } finally { h.stop() }
+})
+
+test('selecting a different source order clears freight and total cash from the previous order', () => run('ReturnDraftDrawer', async h => {
+  Object.assign(h.page.form, fixture(), { freight_refund_amount: '11.18' })
+  await h.page.loadLines('other-order')
+  assert.equal(h.page.form.freight_refund_amount, '0')
+  assert.equal(h.page.form.refund_amount, '')
 }))
 
 test('closing the drawer after a successful save does not ask to discard already saved changes', () => run('ReturnDraftDrawer', async h => {

@@ -67,6 +67,47 @@ def test_original_people_actual_rates_and_cross_period_late_event(db):
     confirm_batch(db, batch.id, "admin")
 
 
+def test_freight_cash_clawback_uses_original_basis_and_excludes_surcharge(db):
+    original(db, principal='649.02', sp='64.90', sv='0', sv2='0')
+    receipt, payment = refund(db, '297.68', principal='618.11')
+    allocation = db.query(ReturnAllocation).filter_by(return_id=receipt.return_id).one()
+    allocation.freight_refund_amount = allocation.freight_refund_amount_usd = Decimal('11.18')
+    db.flush()
+    rows = return_rows(db, payment)
+    assert rows[0]['payment_amount'] == Decimal('-297.68')
+    assert rows[0]['salesperson_commission'] == Decimal('-29.77')
+    _, next_payment = refund(db, '320.43', principal='618.11')
+    second = return_rows(db, next_payment)
+    assert second[0]['salesperson_commission'] == Decimal('-32.04')
+    assert sum(row['salesperson_commission'] for row in rows+second) == Decimal('-61.81')
+
+
+@pytest.mark.parametrize('reverse_order', [(0, 1), (1, 0)])
+def test_old_goods_cap_and_new_freight_cap_survive_both_reversal_orders(db, reverse_order):
+    original(db, principal='649.02', sp='64.90', sv='0', sv2='0')
+    first, first_payment = refund(db, '286.50', principal='570.00')
+    second, second_payment = refund(db, '331.61', principal='618.11')
+    allocation = db.query(ReturnAllocation).filter_by(return_id=second.return_id).one()
+    allocation.freight_refund_amount = allocation.freight_refund_amount_usd = Decimal('48.11')
+    db.flush()
+    payments = [first_payment, second_payment]
+    receipts = [first, second]
+    for number, index in enumerate(reverse_order):
+        old = receipts[index]
+        reversal = ReturnReceipt(return_id=old.return_id, receipt_no=f'freight-reverse-{index}', effect_kind='reverse',
+            original_receipt_id=old.id, order_id=old.order_id, customer_id=old.customer_id, currency='USD',
+            amount=-old.amount, amount_usd=-old.amount_usd, collection_date=date(2026, 9, 2+number), created_by=1)
+        db.add(reversal)
+        db.get(SalesReturn, old.return_id).status = 'reversed'
+        db.flush()
+        payment = project_receipt(db, reversal)
+        return_rows(db, payment)  # Reversing the older 570-cap document must accept before=618.11.
+        payments.append(payment)
+    recomputed = [row for payment in payments for row in return_rows(db, payment)]
+    assert sum(row['salesperson_commission'] for row in recomputed) == 0
+    assert sum(row['payment_amount'] for row in recomputed) == 0
+
+
 def test_cumulative_rounding_full_refund_and_reversal(db):
     original(db, principal="3", sp="0.02", sv="0.01", sv2="0.01")
     receipts = [refund(db, "1", principal="3")[0] for _ in range(3)]

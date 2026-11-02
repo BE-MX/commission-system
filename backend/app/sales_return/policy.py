@@ -20,7 +20,12 @@ def digest(value):
 
 
 def price(snapshot, body, history=None):
+    from app.sales_return import freight
     history = history or {}
+    freight_facts = freight.limits(snapshot, history)
+    freight_refund = money(body.freight_refund_amount)
+    if freight_refund < 0 or freight_refund > freight_facts['remaining']:
+        raise ValueError(f"运费退款不能超过已核验的剩余运费 {freight_facts['remaining']:.2f}")
     sources = {str(row["source_key"]): row for row in snapshot["lines"]}
     if len(sources) != len(snapshot["lines"]):
         raise ValueError("实际出库明细存在重复身份，请先核验")
@@ -94,18 +99,19 @@ def price(snapshot, body, history=None):
     if presale:
         from app.sales_return.cash_allocation import match
         available, _ = match(payments, payment_available, snapshot["funding_batches"], lines)
-    lower, upper = max(ZERO, total - outstanding), min(total, available)
+    lower, upper = max(ZERO, total - outstanding) + freight_refund, min(total, available) + freight_refund
     if lower > upper:
         raise ValueError("可退款本金不足以覆盖本次冲减，请先核对预售资金分配")
     refund = money(upper if body.refund_amount is None else body.refund_amount)
     if not lower <= refund <= upper:
         raise ValueError(f"实际退款必须在 {lower:.2f} 至 {upper:.2f} 之间")
+    goods_refund = refund - freight_refund
     matched = {}
     if presale:
-        funded, matched = match(payments, payment_available, snapshot["funding_batches"], lines, refund)
-        if funded != refund:
+        funded, matched = match(payments, payment_available, snapshot["funding_batches"], lines, goods_refund)
+        if funded != goods_refund:
             raise ValueError("所选批次的实际退款资金不足，请核对原分配")
-    allocations, left, refund_usd = [], refund, ZERO
+    allocations, left, refund_usd = [], goods_refund, ZERO
     for payment in payments:
         identity = str(payment["payment_id"])
         assigned = matched[identity]["amount"] if presale else min(left, payment_available[identity])
@@ -125,16 +131,22 @@ def price(snapshot, body, history=None):
         refund_usd += usd
     if left:
         raise ValueError("原回款分配不完整，请刷新后重试")
+    freight.allocate(allocations, freight_facts, freight_refund)
+    refund_usd += freight_refund
     result = {"order": snapshot, "lines": lines, "reduction_amount": str(total),
-              "refund_amount": str(refund), "waived_amount": str(total - refund),
+              "refund_amount": str(refund), "waived_amount": str(total - goods_refund),
+              "goods_refund_amount": str(goods_refund), "freight_refund_amount": str(freight_refund),
+              "freight_refund_usd": str(freight_refund),
+              "freight_remaining": str(freight_facts['remaining'] - freight_refund),
               "refund_min": str(lower), "refund_max": str(upper),
               "reduction_usd": str(total_usd), "refund_usd": str(refund_usd), "allocations": allocations,
               "balance": {"original_goods_amount": str(original_goods), "registered_amount": str(paid),
                           "current_receivable": str(current_receivable), "current_outstanding": str(outstanding),
-                          "net_receivable": str(current_receivable-total), "net_received": str(paid-refund),
-                          "net_outstanding": str(outstanding-total+refund)}}
+                          "net_receivable": str(current_receivable-total), "net_received": str(paid-goods_refund),
+                          "net_outstanding": str(outstanding-total+goods_refund)}}
     canonical = body.model_dump(mode="json", exclude={"request_key", "version"})
     canonical["refund_amount"] = str(refund)
+    canonical['freight_refund_amount'] = str(freight_refund)
     canonical["lines"] = sorted(({"source_key": line.source_key, "quantity": line.quantity,
                                   "reduction_amount": str(money(line.reduction_amount))} for line in body.lines),
                                 key=lambda line: line["source_key"])

@@ -28,6 +28,10 @@ def verify(db, snapshot):
             if current is None or any(previous.get(key) != current.get(key) for key in
                     ("currency", "principal", "principal_usd", "commission_basis_usd")):
                 raise HTTPException(409, "原回款本金、币种或计提依据已被外部修改，请先核对已生效退货")
+            for key in ('cash_principal', 'cash_principal_usd', 'non_goods_amount', 'non_goods_amount_usd',
+                        'freight_principal', 'freight_principal_usd'):
+                if key in previous and previous[key] != current.get(key):
+                    raise HTTPException(409, '原回款运费或其他费用分摊与已生效快照不一致，请先核对')
     items = db.scalars(select(ReturnItem).where(ReturnItem.return_id.in_([parent.id for parent in parents]))).all()
     for item in items:
         current = current_lines.get(item.source_key)

@@ -22,6 +22,7 @@ class Draft(BaseModel):
     reason: str = Field(min_length=2, max_length=2000)
     lines: list[Line] = Field(min_length=1, max_length=200)
     refund_amount: Money | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    freight_refund_amount: Money = Field(default=Decimal('0'), ge=0, max_digits=14, decimal_places=2)
 
     @model_validator(mode="after")
     def distinct_lines(self):

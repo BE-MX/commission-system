@@ -188,4 +188,5 @@ def goods_payments(db, invoice, goods, rows, payments):
         _conflict('扣除运费和附加费后的商品本金与原单不一致，请先核对其他手续费或回款差额')
     return [{**payment, 'cash_principal': payment['principal'], 'cash_principal_usd': payment['principal_usd'],
              'non_goods_amount': sources._money(non_goods), 'non_goods_amount_usd': sources._money(non_goods),
+             'freight_principal': sources._money(shipping), 'freight_principal_usd': sources._money(shipping),
              'principal': sources._money(goods_cash), 'principal_usd': sources._money(goods_cash)}]

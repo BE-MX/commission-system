@@ -24,6 +24,7 @@ def history(db, order_id, *, exclude=None):
     quantities, reductions, reduction_usd, refunds, refunds_usd, physical_reductions = [defaultdict(lambda: Decimal(0)) for _ in range(6)]
     types = {row.id: row.return_type for row in returns}
     physical_rounding = defaultdict(lambda: Decimal(0))
+    freight_refunds, freight_refunds_usd = defaultdict(lambda: Decimal(0)), defaultdict(lambda: Decimal(0))
     for row in db.scalars(select(ReturnItem).where(ReturnItem.return_id.in_(ids))).all() if ids else []:
         if types[row.return_id] == "return_refund":
             quantities[row.source_key] += row.quantity
@@ -35,19 +36,22 @@ def history(db, order_id, *, exclude=None):
         reductions[row.source_key] += row.reduction_amount
         reduction_usd[row.source_key] += row.reduction_usd
     for row in db.scalars(select(ReturnAllocation).where(ReturnAllocation.return_id.in_(ids))).all() if ids else []:
-        refunds[row.original_payment_id] += row.refund_amount
-        refunds_usd[row.original_payment_id] += row.refund_amount_usd
+        refunds[row.original_payment_id] += row.refund_amount - row.freight_refund_amount
+        refunds_usd[row.original_payment_id] += row.refund_amount_usd - row.freight_refund_amount_usd
+        freight_refunds[row.original_payment_id] += row.freight_refund_amount
+        freight_refunds_usd[row.original_payment_id] += row.freight_refund_amount_usd
     return {"quantities": dict(quantities), "physical_reductions": dict(physical_reductions),
             "physical_rounding": dict(physical_rounding),
             "reductions": dict(reductions), "reductions_usd": dict(reduction_usd),
             "refunds": dict(refunds), "refunds_usd": dict(refunds_usd),
+            "freight_refunds": dict(freight_refunds), "freight_refunds_usd": dict(freight_refunds_usd),
             "reduction_amount": sum((row.reduction_amount for row in returns), Decimal(0))}
 
 
 def draft_body(db, row):
     items = db.scalars(select(ReturnItem).where(ReturnItem.return_id == row.id).order_by(ReturnItem.id)).all()
     return Draft(order_id=row.order_id, return_type=row.return_type, reason_code=row.reason_code, reason=row.reason,
-                 refund_amount=row.refund_amount,
+                 refund_amount=row.refund_amount, freight_refund_amount=row.freight_refund_amount,
                  lines=[Line(source_key=i.source_key, quantity=i.quantity, reduction_amount=i.reduction_amount) for i in items])
 
 
@@ -118,9 +122,13 @@ def list_rows(db, user, *, page=1, page_size=20, keyword="", status="", return_t
 
 
 def order_lines(db, order_id, user, *, receipt_evidence=None):
-    from app.sales_return import sources
+    from app.sales_return import freight, sources
     snapshot = sources.snapshot(db, order_id, user, receipt_evidence=receipt_evidence)
     current = history(db, order_id)
+    freight_facts = freight.limits(snapshot, current)
+    snapshot.update(freight_refund_supported=freight_facts['supported'],
+                    freight_amount=str(freight_facts['original']),
+                    freight_refund_available=str(freight_facts['remaining']))
     for item in snapshot["lines"]:
         key = item["source_key"]
         item["shipped_quantity"] = item["quantity"]

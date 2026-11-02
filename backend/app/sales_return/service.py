@@ -37,7 +37,11 @@ def preview(db, body, user, *, exclude=None, receipt_evidence=None):
 
 
 def _body_hash(body):
-    return policy.digest(body.model_dump(mode="json", exclude={"version", "request_key"}))
+    payload = body.model_dump(mode="json", exclude={"version", "request_key"})
+    # Existing zero-freight requests retain their exact stored idempotency hash.
+    if not body.freight_refund_amount:
+        payload.pop('freight_refund_amount', None)
+    return policy.digest(payload)
 
 
 def _set_draft(db, row, body, quote):
@@ -46,7 +50,7 @@ def _set_draft(db, row, body, quote):
         setattr(row, name, snapshot.get(name))
     for name in ("return_type", "reason_code", "reason"):
         setattr(row, name, getattr(body, name))
-    for name in ("reduction_amount", "refund_amount", "waived_amount"):
+    for name in ("reduction_amount", "refund_amount", "waived_amount", "freight_refund_amount"):
         setattr(row, name, policy.money(quote[name]))
     row.snapshot = snapshot
     row.request_hash = _body_hash(body)
@@ -134,6 +138,8 @@ def activate(db, identity, body, user, *, receipt_evidence=None):
                           owner_okki_user_id=row.owner_okki_user_id, customer_id=row.customer_id,
                           currency=row.currency, amount=-policy.money(quote["reduction_amount"]),
                           amount_usd=-policy.money(quote["reduction_usd"]), effective_date=now.date(),
+                          freight_amount=-policy.money(quote['freight_refund_amount']),
+                          freight_amount_usd=-policy.money(quote['freight_refund_usd']),
                           gmv_eligible=int(bool(row.snapshot["gmv_eligible"])),
                           order_role=row.snapshot.get("order_role", "pending"),
                           departments=row.snapshot.get("departments", []), snapshot=row.snapshot)
@@ -163,7 +169,8 @@ def activate(db, identity, body, user, *, receipt_evidence=None):
             pool_lots(db, invoice, current=True)
     guard = guards.lock_order(db, row.order_id)
     guard.version += 1
-    log(db, row, "activated", user, {name: quote[name] for name in ("reduction_amount", "refund_amount", "waived_amount")})
+    log(db, row, "activated", user, {name: quote[name] for name in
+        ("reduction_amount", "refund_amount", "waived_amount", "freight_refund_amount")})
     db.flush()
     return row
 
@@ -187,6 +194,7 @@ def reverse(db, identity, body, user):
     db.add(ReturnEffect(return_id=row.id, effect_kind="reverse", order_id=row.order_id,
         owner_okki_user_id=original.owner_okki_user_id, customer_id=row.customer_id, currency=row.currency,
         amount=-original.amount, amount_usd=-original.amount_usd, effective_date=now.date(),
+        freight_amount=-original.freight_amount, freight_amount_usd=-original.freight_amount_usd,
         gmv_eligible=original.gmv_eligible, order_role=original.order_role, departments=original.departments, snapshot=original.snapshot))
     previous = db.scalar(select(ReturnReceipt).where(ReturnReceipt.return_id == row.id, ReturnReceipt.effect_kind == "activate"))
     if previous:

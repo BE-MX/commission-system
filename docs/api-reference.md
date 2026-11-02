@@ -25,7 +25,9 @@
 | `PATCH /{id}/receivings/{event_id}/inspection` | `sales_return_receiving:write` | 原收货事件 `{version, accepted_quantity, rejected_quantity, pending_quantity, note}`，只继续分类待检，不增加实收 |
 | `POST /{id}/receivings/{event_id}/stock` | `sales_return_receiving:write` | 当前权威入库契约未接通，明确返回 409，不能据输入单号增加可售库存 |
 
-草稿包含 `order_id`、`return_type=return_refund/refund_only`、`reason_code`、`reason`、`lines=[{source_key,quantity,reduction_amount}]`、可选 `refund_amount`；数量严格为整型，金额为十进制字符串。建单加 `request_key`，编辑加 `version`。金额为 0 的纯实物退回不产生零额回款；仅退款必须有正向商品冲减。来源证据、身份或额度变化返回 409 并要求重新预览；历史原款计提依据不全显示 `pending_basis`，不静默套用新人员。
+草稿包含 `order_id`、`return_type=return_refund/refund_only`、`reason_code`、`reason`、`lines=[{source_key,quantity,reduction_amount}]`、可选 `refund_amount`（含运费的现金合计）与 `freight_refund_amount`（默认 0）；数量严格为整型，金额为十进制字符串。建单加 `request_key`，编辑加 `version`。金额为 0 的纯实物退回不产生零额回款；仅退款必须有正向商品冲减。来源证据、身份或额度变化返回 409 并要求重新预览；历史原款计提依据不全显示 `pending_basis`，不静默套用新人员。
+
+运费退款只支持证据完整的 USD 现货单笔全额回款；冻结 `freight_principal/freight_principal_usd`，不包含附加费。明细接口增加 `freight_refund_supported/freight_refund_available`。预览返回 `goods_refund_amount/freight_refund_amount/freight_refund_usd/freight_remaining`；原款分摊的 `refund_amount` 为现金合计，`freight_refund_amount` 为其中运费。商品与运费分别校验累计额度，草稿不占用额度，生效事务再次加锁核验。运费同步冲减净应收与净回款，不减少商品 GMV；提成仍按现金退款及冻结原依据扣回。详情 `effects[].freight_amount/freight_amount_usd` 为有符号事实，反向更正对称恢复。
 
 `GET /api/receipts` 现在在同一 SQL 分页、筛选和排序中合并本地退款，来源 `sales_return`，状态 `local_only`，ID 为 `return:<id>`。本地退款只能从退货单反向更正，不能调用普通回款修改、删除、重试或投递；负数金额不会进入小满 outbox。
 

@@ -15,6 +15,7 @@
         <el-table-column v-if="visibleKeys.includes('order_no')" prop="order_no" label="原订单" min-width="145" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('return_type')" label="处理方式" min-width="110"><template #default="{ row }">{{ label(RETURN_TYPES, row.return_type) }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('reduction_amount')" label="货款冲减" min-width="135" align="right"><template #default="{ row }">{{ row.currency }} {{ amount(row.reduction_amount) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('freight_refund_amount')" label="运费退款" min-width="135" align="right"><template #default="{ row }">{{ row.currency }} {{ amount(row.freight_refund_amount) }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('refund_amount')" label="现金退款" min-width="135" align="right"><template #default="{ row }">{{ row.currency }} {{ amount(row.refund_amount) }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('waived_amount')" label="未收减免" min-width="135" align="right"><template #default="{ row }">{{ row.currency }} {{ amount(row.waived_amount) }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" label="单据状态" min-width="110"><template #default="{ row }"><StatusBadge :type="row.status === 'effective' ? 'success' : 'info'">{{ label(RETURN_STATUSES, row.status) }}</StatusBadge></template></el-table-column>
@@ -40,7 +41,7 @@ import TableTools from '@/components/TableTools.vue'
 import ReturnDraftDrawer from './ReturnDraftDrawer.vue'
 import ReturnDetailDrawer from './ReturnDetailDrawer.vue'
 import { RETURN_TYPES, RETURN_STATUSES, CASH_STATUSES, RECEIVING_STATUSES, amount, label } from './returnState'
-const columns = [{ key: 'return_no', label: '退货单号' }, { key: 'customer_name', label: '客户' }, { key: 'order_no', label: '原订单' }, { key: 'return_type', label: '处理方式' }, { key: 'reduction_amount', label: '货款冲减' }, { key: 'refund_amount', label: '现金退款' }, { key: 'waived_amount', label: '未收减免' }, { key: 'status', label: '单据状态' }, { key: 'cash_status', label: '资金状态' }, { key: 'receiving_status', label: '收货状态' }, { key: 'effective_date', label: '生效日期' }]
+const columns = [{ key: 'return_no', label: '退货单号' }, { key: 'customer_name', label: '客户' }, { key: 'order_no', label: '原订单' }, { key: 'return_type', label: '处理方式' }, { key: 'reduction_amount', label: '货款冲减' }, { key: 'freight_refund_amount', label: '运费退款' }, { key: 'refund_amount', label: '现金退款合计' }, { key: 'waived_amount', label: '未收减免' }, { key: 'status', label: '单据状态' }, { key: 'cash_status', label: '资金状态' }, { key: 'receiving_status', label: '收货状态' }, { key: 'effective_date', label: '生效日期' }]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('sales-returns', columns)
 const listPage = useListPage(async (params, { signal, isCurrent }) => {
   try { return await listSalesReturns(params, { signal }) }
