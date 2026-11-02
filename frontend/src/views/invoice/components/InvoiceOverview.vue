@@ -3,7 +3,7 @@
     <div class="summary-toolbar">
       <div class="summary-heading">
         <strong>订单概览</strong>
-        <span>当前账号可见 · 已同步 · 排除取消中及已取消 · 按下单日期</span>
+        <span>当前账号可见 · 已同步 · 排除取消中及已取消 · 按下单日期 · 金额不含手续费</span>
       </div>
       <div class="summary-controls">
       <el-date-picker

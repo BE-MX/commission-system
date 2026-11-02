@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { viewController } from './helpers/viewController.mjs'
 import { createInvoiceSubmissionGuard } from '../src/views/invoice/composables/invoiceSubmissionGuard.js'
+import { restoreTablePreferences } from '../src/utils/tableViewPreferences.js'
 
 function harness(t, overrides = {}) {
   const calls = { list: [], summary: [] }
@@ -26,6 +27,20 @@ test('initial list and summary use the same complete Beijing calendar month', as
   assert.equal(calls.list[0].date_from, '2026-11-01')
   assert.equal(calls.list[0].date_to, '2026-11-30')
   assert.deepEqual(calls.summary[0], { date_from: '2026-11-01', date_to: '2026-11-30' })
+})
+
+test('order amount appears before payable, survives saved preferences and sorts on the server', async t => {
+  const { page, calls } = harness(t)
+  const keys = page.columnDefs.map(column => column.key)
+  assert.equal(keys.indexOf('order_amount') + 1, keys.indexOf('total_amount'))
+  const oldKeys = keys.filter(key => key !== 'order_amount')
+  const restored = restoreTablePreferences({ version: 1, knownColumnKeys: oldKeys, visibleKeys: oldKeys }, page.columnDefs)
+  assert.ok(restored.visibleKeys.includes('order_amount'))
+  await page.handlePageChange(3)
+  await page.handleTableSort({ prop: 'order_amount', order: 'ascending' })
+  assert.equal(calls.list.at(-1).page, 1)
+  assert.equal(calls.list.at(-1).sort_field, 'order_amount')
+  assert.equal(calls.list.at(-1).sort_order, 'asc')
 })
 
 test('date changes reset pagination, preserve applied filters and keep draft edits pending', async t => {

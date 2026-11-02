@@ -32,12 +32,12 @@ def _client(db, *, user_id=5, permissions=("invoice:read",)):
 
 def _invoice(db, number, *, day=date(2026, 9, 15), salesperson=5, creator=5,
              customer="A", amount="100.00", currency="USD", new_deal=0,
-             sync_status="synced", status="ready"):
+             sync_status="synced", status="ready", fee="0.00"):
     db.add(Invoice(
         invoice_no=number, order_type="stock", customer_id=customer,
         customer_name=f"Customer {customer}", invoice_date=day,
         sales_user_id=salesperson, created_by=creator,
-        total_amount=Decimal(amount), currency=currency, okki_new_deal=new_deal,
+        total_amount=Decimal(amount), surcharge_amount=Decimal(fee), currency=currency, okki_new_deal=new_deal,
         sync_status=sync_status, status=status,
     ))
 
@@ -93,6 +93,39 @@ def test_summary_uses_all_visible_synced_invoices_not_current_page(db):
         })
         assert result.json()["data"]["order_count"] == 4
         assert result.json()["data"]["new_sign_count"] == 1
+
+
+def test_summary_and_list_exclude_fees_but_preserve_payable_and_sort_before_paging(db):
+    seed_authority(db, 5, "invoice:read")
+    _invoice(db, "FEE", amount="130.35", fee="20.25")
+    _invoice(db, "NO-FEE", amount="120.20")
+    _invoice(db, "EUR-FEE", amount="500", fee="50", currency="EUR")
+    _invoice(db, "CANCELLED-FEE", amount="1000", fee="10", status="cancelled")
+    _invoice(db, "UNSYNCED-FEE", amount="1000", fee="10", sync_status="not_synced")
+    db.commit()
+    with _client(db) as client:
+        summary = client.get("/api/invoice/invoices/summary", params={
+            "date_from": "2026-09-01", "date_to": "2026-09-30",
+        }).json()["data"]
+        assert summary["gmv"] == 230.30
+        assert summary["average_order_amount"] == 115.15
+        assert summary["order_count"] == 3
+        assert summary["non_usd_count"] == 1
+        params = {"sort_field": "order_amount", "sort_order": "asc", "page_size": 1}
+        first = client.get("/api/invoice/invoices", params=params).json()["data"]
+        assert first["total"] == 5
+        row = first["items"][0]
+        assert row["invoice_no"] == "FEE"
+        assert row["order_amount"] == 110.10
+        assert row["total_amount"] == 130.35
+        second = client.get("/api/invoice/invoices", params={**params, "page": 2}).json()["data"]
+        assert second["items"][0]["invoice_no"] == "NO-FEE"
+        assert second["items"][0]["order_amount"] == 120.20
+        eur = client.get("/api/invoice/invoices", params={"keyword": "EUR-FEE"}).json()["data"]["items"][0]
+        assert eur["order_amount"] == 450
+        assert eur["currency"] == "EUR"
+        descending = client.get("/api/invoice/invoices", params={**params, "sort_order": "desc"}).json()["data"]
+        assert descending["items"][0]["order_amount"] == 990
 
 
 def test_summary_rejects_invalid_range_and_requires_read_permission(db):

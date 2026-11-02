@@ -97,7 +97,7 @@
           <template #default="{ row }">
             <span v-if="column.key === 'invoice_no'" class="invoice-detail-entry"><button type="button" class="invoice-number invoice-number-button" @click="invoiceDetailRef.open(row)">{{ row.invoice_no }} ↗</button><InvoiceAnomalyBadge :anomalies="row.anomalies || []" /></span>
             <StatusBadge v-else-if="column.key === 'order_type'" size="small" :type="orderTypeTone(row.order_type)" effect="plain">{{ orderTypeLabel(row.order_type) }}</StatusBadge>
-            <template v-else-if="column.key === 'total_amount'">{{ row.currency }} {{ money(row.total_amount) }}</template>
+            <template v-else-if="column.key === 'order_amount' || column.key === 'total_amount'"><span v-if="row.currency && row.currency.toUpperCase() !== 'USD'">{{ row.currency }} </span>{{ money(row[column.key]) }}</template>
             <StatusBadge v-else-if="column.key === 'status'" size="small" :type="statusType(row.status)" effect="plain">{{ invoiceIsLocal(row) ? businessLabel(row.commerce_status) : statusText(row.status) }}</StatusBadge>
             <StatusBadge v-else-if="column.key === 'transaction_route'" size="small" type="info">{{ routeLabel(row.transaction_route || row.transaction_mode) }}</StatusBadge>
             <StatusBadge v-else-if="column.key === 'shadow_status'" size="small" type="info">{{ shadowLabel(row.shadow_status) }}</StatusBadge>

@@ -74,6 +74,7 @@ def list_invoices(
         query = query.filter(Invoice.invoice_date <= date_to)
     total = query.count()
     sort_columns = {**{name: getattr(Invoice, name) for name in ("invoice_no", "customer_name", "order_type", "invoice_date", "total_amount", "status", "sync_status", "created_at")}, "item_count": func.count(InvoiceItem.id), "created_by_name": db.query(ArkUser.real_name).filter(ArkUser.id == Invoice.created_by).correlate(Invoice).scalar_subquery()}
+    sort_columns["order_amount"] = Invoice.total_amount - Invoice.surcharge_amount
     rows = (
         apply_list_sort(query.outerjoin(InvoiceItem).group_by(Invoice.id).with_entities(Invoice, func.count(InvoiceItem.id).label("item_count")), sort_field, sort_order, sort_columns, default=(Invoice.created_at.desc(),), tie_breakers=(Invoice.id.asc(),))
         .offset((page - 1) * page_size)
@@ -141,7 +142,7 @@ def summarize_invoices(
         func.count(Invoice.id),
         func.count(func.distinct(case((Invoice.okki_new_deal == 1, Invoice.customer_id)))),
         func.coalesce(func.sum(case((Invoice.okki_new_deal.is_(None), 1), else_=0)), 0),
-        func.coalesce(func.sum(case((is_usd, Invoice.total_amount), else_=0)), 0),
+        func.coalesce(func.sum(case((is_usd, Invoice.total_amount - Invoice.surcharge_amount), else_=0)), 0),
         func.coalesce(func.sum(case((is_usd, 1), else_=0)), 0),
     ).one()
     gmv = _money(Decimal(gmv or 0))
@@ -1193,6 +1194,7 @@ def _invoice_list_row(invoice: Invoice, item_count: int, creator_name: str | Non
         "source_order_id": invoice.source_order_id,
         "source_order_no": invoice.source_order_no,
         "total_amount": invoice.total_amount,
+        "order_amount": _money(Decimal(invoice.total_amount or 0) - Decimal(invoice.surcharge_amount or 0)),
         "item_count": int(item_count or 0),
         "created_at": to_beijing_time(invoice.created_at),
     }

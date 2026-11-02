@@ -57,6 +57,7 @@ export function useInvoiceManagePage() {
     { key: 'order_type', label: '类型', minWidth: 110, maxWidth: 130 },
     { key: 'invoice_date', label: '日期', prop: 'invoice_date', minWidth: 116, maxWidth: 150 },
     { key: 'item_count', label: '明细', prop: 'item_count', minWidth: 80, maxWidth: 120, align: 'right' },
+    { key: 'order_amount', label: '订单金额', minWidth: 150, maxWidth: 190, align: 'right' },
     { key: 'total_amount', label: '应付合计', minWidth: 150, maxWidth: 190, align: 'right' },
     { key: 'status', label: '状态', minWidth: 160, maxWidth: 180, tooltip: true },
     { key: 'transaction_route', label: '正式来源', minWidth: 120 },
