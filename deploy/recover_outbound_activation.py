@@ -87,6 +87,19 @@ def archive_previous_attempt(receipt, raw, receipt_raw, digest):
                 stream.write(body)
 
 
+def expected_writer_state(row, *, reviewed_retry=False):
+    service = row['writer']['service']
+    if service in {'CommissionSystem', 'WhatsAppConnector', 'ark-backend'}:
+        return 'running'
+    # The inspected retry is after completed DDL and application activation. The
+    # original running tracking worker may already have resumed independently;
+    # preserve its baseline, never stop it just to recreate the earlier snapshot.
+    if (reviewed_retry and row['writer']['kind'] == 'pm2'
+            and service == 'shipment-tracking-mcp' and row.get('before') == 'running'):
+        return 'running'
+    return 'stopped'
+
+
 def remote_state(p, options, revision=REVISION):
     code = """import json,subprocess,urllib.request
 from pathlib import Path
@@ -184,7 +197,7 @@ def execute(plan_path, prepare_only=False):
         if [row['writer'] for row in migration['writers']] != inventory['migration_writers']:
             raise RuntimeError('Migration writer inventory changed')
         for row in migration['writers']:
-            expected = 'running' if row['writer']['service'] in {'CommissionSystem', 'WhatsAppConnector', 'ark-backend'} else 'stopped'
+            expected = expected_writer_state(row, reviewed_retry=previous_digest is not None)
             if schema.writer_state(row['writer'], nssm) != expected:
                 raise RuntimeError('Actual writer differs from the paused checkpoint')
         if outbound_release.artifact(Path(__file__).parent) != outbound_release.artifact(source / 'deploy'):

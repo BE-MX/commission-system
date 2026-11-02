@@ -220,3 +220,17 @@ def test_retry_archives_both_bytes_without_overwriting_evidence(tmp_path):
     with pytest.raises(RuntimeError, match='differs'):
         recovery.archive_previous_attempt(receipt, b'changed journal', b'old receipt', 'a'*64)
     assert archive.read_bytes() == b'old journal'
+
+
+@pytest.mark.parametrize('reviewed,before,kind,service,expected', [
+    (False, 'running', 'pm2', 'shipment-tracking-mcp', 'stopped'),
+    (True, 'running', 'pm2', 'shipment-tracking-mcp', 'running'),
+    (True, 'stopped', 'pm2', 'shipment-tracking-mcp', 'stopped'),
+    (True, 'running', 'systemd', 'shipment-tracking-mcp', 'stopped'),
+    (True, 'running', 'pm2', 'unregistered-worker', 'stopped'),
+    (True, 'running', 'systemd_timer', 'ark-okki-outbound-poller', 'stopped'),
+    (True, 'running', 'systemd', 'ark-backend', 'running'),
+])
+def test_reviewed_retry_preserves_only_resumed_original_tracking_writer(reviewed, before, kind, service, expected):
+    row = {'writer': {'service': service, 'kind': kind}, 'before': before}
+    assert recovery.expected_writer_state(row, reviewed_retry=reviewed) == expected
