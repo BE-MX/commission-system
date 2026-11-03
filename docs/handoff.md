@@ -1,3 +1,9 @@
+## 2026-11-03 本地成品库存入口路由修复（Codex，Git交付，未部署）
+
+- 根因：员工导航InventoryLedger和客户公开PublicInventory均注册为`/inventory`，按菜单路径导航时优先匹配公开页，跳过员工布局和库存权限守卫。
+- 员工页面改为`/stock/inventory`，菜单“备货管理→本地成品库存账”及导航权限清单同步；客户公开`/inventory`保持原用途。入库API与库存数量逻辑未修改。
+- 新回归运行真实Vue Router匹配及实际路由守卫，覆盖菜单点击/按名称跳转/路径重载、公开匿名访问、未登录跳登录、无库存权限拒绝；与常用导航/页签/入库表单组合21项通过。严格约定检查及生产构建通过（139条导航），构建证据`tmp/inventory-route-build.log`。本轮已获合并main及推送授权，仅交付库存入口修复；本地main原有7个未推送提交与119项工作区内容保留，不纳入远端交付。未执行生产部署。
+
 ## 2026-11-02 客户素材上传弹窗重开重置标签（Codex，Git 交付，未部署）
 
 - 工作区 `D:/MyProgram/commission-system-codex-media-upload-color-tags`，分支 `codex/media-upload-color-tags`，基点 `d2d97904`。用户反馈产品类型锁定后关闭再开仍有旧高亮，拖入文件夹后选中消失，要求每次进入清缓存。用户已授权本次修复提交、合并 main 与推送 origin，暂不部署；未修改生产数据。交付分支 codex/media-tag-reset 基于远端 60c5c635，仅含本次修复，既有未推送测试提交不夹带。最终 Git 引用以回读为准。
