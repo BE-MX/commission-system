@@ -2,7 +2,7 @@
   <el-sub-menu ref="branch" :index="group.key" popper-class="ark-navigation-popup" :aria-label="group.title" tabindex="0"
     :data-nav-group-trigger="group.key" @keydown.enter.self.prevent.stop="activateGroup" @keydown.space.self.prevent.stop="activateGroup" @keydown.esc.prevent.stop="closeGroup">
     <template #title>
-      <el-icon class="nav-group-icon"><component :is="group.icon" /><span v-if="group.iconBadge" class="nav-icon-badge">{{ group.iconBadge }}</span><NavigationTextBadge :item="group" icon /></el-icon>
+      <el-icon class="nav-group-icon"><component :is="group.icon" /><NavigationTextBadge v-if="group.iconBadge" :item="{ textBadge: group.iconBadge, badgePlace: 'icon', badgeTone: 'gold' }" icon /><NavigationTextBadge :item="group" icon /></el-icon>
       <span class="nav-title" :title="group.title">{{ group.title }}</span><NavigationTextBadge :item="group" />
     </template>
     <template v-for="item in group.items" :key="item.key || item.path">
@@ -54,7 +54,6 @@ async function activateGroup(event) {
 <style scoped>
 .nav-group-icon { position: relative; overflow: visible; }
 .nav-title { display: inline-block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
-.nav-icon-badge { position: absolute; right: -12px; bottom: -9px; font-size: 9px; color: var(--color-gold); background: var(--sidebar-bg-from); line-height: 13px; white-space: nowrap; }
 .external-item { text-decoration: none; }
 .nav-review-badge { margin-right: 22px; line-height: 20px; }
 .nav-document-label { position: relative; margin-right: 14px; }
