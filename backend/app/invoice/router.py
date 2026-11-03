@@ -1303,7 +1303,10 @@ def close_linked(invoice_id: int, identity: str, db: Session = Depends(get_db),
     invoice = edit_authority.lock_document(db, invoice_id)
     if invoice is None:
         raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(db, invoice, user)
+    # Installed authority returns the current employee id, while customer
+    # visibility consumes a JWT-shaped subject. Keep the current scope check.
+    scope_user = {**user, 'sub': str(user.get('id') or user.get('sub'))}
+    _ensure_invoice_visible(db, invoice, scope_user)
     row = db.get(linked.InvoiceLinkedSync, identity)
     if row is None or row.invoice_id != invoice.id:
         raise HTTPException(404, "关联同步记录不存在")

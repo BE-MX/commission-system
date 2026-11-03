@@ -138,8 +138,12 @@ class TestSchedulerRegistration:
                 "receipt_index_refresh",
                 "invoice_order_query_recovery",
                 "okki_outbound_delete_reconcile",
+                "invoice_linked_pending",
             }
             whatsapp_events = scheduler.get_job('whatsapp_event_sync')
+            linked_queue = scheduler.get_job('invoice_linked_pending')
+            assert linked_queue.trigger.interval.total_seconds() == 15
+            assert linked_queue.max_instances == 1 and linked_queue.coalesce is True
             assert whatsapp_events.trigger.interval.total_seconds() == real_settings.WHATSAPP_EVENT_SYNC_INTERVAL_SECONDS
             assert whatsapp_events.max_instances == 1 and whatsapp_events.coalesce is True
             task_brief = scheduler.get_job("task_daily_brief")

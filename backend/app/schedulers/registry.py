@@ -83,6 +83,7 @@ JOB_PORTAL_AUTH_CLEANUP = "portal_auth_cleanup"
 JOB_PORTAL_NOTIFICATIONS = "portal_notifications"
 JOB_PORTAL_DINGTALK = "portal_dingtalk_notices"
 JOB_PORTAL_OUTBOUND = "portal_outbound"
+JOB_INVOICE_LINKED_PENDING = "invoice_linked_pending"
 
 
 def _console_safe(value: object, encoding: str | None = None) -> str:
@@ -165,6 +166,11 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
         from app.schedulers.portal_outbound import process_portal_outbound
         scheduler.add_job(process_portal_outbound, trigger="interval", seconds=30,
             id=JOB_PORTAL_OUTBOUND, replace_existing=True, max_instances=1, coalesce=True,
+            misfire_grace_time=30)
+    if settings.OKKI_CLIENT_ID and settings.OKKI_CLIENT_SECRET:
+        from app.schedulers.invoice_linked import process_pending_invoice_syncs
+        scheduler.add_job(process_pending_invoice_syncs, trigger='interval', seconds=15,
+            id=JOB_INVOICE_LINKED_PENDING, replace_existing=True, max_instances=1, coalesce=True,
             misfire_grace_time=30)
     from app.receipt.scheduler import process_receipts, refresh_receipt_index
     if settings.INVOICE_ORDER_QUERY_RECOVERY_ENABLED:

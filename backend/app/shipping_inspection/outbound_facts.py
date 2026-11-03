@@ -9,6 +9,7 @@ from sqlalchemy.orm.attributes import get_history
 
 from app.core.time import beijing_now, to_beijing_naive
 from app.shipping_inspection import audit_service, outbound_sync_plan as plans
+from app.shipping_inspection import outbound_binding as binding_policy
 from app.shipping_inspection.models import ShippingOperationEvent
 from app.shipping_inspection.outbound_prepare import reject
 
@@ -74,6 +75,7 @@ def start(db,invoice_id,record,actor_id,plan,payload,auto_recall,source,warehous
     lineage=db.execute(select(Conversion.id,Conversion.request_id).where(Conversion.invoice_id==invoice_id)).all()
     nonce=str(uuid4())
     data={'protocol':1,'nonce':nonce,'invoice_id':invoice_id,'actor_id':actor_id,'authority_epoch':epoch,
+          'binding_version':binding_policy.version(plan),
           'lineage':[{'conversion_id':row.id,'request_id':row.request_id} for row in lineage],
           'record':deepcopy(record),'plan':deepcopy(plan),'payload':deepcopy(payload),
           'binding_fingerprint':plan['local_binding_fingerprint'],'plan_fingerprint':plans.digest(plan),
@@ -91,6 +93,7 @@ def validate(db,attempt):
     if (row is None or row.action!='sync_attempt' or row.payload!=data or row.result!={}
             or row.operator_user_id!=data['actor_id'] or row.outbound_record_id!=data['record']['outbound_record_id']
             or data.get('protocol')!=1 or data.get('nonce')!=attempt.nonce
+            or data.get('binding_version', 1)!=binding_policy.version(data['plan'])
             or data['plan_fingerprint']!=plans.digest(data['plan'])
             or data['payload_fingerprint']!=plans.digest(data['payload'])
             or data['plan'].get('local_binding_fingerprint')!=data['binding_fingerprint']

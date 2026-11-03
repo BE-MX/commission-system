@@ -10,6 +10,7 @@ from threading import Event
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from mysql_current_fixture import current_queue_schema  # noqa: F401
 import httpx
 from sqlalchemy import select,text,event
 from sqlalchemy.exc import OperationalError
@@ -37,7 +38,7 @@ def prepared(e,monkeypatch,tmp_path):
         intent=db.scalar(select(ReceiptIntent).where(ReceiptIntent.invoice_id==invoice.id))
         for identity in intent.attachment_ids:db.get(ReceiptAttachment,identity).created_by=e.ctx.actor
         db.commit()
-    response=asyncio.run(e.write(route,body,method));assert response.status_code==200
+    response=asyncio.run(e.write(route,body,method));assert response.status_code==200,response.text
     identity=response.json()['data']['operation']['id']
     c.identity=identity;c.run_route=route+'/'+identity+'/run';c.get_route=route
     c.reads=[]
@@ -258,7 +259,7 @@ def test_linked_preflight_failure_finishes_without_sending(editor,monkeypatch,tm
         assert edit_authority.lock_document(db,e.invoice_id).linked_sync_id is None
 
 
-def test_current_read_expires_only_linked_lease_without_sending(editor,monkeypatch,tmp_path):
+def test_current_read_observes_expired_linked_lease_without_writing_or_sending(editor,monkeypatch,tmp_path):
     e=editor;c=prepared(e,monkeypatch,tmp_path)
     with Session(e.ctx.engine) as db:
         row=db.get(InvoiceLinkedSync,c.identity);row.status='running';row.run_token='owned-expired-token'
@@ -266,7 +267,7 @@ def test_current_read_expires_only_linked_lease_without_sending(editor,monkeypat
     before=frozen(c);result=request(c,c.get_route,'GET');assert result.status_code==200 and result.json()['data']['status']=='uncertain'
     after=frozen(c);assert before[:5]==after[:5] and before[6:]==after[6:]
     with Session(e.ctx.engine) as db:
-        row=db.get(InvoiceLinkedSync,c.identity);assert row.status=='uncertain' and row.run_token=='owned-expired-token'
+        row=db.get(InvoiceLinkedSync,c.identity);assert row.status=='running' and row.run_token=='owned-expired-token'
     assert c.posts==c.tokens==c.reads==c.followups==[]
 
 

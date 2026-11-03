@@ -210,7 +210,7 @@ def _follow_existing(db, invoice, user, related, *, force_authority=False):
     preview = outbound_sync_service.preview(db, record, user, **number_args,
                                             force_authority=enabled)
     if preview.get('recover'):
-        result = outbound_sync_service.synchronize(db, record, user, None, check_only=True,
+        result = outbound_sync_service.synchronize(db, record, user, None, repair=True,
                                                     **number_args, force_authority=enabled)
     elif preview.get('requires_recheck'):
         result = outbound_sync_service.synchronize(db, record, user, preview['version'],
@@ -219,6 +219,13 @@ def _follow_existing(db, invoice, user, related, *, force_authority=False):
     else:
         result = outbound_sync_service.synchronize(db, record, user, preview['version'],
                                                     **number_args, source='invoice_sync', force_authority=enabled)
+    # Each accepted partial step proves missing_only and persists a fresh nonce.
+    # Unknown/no-progress results stop here; never replay their original POST.
+    for _ in range(preview.get('repair_limit', 0)):
+        if result['status'] != 'sync_uncertain' or not result.get('repairable'):
+            break
+        result = outbound_sync_service.synchronize(db, record, user, None, repair=True,
+                                                    **number_args, force_authority=enabled)
     if result['status'] == 'sync_done':
         if outbound_sync_state.evidence(db, record['outbound_record_id'])[1]:
             return {'status': 'manual', 'category': 'inspection_recheck', 'outbound_updated': True,

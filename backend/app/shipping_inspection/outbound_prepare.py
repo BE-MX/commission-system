@@ -14,6 +14,7 @@ from app.portal.access_policy import employee_principal
 from app.portal.errors import PortalError
 from app.portal.order_models import Conversion, OrderRequest
 from app.shipping_inspection import outbound_service, outbound_sync_plan as plans, outbound_sync_state as state
+from app.shipping_inspection import outbound_binding as binding_policy
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto, ShippingOperationEvent
 
 logger = logging.getLogger(__name__)
@@ -194,7 +195,8 @@ def evidence(db, record, local, business, desired_serial_id, number_only, expect
             reject(409, '取证期间原订单或出库单已变化')
         plan.update(before=deepcopy(before), invoice_id=local['invoice_id'], invoice_no=local['invoice_no'],
             invoice_version=local['invoice_version'], order=deepcopy(order), source_items=local['source_items'],
-            local_binding_fingerprint=plans.digest(business))
+            binding_version=binding_policy.CURRENT_VERSION,
+            local_binding_fingerprint=binding_policy.fingerprint(business, binding_policy.CURRENT_VERSION))
         plan['version'] = plans.version_digest(plan)
         return plan
     except HTTPException:

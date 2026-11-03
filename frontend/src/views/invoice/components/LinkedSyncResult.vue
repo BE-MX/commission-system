@@ -19,10 +19,17 @@
   </section>
 </template>
 <script setup>
+import { watch, onBeforeUnmount } from 'vue'
 import { formatMoney } from '../../../utils/money.js'
+import { createLinkedSyncPolling } from '../composables/linkedSyncPolling.js'
 
-defineProps({ operation: { type: Object, default: null }, busy: Boolean })
-defineEmits(['refresh', 'retry', 'recheck', 'close', 'resolve'])
+const props = defineProps({ operation: { type: Object, default: null }, busy: Boolean,
+  refreshing: Boolean, active: Boolean })
+const emit = defineEmits(['refresh', 'retry', 'recheck', 'close', 'resolve'])
+const polling = createLinkedSyncPolling(() => props, () => emit('refresh'))
+watch(() => [props.active, props.operation?.id, props.operation?.status, props.busy, props.refreshing],
+  polling.update, { immediate: true })
+onBeforeUnmount(polling.stop)
 const names = { order: '小满订单', outbound: '出库单', receipt: '回款单', resolution: '人工核对记录' }
 const labels = { pending: '待处理', running: '同步中', sending: '发送中', done: '已完成', failed: '未完成', uncertain: '待核对', manual: '需要处理' }
 </script>

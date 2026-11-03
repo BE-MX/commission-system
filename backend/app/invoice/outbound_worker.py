@@ -381,39 +381,47 @@ def install_mode(db):
 
 def run_once(factory):
     settings = get_settings()
-    if not (settings.PORTAL_ENABLED and settings.PORTAL_OUTBOUND_WORKER_ENABLED):
+    if not settings.PORTAL_ENABLED:
         return {'status':'disabled','processed':0}
+    from app.invoice.linked_sync_worker import run_once as resume_saved_syncs
     with factory() as db:
-        # Shared advisory executor fence; no authority/PI/task row lock crosses I/O.
         with outbound_mode.executor_fence(db) as acquired:
             if not acquired:return {'status':'busy','processed':0}
             try:
                 install_mode(db)
                 if not enabled():return {'status':'disabled','processed':0}
-                # Each bounded page advances even when every action is deferred/in flight.
-                # A fixed high-water mark prevents new arrivals extending this tick forever.
-                ceiling=db.scalar(select(func.max(Invoice.id))) or 0;clear(db)
-                cursor=0;completed=0
-                while cursor<ceiling:
-                    later=aliased(ShippingOperationEvent)
-                    unfinished=~select(later.id).where(later.scope==facts.FINISH,
-                        later.outbound_record_id==ShippingOperationEvent.outbound_record_id,
-                        later.payload['nonce'].as_string()==ShippingOperationEvent.payload['nonce'].as_string(),
-                        later.id>ShippingOperationEvent.id).exists()
-                    late=select(ShippingOperationEvent.id).where(ShippingOperationEvent.scope==facts.FACT,
-                        ShippingOperationEvent.outbound_record_id==func.concat('create:',Invoice.id),unfinished).exists()
-                    ordinary=or_(OkkiOutboundTask.id.is_(None),
-                        OkkiOutboundTask.status.in_(['pending','waiting_stock','failed','running','uncertain']))
-                    candidates=db.scalars(select(Invoice.id).outerjoin(OkkiOutboundTask,OkkiOutboundTask.invoice_id==Invoice.id)
-                        .where(Invoice.id>cursor,Invoice.id<=ceiling,Invoice.outbound_auto_requested==1,
-                               Invoice.sync_status=='synced',Invoice.order_type!='presale',or_(ordinary,late))
-                        .order_by(Invoice.id).limit(20)).all();clear(db)
-                    if not candidates:break
-                    cursor=candidates[-1]
-                    for invoice_id in candidates:
-                        try:process(db,invoice_id);completed+=1
-                        except HTTPException as error:
-                            diagnose(db,'action_deferred',error)
-                return {'status':'processed','processed':completed}
             finally:
                 outbound_mode.rollback_owned(db)
+        # Keep the finite high-water scan so waiting-stock rows cannot starve
+        # later candidates. Release the actual mutex after EVERY invoice, and
+        # serve saved employee intents before taking another creation slot.
+        ceiling=db.scalar(select(func.max(Invoice.id))) or 0;clear(db)
+        cursor=0;completed=0
+        while cursor<ceiling:
+            later=aliased(ShippingOperationEvent)
+            unfinished=~select(later.id).where(later.scope==facts.FINISH,
+                later.outbound_record_id==ShippingOperationEvent.outbound_record_id,
+                later.payload['nonce'].as_string()==ShippingOperationEvent.payload['nonce'].as_string(),
+                later.id>ShippingOperationEvent.id).exists()
+            late=select(ShippingOperationEvent.id).where(ShippingOperationEvent.scope==facts.FACT,
+                ShippingOperationEvent.outbound_record_id==func.concat('create:',Invoice.id),unfinished).exists()
+            ordinary=or_(OkkiOutboundTask.id.is_(None),
+                OkkiOutboundTask.status.in_(['pending','waiting_stock','failed','running','uncertain']))
+            candidates=db.scalars(select(Invoice.id).outerjoin(OkkiOutboundTask,OkkiOutboundTask.invoice_id==Invoice.id)
+                .where(Invoice.id>cursor,Invoice.id<=ceiling,Invoice.outbound_auto_requested==1,
+                       Invoice.sync_status=='synced',Invoice.order_type!='presale',or_(ordinary,late))
+                .order_by(Invoice.id).limit(20)).all();clear(db)
+            if not candidates:break
+            cursor=candidates[-1]
+            for invoice_id in candidates:
+                pending=resume_saved_syncs(factory, limit=1)
+                if pending['status']=='busy':return {'status':'busy','processed':completed}
+                with outbound_mode.executor_fence(db) as acquired:
+                    if not acquired:return {'status':'busy','processed':completed}
+                    try:
+                        process(db,invoice_id);completed+=1
+                    except HTTPException as error:
+                        diagnose(db,'action_deferred',error)
+                    finally:
+                        outbound_mode.rollback_owned(db)
+        return {'status':'processed','processed':completed}

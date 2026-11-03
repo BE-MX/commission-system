@@ -51,7 +51,15 @@ def editor(trade, monkeypatch):
         invoice=invoices.get_invoice(db,order.invoice_id);invoice_id=invoice.id;version=invoice.portal_document_version
         values={key:getattr(invoice,key) for key in InvoiceUpdate.model_fields if hasattr(invoice,key) and key!='items'}
         values['items']=[{key:getattr(item,key) for key in InvoiceItemPayload.model_fields if hasattr(item,key)} for item in invoice.items]
-        for item in values['items']:item['semifinished_plan']=item.get('semifinished_plan') or []
+        for item in values['items']:
+            item['semifinished_plan']=item.get('semifinished_plan') or []
+            # Legacy rows store NULL; the editor submits the current bulk default.
+            if item.get('commercial_kind') is None:item.pop('commercial_kind',None)
+        values['item_groups']=[{'key':group.key,'name':group.name,'sort_order':group.sort_order}
+                               for group in invoice.item_groups]
+        group_keys={group.id:group.key for group in invoice.item_groups}
+        for item, payload in zip(invoice.items, values['items']):
+            payload['group_key']=group_keys.get(item.group_id, values['item_groups'][0]['key'])
         values['remark']='Edited only after current employee authorization'
         body=InvoiceUpdate.model_validate(values).model_dump(mode='json')
         owner=db.get(ArkUser,ctx.actor);owner.password_hash=utils.hash_password(password);username=owner.username

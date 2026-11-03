@@ -17,6 +17,10 @@ from app.auth.dependencies import require_any_permission, require_permission
 from app.core.time import beijing_now
 from app.invoice import legacy_sending, edit_authority, linked_sync_service as linked, order_sync_execution as orders
 from app.invoice import linked_outbound_service, service, xiaoman_service
+from app.invoice.stock_reservations import inventory_fence
+from app.commerce_transition.models import SendingClaim
+from sqlalchemy import select
+from app.portal.event_models import AuditEvent
 from app.portal.upstream_authority import begin_employee_document_write
 from app.receipt import balance, remote
 
@@ -128,7 +132,94 @@ def _followup(db,invoice_id,identity,user):
     db.commit()
 
 
-def run(db,invoice_id,identity,user,*,recheck=False):
+def _defer_inventory(db, invoice_id, identity, user, recheck):
+    invoice, row, current = _phase(db, invoice_id, identity, user)
+    if row.status == 'running' or row.status == 'uncertain' or row.status in {'done', 'manual'} and not recheck:
+        return row, invoice, current
+    if row.status in {'done', 'manual'}:
+        linked.ensure_idle(invoice)
+        if row.steps['order']['status'] != 'done' or linked.snapshot(invoice) != row.after or linked.latest(db, invoice_id).id != identity:
+            raise HTTPException(409, '原关联同步版本尚未完整核对，不能沿用任务')
+        invoice.linked_sync_id = identity
+        row.steps = {**row.steps, 'outbound': {'status': 'pending', 'message': '等待重新核对'},
+                     'receipt': {'status': 'pending', 'message': '等待重新核对'}}
+    if invoice.linked_sync_id != identity or linked.snapshot(invoice) != row.after:
+        raise HTTPException(409, '该修改版本已结束或订单已变化，请核对原任务')
+    uncertain = (invoice.sync_status == 'sync_uncertain' or orders.facts.unresolved(db, invoice)
+                 or db.scalar(select(SendingClaim.id).where(SendingClaim.active_invoice_key == invoice_id)) is not None)
+    key = 'order' if row.steps['order']['status'] != 'done' else 'outbound'
+    row.status = 'uncertain' if uncertain else 'pending'
+    row.steps = {**row.steps, key: {
+        'status': 'uncertain' if uncertain else 'pending',
+        'category': 'original_result' if uncertain else 'inventory_busy',
+        'message': '原发送结果待核对，不会重复发送' if uncertain else '库存任务处理中，已排队，系统将自动继续同步'}}
+    row.run_token, row.lease_until = None, None
+    db.commit()
+    invoice, row, current = _phase(db, invoice_id, identity, user)
+    return row, invoice, current
+
+
+def run(db, invoice_id, identity, user, *, recheck=False):
+    # Authorization precedes queue mutation; actual mutex ownership precedes the
+    # durable running claim and is shared by order + outbound nested executors.
+    try:
+        _phase(db, invoice_id, identity, user)
+        db.commit()
+        with inventory_fence(db) as acquired:
+            try:
+                if not acquired:
+                    return _defer_inventory(db, invoice_id, identity, user, recheck)
+                return _run(db, invoice_id, identity, user, recheck=recheck)
+            finally:
+                # End business row locks before returning the named-lock socket.
+                db.rollback(); db.expire_all()
+    except Exception:
+        db.rollback(); db.expire_all()
+        raise
+
+
+def _send_history(db, invoice_id):
+    attempts = tuple(db.scalars(select(AuditEvent.id).where(AuditEvent.action == orders.facts.START,
+        AuditEvent.safe_diff_json['invoice_id'].as_integer() == invoice_id).order_by(AuditEvent.id)).all())
+    claims = tuple(db.scalars(select(SendingClaim.id).where(SendingClaim.invoice_id == invoice_id)
+                             .order_by(SendingClaim.id)).all())
+    return attempts, claims
+
+
+def _finish_unsent_failure(db, invoice_id, identity, user, token, history):
+    """Only the exact still-owned run with NO new durable attempt can fail safely."""
+    if token is None or history is None:
+        return
+    try:
+        invoice, row, _ = _phase(db, invoice_id, identity, user, token)
+        safe = (invoice.sync_status == 'not_synced' and not invoice.sync_attempt
+                and row.steps['order']['status'] == 'sending'
+                and _send_history(db, invoice_id) == history
+                and not orders.facts.unresolved(db, invoice)
+                and db.scalar(select(SendingClaim.id).where(SendingClaim.active_invoice_key == invoice_id)) is None)
+        if safe:
+            row.steps = {**row.steps, 'order': {'status': 'failed', 'category': 'unsent_preparation',
+                'message': '同步准备未完成，本次未发送；可重试当前任务'}}
+            row.status, row.run_token, row.lease_until = 'failed', None, None
+            db.commit()
+        elif row.steps['order']['status'] == 'sending':
+            # A committed START/claim survives the failed caller. Preserve its
+            # responsibility and expose uncertainty instead of an abandoned lease.
+            row.steps = {**row.steps, 'order': {'status': 'uncertain', 'category': 'original_result',
+                'message': '原发送结果待核对，不会重复发送；请核对原任务'}}
+            row.status, row.run_token, row.lease_until = 'uncertain', None, None
+            db.commit()
+        else:
+            db.rollback()
+    except Exception as error:
+        db.rollback()
+        logger.warning('Linked unsent failure cannot be finalized invoice=%s kind=%s', invoice_id, type(error).__name__)
+        print(f'[linked-sync] original responsibility retained invoice={invoice_id}', flush=True)
+
+
+def _run(db,invoice_id,identity,user,*,recheck=False):
+    token = None
+    before_send_history = None
     try:
         invoice,row,current=_phase(db,invoice_id,identity,user)
         if row.status in {'done','manual'} and recheck:
@@ -148,6 +239,7 @@ def run(db,invoice_id,identity,user,*,recheck=False):
         if invoice.linked_sync_id!=identity or linked.snapshot(invoice)!=row.after:
             raise HTTPException(409,"该修改版本已结束或订单已变化，请核对原任务")
         token=uuid4().hex
+        before_send_history = _send_history(db, invoice_id)
         row.status,row.run_token,row.lease_until='running',token,beijing_now()+timedelta(minutes=30)
         order_done=row.steps['order']['status']=='done'
         db.commit()
@@ -215,4 +307,5 @@ def run(db,invoice_id,identity,user,*,recheck=False):
         invoice,row,current=_phase(db,invoice_id,identity,user);return row,invoice,current
     except Exception:
         db.rollback()
+        _finish_unsent_failure(db, invoice_id, identity, user, token, before_send_history)
         raise

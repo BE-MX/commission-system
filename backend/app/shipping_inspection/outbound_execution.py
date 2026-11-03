@@ -10,6 +10,7 @@ from app.portal.access_policy import employee_principal
 from app.portal.errors import PortalError
 from app.shipping_inspection import outbound_prepare as prepare, outbound_facts as facts
 from app.shipping_inspection import outbound_sync_plan as plans, outbound_sync_state as state
+from app.shipping_inspection import outbound_binding as binding_policy
 
 logger=logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ def local(db,record,user,warehouse,*,attempt=None,actions=None,sender=False):
             legacy_sending.authorize(db, invoice, attempt.data['authority_epoch'])
         facts.validate(db,attempt)
         if (invoice.id!=attempt.data['invoice_id'] or original!=attempt.data['record']
-                or plans.digest(business)!=attempt.data['binding_fingerprint']
+                or binding_policy.fingerprint(business,binding_policy.version(attempt.data['plan']))!=attempt.data['binding_fingerprint']
                 or event is None or event.payload!=facts.event_payload(attempt)
                 or event.operator_user_id!=attempt.data['actor_id']
                 or event.source!=attempt.data['source']
@@ -94,7 +95,7 @@ def response(db,record,user,invoice_id,warehouse,result):
 
 def claim(db,record,user,warehouse,plan,binding,auto_recall,source,payload=None,parent=None,repair_step=None):
     actor,original,invoice,event,business,current_binding,_=local(db,record,user,warehouse)
-    if (current_binding!=binding or plans.digest(business)!=plan['local_binding_fingerprint']
+    if (current_binding!=binding or binding_policy.fingerprint(business,binding_policy.version(plan))!=plan['local_binding_fingerprint']
             or event is None or event.action in state.ACTIVE):
         prepare.reject(409,'凭证获取期间原出库或本地资料已变化')
     attempt=facts.start(db,invoice.id,original,actor['id'],plan,payload or plan['payload'],
@@ -252,7 +253,7 @@ def verify(db,record,user,warehouse,attempt,*,sender=False):
                 facts.append(db,facts.FINISH,item.nonce,item,facts.identity(item),
                     {'facts_fingerprint':facts.fingerprint(db,item,include_reads=False),
                      'evidence_fingerprint':expected_facts[item.nonce],'verified_fingerprint':plans.digest(after),
-                     'after_binding_fingerprint':plans.digest(finished_business),
+                     'after_binding_fingerprint':binding_policy.fingerprint(finished_business,binding_policy.version(item.data['plan'])),
                      'event_result_fingerprint':plans.digest(event.result),'result':deepcopy(result),
                      'finished_by':actor['id']})
     invoice_id=invoice.id
@@ -355,7 +356,7 @@ def review_finished(db,record,user,warehouse,attempt):
         finished=facts.get(db,facts.FINISH,attempt.nonce,lock=True)
         facts.validate(db,attempt)
         if (event is None or event.action!='sync_done' or event.payload!=facts.event_payload(attempt)
-                or finished is None or plans.digest(business)!=finished.result.get('after_binding_fingerprint')
+                or finished is None or binding_policy.fingerprint(business,binding_policy.version(attempt.data['plan']))!=finished.result.get('after_binding_fingerprint')
                 or plans.digest(event.result)!=finished.result.get('event_result_fingerprint')):
             prepare.reject(409,'已完成原单或当前验货绑定已变化，不能覆盖')
         chain=facts.chain(db,attempt)
@@ -440,7 +441,7 @@ def synchronize(db,record,user,version,*,check_only=False,confirm_recheck=False,
         actor={**actor,'sub':str(actor['id'])}
         original=prepare.mirror(db,record,actor,warehouse)
         _,_,business,binding,local_data=prepare.capture(db,original,actor,executing=True)
-        if plans.digest(business)!=plan['local_binding_fingerprint']:prepare.reject(409,'原完整本地绑定已变化')
+        if binding_policy.fingerprint(business,binding_policy.version(plan))!=plan['local_binding_fingerprint']:prepare.reject(409,'原完整本地绑定已变化')
         if not plan['changed']:
             # Reuse verified local semantics; prepare already took exact outbound/order readbacks outside locks.
             event.payload={'invoice_id':invoice.id,'plan':plan};event.source=source

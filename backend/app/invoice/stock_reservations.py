@@ -7,6 +7,7 @@ subtracted twice. Task IDs define the stable allocation order.
 import json
 import logging
 from functools import wraps
+from contextlib import contextmanager
 from threading import Lock
 from weakref import WeakKeyDictionary
 from collections import defaultdict
@@ -226,26 +227,34 @@ def claims(db, *, native_reader=None, native_keys=None, before_task_id=None, inv
     return result
 
 
+@contextmanager
+def inventory_fence(db):
+    """Share actual mutex ownership across one linked workflow's nested executors."""
+    if db.info.get('stock_executor_fence'):
+        yield True
+        return
+    if db.get_bind().dialect.name == 'sqlite':
+        gate = _sqlite_fences.setdefault(db.get_bind(), Lock())
+        if not gate.acquire(blocking=False):
+            yield False
+            return
+        try:
+            db.info['stock_executor_fence'] = True
+            yield True
+        finally:
+            db.info.pop('stock_executor_fence', None)
+            gate.release()
+        return
+    from app.invoice.outbound_mode import executor_fence
+    with executor_fence(db, require_fresh=False) as acquired:
+        yield acquired
+
+
 def fenced(function):
     """Serialize other stock-increasing outbound paths with both task executors."""
     @wraps(function)
     def execute(db, *args, **kwargs):
-        if db.info.get('stock_executor_fence'):
-            return function(db, *args, **kwargs)
-        if db.get_bind().dialect.name == 'sqlite':
-            # Isolated SQLite fixtures have no MySQL named-lock primitive.
-            gate = _sqlite_fences.setdefault(db.get_bind(), Lock())
-            if not gate.acquire(blocking=False):
-                from fastapi import HTTPException
-                raise HTTPException(409, '库存出库正在处理中，请稍后重新核对')
-            try:
-                db.info['stock_executor_fence'] = True
-                return function(db, *args, **kwargs)
-            finally:
-                db.info.pop('stock_executor_fence', None)
-                gate.release()
-        from app.invoice.outbound_mode import executor_fence
-        with executor_fence(db, require_fresh=False) as acquired:
+        with inventory_fence(db) as acquired:
             if not acquired:
                 from fastapi import HTTPException
                 raise HTTPException(409, '库存出库正在处理中，请稍后重新核对')

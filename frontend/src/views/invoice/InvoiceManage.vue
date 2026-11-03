@@ -199,6 +199,8 @@
               <LinkedSyncResult v-if="!invoiceIsLocal(form)"
                 :operation="linkedOperation"
                 :busy="linkedBusy"
+                :refreshing="linkedLoading"
+                :active="drawerVisible"
                 @refresh="refreshLinked"
                 @retry="retryLinked"
                 @recheck="recheckLinked"

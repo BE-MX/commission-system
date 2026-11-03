@@ -5,6 +5,7 @@ from datetime import timedelta
 import json
 import httpx
 import pytest
+from mysql_current_fixture import current_queue_schema  # noqa: F401
 from fastapi import HTTPException
 from sqlalchemy import select,text,event,update
 from sqlalchemy.orm import Session
@@ -212,8 +213,11 @@ def test_worker_scheduler_processes_valid_item_after_twenty_blocked_items(editor
         if unavailable:
             original.xiaoman_order_id=old_task.order_id='99999999'
             db.scalar(select(InvoiceSyncLog).where(InvoiceSyncLog.invoice_id==original.id,InvoiceSyncLog.action=='create')).response_body=json.dumps({'order_id':'99999999'})
+        else:
+            original.xiaoman_order_id=old_task.order_id='blocked-'+uuid4().hex
         for index in range(20):
-            cloned=Invoice(**{**values,'invoice_no':queue_prefix+'-'+str(index)})
+            cloned=Invoice(**{**values,'invoice_no':queue_prefix+'-'+str(index),
+                'xiaoman_order_id':values['xiaoman_order_id'] if index==19 else 'blocked-'+uuid4().hex})
             db.add(cloned);db.flush()
             for item in items:
                 data={column.key:getattr(item,column.key) for column in InvoiceItem.__table__.columns if column.key not in ('id','invoice_id')}
@@ -439,7 +443,7 @@ def test_worker_failed_business_rollback_invalidates_session_before_fence_releas
         raise RuntimeError('Owned unexpected business error')
     original=Connection.scalar
     def scalar(connection,statement,*args,**kwargs):
-        if 'SELECT RELEASE_LOCK' in str(statement):
+        if 'SELECT RELEASE_LOCK' in str(statement) and state['physical'] is not None:
             assert state['invalidated'] and state['physical']._sock is None
             state['release_seen']=True
         return original(connection,statement,*args,**kwargs)

@@ -167,10 +167,12 @@ def preview(db, record, user, *, desired_serial_id=None, expected_serial_id=None
         if plan is None:
             result = {'status': event.action, 'recover': True,
                       'message': '正在核对上次同步结果，并检查能否安全补齐缺失明细', 'invoice_no': invoice.invoice_no}
+            result['repair_limit'] = len(((event.payload or {}).get('plan') or {}).get('expected') or [])
         else:
             result = {key: plan[key] for key in ('version', 'invoice_no', 'changes', 'remark_before', 'remark_after',
                 'serial_before', 'serial_after', 'serial_changed', 'changed', 'requires_recheck')}
             result['inspection_status'] = (plan['inspection'] or {}).get('status')
+            result['repair_limit'] = len(plan['expected'])
         commit(db)
         if enabled:
             from app.shipping_inspection.outbound_prepare import authorize_response
