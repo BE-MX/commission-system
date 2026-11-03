@@ -2,6 +2,10 @@ import { systemClient } from './clients'
 
 const quiet = { showLoading: false, suppressToast: true }
 
+export function getEffectiveNavigationConfig(config = {}) {
+  return systemClient.get('/navigation-config/effective', { ...quiet, ...config })
+}
+
 export function getNavigationPreferences(config = {}) {
   return systemClient.get('/navigation-preferences', { ...quiet, ...config })
 }

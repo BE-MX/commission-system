@@ -94,3 +94,51 @@ def delete_dict_item(
     except service.ProtectedDictTypeError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     return _ok(None, "删除成功")
+
+
+# Organization navigation: source policies are immutable, only display fields are editable.
+from app.system import navigation_config_service as config_service
+from app.system.navigation_config_schemas import NavigationDraftSave, NavigationPrecondition, NavigationPublish
+
+
+def _navigation_user(permission):
+    def dependency(db: Session = Depends(get_core_db), user: dict = Depends(require_permission(permission))):
+        config_service.authorize(db, user, permission)
+        return user
+    return dependency
+
+
+@router.get("/navigation-config/catalog")
+def navigation_catalog(user=Depends(_navigation_user("navigation:read"))):
+    return _ok(config_service.catalog())
+
+
+# Every authenticated user may consume display-only overrides, like personal preferences.
+@router.get("/navigation-config/effective")
+def navigation_effective(db: Session = Depends(get_core_db), user=Depends(get_current_user)):
+    return _ok(config_service.effective(db))
+
+
+@router.get("/navigation-config/draft")
+def navigation_draft(db: Session = Depends(get_core_db), user=Depends(_navigation_user("navigation:read"))):
+    return _ok(config_service.get_draft(db))
+
+
+@router.put("/navigation-config/draft")
+def navigation_save(payload: NavigationDraftSave, db: Session = Depends(get_core_db), user=Depends(_navigation_user("navigation:write"))):
+    return _ok(config_service.save_draft(db, payload, int(user["sub"])))
+
+
+@router.post("/navigation-config/publish")
+def navigation_publish(payload: NavigationPublish, db: Session = Depends(get_core_db), user=Depends(_navigation_user("navigation:admin"))):
+    return _ok(config_service.publish(db, payload, int(user["sub"])))
+
+
+@router.get("/navigation-config/versions")
+def navigation_versions(db: Session = Depends(get_core_db), user=Depends(_navigation_user("navigation:read"))):
+    return _ok(config_service.versions(db))
+
+
+@router.post("/navigation-config/versions/{version_id}/restore-draft")
+def navigation_restore(version_id: int, payload: NavigationPrecondition, db: Session = Depends(get_core_db), user=Depends(_navigation_user("navigation:write"))):
+    return _ok(config_service.restore(db, version_id, payload, int(user["sub"])))

@@ -1,5 +1,21 @@
 # 莱莎方舟 API 参考
 
+## 全局导航配置（2026-11-03，待部署）
+
+前缀 `/api/system/navigation-config`，统一 `ok()` 信封。`effective` 对登录用户提供展示覆盖；真实可见性继续由不可编辑的源路由/菜单/原分类权限与交易阶段取交集。其余读接口要求 `navigation:read`，保存/恢复要求 `navigation:write`，发布要求 `navigation:admin`，写操作重查实时授权。
+
+| 接口 | 契约 |
+|---|---|
+| `GET /catalog` | 源节点、图标白名单、目录文件 hash |
+| `GET /effective` | 已发布版本及只含展示字段的 nodes；不返回可执行路由、权限或业务角标来源 |
+| `GET /draft` | 共享草稿 nodes、draft_revision、base_version、catalog_hash |
+| `PUT /draft` | 提交上述完整结构；节点仅允许名称、图标、分类、顺序、显隐、文字角标和标题同步 |
+| `POST /publish` | draft_revision + base_version + catalog_hash + request_id，原子发布；同键同请求幂等返回 |
+| `GET /versions` | `items` 包含版本快照、北京时间、操作者与差异 |
+| `POST /versions/{id}/restore-draft` | 版本前置条件同保存，恢复为草稿，不直接切换线上 |
+
+409 表示草稿、线上版本或注册目录冲突，保留本地编辑后比较；422 表示字段/结构违规。发布幂等键不得用于另一请求。内置节点不可删除；自建非空分类须先迁移并保存子项后再删。实际实现和验收证据见[导航管理交付](requirements/2026-11-03-navigation-management/implementation.md)。
+
 本文维护接口查找与使用摘要；详细请求字段按对应领域契约和路由源码核对。部署、开关和真实业务验收统一见[交接文档](handoff.md)。 本轮于 2026-10-31 按本地源码核对门户认证与绩效目标入口；并非全部端点的实时验收。源码默认关闭不表示生产实际关闭。
 
 ## 外贸退货单（2026-10-30）

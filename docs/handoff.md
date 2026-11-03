@@ -1,3 +1,10 @@
+## 2026-11-03 导航管理实现（Codex，本地开发，未部署）
+
+- 工作区 `D:/MyProgram/commission-system-codex-navigation-management`，分支 `codex/navigation-management`，基于 `a8707d8f`。用户授权按设计开发；不含提交、合并、推送或生产部署。
+- 实现结构/名称/图标/文字角标维护、自建一二级分类、排序/移动/显隐、共享草稿、CAS、差异发布、版本恢复与审计；侧栏/搜索/常用/快捷导航统一消费发布配置，保留源权限、业务角标及交易阶段限制。
+- 新迁移 `248_navigation_config` 新增配置、版本、审计表，未执行共享库迁移。导航 read/write/admin 权限需部署后分配。V0 可恢复当前构建默认；MySQL 首次初始化改为锁定当前读避免旧快照问题。
+- [实现与验收报告](requirements/2026-11-03-navigation-management/implementation.md)记录真实 Vue + 隔离 SQLite 浏览器验收、测试、构建及边界；无生产业务写入，其余工作区内容保留。
+
 ## 2026-11-03 本地成品库存入口路由修复（Codex，Git交付，未部署）
 
 - 根因：员工导航InventoryLedger和客户公开PublicInventory均注册为`/inventory`，按菜单路径导航时优先匹配公开页，跳过员工布局和库存权限守卫。

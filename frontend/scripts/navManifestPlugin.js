@@ -32,6 +32,8 @@ export function navManifestPlugin() {
           optimizeDeps: { noDiscovery: true, include: [] },
         })
         const nav = await server.ssrLoadModule('/src/config/navigation.js')
+        const icons = await server.ssrLoadModule('@element-plus/icons-vue')
+        const { buildNavigationCatalog } = await server.ssrLoadModule('/src/config/navigationCatalog.js')
         const { buildNavManifest } = await server.ssrLoadModule('/src/config/navManifest.js')
         let gitSha = null
         try {
@@ -49,6 +51,8 @@ export function navManifestPlugin() {
           favorite_access: manifest.favorite_access,
         }
         fs.writeFileSync(path.resolve(root, '../backend/app/system/navigation_access_manifest.json'), JSON.stringify(accessManifest, null, 2) + '\n')
+        const catalog = { source_sha256: accessManifest.source_sha256, ...buildNavigationCatalog(nav.MENU_GROUPS, nav.NAV_ENTRIES, icons) }
+        fs.writeFileSync(path.resolve(root, '../backend/app/system/navigation_config_catalog.json'), JSON.stringify(catalog, null, 2) + '\n')
         console.log(`[nav-manifest] ${manifest.entries.length} entries -> nav-manifest.json`)
       } catch (err) {
         throw new Error(`[nav-manifest] export failed: ${err.message}`, { cause: err })
