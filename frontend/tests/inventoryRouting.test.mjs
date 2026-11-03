@@ -18,6 +18,7 @@ async function harness() {
       return router
     } },
     '@/config/navigation': { NAV_ENTRIES },
+    '@/composables/useNavigationConfig': { navigationRouteTitle: (_name, fallback) => fallback },
     '@/utils/recentNav': { recordRecentNav() {} },
     './customerImageRoute': { bypassCustomerImageRoute: () => false, captureCustomerImageRouteToken() {} },
     './expoKioskRoute': { EXPO_KIOSK_PATH: '/expo/kiosk', expoKioskLoginLocation() {}, guardExpoKioskBoundary: () => null, isExpoKioskTarget: () => false },
