@@ -23,6 +23,23 @@ function baseApi() {
  const envelope = data => Promise.resolve({ data })
  return { getNavigationCatalog: () => envelope({ nodes: [node], icons: ['House'], catalog_hash: 'hash' }), getNavigationDraft: () => envelope({ nodes: [node], draft_revision: 1, base_version: 0, catalog_hash: 'hash' }), getNavigationVersions: () => envelope({ items: [{ id: 0, version: 0, nodes: [node] }] }) }
 }
+
+test('explicit default-icon recovery only edits icons locally and preserves draft fields', async () => {
+  let writes = 0
+  const api = { ...baseApi(), saveNavigationDraft: async () => { writes++ }, publishNavigationDraft: async () => { writes++ } }
+  const state = await harness(api)
+  await state.load()
+  state.nodes.value[0] = { ...state.nodes.value[0], icon: 'Document', label: 'Renamed', badge: 'NEW', parent: 'custom-group' }
+  state.nodes.value.push({ ...node, id: 'custom-group', kind: 'group', icon: 'Bell' })
+  await state.restoreDefaultIcons()
+  assert.equal(state.nodes.value[0].icon, 'House')
+  assert.equal(state.nodes.value[0].label, 'Renamed')
+  assert.equal(state.nodes.value[0].badge, 'NEW')
+  assert.equal(state.nodes.value[0].parent, 'custom-group')
+  assert.equal(state.nodes.value[1].icon, 'Bell')
+  assert.equal(state.dirty.value, true)
+  assert.equal(writes, 0)
+})
 test('publish timeout reuses idempotency key; restoring a new draft resets it', async () => {
  const requests = []
  const api = { ...baseApi(), publishNavigationDraft: async request => { requests.push(request); throw new Error('timeout') }, restoreNavigationVersion: async () => ({ data: { nodes: [{ ...node, label: 'Restored' }], draft_revision: 2, base_version: 0, catalog_hash: 'hash' } }) }

@@ -167,6 +167,8 @@ function rememberClosedGroup(key) {
 }
 </script>
 
+<style scoped src="./navigationQuickTask.css"></style>
+
 <style scoped>
 .nav-document-label{position:relative;overflow:visible;margin-right:14px}
 .nav-document-anomaly{position:absolute;right:-14px;top:-8px;width:14px;height:14px;display:grid;place-items:center;border-radius:50%;background:var(--color-gold);color:var(--sidebar-bg-from);font-size:10px;font-weight:800;line-height:1;box-shadow:0 0 6px var(--sidebar-glow-gold)}
@@ -375,37 +377,6 @@ function rememberClosedGroup(key) {
   :deep(.el-sub-menu__title),
   .nav-search :deep(.el-input__wrapper) { transition: none; }
 }
-/* 任务中心：导航项悬浮 +（hover 高频出现，只做 120ms opacity + 轻微位移）。
-   scoped 只给选择器最后一段 .nav-add 加作用域属性，祖先写 .el-menu-item 无需 :deep；
-   el-menu-item 本身是 flex，按钮用 margin-left:auto 贴右，不需要改它的定位上下文。 */
-.nav-add {
-  display: grid;
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  margin-left: auto;
-  place-items: center;
-  border: 0;
-  border-radius: 7px;
-  background: var(--sidebar-glow-gold);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-gold) 35%, transparent);
-  color: var(--color-gold);
-  font: 600 15px/1 var(--font-display);
-  cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(4px);
-  transition: opacity 120ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms ease;
-}
-.side-menu .el-menu-item:hover .nav-add,
-.side-menu .el-menu-item:focus-within .nav-add,
-.nav-add:focus-visible { opacity: 1; pointer-events: auto; transform: none; }
-.nav-add:hover { background: color-mix(in srgb, var(--color-gold) 26%, transparent); }
-.nav-add:active { transform: scale(0.94); }
-.nav-add:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 1px; }
-.side-menu .el-menu-item.is-active .nav-add { color: var(--card-bg); background: color-mix(in srgb, var(--card-bg) 30%, transparent); box-shadow: none; }
-@media (hover: none) { .nav-add { display: none; } }
-@media (prefers-reduced-motion: reduce) { .nav-add { transition: none; transform: none; } }
 </style>
 
 <style>

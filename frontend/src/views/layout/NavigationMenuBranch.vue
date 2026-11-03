@@ -49,6 +49,8 @@ async function activateGroup(event) {
   }
 }
 </script>
+<style scoped src="./navigationQuickTask.css"></style>
+
 <style scoped>
 .nav-group-icon { position: relative; overflow: visible; }
 .nav-title { display: inline-block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
@@ -57,6 +59,5 @@ async function activateGroup(event) {
 .nav-review-badge { margin-right: 22px; line-height: 20px; }
 .nav-document-label { position: relative; margin-right: 14px; }
 .nav-document-anomaly { position: absolute; right: -16px; top: -8px; width: 16px; height: 16px; border: 0; padding: 0; display: grid; place-items: center; border-radius: 50%; background: var(--color-gold); color: var(--sidebar-bg-from); font-size: 10px; font-weight: 800; cursor: pointer; }
-.nav-add { margin-left: auto; border: 0; background: transparent; color: var(--color-gold); cursor: pointer; font-size: 18px; }
-.nav-add:focus-visible, .nav-document-anomaly:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
+.nav-document-anomaly:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
 </style>
