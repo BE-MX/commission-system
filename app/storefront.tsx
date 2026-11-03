@@ -60,7 +60,7 @@ export default function Storefront() {
           </section>
 
           <section className="app-section product-section" id="products">
-            <div className="app-section-title"><div><span>RECOMMENDED</span><h2>12款主推发型</h2></div><a href="/retail/category">进入商城</a></div>
+            <div className="app-section-title"><div><span>RECOMMENDED</span><h2>16款主推发型</h2></div><a href="/retail/category">进入商城</a></div>
             {loading ? <div className="loading-state">正在准备款式…</div> : <div className="product-grid app-product-grid">
               {activeProducts.map((product, index) => {
                 const canView = rank[level] >= rank[product.minLevel];

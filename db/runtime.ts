@@ -207,7 +207,7 @@ async function initialize() {
   }
 
   const catalogVersion = await db.prepare("SELECT value FROM app_metadata WHERE key = 'product_catalog_version'").first<{ value: string }>();
-  if (catalogVersion?.value !== "12-styles-2026-08") {
+  if (catalogVersion?.value !== "16-styles-2026-11") {
     const now = new Date().toISOString();
     await db.prepare("DELETE FROM products").run();
     const inserts = featuredProducts.map((product) => db.prepare(`INSERT INTO products
@@ -221,7 +221,7 @@ async function initialize() {
         product.craft, product.description, JSON.stringify(product.highlights), JSON.stringify(product.audience),
         JSON.stringify(product.scenarios), JSON.stringify(product.images), product.videoUrl, now));
     await db.batch(inserts);
-    await db.prepare("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('product_catalog_version', '12-styles-2026-08')").run();
+    await db.prepare("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('product_catalog_version', '16-styles-2026-11')").run();
   }
 
   const accountCount = await db.prepare("SELECT COUNT(*) AS total FROM wholesale_accounts").first<{ total: number }>();

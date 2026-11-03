@@ -24,14 +24,14 @@ export type SeedProduct = {
   videoUrl: string;
 };
 
-const media = (slug: string) => ({
-  images: [1, 2, 3, 4].map((index) => `/products/${slug}/${String(index).padStart(2, "0")}.jpg`),
-  videoUrl: `/products/${slug}/video.mp4`,
+const media = (slug: string, imageCount = 4, hasVideo = true) => ({
+  images: Array.from({ length: imageCount }, (_, index) => `/products/${slug}/${String(index + 1).padStart(2, "0")}.jpg`),
+  videoUrl: hasVideo ? `/products/${slug}/video.mp4` : "",
 });
 
 export const featuredProducts: SeedProduct[] = [
   {
-    name: "25厘米锁骨发", material: "保鳞发", length: "25厘米", color: "自然色",
+    name: "25厘米侧分直发", material: "保鳞发", length: "25厘米", color: "自然色",
     retailPrice: 6298, priceA: 2198, priceB: 1998, minLevel: "retail", stock: 30,
     status: "active", tone: "charcoal", category: "气质系列", sku: "LS-25-SIDE",
     construction: "递针顶", hairVolume: "常规款", parting: "左分，可调整中分/侧分",
@@ -42,7 +42,7 @@ export const featuredProducts: SeedProduct[] = [
     scenarios: ["通勤", "约会", "日常出行"], ...media("25cm-collarbone"),
   },
   {
-    name: "35厘米黑长直", material: "保鳞发", length: "35厘米", color: "自然色",
+    name: "35厘米长直发", material: "保鳞发", length: "35厘米", color: "自然色",
     retailPrice: 6598, priceA: 2298, priceB: 2098, minLevel: "retail", stock: 30,
     status: "active", tone: "espresso", category: "臻藏系列", sku: "LS-35-LONG",
     construction: "递针左分", hairVolume: "常规款", parting: "左分",
@@ -53,9 +53,9 @@ export const featuredProducts: SeedProduct[] = [
     scenarios: ["通勤", "校园", "聚会"], ...media("35cm-long-straight"),
   },
   {
-    name: "一刀切", material: "保鳞发", length: "25厘米", color: "蓝黑色",
+    name: "一刀切-蓝黑", material: "保鳞发", length: "25厘米", color: "蓝黑色",
     retailPrice: 6298, priceA: 2198, priceB: 1998, minLevel: "retail", stock: 30,
-    status: "active", tone: "charcoal", category: "臻藏系列", sku: "LS-BLUNT-25",
+    status: "active", tone: "charcoal", category: "气质系列", sku: "LS-BLUNT-25",
     construction: "递针顶", hairVolume: "常规款", parting: "刘海造型，顶部可中分",
     craft: "整个头顶仿真头皮，可调整中分或侧分，线条清晰且自然度高。",
     description: "蓝黑色直发波波配合齐整发尾与利落刘海，几何轮廓鲜明，呈现简约、冷感的时尚气质。",
@@ -119,7 +119,7 @@ export const featuredProducts: SeedProduct[] = [
     scenarios: ["通勤", "旅行", "轻商务"], ...media("8001-a"),
   },
   {
-    name: "8003", material: "保鳞发", length: "15厘米", color: "暗棕色",
+    name: "8003自然色", material: "保鳞发", length: "15厘米", color: "自然色",
     retailPrice: 3498, priceA: 1198, priceB: 1098, minLevel: "retail", stock: 30,
     status: "active", tone: "espresso", category: "气质系列", sku: "LS-8003",
     construction: "递针旋", hairVolume: "轻薄款", parting: "有刘海，不分缝",
@@ -127,10 +127,10 @@ export const featuredProducts: SeedProduct[] = [
     description: "紧凑黑色精灵短发搭配短刘海、圆润顶部和干净鬓角后颈，呈现极简、轻负担的活力气质。",
     highlights: ["紧凑轮廓突出五官与颈部", "适度顶部量感避免贴头皮", "干净鬓角与后颈更显精神"],
     audience: ["喜欢极简和运动休闲风", "想要干练短发", "不追求夸张纹理或颜色"],
-    scenarios: ["通勤", "运动休闲", "日常"], ...media("8003"),
+    scenarios: ["通勤", "运动休闲", "日常"], ...media("8003", 3),
   },
   {
-    name: "9005", material: "保鳞发", length: "15厘米", color: "暖棕色",
+    name: "9005自然色", material: "保鳞发", length: "15厘米", color: "自然色",
     retailPrice: 3498, priceA: 1198, priceB: 1098, minLevel: "retail", stock: 30,
     status: "active", tone: "honey", category: "气质系列", sku: "LS-9005",
     construction: "递针旋", hairVolume: "轻薄款", parting: "有刘海，不分缝",
@@ -141,7 +141,7 @@ export const featuredProducts: SeedProduct[] = [
     scenarios: ["聚会", "轻通勤", "拍照"], ...media("9005"),
   },
   {
-    name: "主持人纹理", material: "保鳞发", length: "15厘米", color: "深棕色",
+    name: "主持人纹理-棕", material: "保鳞发", length: "15厘米", color: "深棕色",
     retailPrice: 3498, priceA: 1198, priceB: 1098, minLevel: "retail", stock: 30,
     status: "active", tone: "chestnut", category: "高光系列", sku: "LS-HOST-TEXTURE",
     construction: "递针旋", hairVolume: "轻薄款", parting: "有刘海，不分缝",
@@ -152,14 +152,58 @@ export const featuredProducts: SeedProduct[] = [
     scenarios: ["职场", "主持出镜", "商务活动"], ...media("presenter-texture"),
   },
   {
-    name: "锡纸烫", material: "保鳞发", length: "15厘米", color: "深棕色",
+    name: "6201锡纸烫", material: "保鳞发", length: "15厘米", color: "深棕色",
     retailPrice: 3498, priceA: 1198, priceB: 1098, minLevel: "retail", stock: 30,
-    status: "active", tone: "charcoal", category: "气质系列", sku: "LS-FOIL-PERM",
+    status: "active", tone: "charcoal", category: "高光系列", sku: "LS-6201",
     construction: "递针旋", hairVolume: "轻薄款", parting: "有刘海，不分缝",
     craft: "头顶仿真头旋，轻薄透气、自然逼真，适合层次分明的短发纹理。",
     description: "深色短发呈现分束、上扬的锡纸烫纹理，轻盈刘海配合蓬起头顶和短后颈，立体且富有态度。",
     highlights: ["分束纹理形成鲜明光影", "蓬起顶部与收紧两侧增强立体度", "不规则短纹理更年轻有个性"],
     audience: ["偏爱街头、派对或创意风格", "希望增加头顶蓬松感", "接受明显纹理"],
     scenarios: ["街头", "派对", "个性出行"], ...media("foil-perm"),
+  },
+  {
+    name: "6010时尚款", material: "保鳞发", length: "15厘米", color: "深棕色",
+    retailPrice: 3498, priceA: 1198, priceB: 1098, minLevel: "retail", stock: 30,
+    status: "active", tone: "espresso", category: "安心系列", sku: "LS-6010-FASHION",
+    construction: "递针旋", hairVolume: "轻薄款", parting: "轻盈刘海，不分缝",
+    craft: "头顶采用仿真头旋工艺，轮廓轻巧、贴合自然，适合日常高频佩戴。",
+    description: "深棕色轻巧短发搭配自然碎刘海，顶部圆润、两侧贴合，整体清爽亲和，第一次佩戴也容易驾驭。",
+    highlights: ["轻巧短轮廓自然百搭", "碎刘海柔化额头线条", "贴合两侧便于日常打理"],
+    audience: ["第一次尝试短发假发", "喜欢自然低调造型", "重视轻便与易打理"],
+    scenarios: ["日常", "通勤", "休闲出行"], ...media("6010-fashion", 4, false),
+  },
+  {
+    name: "6010自然色", material: "保鳞发", length: "15厘米", color: "自然色",
+    retailPrice: 3498, priceA: 1198, priceB: 1098, minLevel: "retail", stock: 30,
+    status: "active", tone: "charcoal", category: "臻藏系列", sku: "LS-6010-NATURAL",
+    construction: "递针旋", hairVolume: "轻薄款", parting: "不对称侧分刘海",
+    craft: "依据脸型呈现不对称侧分与精细收边，头顶仿真头旋兼顾自然度和专属感。",
+    description: "自然色不对称短发以流畅侧刘海为重点，轮廓克制精致，突出眉眼与脸部比例，适合高级定制造型。",
+    highlights: ["不对称侧分体现设计感", "精细收边突出脸部轮廓", "自然色经典耐看"],
+    audience: ["追求精致短发与专属感", "喜欢自然色经典造型", "重视脸型适配"],
+    scenarios: ["商务", "正式会面", "品质日常"], ...media("6010-natural", 4, false),
+  },
+  {
+    name: "果阳雪棕", material: "保鳞发", length: "40厘米", color: "雪棕色",
+    retailPrice: 6998, priceA: 2398, priceB: 2198, minLevel: "retail", stock: 20,
+    status: "active", tone: "honey", category: "高光系列", sku: "LS-SNOW-BROWN",
+    construction: "递针中分", hairVolume: "常规款", parting: "中分空气刘海",
+    craft: "中分区域采用仿真头皮递针工艺，长发层次与柔和卷度兼顾镜头表现和自然流动感。",
+    description: "雪棕色长发以柔和层次和自然大弧度落在胸前，轻盈中分刘海提亮面部，适合重要社交与宴会场合。",
+    highlights: ["雪棕色提升精致度与柔和感", "长层次与大弧度镜头表现突出", "中分刘海修饰颧骨与脸型"],
+    audience: ["喜欢温柔长发与浅棕色调", "需要宴会或拍摄造型", "希望提升女性魅力与精致感"],
+    scenarios: ["宴会", "婚礼", "重要社交"], ...media("snow-brown-long", 4, false),
+  },
+  {
+    name: "9303深棕", material: "保鳞发", length: "45厘米", color: "深棕色",
+    retailPrice: 7298, priceA: 2498, priceB: 2298, minLevel: "retail", stock: 20,
+    status: "active", tone: "espresso", category: "高光系列", sku: "LS-9303",
+    construction: "递针侧分", hairVolume: "丰盈款", parting: "可选单边或双边造型",
+    craft: "仿真头皮分缝结合长卷层次，可呈现单边或双边两种正面效果，满足不同重要场合的造型需求。",
+    description: "深棕色长卷发层次丰盈、弧度华丽，可切换单边与双边造型，呈现稳定而有仪式感的高光形象。",
+    highlights: ["单边与双边两种造型可选", "丰盈长卷带来明显仪式感", "深棕色稳重上镜"],
+    audience: ["参加婚礼、晚宴或庆典", "需要丰盈长卷与强镜头表现", "偏爱优雅华丽造型"],
+    scenarios: ["婚礼", "晚宴", "庆典"], ...media("9303-deep-brown", 7, false),
   },
 ];
