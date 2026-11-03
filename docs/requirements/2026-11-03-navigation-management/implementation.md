@@ -1,6 +1,6 @@
 # 导航管理实现与验收
 
-2026-11-03。工作区 `D:/MyProgram/commission-system-codex-navigation-management`，分支 `codex/navigation-management`，基于 `a8707d8f`。状态：代码已实现，本地隔离验证；未提交、合并、推送或部署。
+2026-11-03。工作区 `D:/MyProgram/commission-system-codex-navigation-management`，分支 `codex/navigation-management`，基于 `a8707d8f`。状态：代码已实现，76 项自动检查与隔离浏览器验收通过；用户已授权提交、合并 main 与推送 origin，本轮不部署。交付基于最新 origin/main，本地 main 既有未推送测试提交不纳入远端。最终 Git 引用以交接及回读为准。
 
 ## 已实现
 

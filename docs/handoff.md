@@ -1,9 +1,16 @@
-## 2026-11-03 导航管理实现（Codex，本地开发，未部署）
+## 2026-11-03 导航管理实现（Codex，Git交付，未部署）
 
-- 工作区 `D:/MyProgram/commission-system-codex-navigation-management`，分支 `codex/navigation-management`，基于 `a8707d8f`。用户授权按设计开发；不含提交、合并、推送或生产部署。
+- 工作区 `D:/MyProgram/commission-system-codex-navigation-management`，分支 `codex/navigation-management`，基于 `a8707d8f`。用户已授权本批提交、合并 main 与推送 origin；不部署。远端交付基于最新 origin/main，不夹带本地 main 既有未推送提交。
 - 实现结构/名称/图标/文字角标维护、自建一二级分类、排序/移动/显隐、共享草稿、CAS、差异发布、版本恢复与审计；侧栏/搜索/常用/快捷导航统一消费发布配置，保留源权限、业务角标及交易阶段限制。
 - 新迁移 `248_navigation_config` 新增配置、版本、审计表，未执行共享库迁移。导航 read/write/admin 权限需部署后分配。V0 可恢复当前构建默认；MySQL 首次初始化改为锁定当前读避免旧快照问题。
 - [实现与验收报告](requirements/2026-11-03-navigation-management/implementation.md)记录真实 Vue + 隔离 SQLite 浏览器验收、测试、构建及边界；无生产业务写入，其余工作区内容保留。
+
+## 2026-11-03 发票客户选择分组与有效性核对（Codex，Git交付，未部署）
+
+- 工作区 `D:/MyProgram/commission-system-codex-customer-picker`，分支 `codex/customer-picker`，基点 `a8707d8f`。用户要求优化客户下拉显示：客户与联系人按公司ID归组，展示名称/国家/编号，联系人缩进；相同名称的不同公司不合并，跨页追加按身份去重归组，底部分别统计当前客户和联系人。
+- 新旧表单共用组件，选择时只读核对当前一个小满客户。仅明确不存在响应才隐藏该组客户及全部联系人，并从数量统计中剔除；负责人变化、网络或鉴权异常分别处理并保留原填写内容。切换客户/上下文、关闭抽屉或重置后迟到结果不能回填。新端点及边界见 `docs/api-reference.md`。
+- 本次不更正 Rina-KC-1103 生产客户，不删除旧镜像、不修改客户合并关系，用户已授权本批提交、合并 main 与推送 origin；不部署，不夹带本地 main 原有未推送测试提交。相关验证证据与已知基线限制见 `docs/reports/2026-11-03-invoice-customer-picker.md`。
+
 
 ## 2026-11-03 本地成品库存入口路由修复（Codex，Git交付，未部署）
 

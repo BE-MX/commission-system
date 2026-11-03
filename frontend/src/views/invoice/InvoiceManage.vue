@@ -208,10 +208,10 @@
               <InvoiceOrderCustomerFields
                 v-model:contact-details-expanded="editor.contactDetailsExpanded.value"
                 :contact-details-complete="editor.contactDetailsComplete.value"
-                v-model:selected-customer="selectedCustomer"
+                v-model:selected-customer="selectedCustomer" :active="drawerVisible"
                 v-model:private-only-company="privateOnlyCompany"
                 :form="form" :sales-user-options="salesUserOptions" :customer-options="customerOptions"
-                :customer-loading="customerLoading" :customer-total="customerTotal"
+                :customer-loading="customerLoading"
                 :customer-has-more="customerHasMore" :okki-bound="okkiBound"
                 :can-toggle-private="canTogglePrivate" :customer-rule="customerRule"
                 :last-order-date="lastOrderDate" :invoice-no-taken="invoiceNoTaken"
@@ -490,7 +490,7 @@ const router = useRouter(), route = useRoute()
 const editor = useInvoiceEditor({ onSaved: handleSaved })
 const {
   drawerVisible, legacyVisible, customerLoading, customerOptions, salesUserOptions, selectedCustomer, customerRule,
-  customerTotal, customerHasMore, loadMoreCustomers, privateOnlyCompany,
+  customerHasMore, loadMoreCustomers, privateOnlyCompany,
   canTogglePrivate, okkiBound, invoiceNoTaken, entryOptions, form, hairItems, accessoryItems,
   saveAndSyncSubmitting, quantityErrorRow, beforeEditorClose, closeEditor, confirmEditorClose, syncCompletionMessage,
   activeGroupKey, activeGroupName, groupCounts, createItemGroup, renameItemGroup, deleteItemGroup, moveRowsToGroup,

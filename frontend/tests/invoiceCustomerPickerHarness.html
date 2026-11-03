@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>客户选择 · 隔离验收</title>
+<div id="app"></div>
+<script type="module">
+import { createApp, h, ref } from 'vue'
+import { createPinia } from 'pinia'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import '../src/styles/tokens.css'
+import Picker from '../src/views/invoice/components/InvoiceCustomerPicker.vue'
+import { invoiceClient } from '../src/api/clients'
+
+// Synthetic read responses only. No request is sent to any business service.
+const offline = ref(false)
+const slow = ref(false)
+const narrow = ref(false)
+invoiceClient.defaults.adapter = async config => {
+  if (config.url !== '/customers/availability') throw new Error('Unexpected fixture request')
+  if (slow.value) await new Promise(resolve => setTimeout(resolve, 3000))
+  if (offline.value) throw new Error('Synthetic network outage')
+  const id = config.params.customer_id
+  return { data: { code: 200, message: 'ok', data: { company_id: id,
+    status: id === '9002' ? 'missing' : 'active', company_name: 'Hajra Omanovic' } },
+    status: 200, statusText: 'OK', headers: {}, config }
+}
+const company = (id, name) => ({ company_id: id, company_name: name, country_name: '美国', kind: 'customer', option_key: `customer:${id}` })
+const contact = (id, name, key) => ({ ...company(id, name), kind: 'contact', name: 'Hajra Omanovic', contact_id: key,
+  option_key: `contact:${key}`, email: 'fixture@example.test', tel: 'test-phone' })
+const all = [company('9001', 'Hajra Omanovic'), contact('9001', 'Hajra Omanovic', 'c1'),
+  company('9002', 'Hajra Omanovic_20260827090512301'), contact('9002', 'Hajra Omanovic_20260827090512301', 'c2')]
+createApp({ setup() {
+  const selected = ref(null), options = ref(all), context = ref(1)
+  return () => h('main', { class: narrow.value ? 'preview narrow' : 'preview' }, [
+    h('h1', '订单与客户'), h('p', { class: 'fixture-note' }, '隔离验收 · 模拟数据，无业务写入'),
+    h('label', { class: 'field-label' }, '客户'),
+    h(Picker, { modelValue: selected.value, options: options.value, privateOnly: true, salesUserId: 16,
+      contextKey: String(context.value), 'onUpdate:modelValue': row => { selected.value = row },
+      search: word => { options.value = word ? all.filter(row => `${row.company_name} ${row.name || ''}`.toLowerCase().includes(word.toLowerCase())) : all }, loadMore() {} }),
+    h('p', { class: 'selection', role: 'status' }, selected.value
+      ? `已选客户：${selected.value.company_name} · 编号 ${selected.value.company_id} · 联系人 ${selected.value.name || '未指定'}` : '尚未选择客户'),
+    h('div', { class: 'fixture-controls' }, [
+      h('label', [h('input', { type: 'checkbox', checked: offline.value, onChange: e => { offline.value = e.target.checked } }), '模拟网络失败']),
+      h('label', [h('input', { type: 'checkbox', checked: slow.value, onChange: e => { slow.value = e.target.checked } }), '模拟慢查询']),
+      h('label', [h('input', { type: 'checkbox', checked: narrow.value, onChange: e => { narrow.value = e.target.checked } }), '窄屏布局']),
+      h('button', { onClick: () => { context.value++; selected.value = null; options.value = all } }, '重置表单'),
+    ]),
+  ])
+} }).use(createPinia()).use(ElementPlus).mount('#app')
+</script>
+<style>
+body { margin: 0; padding: 24px; background: var(--bg-page); color: var(--text-primary); font-family: sans-serif; }
+.preview { max-width: 600px; padding: 24px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; }
+.preview.narrow { max-width: 300px; }
+h1 { margin: 0 0 12px; font-size: 20px; }
+.fixture-note, .selection { color: var(--text-secondary); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.field-label { display: block; font-size: 14px; font-weight: 600; margin: 20px 0 8px; }
+.fixture-controls { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; font-size: 12px; }
+.fixture-controls label { display: flex; align-items: center; gap: 4px; }
+@media (max-width: 420px) { body { padding: 12px; } .preview { padding: 16px; } }
+</style>
+</html>

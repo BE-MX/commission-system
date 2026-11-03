@@ -27,31 +27,12 @@
     <el-form-item label="客户" required>
       <NativeCustomerPicker v-if="invoiceIsLocal(form)" v-model="form.local_customer_id" :disabled="Boolean(form.id)" :selected-name="form.customer_name" @select="selectLocalCustomer" />
       <div v-else class="customer-filter-row">
-        <el-select
-          v-model="selectedCustomer"
-          value-key="option_key"
-          filterable
-          remote
-          reserve-keyword
-          :remote-method="searchCustomers"
-          :loading="customerLoading"
-          placeholder="输入客户名称、ID 或联系人姓名"
-          class="customer-filter-select"
-          @change="onCustomerChange"
-        >
-          <el-option
-            v-for="customer in customerOptions"
-            :key="customer.option_key"
-            :label="customerOptionLabel(customer)"
-            :value="customer"
-          />
-          <template #footer>
-            <span>共 {{ customerTotal }} 项匹配</span>
-            <el-button v-if="customerHasMore" link type="primary" :loading="customerLoading" @click="loadMoreCustomers">
-              加载更多
-            </el-button>
-          </template>
-        </el-select>
+        <InvoiceCustomerPicker
+          v-model="selectedCustomer" :options="customerOptions" :loading="customerLoading"
+          :has-more="customerHasMore" :search="searchCustomers" :load-more="loadMoreCustomers"
+          :private-only="privateOnlyCompany" :sales-user-id="form.sales_user_id"
+          :context-key="String(form.id || 'new')" :active="active" class="customer-filter-select" @change="onCustomerChange"
+        />
         <el-checkbox v-permission="'invoice_private_filter:read'" v-model="privateOnlyCompany" class="customer-filter-check">仅私海</el-checkbox>
       </div>
       <div v-if="!invoiceIsLocal(form) && !okkiBound && privateOnlyCompany" class="binding-helper">
@@ -155,6 +136,7 @@
 </template>
 
 <script setup>
+import InvoiceCustomerPicker from './InvoiceCustomerPicker.vue'
 import NativeCustomerPicker from '../native/components/NativeCustomerPicker.vue'
 import { invoiceIsLocal } from '@/views/commerce-transition/routeState'
 function selectLocalCustomer(customer) {
@@ -164,7 +146,6 @@ function selectLocalCustomer(customer) {
 }
 
 import { DocumentCopy } from '@element-plus/icons-vue'
-import { customerOptionLabel } from '../composables/useInvoiceCustomerSearch'
 import { orderTypeLabel } from '../composables/useInvoiceShipments'
 import { describeCustomerRule } from '../composables/useInvoiceEditor'
 import InvoiceCustomerSyncEntry from './InvoiceCustomerSyncEntry.vue'
@@ -176,12 +157,12 @@ const contactDetailsExpanded = defineModel('contactDetailsExpanded', { default: 
 
 defineEmits(['open-whole-order-paste'])
 const props = defineProps({
+  active: { type: Boolean, default: true },
   form: { type: Object, required: true },
   contactDetailsComplete: Boolean,
   salesUserOptions: { type: Array, required: true },
   customerOptions: { type: Array, required: true },
   customerLoading: Boolean,
-  customerTotal: Number,
   customerHasMore: Boolean,
   okkiBound: Boolean,
   canTogglePrivate: Boolean,

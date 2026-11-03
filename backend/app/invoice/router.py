@@ -215,6 +215,31 @@ def search_customer_options(
     )})
 
 
+@router.get("/customers/availability", summary="Verify a selected customer against live OKKI")
+def get_customer_availability(
+    customer_id: str = Query(..., pattern=r"^[1-9][0-9]{0,19}$"),
+    private_only: bool = Query(True),
+    sales_user_id: int | None = Query(None, gt=0),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("invoice:write")),
+):
+    owner_okki_id = None
+    if private_only:
+        owner_okki_id, bound = _resolve_private_owner(db, current_user, sales_user_id)
+        if not bound:
+            raise HTTPException(409, "未绑定 OKKI，暂无法核对私海客户")
+    try:
+        result = customer_picker_service.check_availability(db, customer_id=customer_id, owner_okki_id=owner_okki_id)
+        db.commit()  # Persist a refreshed provider token only; no invoice/overlay writes.
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+    except okki_client.OkkiApiError as exc:
+        db.rollback()
+        raise HTTPException(502, "暂时无法核对小满客户，请稍后重试") from exc
+    return ok(result)
+
+
 @router.get("/customers/contacts", summary="Search customers by contact name")
 def search_customer_contacts(
     keyword: str | None = Query(None),
