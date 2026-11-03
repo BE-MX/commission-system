@@ -177,6 +177,28 @@ def query_companies_by_name(db: Session, word: str, *, count: int = 20) -> list[
     return items if isinstance(items, list) else []
 
 
+def get_company_availability(db: Session, company_id: int) -> dict:
+    """Read a single selected company; only the exact observed 404 proves absence."""
+    for force in (False, True):
+        token = ensure_access_token(db, force=force)
+        data = _get_json("/v1/company/info", token, context="客户有效性核对",
+                         params={"company_id": company_id}, allow_missing=True, timeout=12)
+        if data is None:
+            continue
+        if data is False:
+            return {"company_id": str(company_id), "status": "missing"}
+        if (not isinstance(data, dict) or str(data.get("company_id")) != str(company_id)
+                or not isinstance(data.get("name"), str) or not data["name"].strip()):
+            raise OkkiApiError("小满客户身份返回不完整，请稍后重试核对")
+        owners = data.get("owner")
+        if not isinstance(owners, list):
+            raise OkkiApiError("小满客户归属返回不完整，请稍后重试核对")
+        return {"company_id": str(company_id), "status": "active", "company_name": data["name"],
+                "owner_user_ids": [str(row["user_id"]) for row in owners
+                                   if isinstance(row, dict) and row.get("user_id") is not None]}
+    raise OkkiApiError("小满客户核对鉴权失败，请稍后重试")
+
+
 def get_company_info(db: Session, company_id: int) -> dict:
     """GET /v1/company/info — 客户详情（含 owner 跟进人列表）。只读接口（company scope）。"""
     params = {"company_id": company_id}

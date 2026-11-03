@@ -7,6 +7,22 @@ from app.invoice import product_service
 from app.invoice.models import InvoiceCustomerOverlay
 
 
+def check_availability(db: Session, *, customer_id: str, owner_okki_id: int | None = None) -> dict:
+    """Verify one scoped choice without changing customer or invoice business data."""
+    from app.invoice import okki_client
+
+    sql, params, expanding = _effective_customers(db, owner_okki_id)
+    statement = text(f"SELECT company_id FROM ({sql}) ci WHERE company_id=:customer_id")
+    statement = statement.bindparams(*(bindparam(key, expanding=True) for key in expanding))
+    if db.execute(statement, {**params, "customer_id": customer_id}).first() is None:
+        raise LookupError("客户不在当前可选范围，请重新搜索")
+    result = okki_client.get_company_availability(db, int(customer_id))
+    owners = result.pop("owner_user_ids", [])
+    if result["status"] == "active" and owner_okki_id is not None and str(owner_okki_id) not in owners:
+        return {"company_id": customer_id, "status": "out_of_scope"}
+    return result
+
+
 def _effective_customers(db: Session, owner_okki_id: int | None) -> tuple[str, dict, list[str]]:
     schema = product_service._schema()
     # Mirror uses utf8mb4_0900_ai_ci; Ark overlays use utf8mb4_unicode_ci.

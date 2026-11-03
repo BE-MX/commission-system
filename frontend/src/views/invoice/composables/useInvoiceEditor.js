@@ -975,7 +975,6 @@ export function useInvoiceEditor({ onSaved } = {}) {
     salesUserOptions,
     selectedCustomer,
     customerRule,
-    customerTotal: customerSearch.total,
     customerHasMore: customerSearch.hasMore,
     loadMoreCustomers: customerSearch.loadMore,
     privateOnlyCompany,
