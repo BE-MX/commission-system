@@ -3,6 +3,26 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { createHash } from 'node:crypto'
 import { buildNavigationCatalog } from '../src/config/navigationCatalog.js'
+import { createServer } from 'vite'
+import { fileURLToPath } from 'node:url'
+
+test('real Vite SSR loads resolve every source icon across separate package instances', async () => {
+  const server = await createServer({ configFile: false, root: fileURLToPath(new URL('..', import.meta.url)),
+    server: { middlewareMode: true, hmr: false }, optimizeDeps: { noDiscovery: true, include: [] } })
+  try {
+    const nav = await server.ssrLoadModule('/src/config/navigation.js')
+    const icons = await server.ssrLoadModule('@element-plus/icons-vue')
+    const catalog = buildNavigationCatalog(nav.MENU_GROUPS, nav.NAV_ENTRIES, icons)
+    const shipped = JSON.parse(fs.readFileSync(new URL('../../backend/app/system/navigation_config_catalog.json', import.meta.url)))
+    assert.deepEqual(shipped.nodes.map(n => [n.id, n.icon]), catalog.nodes.map(n => [n.id, n.icon]))
+    const sources = [...Object.entries(nav.MENU_GROUPS).map(([id, group]) => [id, group.icon]),
+      ...nav.NAV_ENTRIES.filter(e => e.menu && !e.hideInMenu).map(e => [e.name || e.path, e.menu.icon])]
+    for (const [id, component] of sources) {
+      assert.equal(catalog.nodes.find(n => n.id === id).icon, component.name, id)
+    }
+    assert.ok(new Set(catalog.nodes.map(n => n.icon)).size > 10)
+  } finally { await server.close() }
+})
 
 test('catalog preserves route identities, source restrictions and protected recovery entries', () => {
   const Connection = {}, Document = {}
@@ -19,6 +39,10 @@ test('catalog preserves route identities, source restrictions and protected reco
   assert.equal(catalog.nodes[2].id, 'https://example.test/')
   assert.match(catalog.nodes[1].rule, /navigation:read/)
   assert.equal(catalog.nodes.some(n => n.id === 'Detail'), false)
+})
+
+test('unregistered icons fail the build instead of silently replacing navigation icons', () => {
+  assert.throws(() => buildNavigationCatalog({ group: { title: 'Group', icon: { name: 'TypoIcon' } } }, [], { Document: {} }), /Unregistered navigation icon/)
 })
 
 test('shipped catalog matches current navigation source and registered access identities', () => {

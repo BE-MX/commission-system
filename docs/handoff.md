@@ -1,3 +1,9 @@
+## 2026-11-03 导航图标与任务按钮回归修复（Codex，未部署）
+
+- 用户报告图标统一、任务按钮hover动效消失，确认只存过草稿未发布。修正Vite SSR不同组件对象导致全量fallback Document，重建40种图标的默认目录；无法识别图标时阻断构建。
+- 原scoped按钮样式提取为根/递归菜单共享样式，恢复hover/焦点/按下反馈及减少动态模式。旧草稿新增显式“恢复默认图标”，仅改编辑区图标、保留其他调整，不自动保存或发布。
+- 真实浏览器核验四类SVG路径及任务按钮hover/移出/键盘/按下/折叠/减少动态模式；旧草稿恢复的取消、确认、保留名称角标、未保存状态均通过。[回归报告](reports/2026-11-03-navigation-icon-hover-regression.md)。工作区codex/navigation-regression；不增加迁移或写生产数据。
+
 ## 2026-11-03 导航管理实现（Codex，Git交付，未部署）
 
 - 工作区 `D:/MyProgram/commission-system-codex-navigation-management`，分支 `codex/navigation-management`，基于 `a8707d8f`。用户已授权本批提交、合并 main 与推送 origin；不部署。远端交付基于最新 origin/main，不夹带本地 main 既有未推送提交。

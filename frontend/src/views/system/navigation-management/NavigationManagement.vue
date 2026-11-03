@@ -4,7 +4,7 @@
     <el-alert v-if="error" :title="error" type="error" :closable="false"><el-button text @click="load">重新加载</el-button></el-alert>
     <el-alert v-if="conflict" title="共享草稿或注册目录已更新，本地编辑已保留。重新载入前请保存本地修改内容。" type="warning" :closable="false"><el-button text @click="reload">重新载入</el-button></el-alert>
     <el-alert v-if="blocked" title="编辑权限已撤销，当前输入仍保留。" type="warning" :closable="false"/>
-    <div class="navigation-action-bar"><div class="navigation-status"><span class="navigation-status-dot"/><strong>当前版本 V{{ baseVersion }}</strong><span>{{ dirty ? '有未保存修改' : changes.length ? '草稿已保存 · 尚未发布' : '与当前版本一致' }}</span></div><div class="navigation-actions"><el-button @click="historyOpen = true">版本记录</el-button><el-button v-permission="'navigation:write'" :disabled="!dirty || unavailable || errors.length > 0" :loading="busy" @click="save">保存草稿</el-button><el-button v-permission="'navigation:admin'" type="primary" :disabled="!changes.length || unavailable || errors.length > 0" :loading="busy" @click="preparePublish">预览并发布 ↗</el-button></div></div>
+    <div class="navigation-action-bar"><div class="navigation-status"><span class="navigation-status-dot"/><strong>当前版本 V{{ baseVersion }}</strong><span>{{ dirty ? '有未保存修改' : changes.length ? '草稿已保存 · 尚未发布' : '与当前版本一致' }}</span></div><div class="navigation-actions"><el-button @click="historyOpen = true">版本记录</el-button><el-button v-permission="'navigation:write'" :disabled="unavailable" @click="restoreDefaultIcons">恢复默认图标</el-button><el-button v-permission="'navigation:write'" :disabled="!dirty || unavailable || errors.length > 0" :loading="busy" @click="save">保存草稿</el-button><el-button v-permission="'navigation:admin'" type="primary" :disabled="!changes.length || unavailable || errors.length > 0" :loading="busy" @click="preparePublish">预览并发布 ↗</el-button></div></div>
     <div class="navigation-workspace">
       <section class="navigation-panel navigation-structure" aria-label="导航结构"><header><h2>导航结构 <small>{{ nodes.length }}</small></h2><el-button v-permission="'navigation:write'" text :disabled="unavailable" aria-label="新增一级分类" @click="addGroup('')">＋ 新增</el-button></header>
         <div class="navigation-tree-tools"><el-input v-model="query" clearable placeholder="搜索名称、原名或路径" aria-label="搜索导航" :prefix-icon="iconSet.Search"/><el-radio-group v-model="filter" size="small"><el-radio-button value="all">全部</el-radio-button><el-radio-button value="hidden">已隐藏 {{ nodes.filter(n => !n.visible).length }}</el-radio-button></el-radio-group></div>
@@ -36,7 +36,7 @@ import { childrenOf, reorderNode } from './navigationEditor'
 import { useNavigationEditor } from './useNavigationEditor'
 import './navigation-management.css'
 defineOptions({ name: 'NavigationManagement' })
-const { nodes, icons, versions, selectedId, selected, loading, busy, blocked, error, conflict, baseVersion, dirty, errors, changes, emptyGroups, historyOpen, publishOpen, load, save, preparePublish, publish, addGroup, removeSelected, move, restore } = useNavigationEditor()
+const { nodes, icons, versions, selectedId, selected, loading, busy, blocked, error, conflict, baseVersion, dirty, errors, changes, emptyGroups, historyOpen, publishOpen, load, save, preparePublish, publish, addGroup, removeSelected, move, restore, restoreDefaultIcons } = useNavigationEditor()
 const query = ref(''), filter = ref('all'), compact = ref(false), treeRef = ref()
 const auth = useAuthStore(), commercePhase = useCommercePhase()
 const canWrite = computed(() => auth.hasPermission('navigation:write'))

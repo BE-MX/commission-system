@@ -2,7 +2,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import * as api from '@/api/navigationConfig'
 import { confirmAction, isFeedbackCancelled, msgError, msgSuccessText, msgWarning, promptAction } from '@/utils/feedback'
-import { childrenOf, descendantIds, diffNodes, mergeNodes, nextSiblingOrder, reorderNode, sameWritableNodes, validateNodes, writableNodes } from './navigationEditor'
+import { childrenOf, descendantIds, diffNodes, mergeNodes, nextSiblingOrder, reorderNode, restoreSourceIcons, sameWritableNodes, validateNodes, writableNodes } from './navigationEditor'
 export function useNavigationEditor() {
   const nodes = ref([]), catalog = ref([]), icons = ref([]), versions = ref([]), selectedId = ref('')
   const loading = ref(false), busy = ref(false), blocked = ref(false), error = ref(''), conflict = ref(false)
@@ -129,9 +129,20 @@ export function useNavigationEditor() {
       return false
     }
   }
+  async function restoreDefaultIcons() {
+    if (busy.value || loading.value || blocked.value || conflict.value || pendingSave.value) return
+    const restored = restoreSourceIcons(nodes.value, catalog.value)
+    const count = restored.filter((node, i) => node.icon !== nodes.value[i].icon).length
+    if (!count) { msgSuccessText('已是系统默认图标'); return }
+    try {
+      await confirmAction(`将 ${count} 个内置导航恢复为系统默认图标？名称、分类、角标和自建分类图标保持原样；确认后仅修改当前编辑内容，保存草稿或发布需另行操作。`, '恢复系统默认图标', { confirmButtonText: '恢复图标', cancelButtonText: '取消' })
+      nodes.value = restored; publishRequest.value = ''
+      msgSuccessText('默认图标已恢复到当前编辑内容，请预览后保存')
+    } catch (e) { if (!isFeedbackCancelled(e)) msgError('恢复默认图标失败', e) }
+  }
   function beforeUnload(event) { if (dirty.value) { event.preventDefault(); event.returnValue = '' } }
   onBeforeRouteLeave(leave)
   onMounted(() => { load(); window.addEventListener('beforeunload', beforeUnload) })
   onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
-  return { nodes, catalog, icons, versions, selectedId, selected, loading, busy, blocked, error, conflict, baseVersion, dirty, errors, changes, emptyGroups, historyOpen, publishOpen, load, save, preparePublish, publish, addGroup, removeSelected, move, restore, descendantIds }
+  return { nodes, catalog, icons, versions, selectedId, selected, loading, busy, blocked, error, conflict, baseVersion, dirty, errors, changes, emptyGroups, historyOpen, publishOpen, load, save, preparePublish, publish, addGroup, removeSelected, move, restore, restoreDefaultIcons, descendantIds }
 }

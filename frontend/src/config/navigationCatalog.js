@@ -1,6 +1,12 @@
 // Build-time presentation catalog. Executable routes and source access rules stay in navigation.js.
 export function buildNavigationCatalog(groups, entries, icons) {
-  const iconName = component => Object.keys(icons).find(key => icons[key] === component) || 'Document'
+  const iconName = component => {
+    const key = Object.keys(icons).find(key => icons[key] === component)
+      || component?.name
+      || Object.keys(icons).find(key => component?.__name && icons[key]?.__name === component.__name)
+    if (!key || !icons[key]) throw new Error(`Unregistered navigation icon: ${component?.name || component?.__name || 'missing'}`)
+    return key
+  }
   const nodes = Object.entries(groups).map(([id, group], index) => ({
     id, kind: 'group', label: group.title, icon: iconName(group.icon), parent: '', order: index + 20,
     visible: true, builtin: true, protected: id === 'system', badge: group.iconBadge || '',

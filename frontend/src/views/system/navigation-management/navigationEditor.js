@@ -1,4 +1,8 @@
 export const editableFields = ['id', 'kind', 'label', 'icon', 'parent', 'order', 'visible', 'badge', 'badgePlace', 'badgeTone', 'titleSync']
+export function restoreSourceIcons(nodes, catalog) {
+  const defaults = new Map(catalog.map(node => [node.id, node.icon]))
+  return nodes.map(node => defaults.has(node.id) ? { ...node, icon: defaults.get(node.id) } : { ...node })
+}
 export function writableNodes(nodes) {
   return nodes.map(node => Object.fromEntries(editableFields.map(key => [key, key === 'label' || key === 'badge' ? String(node[key] || '').trim() : node[key]])))
 }
