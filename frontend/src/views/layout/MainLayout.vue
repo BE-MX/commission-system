@@ -21,7 +21,7 @@
               <Expand v-else />
             </button>
             <div class="header-title-group">
-              <h1 class="page-title">{{ route.meta.title || '工作台' }}</h1>
+              <h1 class="page-title">{{ pageTitle }}</h1>
             </div>
           </div>
           <div class="header-right">
@@ -106,11 +106,13 @@ import { NAV_ENTRIES } from '@/config/navigation'
 import NavigationTabs from './NavigationTabs.vue'
 import SidebarNavigation from './SidebarNavigation.vue'
 import QuickNavigation from './QuickNavigation.vue'
+import { navigationRouteTitle } from '@/composables/useNavigationConfig'
 import { useNavigationTabs } from './navigationTabs'
 import { getRouteTabKey, getTabButtonId, getTabPanelId } from './navigationTabState'
 
 const route = useRoute()
 const router = useRouter()
+const pageTitle = computed(() => navigationRouteTitle(route.name, route.meta.title || '工作台'))
 const authStore = useAuthStore()
 const { openQuickTask } = useQuickTask()
 

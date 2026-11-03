@@ -15,7 +15,7 @@
     <FavoriteNavigation :collapsed="collapsed" :available="favoriteCandidates" />
 
     <template v-if="!collapsed">
-      <div class="menu-label">NAVIGATION</div>
+      <div class="menu-label" :title="navigationConfigError || undefined">NAVIGATION<span v-if="navigationConfigError" role="status"> · 待更新</span></div>
       <div class="nav-search">
         <el-input
           v-model="searchQuery"
@@ -47,9 +47,9 @@
         @keydown.enter.prevent.stop="activateMenuItem"
         @keydown.space.prevent.stop="activateMenuItem"
       >
-        <el-icon><component :is="item.icon" /></el-icon>
+        <el-icon class="nav-group-icon"><component :is="item.icon" /><NavigationTextBadge :item="item" icon /></el-icon>
         <template #title>
-          <span>{{ item.title }}</span>
+          <span :title="item.title">{{ item.title }}</span><NavigationTextBadge :item="item" />
           <button
             v-if="!collapsed && item.name"
             v-permission="'task:write'"
@@ -63,64 +63,9 @@
         </template>
       </el-menu-item>
 
-      <el-sub-menu
-        v-for="group in visibleGroups"
-        :key="group.key"
-        :index="group.key"
-        popper-class="ark-navigation-popup"
-        :aria-label="group.title"
-        aria-haspopup="menu"
-        tabindex="0"
-        :data-nav-group-trigger="group.key"
-        @keydown.enter.self.prevent.stop="activateMenuGroup($event, group.key)"
-        @keydown.space.self.prevent.stop="activateMenuGroup($event, group.key)"
-        @keydown.esc.self.prevent.stop="closeKeyboardGroup($event, group.key)"
-      >
-        <template #title>
-          <el-icon class="nav-group-icon">
-            <component :is="group.icon" />
-            <span v-if="group.iconBadge" class="nav-icon-badge">{{ group.iconBadge }}</span>
-          </el-icon>
-          <span>{{ group.title }}</span>
-        </template>
-        <template v-for="item in group.items" :key="item.path">
-          <a
-            v-if="item.external"
-            class="el-menu-item external-item"
-            :data-nav-group="group.key"
-            @keydown.esc.prevent.stop="closeKeyboardGroup($event, group.key)"
-            @focusout="leaveKeyboardGroup($event, group.key)"
-            :href="item.path"
-            target="_blank"
-            rel="noopener"
-          >
-            <el-icon><component :is="item.icon" /></el-icon>
-            <span>{{ item.title }}</span>
-            <el-icon class="ext-mark"><TopRight /></el-icon>
-          </a>
-          <el-menu-item v-else :index="item.path" :data-nav-group="group.key" tabindex="0"
-            @keydown.enter.prevent.stop="activateMenuItem" @keydown.space.prevent.stop="activateMenuItem"
-            @keydown.esc.prevent.stop="closeKeyboardGroup($event, group.key)" @focusout="leaveKeyboardGroup($event, group.key)">
-            <el-icon><component :is="item.icon" /></el-icon>
-            <template #title>
-              <el-badge v-if="item.badge === 'domesticReviews'" :value="pendingReviews ?? 0" :max="Number.MAX_SAFE_INTEGER" :hidden="pendingReviews == null || pendingReviews === 0" class="nav-review-badge" :aria-label="pendingReviews == null ? `${item.title}，待审核数量暂未获取` : `${item.title}，${pendingReviews}笔待审核`">
-                <span>{{ item.title }}</span>
-              </el-badge>
-              <span v-else class="nav-document-label" :title="documentBadgeTitle(item)">{{ item.title }}<template v-if="documentAnomalies[item.anomalyDomain]?.has_anomaly"><button v-if="item.anomalyDomain === 'outbound'" type="button" class="nav-document-anomaly nav-document-anomaly-button" :aria-label="documentBadgeTitle(item)" @click.stop.prevent="outboundProblemsVisible = true" @keydown.enter.stop @keydown.space.stop>!</button><span v-else class="nav-document-anomaly" :aria-label="documentBadgeTitle(item)">!</span></template></span>
-              <button
-                v-if="!collapsed && item.name"
-                v-permission="'task:write'"
-                type="button"
-                class="nav-add"
-                data-quick-task-trigger
-                :aria-label="`为「${item.title}」记任务`"
-                :title="`为「${item.title}」记任务`"
-                @click.stop.prevent="quickAdd($event, item)"
-              >+</button>
-            </template>
-          </el-menu-item>
-        </template>
-      </el-sub-menu>
+      <NavigationMenuBranch v-for="group in visibleGroups" :key="group.key" :group="group" :collapsed="collapsed"
+        :pending-reviews="pendingReviews" :document-anomalies="documentAnomalies" :document-badge-title="documentBadgeTitle"
+        @quick-add="quickAdd" @outbound-problems="outboundProblemsVisible = true" />
 
       <div v-if="hasNoMatches" class="nav-empty">
         <el-icon><Search /></el-icon>
@@ -138,15 +83,17 @@
 <script setup>
 import { useDomesticReviewBadge } from './useDomesticReviewBadge'
 import { useDocumentAnomalyBadge } from './useDocumentAnomalyBadge'
-import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
-import { Search, TopRight } from '@element-plus/icons-vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { Search } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { MENU_GROUPS, NAV_ENTRIES } from '@/config/navigation'
+import { useNavigationConfig } from '@/composables/useNavigationConfig'
 import { useQuickTask } from '@/composables/useQuickTask'
 import { useCommercePhase } from './useCommercePhase'
-import { accessibleNavigationSections, filterNavigationSections, normalizeNavigationQuery } from './navigationSearch'
+import { quickNavigationItems, filterNavigationSections, normalizeNavigationQuery } from './navigationSearch'
 import FavoriteNavigation from './FavoriteNavigation.vue'
+import NavigationMenuBranch from './NavigationMenuBranch.vue'
+import NavigationTextBadge from './NavigationTextBadge.vue'
 
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
@@ -181,7 +128,7 @@ watch(() => props.collapsed, value => {
 })
 
 const commercePhase = useCommercePhase()
-const accessibleNavigation = computed(() => accessibleNavigationSections(NAV_ENTRIES, MENU_GROUPS, authStore, { commercePhase: commercePhase.value }))
+const { sections: accessibleNavigation, error: navigationConfigError } = useNavigationConfig(authStore, commercePhase)
 const accessibleTopLevelItems = computed(() => accessibleNavigation.value.topLevelItems)
 const accessibleGroups = computed(() => accessibleNavigation.value.groups)
 
@@ -190,15 +137,13 @@ const filteredNavigation = computed(() => filterNavigationSections(
   accessibleGroups.value,
   normalizedQuery.value,
 ))
-const favoriteCandidates = computed(() => [
-  ...accessibleTopLevelItems.value.map(item => ({ ...item, name: item.name || item.path, groupTitle: '一级页面' })),
-  ...accessibleGroups.value.flatMap(group => group.items.map(item => ({ ...item, name: item.name || item.path, groupTitle: group.title }))),
-])
+const favoriteCandidates = computed(() => quickNavigationItems(accessibleNavigation.value).map(item => ({ ...item, name: item.name || item.path })))
 const topLevelItems = computed(() => filteredNavigation.value.topLevelItems)
 const visibleGroups = computed(() => filteredNavigation.value.groups)
 
+function collectGroupKeys(groups) { return groups.flatMap(group => [group.key, ...collectGroupKeys(group.items.filter(item => item.items))]) }
 const defaultOpenGroupKeys = computed(() => (
-  normalizedQuery.value ? visibleGroups.value.map(group => group.key) : openedGroupKeys.value
+  normalizedQuery.value ? collectGroupKeys(visibleGroups.value) : openedGroupKeys.value
 ))
 const menuRenderKey = computed(() => `navigation-${normalizedQuery.value}`)
 const hasNoMatches = computed(() => (
@@ -210,36 +155,6 @@ const hasNoMatches = computed(() => (
 // Keep Element Plus click routing/permission guards for keyboard activation too.
 function activateMenuItem(event) {
   if (!event.repeat && event.target === event.currentTarget && !event.currentTarget.classList.contains('is-disabled')) event.currentTarget.click()
-}
-async function activateMenuGroup(event, key) {
-  if (event.repeat || event.target !== event.currentTarget || event.currentTarget.classList.contains('is-disabled')) return
-  const trigger = event.currentTarget
-  if (trigger.getAttribute('aria-expanded') === 'true') {
-    menu.value?.close(key)
-    rememberClosedGroup(key)
-    return
-  }
-  menu.value?.open(key)
-  if (props.collapsed) {
-    await nextTick()
-    const firstItem = [...trigger.ownerDocument.querySelectorAll('[data-nav-group]')]
-      .find(item => item.dataset.navGroup === key && item.getClientRects().length > 0)
-    firstItem?.focus()
-  }
-}
-function closeKeyboardGroup(event, key) {
-  menu.value?.close(key)
-  rememberClosedGroup(key)
-  const trigger = [...menu.value?.$el.querySelectorAll('[data-nav-group-trigger]') || []]
-    .find(item => item.dataset.navGroupTrigger === key)
-  trigger?.focus()
-}
-function leaveKeyboardGroup(event, key) {
-  if (!props.collapsed) return
-  const target = event.relatedTarget
-  if (target?.dataset.navGroup === key) return
-  menu.value?.close(key)
-  rememberClosedGroup(key)
 }
 function rememberOpenedGroup(key) {
   if (normalizedQuery.value || openedGroupKeys.value.includes(key)) return

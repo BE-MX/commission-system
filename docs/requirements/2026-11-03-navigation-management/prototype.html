@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>导航管理 · 莱莎方舟</title><link rel="stylesheet" href="prototype.css"></head>
+<body>
+<aside class="app-sidebar">
+ <div class="brand"><span class="brand-symbol">L</span><div>LeShine<small>ARK PLATFORM</small></div></div>
+ <div class="side-caption">常用导航</div><div class="side-link"><span data-icon="DataAnalysis"></span>工作台</div><div class="side-link"><span data-icon="Document"></span>订单管理</div>
+ <div class="side-separator"></div><div class="side-caption">工作空间</div>
+ <div class="side-link"><span data-icon="OfficeBuilding"></span>客户管理<span class="chevron">›</span></div>
+ <div class="side-link"><span data-icon="Document"></span>订单管理<span class="chevron">›</span></div>
+ <div class="side-link"><span data-icon="Box"></span>备货管理<span class="chevron">›</span></div>
+ <div class="side-link"><span data-icon="Picture"></span>素材管理<span class="chevron">›</span></div>
+ <div class="side-link"><span data-icon="Reading"></span>企业知识库<span class="chevron">›</span></div>
+ <div class="side-link current-section"><span data-icon="Setting"></span>系统管理<span class="chevron">⌄</span></div>
+ <div class="side-child">用户管理</div><div class="side-child">角色权限</div><div class="side-child">基础字典</div><div class="side-child active" aria-current="page"><span data-icon="Connection"></span>导航管理</div><div class="side-child">AI 接入管理</div><div class="side-child">运行与自动化中心</div>
+ <div class="side-footer"><span class="online-dot"></span>交互设计原型 <span>V1.0</span></div>
+</aside>
+<div class="app-body">
+ <header class="chrome"><div><span data-icon="Connection"></span><span class="crumb">系统管理</span><span class="muted">/</span><strong>导航管理</strong></div><div><span class="prototype-tag">本地演示</span><span class="avatar">管</span><span>管理员</span></div></header>
+ <div class="page-tabs"><span>工作台</span><span class="selected">导航管理</span></div>
+ <main>
+  <div class="page-heading"><div><div class="eyebrow">WORKSPACE SETTINGS</div><h1>导航管理</h1><p>统一维护导航名称、图标与分类，调整后先预览，再发布。</p></div><a href="README.md" class="doc-link">查看设计说明 ↗</a></div>
+  <div class="action-bar"><div class="version-status"><span class="status-dot"></span><strong id="version-label">演示版本 V1</strong><span id="draft-label">与当前版本一致</span></div><div class="actions"><button id="history-btn"><span data-icon="Clock"></span>版本记录</button><button id="save-btn">保存草稿</button><button id="publish-btn" class="primary">预览并发布 <span>↗</span></button></div></div>
+  <div class="workspace">
+   <section class="structure panel" aria-label="导航结构"><div class="panel-heading"><h2>导航结构 <span id="tree-count" class="small-count"></span></h2><button id="new-btn" class="icon-button" aria-label="新增分类" title="新增分类">＋</button></div>
+    <div class="structure-tools"><label class="search-box"><span data-icon="Search"></span><input id="search" type="search" placeholder="搜索名称或路径" aria-label="搜索导航名称或路径"></label><div class="filter-row"><button class="filter active" data-filter="all">全部</button><button class="filter" data-filter="hidden">已隐藏 <span id="hidden-count">0</span></button><button id="fold-all" class="text-button">收起分类</button></div></div>
+    <div id="tree" class="tree"></div><div class="panel-foot"><span data-icon="Info"></span>拖动手柄调整同级顺序</div>
+   </section>
+   <section class="editor panel" aria-label="导航属性"><div class="panel-heading"><h2>导航属性</h2><span id="kind-label" class="tag neutral">一级分类</span></div><div id="editor"></div></section>
+   <aside class="preview panel"><div class="panel-heading"><h2>实时预览</h2><button id="compact-btn" class="icon-button" title="切换侧栏折叠预览" aria-label="切换侧栏折叠预览"><span data-icon="Fold"></span></button></div><div class="preview-mode">当前编辑的分类 · 草稿</div><div id="preview"></div><div class="preview-help"><span data-icon="Info"></span><p>这里只预览展示效果。员工实际可见内容仍取决于原有权限。</p></div></aside>
+  </div>
+  <footer class="page-foot"><span>适用于主站导航 · 个人常用导航保持独立</span><span>所有操作仅保存在此浏览器</span></footer>
+ </main>
+</div>
+<dialog id="modal" aria-labelledby="modal-title"><form id="modal-form"><div class="dialog-head"><div><div id="modal-eyebrow" class="eyebrow">NAVIGATION</div><h2 id="modal-title"></h2></div><button type="button" id="modal-close" class="icon-button" aria-label="关闭对话框">×</button></div><div id="modal-body" class="dialog-body"></div><div id="modal-footer" class="dialog-footer"></div></form></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="snapshot.js"></script><script src="prototype.js"></script>
+</body></html>

@@ -1,3 +1,4 @@
+import { navigationRouteTitle } from '@/composables/useNavigationConfig'
 import { msgError } from '@/utils/feedback'
 import { createRouter, createWebHistory } from 'vue-router'
 import { NAV_ENTRIES } from '@/config/navigation'
@@ -115,7 +116,8 @@ router.beforeEach(async (to, from, next) => {
   }
 
   // 设置页面标题
-  document.title = to.meta.title ? `${to.meta.title} - 莱莎方舟` : '莱莎方舟'
+  const displayTitle = navigationRouteTitle(to.name, to.meta.title)
+  document.title = displayTitle ? `${displayTitle} - 莱莎方舟` : '莱莎方舟'
 
   // 公开页面直接放行
   if (to.meta.public) return next()

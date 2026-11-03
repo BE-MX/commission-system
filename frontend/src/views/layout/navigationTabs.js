@@ -1,3 +1,4 @@
+import { navigationDisplayConfig, navigationRouteTitle } from '@/composables/useNavigationConfig'
 import { computed, reactive, ref, watch } from 'vue'
 import { isNavigationFailure } from 'vue-router'
 import {
@@ -16,7 +17,7 @@ export function useNavigationTabs(route, router) {
   watch(
     () => [getRouteTabKey(route), route.fullPath, route.meta?.title],
     () => {
-      tabs.value = upsertRouteTab(tabs.value, route)
+      tabs.value = upsertRouteTab(tabs.value, { ...route, meta: { ...route.meta, title: navigationRouteTitle(route.name, route.meta?.title) } })
     },
     { immediate: true },
   )
@@ -54,6 +55,16 @@ export function useNavigationTabs(route, router) {
     }
     return `ArkTab_${(hash >>> 0).toString(36)}`
   }
+
+  watch(navigationDisplayConfig, () => {
+    tabs.value = tabs.value.map(tab => {
+      const name = tab.key.split(':')[0]
+      const routeRecord = router.getRoutes().find(record => record.name === name)
+      return { ...tab, title: navigationRouteTitle(name, routeRecord?.meta?.title || tab.title) }
+    })
+    const title = navigationRouteTitle(route.name, route.meta?.title)
+    document.title = title ? `${title} - 莱莎方舟` : '莱莎方舟'
+  })
 
   const cachedTabNames = computed(() => tabs.value.map(tab => getTabCacheName(tab.key)))
 

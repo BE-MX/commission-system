@@ -1,5 +1,11 @@
 # 莱莎方舟 数据库表参考
 
+## 全局导航配置（248_navigation_config，待部署）
+
+迁移继承 `247_sales_return_freight`，新增 `ark_navigation_configs`（组织共享草稿、draft_revision、base_version、当前版本指针与目录 hash）、`ark_navigation_versions`（不可变发布快照、唯一版本、唯一 request_id、请求指纹、字段差异）、`ark_navigation_config_audits`（保存/发布/恢复审计）。时间均为无时区北京时间。
+
+草稿使用条件 UPDATE 比较修订号及发布版本；发布在同事务切换指针、插入版本及审计。回退复制历史为新草稿，不修改历史快照。只保存展示字段，权限/路由/交易阶段仍由代码与构建目录决定。降级遇到任何配置或历史记录时阻断，避免删除管理员配置。没有从开发机执行共享库迁移。
+
 本文维护表结构与迁移说明；源码依据为 `backend/alembic/versions/` 与对应模型。迁移编号代表结构依赖，不代表当前生产 head。部署、开关和真实业务验收统一见[交接文档](handoff.md)。 本轮 2026-10-31 核对本地迁移链至 `214_sales_return_ledger`；这不是实时生产查询。
 
 ## 外贸退货运费扩展（247_sales_return_freight）
