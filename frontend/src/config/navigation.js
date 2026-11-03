@@ -246,7 +246,7 @@ export const NAV_ENTRIES = [
   { path: '/finance/native', name: 'NativeFinance', component: () => import('@/views/finance/native/NativeFinance.vue'), title: '本地资金与应收', permission: 'receipt:read', menu: { group: 'invoice', icon: Money, order: 12, commercePhases: NATIVE_PHASES } },
   { path: '/finance/reference', name: 'FinanceReference', component: () => import('@/views/finance/native/FinanceReference.vue'), title: '本地资金配置', permission: 'receipt:admin', menu: { group: 'invoice', icon: Setting, order: 13, commercePhases: NATIVE_PHASES } },
   { path: '/catalog/products', name: 'CatalogProducts', component: () => import('@/views/catalog/CatalogProducts.vue'), title: '产品与 SKU', permission: 'catalog:read', menu: { group: 'stock', icon: Goods, order: 1 } },
-  { path: '/inventory', name: 'InventoryLedger', component: () => import('@/views/inventory/InventoryPage.vue'), title: '本地成品库存账', permission: 'inventory:read', menu: { group: 'stock', icon: Box, order: 2 } },
+  { path: '/stock/inventory', name: 'InventoryLedger', component: () => import('@/views/inventory/InventoryPage.vue'), title: '本地成品库存账', permission: 'inventory:read', menu: { group: 'stock', icon: Box, order: 2 } },
   { path: '/trade/roster', name: 'TradeRoster', component: () => import('@/views/trade/SalesRoster.vue'), title: '本地业务员名册', anyPermission: ['employee:read', 'employee:write'], menu: { group: 'personnel', icon: User, order: 3 } },
   { path: '/trade/projection', name: 'TradeProjection', component: () => import('@/views/trade/ProjectionStatus.vue'), title: '本地经营投影', permission: 'employee:write', menu: { group: 'personnel', icon: DataAnalysis, order: 4 } },
   // ── 工作台 (顶级,不属任何分组) ──────────────────────────

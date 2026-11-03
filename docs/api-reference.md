@@ -2792,6 +2792,8 @@ AI 整理走 `app.ai.service.chat` facade，预设 `domestic_followup_parse`（�
 
 # 本地产品与库存账（开发分支）
 
+员工操作页面为 `/stock/inventory`（备货管理→本地成品库存账）；客户公开库存展示使用 `/inventory`。两者路由与权限独立，本节 `/api/inventory` 接口前缀不受页面地址调整影响。
+
 `/api/catalog`：`GET/POST /products`、`PUT /products/{id}`、`POST /products/{id}/skus`、`PUT /skus/{id}/status`。查看需 `catalog:read`（制单/库存读取可使用对应权限），维护需 `catalog:write`；编码和计量单位为稳定身份，停用不改历史交易快照。
 
 `/api/inventory`：`GET/POST /warehouses`、`GET /balances`、`GET/POST /documents`、`GET /documents/{id}`、`POST /documents/{id}/reversal`。读取需 `inventory:read`，收货/调拨需 `inventory:write`；期初/调整/盘点同时需 `inventory:admin`，仓库维护与冲销需 `inventory:admin`。全部返回统一信封。
