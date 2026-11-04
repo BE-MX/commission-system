@@ -3,11 +3,6 @@ export default function AccessGateway() {
     <main className="access-gateway">
       <section className="gateway-brand">
         <img src="/leshine-brand.jpg" alt="LESHINE 莱莎健康假发" />
-        <div>
-          <p>LESHINE</p>
-          <h1>莱莎健康假发</h1>
-          <span>34年健康假发的坚守者</span>
-        </div>
       </section>
       <section className="gateway-login">
         <p className="gateway-kicker">请选择访问身份</p>
