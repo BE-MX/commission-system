@@ -10,6 +10,12 @@
 - 列表接口新增录入人/日期/关键字筛选；录入人候选由可见已确认记录派生，保留历史停用人，不需要写权限。该阶段只读总览无迁移、无生产数据修改，未提交/合并/推送/部署；后续已提交编辑见本日上方最新记录。
 - 后端 49 项、前端相关 30 项及构建通过；独立审查和本地模拟浏览器验收完成主要路径。约定检查、diff 检查与本地快照 Git 巡检完成。[实现与验证](reports/2026-11-04-domestic-followup-overview.md)。
 
+## 2026-11-04 内贸下单参考图粘贴上传（Codex，Git 交付，未部署）
+
+- 工作区 `D:/MyProgram/commission-system-codex-domestic-paste-upload`，分支 `codex/domestic-paste-upload`。新建订单、草稿新增明细与编辑明细中的参考图统一复用 `AppUpload` 的粘贴/拖拽上传区，覆盖发型、颜色、发型要求、备注；生产订单沿用其现有字段子集。选择文件、原有预览与删除保留，格式与服务端一致为 JPEG / PNG / WebP，每张最多 20MB。
+- 新建页把已上传数组传给上传组件，确保每区六张上限跨批次计数、删除后释放额度；草稿新增与编辑沿用原九张上限。新增明细保存期间隐藏上传入口，避免粘贴绕过表单禁用。上传仍由各字段闭包自行追加，保留并发上传不丢图的既有方式；无依赖、API、权限或数据库变化。
+- 相关 Node 回归 62 项、`npm run build`（31.11s）、严格约定及 diff 检查通过；本地快照 Git 巡检完成（未 fetch）。Chrome 隔离验收通过三个真实入口的四区粘贴、字段隔离、并发、删除重传、文字粘贴及窄屏；有效 PNG / JPG / WebP 缩略图真实解码，草稿与编辑图片查看通过，新建页实际剪贴板写入后 Ctrl+V、数量/大小/格式限制、选图与拖拽均通过。复验入口 `frontend/tests/fixtures/domestic-paste-upload/index.html`，浏览器脚本 `frontend/tests/domesticPasteUpload.browser.py`，截图/结果保留在 `tmp/domestic-paste-upload/`，本次 3036 测试服务已停止。用户已授权本次提交、合并 main 并推送 origin/main；不部署。交付只包含本次改动，主目录已有修改及独有测试历史保留，不夹带推送。
+
 ## 2026-11-04 订单发票快递渠道与付款校验（Codex，Git 交付，未部署）
 
 - 工作区 `D:/MyProgram/commission-system-codex-express-9610`，分支 `codex/express-9610`，基于 main `679d9888`。DHL/FEDEX 选项改为 DHL普货/FEDEX普货，新增 DHL9610/FEDEX9610，保留顺丰与其他快递；存量旧值打开编辑映射为普货，不批量改库。整单粘贴保留 9610 标识。

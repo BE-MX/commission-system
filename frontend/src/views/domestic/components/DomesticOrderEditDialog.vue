@@ -89,8 +89,8 @@
               </div>
             </div>
             <AppUpload v-if="!itemDialog.saving" :model-value="itemDialog.form[section.imageKey].map(path => ({ path }))"
-              :upload-fn="file => uploadReference(section.imageKey, file)" :show-list="false" multiple
-              accept=".jpg,.jpeg,.png,.webp" :max-size-mb="20" button-text="添加参考图" />
+              :upload-fn="file => uploadReference(section.imageKey, file)" :show-list="false" multiple transfer
+              accept="image/jpeg,image/png,image/webp" :max-size-mb="20" button-text="选择参考图" />
           </el-form-item>
         </div>
       </el-form>
