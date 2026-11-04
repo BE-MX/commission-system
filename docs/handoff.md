@@ -1,3 +1,9 @@
+## 2026-11-04 私海助理（Codex，本地实现，默认关闭）
+
+工作目录 `D:/MyProgram/commission-system-codex-private-sea-assistant`，分支 `codex/private-sea-assistant`。私海页面、四表迁移250、来源授权、规则/模型队列、早报票据和 P0 评测/统计已实现。54项定向回归、隔离MySQL迁移与来源SQL、前端build、桌面/窄屏浏览器走查和独立审查问题复核已完成。开关默认关闭。
+
+实际模型/钉钉、真实五日评测和两周试点仍待执行。R5需先校准订单分类映射；共同归属因连接器partial覆盖保守独立评估。实现边界、配置和验证证据见[实现记录](requirements/2026-11-04-private-sea-assistant/implementation-status.md)。临时MySQL已停止，清理目录被工具策略拒绝，测试文件保留在本工作区tmp。
+
 ## 2026-11-04 内贸客户充值凭证粘贴（Codex，Git 交付，未部署）
 
 - 工作区 `D:/MyProgram/commission-system-codex-domestic-recharge-paste`，分支 `codex/domestic-recharge-paste`。客户充值转账凭证改用 `AppUpload` 粘贴/拖拽区，充值申请撤回后重提的替换凭证入口同步开启。保留 JPG / PNG / WebP / PDF、单文件、20MB 限制；已有凭证先移除再替换。

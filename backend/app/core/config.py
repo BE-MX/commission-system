@@ -20,6 +20,16 @@ _PublicPoolQuota = Annotated[int, Field(gt=0, le=100)]
 
 
 class Settings(BaseSettings):
+    # Private-sea assistant remains opt-in until the offline pilot is accepted.
+    CLIENT_DESK_ENABLED: bool = False
+    CLIENT_DESK_PILOT_USER_IDS: list[int] = Field(default_factory=list)
+    CLIENT_DESK_NONWORKDAY_USER_IDS: list[int] = Field(default_factory=list)
+    CLIENT_DESK_PRESET_NAME: str = "client_desk_daily"
+    CLIENT_DESK_ALLOWED_PROVIDER_IDS: list[int] = Field(default_factory=list)
+    CLIENT_DESK_REPORT_SECRET: str = Field(default="", repr=False)
+    CLIENT_DESK_ORIGIN: str = ""
+    CLIENT_DESK_RULES: dict = Field(default_factory=dict)
+    CLIENT_DESK_CALENDAR: dict = Field(default_factory=dict)
     COMMERCE_PHASE: Literal['legacy_only', 'transition', 'local_only'] | None = None
     COMMERCE_RECEIVING_ENTITY_KEY: str = 'leshine'
     COMMERCE_BANK_CHANNEL: str = 'bank_statement'

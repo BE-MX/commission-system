@@ -185,7 +185,7 @@ const handleSubmit = async () => {
     // 或目标是展会 kiosk（展位 iPad 不进移动端素材页）
     const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
     const desktopMode = readSessionItem('ark_desktop_mode') === '1'
-    if (isMobileUA && !desktopMode && !redirect.startsWith('/expo') && !isShippingStationPath(redirect) && !isShippingInspectionPath(redirect) && !isFxSettlementPath(redirect) && !redirect.startsWith('/domestic/followups')) {
+    if (isMobileUA && !desktopMode && !redirect.startsWith('/expo') && !isShippingStationPath(redirect) && !isShippingInspectionPath(redirect) && !isFxSettlementPath(redirect) && !redirect.startsWith('/domestic/followups') && !redirect.startsWith('/client-desk')) {
       window.location.href = '/m/'
       return
     }

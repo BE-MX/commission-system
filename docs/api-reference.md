@@ -1,5 +1,13 @@
 # 莱莎方舟 API 参考
 
+## 私海助理（2026-11-04，本地实现，默认关闭）
+
+入口 `/api/client-desk`，普通读写接口使用 `client_desk:read/write`，同时校验试点名单、本人 OKKI 私海和当前来源授权。`read_all` 仅预留，不扩展查询范围。
+
+客户读取包含 `/today`、`/customers`、`/customers/{company_id}`、详情下的 `/timeline` 和 `/timeline/events/{event_key}`。个人状态 PATCH `/state`，共享等级 PUT `/grade`，手工记录 POST `/followups`，重新分析 POST `/reanalyze`，建议反馈 POST `/suggestions/{id}/feedback`。会话入口 `/unlinked-conversations`、POST `/wa-links`、DELETE `/wa-links/{id}`。WhatsApp 跳转经 POST 客户下 `/wa-open` 复核。日期由 GET `/calendar/sample-followup` 计算。
+
+GET `/reports/handoff` 仅公开无敏感内容壳。POST `/reports/redeem` 需登录和收件人匹配，原子消费短时签名票据。不会兑换全平台登录态。请求字段、并发和响应说明见[私海接口契约](requirements/2026-11-04-private-sea-assistant/contracts.md)，实际字段以 `app/client_desk/router.py` 和 `report_router.py` 为准。
+
 ## 全局导航配置（2026-11-03，待部署）
 
 前缀 `/api/system/navigation-config`，统一 `ok()` 信封。`effective` 对登录用户提供展示覆盖；真实可见性继续由不可编辑的源路由/菜单/原分类权限与交易阶段取交集。其余读接口要求 `navigation:read`，保存/恢复要求 `navigation:write`，发布要求 `navigation:admin`，写操作重查实时授权。

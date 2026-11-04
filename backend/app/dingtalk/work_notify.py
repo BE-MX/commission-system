@@ -10,6 +10,29 @@ logger = logging.getLogger("commission.dingtalk")
 class WorkNotifier:
     """企业内部应用工作通知（发给指定用户）"""
 
+    async def send_with_receipt(self, user_id: str, title: str, markdown_text: str) -> tuple[str, str | None]:
+        """One attempt; distinguish explicit rejection from uncertain delivery."""
+        from app.dingtalk.config import get_dingtalk_settings
+        agent_id = get_dingtalk_settings().DINGTALK_AGENT_ID
+        if not agent_id or not user_id:
+            return "unconfigured", None
+        try:
+            receipt = await get_dingtalk_client().post("topapi/message/corpconversation/asyncsend_v2", json_data={
+                "agent_id": agent_id, "userid_list": user_id,
+                "msg": {"msgtype": "markdown", "markdown": {"title": title, "text": markdown_text}},
+            })
+            if "task_id" not in receipt:
+                return "unknown", None
+            return "accepted", str(receipt["task_id"])
+        except DingTalkError as exc:
+            logger.warning("work notification rejected code=%s", exc.code)
+            print(f"[DINGTALK] work notification rejected code={exc.code}", flush=True)
+            return "rejected", None
+        except Exception as exc:
+            logger.warning("work notification outcome unknown: %s", type(exc).__name__)
+            print(f"[DINGTALK] work notification outcome unknown: {type(exc).__name__}", flush=True)
+            return "unknown", None
+
     async def send_to_users(
         self,
         user_ids: list[str],

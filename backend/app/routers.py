@@ -189,3 +189,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(commerce_transition_router, prefix="/api/commerce-transition", tags=["交易双路线管理"])
     app.include_router(commerce_shadow_router, prefix="/api/commerce-shadow", tags=["交易双路线核对"])
     app.include_router(sales_return_router, prefix="/api/sales-returns", tags=["退货单"])
+    from app.client_desk.router import router as client_desk_router
+    from app.client_desk.report_router import router as client_desk_report_router
+    app.include_router(client_desk_router, prefix="/api/client-desk", tags=["我的私海"])
+    app.include_router(client_desk_report_router, prefix="/api/client-desk", tags=["私海早报"])

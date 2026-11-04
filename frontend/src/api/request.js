@@ -130,7 +130,7 @@ export function createApiClient({
         if (!ownsCurrentAuthentication(error.config)) return Promise.reject(error)
         clearAuthState()
         const returnTo = window.location.pathname + window.location.search + window.location.hash
-        window.location.href = isFxSettlementPath(window.location.pathname)
+        window.location.href = (isFxSettlementPath(window.location.pathname) || window.location.pathname.startsWith('/client-desk'))
           ? '/login?redirect=' + encodeURIComponent(returnTo)
           : '/login'
         return Promise.reject(error)

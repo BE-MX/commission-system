@@ -1,5 +1,11 @@
 # 莱莎方舟 数据库表参考
 
+## 私海助理（250_client_desk，本地实现，待发布）
+
+新增 `ark_client_desk_states`（本人×客户人工状态与 AI 画像）、`ark_client_desk_followups`（手工跟进）、`ark_client_desk_suggestions`（全量候选、分析租约、独立质量反馈/行动事实及早报发送状态）、`ark_client_desk_wa_links`（手工会话关联与忽略）。客户键 BIGINT，用户外键与 ark_users 一致；会话关联用 generated active_slot 保证仅一条有效版本。公司等级复用发票 profile，业务镜像只读。
+
+迁移从 `249_followup_revisions` 接续。字段、索引和写入边界见[存储契约](requirements/2026-11-04-private-sea-assistant/contracts.md)和冻结迁移 `backend/alembic/versions/250_client_desk.py`。默认不开通用户，真实生产迁移须由部署入口执行。
+
 ## 全局导航配置（248_navigation_config，待部署）
 
 迁移继承 `247_sales_return_freight`，新增 `ark_navigation_configs`（组织共享草稿、draft_revision、base_version、当前版本指针与目录 hash）、`ark_navigation_versions`（不可变发布快照、唯一版本、唯一 request_id、请求指纹、字段差异）、`ark_navigation_config_audits`（保存/发布/恢复审计）。时间均为无时区北京时间。

@@ -1,5 +1,5 @@
 {
-  "source_sha256": "29dc49d91c8c3137b415c16f5dc40ba040c271bf1ef8eac6e64d9760d6ab172c",
+  "source_sha256": "dd86b888407b7f499cc465d2155d798ef64e8d27776ace95f545e84090b20060",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -551,6 +551,26 @@
         ]
       }
     ],
+    "ClientDesk": [
+      {
+        "permission": "client_desk:read"
+      },
+      {
+        "permission": "client_desk:read"
+      },
+      {
+        "anyPermission": [
+          "customer:read",
+          "client_desk:read",
+          "sales_automation:read",
+          "customer_opportunity:read",
+          "customer_radar:read",
+          "mail_outreach:read",
+          "mail_outreach:write",
+          "mail_outreach:admin"
+        ]
+      }
+    ],
     "CustomerHubProfiles": [
       {
         "anyPermission": [
@@ -569,6 +589,7 @@
       {
         "anyPermission": [
           "customer:read",
+          "client_desk:read",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",
@@ -592,6 +613,7 @@
       {
         "anyPermission": [
           "customer:read",
+          "client_desk:read",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",
@@ -615,6 +637,7 @@
       {
         "anyPermission": [
           "customer:read",
+          "client_desk:read",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",
@@ -638,6 +661,7 @@
       {
         "anyPermission": [
           "customer:read",
+          "client_desk:read",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",
@@ -663,6 +687,7 @@
       {
         "anyPermission": [
           "customer:read",
+          "client_desk:read",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",
@@ -690,6 +715,7 @@
       {
         "anyPermission": [
           "customer:read",
+          "client_desk:read",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",

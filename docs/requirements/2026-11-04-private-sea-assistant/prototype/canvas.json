@@ -1,0 +1,38 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-11-04T10:40:28.404Z"
+  },
+  "title": "我的私海 · 业务员跟进助手",
+  "launch": {
+    "view": "focused",
+    "file": "Main.dc.html"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 980,
+      "title": "我的私海",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Brief.dc.html": {
+      "x": 1520,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "钉钉早报",
+      "is_interactive": true
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Brief.dc.html"
+  ],
+  "notes": {},
+  "designSystems": []
+}

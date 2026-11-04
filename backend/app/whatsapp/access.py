@@ -42,8 +42,16 @@ def owner_enabled(db: Session, account: WhatsAppAccount, *, fresh: bool = False)
     }
 
 
-def require_body(db: Session, account: WhatsAppAccount, user_id: int, *, crm: bool = False, fresh: bool = False) -> dict:
-    actor = live_actor(db, user_id, *(('customer:read', 'customer:read_all', 'customer:admin', 'customer:write') if crm else ('whatsapp:read',)), fresh=fresh)
+def require_body(db: Session, account: WhatsAppAccount, user_id: int, *, crm: bool = False, fresh: bool = False, purpose: str | None = None) -> dict:
+    if purpose == 'client_desk':
+        if not crm:
+            raise PermissionError("私海正文读取必须启用客户共享范围")
+        permissions = ('client_desk:read', 'client_desk:write')
+    elif purpose is None:
+        permissions = ('customer:read', 'customer:read_all', 'customer:admin', 'customer:write') if crm else ('whatsapp:read',)
+    else:
+        raise PermissionError("未知正文读取用途")
+    actor = live_actor(db, user_id, *permissions, fresh=fresh)
     owner_query = db.query(ArkUser.id).filter(
         ArkUser.id == account.ark_user_id, ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None),
     )

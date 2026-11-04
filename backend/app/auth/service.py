@@ -242,6 +242,7 @@ _DATA_KIND_CODES = {"battle_report:read_all", "customer_media:read_all", "custom
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 _DATA_KIND_CODES.add("sales_return:read_all")
 _DATA_KIND_CODES.add("domestic_followup:read_all")
+_DATA_KIND_CODES.add("client_desk:read_all")
 
 
 def _perm_kind(code: str, action: str) -> str:
@@ -309,6 +310,9 @@ def seed_role_permissions(db: Session):
         ("supervisor:read",  "supervisor", "read",  "查看主管关系"),
         ("supervisor:write", "supervisor", "write", "设置/变更/导入主管关系"),
         # 客户管理
+        ("client_desk:read", "client_desk", "read", "查看我的私海及个人建议"),
+        ("client_desk:write", "client_desk", "write", "维护本人私海跟进资料与会话关联"),
+        ("client_desk:admin", "client_desk", "admin", "管理私海助理试点运行"),
         ("customer:read",  "customer", "read",   "查看本人、协作和公海摘要范围内的统一客户档案"),
         ("customer:write", "customer", "write",  "编辑客户归属"),
         # 提成管理（2026-07-12 我的提成页拆独立页面码 064；self_read 退回纯数据范围码）
@@ -540,6 +544,7 @@ def seed_role_permissions(db: Session):
         ("customer:admin", "customer", "admin", "管理本部门范围内的客户、归属和高影响提案"),
         ("customer:manage_dnc", "customer", "manage_dnc", "执行客户禁止联系政策的设置与撤销"),
         ("customer:confirm_material_risk", "customer", "confirm_material_risk", "执行客户重大风险人工确认"),
+        ("client_desk:read_all", "client_desk", "read_all", "预留私海团队数据范围，一期不启用"),
         ("customer:read_all", "customer", "read_all", "读取全部统一客户档案数据范围"),
         ("customer_opportunity:read",   "customer_opportunity", "read",   "查看客户机会（本人）"),
         ("customer_opportunity:write",  "customer_opportunity", "write",  "更新机会状态/添加反馈"),

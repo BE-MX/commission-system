@@ -1,5 +1,5 @@
 {
-  "source_sha256": "29dc49d91c8c3137b415c16f5dc40ba040c271bf1ef8eac6e64d9760d6ab172c",
+  "source_sha256": "dd86b888407b7f499cc465d2155d798ef64e8d27776ace95f545e84090b20060",
   "nodes": [
     {
       "id": "customerPortal",
@@ -847,6 +847,26 @@
       "phase": false
     },
     {
+      "id": "ClientDesk",
+      "kind": "page",
+      "label": "私海助理",
+      "icon": "ChatDotRound",
+      "parent": "customerOperations",
+      "order": -10,
+      "visible": true,
+      "builtin": true,
+      "protected": false,
+      "badge": "",
+      "badgePlace": "text",
+      "badgeTone": "gold",
+      "titleSync": false,
+      "path": "/client-desk",
+      "external": false,
+      "rule": "client_desk:read / client_desk:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "business": "",
+      "phase": false
+    },
+    {
       "id": "CustomerHubProfiles",
       "kind": "page",
       "label": "客户工作台",
@@ -862,7 +882,7 @@
       "titleSync": false,
       "path": "/customer-hub/customers",
       "external": false,
-      "rule": "customer:read / customer_radar:read / customer_pcw:read / customer:read / customer_radar:read / customer_pcw:read / customer:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "customer:read / customer_radar:read / customer_pcw:read / customer:read / customer_radar:read / customer_pcw:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },
@@ -882,7 +902,7 @@
       "titleSync": false,
       "path": "/customer-hub/acquisition",
       "external": false,
-      "rule": "sales_automation:read / sales_automation:read / customer:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "sales_automation:read / sales_automation:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },
@@ -902,7 +922,7 @@
       "titleSync": false,
       "path": "/customer-hub/research",
       "external": false,
-      "rule": "sales_automation:read / sales_automation:read / customer:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "sales_automation:read / sales_automation:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },
@@ -922,7 +942,7 @@
       "titleSync": false,
       "path": "/customer-hub/opportunities",
       "external": false,
-      "rule": "customer_opportunity:read / customer_opportunity:read / customer:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "customer_opportunity:read / customer_opportunity:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },
@@ -942,7 +962,7 @@
       "titleSync": false,
       "path": "/customer-hub/calendar",
       "external": false,
-      "rule": "customer_pcw:read / customer_radar:read / customer_pcw:read / customer_radar:read / customer:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "customer_pcw:read / customer_radar:read / customer_pcw:read / customer_radar:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },
@@ -962,7 +982,7 @@
       "titleSync": false,
       "path": "/mail-outreach",
       "external": false,
-      "rule": "mail_outreach:read / mail_outreach:write / mail_outreach:admin / mail_outreach:read / mail_outreach:write / mail_outreach:admin / customer:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "mail_outreach:read / mail_outreach:write / mail_outreach:admin / mail_outreach:read / mail_outreach:write / mail_outreach:admin / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },

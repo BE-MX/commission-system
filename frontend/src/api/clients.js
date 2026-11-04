@@ -92,3 +92,6 @@ export const commerceMigrationClient = createApiClient({ baseURL: '/api/commerce
 
 export const commerceTransitionClient = createApiClient({ baseURL: '/api/commerce-transition' })
 export const commerceShadowClient = createApiClient({ baseURL: '/api/commerce-shadow', timeout: 120000 })
+
+export const clientDeskClient = createApiClient({ baseURL: '/api/client-desk' })
+export const clientDeskPublicClient = createApiClient({ baseURL: '/api/client-desk', redirectOnUnauthorized: false })

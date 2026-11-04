@@ -48,7 +48,7 @@ export const MENU_GROUPS = {
     title: '客户经营',
     icon: Aim,
     anyPermission: [
-      'customer:read',
+      'customer:read', 'client_desk:read',
       'sales_automation:read',
       'customer_opportunity:read', 'customer_radar:read',
       'mail_outreach:read', 'mail_outreach:write', 'mail_outreach:admin',
@@ -359,6 +359,12 @@ export const NAV_ENTRIES = [
     },
   },
 
+  {
+    path: '/client-desk', name: 'ClientDesk', title: '私海助理',
+    component: () => import('@/views/client_desk/ClientDesk.vue'),
+    permission: 'client_desk:read',
+    menu: { group: 'customerOperations', title: '私海助理', icon: ChatDotRound, order: -10, permission: 'client_desk:read' },
+  },
   // ── 客户经营 ───────────────────────────────────────────
   {
     path: '/customer-hub/customers',

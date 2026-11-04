@@ -36,6 +36,11 @@ const layoutRoutes = configuredRoutes.filter(route => !route.meta.fullscreen)
 const fullscreenRoutes = configuredRoutes.filter(route => route.meta.fullscreen).map(route => ({ ...route, path: '/' + route.path }))
 
 const routes = [
+  {
+    path: '/client-desk/handoff', name: 'ClientDeskHandoff',
+    component: () => import('@/views/client_desk/ReportHandoff.vue'),
+    meta: { title: '私海助理', public: true },
+  },
   ...fullscreenRoutes,
   {
     path: '/login',
@@ -104,7 +109,7 @@ router.beforeEach(async (to, from, next) => {
   // 例外：目标是展会 kiosk（展位 iPad 用主站登录，不进移动端素材页）
   // 例外：客户跟进（钉钉推送入口）
   const redirectTarget = String(to.query.redirect || '')
-  if (isMobileUA && !desktopMode && to.path === '/login' && !redirectTarget.startsWith('/expo') && !isShippingStationPath(redirectTarget) && !isShippingInspectionPath(redirectTarget) && !isFxSettlementPath(redirectTarget) && !redirectTarget.startsWith('/domestic/followups')) {
+  if (isMobileUA && !desktopMode && to.path === '/login' && !redirectTarget.startsWith('/expo') && !isShippingStationPath(redirectTarget) && !isShippingInspectionPath(redirectTarget) && !isFxSettlementPath(redirectTarget) && !redirectTarget.startsWith('/domestic/followups') && !redirectTarget.startsWith('/client-desk')) {
     window.location.href = '/m/login.html'
     return false
   }

@@ -330,3 +330,4 @@ from app.color import models as _color_models  # noqa: F401
 from app.color import swatch_library_models as _color_library_models  # noqa: F401
 
 from app.system.navigation_config_models import NavigationConfig, NavigationVersion, NavigationConfigAudit
+from app.client_desk import models as _client_desk_models  # noqa: F401
