@@ -1,3 +1,9 @@
+## 2026-11-04 内贸客户充值凭证粘贴（Codex，Git 交付，未部署）
+
+- 工作区 `D:/MyProgram/commission-system-codex-domestic-recharge-paste`，分支 `codex/domestic-recharge-paste`。客户充值转账凭证改用 `AppUpload` 粘贴/拖拽区，充值申请撤回后重提的替换凭证入口同步开启。保留 JPG / PNG / WebP / PDF、单文件、20MB 限制；已有凭证先移除再替换。
+- 选择或粘贴只保留本地文件描述，仍随充值申请通过现有 multipart 接口提交；列表与原始文件同步更新，删除后清空原文件并触发必填校验。每次打开重置凭证和组件 key，提交时隐藏上传区。未改变充值金额、会员等级、审核与入账逻辑，无 API 或数据库变化。共享组件的非法格式提示在可选 PDF 时明确包含 PDF。
+- 26 项相关 Node 回归、前端构建（33.17s）、严格约定检查及独立只读审查通过；Git 巡检为未 fetch 的本地快照。隔离浏览器五组验收通过：真实 Ctrl+V 仅本地选择，提交时 multipart 图片字节/文件名/金额/request_id 匹配；删除后阻止旧文件提交、PDF 重选、关闭重开清空、格式/大小限制、390px 窄屏及撤回重提入口粘贴。复验脚本 `frontend/tests/domesticRechargePaste.browser.py`，结果和截图 `tmp/domestic-recharge-paste/`；3037 测试服务已停止，未访问生产数据。用户已授权本次提交、合并 main 并推送 origin/main；不部署。交付仅包含本任务改动，主目录其他修改及本地独有历史保留。
+
 ## 2026-11-04 Veronika 新出库报价核验（Codex，Git交付，未部署）
 
 - 分支 `codex/veronika-shipment-quote`，独立工作区 `D:/MyProgram/commission-system-codex-veronika-shipment-quote`。invoice981报价503定位到供应商出库列表核验阶段；已复现逐页穿插慢详情读取造成分页漂移。改为先连续枚举完整ID、再读详情、最后复核完整ID集合，补足同总数删增替换与详情不足的拒绝。已知列表变化在报价/创建前返回明确409重新取报价；技术坏数据仍503，无自动重发。

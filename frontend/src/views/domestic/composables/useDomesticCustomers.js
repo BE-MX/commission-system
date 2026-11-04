@@ -182,22 +182,14 @@ const {
     })
   }
 
-  // el-upload 手动模式：只留最新选择的一个文件，真正上传随表单一起 multipart 提交
-  function onRechargeVoucherChange(uploadFile, uploadFiles) {
-    const latest = uploadFiles[uploadFiles.length - 1]
-    rechargeDialog.voucherList = latest ? [latest] : []
-    rechargeDialog.voucherFile = latest?.raw || null
+  // AppUpload 只选择本地文件，真正上传随充值申请一起 multipart 提交。
+  async function selectRechargeVoucher(file) {
+    return { path: 'selected-voucher', name: file.name, raw: file, url: '' }
   }
 
-  function onRechargeVoucherRemove() {
-    rechargeDialog.voucherList = []
-    rechargeDialog.voucherFile = null
-  }
-
-  function onRechargeVoucherExceed(files) {
-    const file = files[0]
-    rechargeDialog.voucherList = [{ name: file.name, raw: file }]
-    rechargeDialog.voucherFile = file
+  function onRechargeVoucherChange(files) {
+    rechargeDialog.voucherList = files.slice(0, 1)
+    rechargeDialog.voucherFile = rechargeDialog.voucherList[0]?.raw || null
   }
 
   async function confirmRecharge() {
@@ -359,7 +351,7 @@ const {
     canOperateCustomer, handleProvinceChange, resetFilters,
     saving, dialog, options, openDialog, save,
     rechargeDialog, openRecharge, confirmRecharge,
-    onRechargeVoucherChange, onRechargeVoucherRemove, onRechargeVoucherExceed,
+    selectRechargeVoucher, onRechargeVoucherChange,
     initDialog, openInit, confirmInit,
     adjustDialog, openAdjust, confirmAdjust,
     ledgerState, ledgerDrawer, ledgerTypeLabel, openLedger, loadLedger, changeLedgerSize,

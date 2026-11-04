@@ -89,7 +89,7 @@ function isImage(file) {
 
 function beforeUpload(file) {
   if (props.transfer && !props.accept.split(',').some(type => type.trim() === file.type)) {
-    msgError('请上传 PNG / JPG / WebP 图片')
+    msgError(props.accept.includes('application/pdf') ? '请上传 PNG / JPG / WebP 图片或 PDF' : '请上传 PNG / JPG / WebP 图片')
     return false
   }
   if (file.size > props.maxSizeMb * 1024 * 1024) {

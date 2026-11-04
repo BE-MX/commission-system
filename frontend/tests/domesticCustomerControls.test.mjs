@@ -4,7 +4,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { watchListResourceScope } from '../src/composables/useListResourceScope.js'
 import { isAmount } from '../src/utils/validators.js'
 import { useListPage } from '../src/composables/useListPage.js'
@@ -17,11 +17,15 @@ function createState({ permissions = [], roles = [] } = {}) {
   const warnings = []
   const creates = []
   const updates = []
+  const recharges = []
+  let requestSequence = 0
   const context = {
     reactive, ref, watchListResourceScope, isAmount, onMounted: () => {},
     ElMessage: { warning: message => warnings.push(message) },
     createCustomer: async payload => creates.push(payload),
     updateCustomer: async (id, payload) => updates.push({ id, payload }),
+    newRequestId: () => `recharge-${++requestSequence}`,
+    rechargeCustomer: async (id, payload) => { recharges.push({ id, payload }); return { data: {} } },
     msgSuccess: () => {},
     membershipPreview: () => '', membershipChangeLabel: () => '',
     useAuthStore: () => ({
@@ -37,8 +41,80 @@ function createState({ permissions = [], roles = [] } = {}) {
   const executable = source.replace(/^import\s[\s\S]*?from\s+['"][^'"]+['"]\s*$/gm, '').replace(/^export /gm, '')
   Object.assign(context, feedbackFixture(context), { formatMoney })
   vm.runInNewContext(`${executable}\nthis.state = useDomesticCustomers()`, context)
-  return { state: context.state, requests, warnings, creates, updates }
+  return { state: context.state, requests, warnings, creates, updates, recharges }
 }
+
+function rechargeUpload(state) {
+  const script = readFileSync(new URL('../src/components/AppUpload.vue', import.meta.url), 'utf8')
+    .match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*\r?\n/gm, '')
+  const errors = []
+  const props = { transfer: true, accept: 'image/jpeg,image/png,image/webp,application/pdf',
+    maxSizeMb: 20, limit: 1, get modelValue() { return state.rechargeDialog.voucherList },
+    uploadFn: state.selectRechargeVoucher }
+  const deps = { computed, reactive, ref, defineProps: () => props,
+    defineEmits: () => (_, files) => state.onRechargeVoucherChange(files), msgError: message => errors.push(message) }
+  const zone = new Function(...Object.keys(deps), `${script}\nreturn { onPaste, beforeUpload, doUpload, remove }`)(...Object.values(deps))
+  return { ...zone, errors }
+}
+
+test('pasted recharge evidence stays local until submit and preserves the original file and request key', async () => {
+  const { state, recharges } = createState()
+  state.openRecharge({ id: 7 })
+  state.rechargeDialog.amount = 1200
+  const key = state.rechargeDialog.requestId
+  const zone = rechargeUpload(state)
+  const file = new File(['clipboard pixels'], 'clipboard.png', { type: 'image/png' })
+  let prevented = false
+  await zone.onPaste({ clipboardData: { items: [{ kind: 'file', getAsFile: () => file }] }, preventDefault() { prevented = true } })
+  assert.equal(prevented, true)
+  assert.equal(recharges.length, 0)
+  assert.equal(state.rechargeDialog.voucherFile, file)
+  assert.equal(state.rechargeDialog.voucherList[0].name, 'clipboard.png')
+  await state.confirmRecharge()
+  assert.equal(recharges.length, 1)
+  assert.equal(recharges[0].id, 7)
+  assert.equal(recharges[0].payload.file, file)
+  assert.equal(recharges[0].payload.amount, 1200)
+  assert.equal(recharges[0].payload.request_id, key)
+})
+
+test('removing a pasted voucher blocks stale-file submission and allows selecting a PDF', async () => {
+  const { state, recharges, warnings } = createState()
+  state.openRecharge({ id: 7 })
+  state.rechargeDialog.amount = 1200
+  const zone = rechargeUpload(state)
+  const image = new File(['image'], 'one.png', { type: 'image/png' })
+  assert.equal(zone.beforeUpload(image), true)
+  await zone.doUpload({ file: image })
+  assert.equal(zone.beforeUpload(new File(['second'], 'two.png', { type: 'image/png' })), false)
+  zone.remove(0)
+  assert.equal(state.rechargeDialog.voucherFile, null)
+  await state.confirmRecharge()
+  assert.equal(recharges.length, 0)
+  assert.ok(warnings.some(message => message.includes('转账截图')))
+  const pdf = new File(['%PDF-1.4'], 'bank.pdf', { type: 'application/pdf' })
+  assert.equal(zone.beforeUpload(pdf), true)
+  await zone.doUpload({ file: pdf })
+  await state.confirmRecharge()
+  assert.equal(recharges[0].payload.file, pdf)
+})
+
+test('recharge voucher validation rejects invalid and oversize files and reopening resets evidence', async () => {
+  const { state } = createState()
+  state.openRecharge({ id: 7 })
+  const key = state.rechargeDialog.requestId
+  const zone = rechargeUpload(state)
+  assert.equal(zone.beforeUpload({ type: 'text/plain', size: 5 }), false)
+  assert.ok(zone.errors.at(-1).includes('PDF'))
+  assert.equal(zone.beforeUpload({ type: 'image/png', size: 20 * 1024 * 1024 + 1 }), false)
+  assert.ok(zone.errors.at(-1).includes('20MB'))
+  await zone.onPaste({ clipboardData: { items: [{ kind: 'string' }] }, preventDefault() { assert.fail('text paste intercepted') } })
+  state.onRechargeVoucherChange([await state.selectRechargeVoucher(new File(['old'], 'old.png', { type: 'image/png' }))])
+  state.openRecharge({ id: 8 })
+  assert.equal(state.rechargeDialog.voucherFile, null)
+  assert.equal(state.rechargeDialog.voucherList.length, 0)
+  assert.notEqual(state.rechargeDialog.requestId, key)
+})
 
 const validCustomer = {
   custom_code: 'KH-001', shop_name: '马姐假发', contact: '马姐', phone: '13800138000',
