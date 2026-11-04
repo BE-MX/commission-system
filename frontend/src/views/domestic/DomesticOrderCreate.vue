@@ -311,9 +311,10 @@
               <!-- show-list=false + uploadFn 自管状态：AppUpload 的 v-model 回写
                    在并发上传时会丢行（见组件头注释） -->
               <AppUpload
+                :model-value="item[section.imageKey]"
                 :upload-fn="makeUploadFn(item, section.imageKey)"
-                accept="image/*" :max-size-mb="20" multiple :limit="6"
-                :show-list="false" button-text="加参考图" class="section-upload"
+                accept="image/jpeg,image/png,image/webp" :max-size-mb="20" multiple :limit="6" transfer
+                :show-list="false" button-text="选择参考图" class="section-upload"
               />
               <div v-if="item[section.imageKey].length" class="thumb-row">
                 <div v-for="(img, i) in item[section.imageKey]" :key="img.path" class="thumb">
