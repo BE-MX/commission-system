@@ -3,9 +3,9 @@
 三条落正式记录的路径共用 _apply_and_confirm，保证校验、任务、别名、紧急推送口径一致。
 """
 import logging
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -240,7 +240,8 @@ def serialize(db: Session, followup: Followup, *, with_items: bool = True) -> di
         "attachments": attachment_service.list_for(db, [followup.id]).get(followup.id, []),
     }
     if with_items:
-        items = (db.query(DomesticFollowupItem).filter(DomesticFollowupItem.followup_id == followup.id)
+        items = (db.query(DomesticFollowupItem).filter(DomesticFollowupItem.followup_id == followup.id,
+                 or_(DomesticFollowupItem.status.is_(None), DomesticFollowupItem.status != "withdrawn"))
                  .order_by(DomesticFollowupItem.kind, DomesticFollowupItem.seq).all())
         data["items"] = [serialize_item(i) for i in items]
     return data
@@ -266,10 +267,11 @@ def get_draft(db: Session, current_user: dict, followup_id: int) -> dict:
     return serialize(db, followup)
 
 
-def list_drafts(db: Session, current_user: dict) -> list[dict]:
-    rows = (db.query(Followup)
-            .filter(Followup.author_user_id == visibility.uid(current_user), Followup.status == "draft")
-            .order_by(Followup.created_at.desc()).limit(20).all())
+def list_drafts(db: Session, current_user: dict, *, potential_only: bool = False) -> list[dict]:
+    query = db.query(Followup).filter(Followup.author_user_id == visibility.uid(current_user), Followup.status == "draft")
+    if potential_only:
+        query = query.filter(Followup.customer_id.in_(visibility.potential_customer_ids()))
+    rows = query.order_by(Followup.created_at.desc()).limit(20).all()
     _recover_stale_ai(db, rows)
     return [serialize(db, r, with_items=False) for r in rows]
 
@@ -341,8 +343,14 @@ def quick_receipt_ok(db: Session, current_user: dict, task_id: int, request_id: 
 
 
 def list_followups(db: Session, current_user: dict, *, customer_id: int | None = None, mine: bool = False,
-                   page: int = 1, page_size: int = 20) -> dict:
+                   page: int = 1, page_size: int = 20, author_user_id: int | None = None,
+                   keyword: str = "", date_from: date | None = None, date_to: date | None = None,
+                   potential_only: bool = False) -> dict:
+    if date_from and date_to and date_from > date_to:
+        raise ValueError("开始日期不能晚于结束日期")
     query = db.query(Followup).filter(Followup.status == "confirmed")
+    if potential_only:
+        query = query.filter(Followup.customer_id.in_(visibility.potential_customer_ids()))
     condition = visibility.followup_filter(current_user)
     if condition is not None:
         query = query.filter(condition)
@@ -350,10 +358,42 @@ def list_followups(db: Session, current_user: dict, *, customer_id: int | None =
         query = query.filter(Followup.customer_id == customer_id)
     if mine:
         query = query.filter(Followup.author_user_id == visibility.uid(current_user))
+    if author_user_id:
+        query = query.filter(Followup.author_user_id == author_user_id)
+    if date_from:
+        query = query.filter(Followup.followup_date >= date_from)
+    if date_to:
+        query = query.filter(Followup.followup_date <= date_to)
+    keyword = keyword.strip()
+    if keyword:
+        customers = select(DomesticCustomer.id).where(or_(
+            DomesticCustomer.shop_name.contains(keyword, autoescape=True),
+            DomesticCustomer.custom_code.contains(keyword, autoescape=True),
+            DomesticCustomer.contact.contains(keyword, autoescape=True),
+        ))
+        items = select(DomesticFollowupItem.followup_id).where(
+            DomesticFollowupItem.text.contains(keyword, autoescape=True),
+            or_(DomesticFollowupItem.status.is_(None), DomesticFollowupItem.status != "withdrawn"))
+        query = query.filter(or_(Followup.customer_id.in_(customers), Followup.id.in_(items),
+                                 Followup.summary.contains(keyword, autoescape=True),
+                                 Followup.raw_text.contains(keyword, autoescape=True)))
     total = query.count()
     rows = (query.order_by(Followup.followup_date.desc(), Followup.id.desc())
             .offset((page - 1) * page_size).limit(page_size).all())
     return {"items": [serialize(db, r) for r in rows], "total": total, "page": page, "page_size": page_size}
+
+
+def list_authors(db: Session, current_user: dict, *, potential_only: bool = False) -> list[dict]:
+    """Only authors of visible confirmed records, including historical inactive users."""
+    records = select(Followup.author_user_id).where(Followup.status == "confirmed")
+    if potential_only:
+        records = records.where(Followup.customer_id.in_(visibility.potential_customer_ids()))
+    condition = visibility.followup_filter(current_user)
+    if condition is not None:
+        records = records.where(condition)
+    rows = (db.query(ArkUser.id, ArkUser.real_name).filter(ArkUser.id.in_(records))
+            .order_by(ArkUser.real_name, ArkUser.id).all())
+    return [{"id": row.id, "real_name": row.real_name} for row in rows]
 
 
 def timeline(db: Session, current_user: dict, customer_id: int) -> dict:

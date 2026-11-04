@@ -885,6 +885,14 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 
 新建 8 张表，不改既有表；不建 ORM relationship（红线 9），关联由 service 显式查询。FK 类型与目标列一致：客户 `ark_domestic_customers.id` 为有符号 INT，用户 `ark_users.id` 为 unsigned INT，发货批次 `ark_domestic_shipments.id` 为 BIGINT。downgrade 只删表，三个 sys_dict type 的初值不随降级删除。
 
+后续 `249_followup_revisions`（接 `248_navigation_config`，2026-11-04 本地实现）新增修改历史表，并为截图增加 `archived_at DATETIME NULL`、发件箱增加 `send_claimed_at DATETIME NULL`；不改已有业务数据。已提交编辑递增原 `version`，客户和原作者不变。条目 `withdrawn` 表示编辑移除，保留行和关联任务；截图归档仍保留原 followup_id 和物理文件。新增时间均为无时区北京时间。
+
+| 新增表 | 主键与约束 | 主要字段 |
+| --- | --- | --- |
+| `ark_domestic_followup_revisions` | id BIGINT；request_id 唯一；(followup_id,version) 唯一 | followup_id FK BIGINT、editor_user_id FK INT UNSIGNED、version、request_hash、reason、before_snapshot/after_snapshot JSON（原文、条目、截图和任务快照）、created_at |
+
+修改历史只追加，不提供删除/覆盖入口；249 降级遇到已有历史时阻断。发送前以 `send_claimed_at` 领取五分钟租约，编辑只取消/更新尚未领取或租约过期的通知，发送失败解除租约后重试；已发送或有效租约内的在途消息不撤回。
+
 | 表 | 主键与约束 | 主要字段 |
 | --- | --- | --- |
 | `ark_domestic_followups` | id BIGINT；`request_id` 唯一（客户端幂等键） | customer_id（草稿可空）、author_user_id、followup_date、channel、raw_text（业务员原文，永不被 AI 覆盖）、summary、state_changes JSON、next_date/next_plan/next_method、chat_title、source、status（draft/confirmed/discarded）、ai_status/ai_result/ai_error/ai_log_id、version（乐观锁）、confirmed_at |

@@ -28,12 +28,21 @@ def _mark(ok_ids: list[int], failed_ids: list[int]) -> None:
         db.commit()
 
 
+def _claim(digest_id: int) -> dict | None:
+    with SessionLocal() as db:
+        message = digest_service.claim(db, digest_id)
+        db.commit()
+        return message
+
+
 async def _push(kind: str) -> None:
     try:
         pushes = await asyncio.to_thread(_prepare, kind)
         if not pushes:
             return
-        ok_ids, failed = await digest_service.send(pushes)
+        async def claim_message(message):
+            return await asyncio.to_thread(_claim, message["digest_id"])
+        ok_ids, failed = await digest_service.send(pushes, claim_message)
         await asyncio.to_thread(_mark, ok_ids, failed)
         print(f"[domestic_followup] {kind} pushed {len(ok_ids)}/{len(pushes)}", flush=True)
     except Exception as exc:

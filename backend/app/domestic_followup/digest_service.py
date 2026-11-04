@@ -4,19 +4,20 @@
 """
 import logging
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
 from app.core.config import get_settings
 from app.core.time import beijing_now, beijing_today
+from app.domestic.models import DomesticCustomer
 from app.domestic_followup import config_service
-from app.domestic_followup.constants import TRACKED_KINDS, URGENT, URGENT_MAX_ATTEMPTS
+from app.domestic_followup.constants import OPEN_ITEM_STATES, TRACKED_KINDS, URGENT, URGENT_MAX_ATTEMPTS
 from app.domestic_followup.date_parser import weekday_label
-from app.domestic_followup.models import DomesticFollowupDigest, DomesticFollowupTask
+from app.domestic_followup.models import DomesticFollowupDigest, DomesticFollowupItem, DomesticFollowupTask
 
 logger = logging.getLogger("commission")
 Digest = DomesticFollowupDigest
@@ -137,10 +138,18 @@ def enqueue_urgent(db: Session, item, customer, followup, *, today: date | None 
     return created
 
 
+SEND_LEASE_MINUTES = 5
+
+
+def available_claim():
+    return or_(Digest.send_claimed_at.is_(None),
+               Digest.send_claimed_at < beijing_now() - timedelta(minutes=SEND_LEASE_MINUTES))
+
+
 def pending(db: Session, kind: str, today: date) -> list[dict]:
     query = (db.query(Digest, ArkUser.dingtalk_id).join(ArkUser, ArkUser.id == Digest.user_id)
              .filter(Digest.kind == kind, Digest.pushed_at.is_(None), Digest.attempts < URGENT_MAX_ATTEMPTS,
-                     *_active_user_filter()))
+                     available_claim(), *_active_user_filter()))
     if kind == "daily":
         query = query.filter(Digest.digest_date == today)  # 错过的旧汇总不补发
     pushes = []
@@ -157,11 +166,39 @@ def pending(db: Session, kind: str, today: date) -> list[dict]:
     return pushes
 
 
-async def send(pushes: list[dict]) -> tuple[list[int], list[int]]:
+def claim(db: Session, digest_id: int) -> dict | None:
+    pair = (db.query(Digest, ArkUser.dingtalk_id).join(ArkUser, ArkUser.id == Digest.user_id)
+            .filter(Digest.id == digest_id, Digest.pushed_at.is_(None), Digest.attempts < URGENT_MAX_ATTEMPTS,
+                    available_claim(), *_active_user_filter()).populate_existing().with_for_update().first())
+    if pair is None or not pair[1]:
+        return None
+    row, dingtalk_id = pair
+    if row.kind == "urgent":
+        # A previous in-flight attempt may have failed while an edit changed the item.
+        item_id = int(row.ref_key.split(":", 1)[1]) if row.ref_key.startswith("item:") else None
+        item = (db.query(DomesticFollowupItem).filter(DomesticFollowupItem.id == item_id)
+                .populate_existing().first()) if item_id else None
+        if item is None or item.status not in OPEN_ITEM_STATES or item.severity != "紧急":
+            row.attempts, row.last_error = URGENT_MAX_ATTEMPTS, "跟进修改后取消紧急提醒"
+            db.flush()
+            return None
+        customer = db.get(DomesticCustomer, item.customer_id)
+        row.markdown = (f"### 紧急异常：{customer.shop_name}\n- **{item.category or '其他'}**：{item.text}"
+                        f"\n[查看客户跟进]({workbench_url(customer.id)})")
+    row.send_claimed_at = beijing_now()
+    db.flush()
+    return {"digest_id": row.id, "dingtalk_id": dingtalk_id, "title": row.title, "markdown": row.markdown}
+
+
+async def send(pushes: list[dict], claim_message) -> tuple[list[int], list[int]]:
     from app.dingtalk.work_notify import get_work_notifier
 
     notifier, ok_ids, failed = get_work_notifier(), [], []
     for p in pushes:
+        # Re-read and claim after prepare; an intervening edit can cancel or change this message.
+        p = await claim_message(p)
+        if p is None:
+            continue
         try:
             sent = await notifier.send_to_users(user_ids=[p["dingtalk_id"]], title=p["title"],
                                                 markdown_text=p["markdown"])
@@ -176,6 +213,7 @@ async def send(pushes: list[dict]) -> tuple[list[int], list[int]]:
 def mark(db: Session, *, ok_ids: list[int], failed_ids: list[int]) -> None:
     now = beijing_now()
     for digest in db.query(Digest).filter(Digest.id.in_(list(ok_ids) + list(failed_ids) or [0])).all():
+        digest.send_claimed_at = None
         if digest.id in ok_ids:
             digest.pushed_at = now
         else:

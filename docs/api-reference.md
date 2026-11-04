@@ -2800,7 +2800,11 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | POST | `/attachments` | 上传跟进截图，≤10MB；先上传拿到附件 ID，建草稿或直接保存时再绑定。 |
 | GET | `/attachments/{attachment_id}/file` | 读取截图原图，鉴权后返回文件，不走静态目录直连。 |
 | POST | `/followups` | 直接保存一条跟进（不经 AI 草稿），已绑定未 OCR 的附件在后台线程补跑 OCR。 |
-| GET | `/followups` | 跟进记录列表，支持 `customer_id` / `mine` 过滤和分页。 |
+| GET | `/followups` | 已确认记录列表，支持 `customer_id`、`mine`、`author_user_id`、`keyword`、`date_from` / `date_to`（跟进日期，含首尾）和分页；筛选始终与当前用户可见范围取交集。关键字按字面匹配客户名/编码/联系人及原文/摘要/条目，反向日期范围返回 400。 |
+| GET | `/followups/authors` | 查看权限即可读取；返回当前可见已确认记录的录入人 `{id, real_name}`，含历史停用/离职录入人；不返回仅有草稿或范围外记录的录入人。 |
+| GET | `/followups/{id}` | 单条已确认记录，沿用原查看范围，返回 `can_edit`。 |
+| PUT | `/followups/{id}` | 需 write；仅原作者或 super_admin 可修改，read_all 不授予编辑他人记录权。提交 `version`、`request_id`、必填 `reason` 与完整可编辑字段、保留的条目 ID/截图 ID；客户、作者和原待办来源不可改。旧版本/同请求不同内容返回 409；同请求同内容安全重放。事务内留存前后快照并同步待办，新增截图后台 OCR。 |
+| GET | `/followups/{id}/history` | 原查看范围内读取修改历史；包含修改人、时间、原因、版本、记录及关联待办前后快照。归档截图保留鉴权读取。 |
 | POST | `/drafts` | 建 AI 草稿；创建成功后在后台线程跑 `ai_parse_service.run_parse`，前端轮询状态。 |
 | GET | `/drafts` | 当前用户未处理的草稿列表。 |
 | GET | `/drafts/{followup_id}` | 草稿详情（含 AI 原始结果，供表单回填）。 |
@@ -2815,6 +2819,8 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | POST | `/items/{item_id}/transfer` | 转交条目处理人；目标须持有 `domestic_followup:write`，否则 400。 |
 
 AI 整理走 `app.ai.service.chat` facade，预设 `domestic_followup_parse`（文字归一化）与 `domestic_followup_ocr`（截图 OCR）；两个 preset 启动时自动绑定与 `invoice_screenshot_extract` 相同的视觉 provider/模型（不退回其他 provider）。后台 AI/OCR 走 `jobs.py` 独立线程池（上限 3）。输出宽进：坏字段只丢弃该字段，不整条拒绝。
+
+`GET /followups`、`/followups/authors`、`/drafts`、`/tasks`、`/tasks/summary`、`/items` 均接受 `potential_only=true`（默认 false），与原有数据范围和筛选取交集，只返回客户**当前** `lifecycle_status=潜在` 的数据；无客户的草稿在勾选时不显示。此筛选不改变详情/历史的查看权限。
 
 # 本地产品与库存账（开发分支）
 

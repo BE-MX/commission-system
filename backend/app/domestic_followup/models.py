@@ -45,7 +45,7 @@ class DomesticFollowup(Base):
     ai_log_id = Column(BigInteger, nullable=True, comment="AI 调用日志ID")
     source_task_id = Column(BigInteger, nullable=True, comment="从哪张待办发起的记录")
     request_id = Column(String(64), nullable=False, unique=True, comment="客户端幂等键")
-    version = Column(Integer, nullable=False, default=1, comment="乐观锁：状态迁移时 +1")
+    version = Column(Integer, nullable=False, default=1, comment="乐观锁：状态迁移与已提交修改时 +1")
     confirmed_at = Column(DateTime, nullable=True, comment="确认时间（北京时间）")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间（北京时间）")
@@ -69,7 +69,7 @@ class DomesticFollowupItem(Base):
     category = Column(String(32), nullable=True, comment="分类（sys_dict: domestic_followup_category）")
     severity = Column(String(8), nullable=True, comment="一般/紧急")
     origin = Column(String(16), nullable=False, default="user", comment="user/ai_inferred")
-    status = Column(String(20), nullable=True, comment="issue/suggestion：open/handling/resolved/closed_no_action")
+    status = Column(String(20), nullable=True, comment="open/handling/resolved/closed_no_action；withdrawn 为编辑移除留痕")
     handler_user_id = Column(_UINT, ForeignKey("ark_users.id"), nullable=True, comment="当前处理人")
     resolution = Column(String(500), nullable=True, comment="处理说明")
     resolved_at = Column(DateTime, nullable=True, comment="解决时间（北京时间）")
@@ -97,7 +97,27 @@ class DomesticFollowupAttachment(Base):
     ocr_status = Column(String(12), nullable=False, default="pending", comment="pending/done/failed")
     ocr_text = Column(Text, nullable=True, comment="OCR 文本")
     unreadable_note = Column(String(500), nullable=True, comment="AI 读不到的内容说明（语音/视频等）")
+    archived_at = Column(DateTime, nullable=True, comment="编辑移除时间；保留文件供修改历史读取")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="上传时间（北京时间）")
+
+
+class DomesticFollowupRevision(Base):
+    __tablename__ = "ark_domestic_followup_revisions"
+    __table_args__ = (
+        UniqueConstraint("followup_id", "version", name="uq_dom_followup_revision"),
+        {"comment": "已提交跟进修改留痕：不可变前后快照与待办变化"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    followup_id = Column(BigInteger, ForeignKey("ark_domestic_followups.id"), nullable=False, comment="跟进记录")
+    editor_user_id = Column(_UINT, ForeignKey("ark_users.id"), nullable=False, comment="修改人")
+    version = Column(Integer, nullable=False, comment="保存后的记录版本")
+    request_id = Column(String(64), unique=True, nullable=False, comment="修改请求幂等键")
+    request_hash = Column(String(64), nullable=False, comment="请求内容哈希")
+    reason = Column(String(500), nullable=False, comment="修改原因")
+    before_snapshot = Column(JSON, nullable=False, comment="修改前记录与关联任务快照")
+    after_snapshot = Column(JSON, nullable=False, comment="修改后记录与关联任务快照")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="修改时间（北京时间）")
 
 
 class DomesticCustomerAlias(Base):
@@ -174,6 +194,7 @@ class DomesticFollowupDigest(Base):
     attempts = Column(SmallInteger, nullable=False, default=0, comment="发送失败次数")
     last_error = Column(String(255), nullable=True, comment="最近一次失败原因")
     pushed_at = Column(DateTime, nullable=True, comment="推送成功时间（北京时间）")
+    send_claimed_at = Column(DateTime, nullable=True, comment="开始发送时间；五分钟租约内编辑不撤回在途通知")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
 
 
