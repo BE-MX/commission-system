@@ -101,7 +101,7 @@
         </el-form-item>
         <el-form-item v-if="editDialog.row?.request_type === 'recharge'" label="转账凭证">
           <p>未选择新文件时沿用原凭证，可在列表查看。</p>
-          <AppUpload v-if="!editDialog.saving" v-model="editDialog.files" :upload-fn="selectVoucher" :limit="1" :max-size-mb="20" accept="image/jpeg,image/png,image/webp,application/pdf" button-text="选择替换凭证" />
+          <AppUpload v-if="!editDialog.saving" v-model="editDialog.files" :upload-fn="selectVoucher" :limit="1" :max-size-mb="20" accept="image/jpeg,image/png,image/webp,application/pdf" button-text="选择替换凭证" transfer />
         </el-form-item>
         <el-form-item label="说明 / 调整原因"><el-input v-model="editDialog.remark" type="textarea" :rows="3" maxlength="500" /></el-form-item>
       </el-form>

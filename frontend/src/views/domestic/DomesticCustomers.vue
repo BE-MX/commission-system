@@ -322,15 +322,11 @@
           <span class="preview-hint">仅按本次充值金额计算</span>
         </el-form-item>
         <el-form-item label="转账凭证" required>
-          <el-upload
-            :file-list="rechargeDialog.voucherList" :auto-upload="false" :limit="1"
-            accept=".jpg,.jpeg,.png,.webp,.pdf"
-            :on-change="onRechargeVoucherChange" :on-remove="onRechargeVoucherRemove"
-            :on-exceed="onRechargeVoucherExceed"
-          >
-            <GlassButton variant="ghost">选择图片 / PDF</GlassButton>
-            <template #tip><span class="preview-hint">银行流水或转账截图，必填，不超过 20MB</span></template>
-          </el-upload>
+          <AppUpload v-if="!rechargeDialog.saving" :key="rechargeDialog.requestId"
+            :model-value="rechargeDialog.voucherList" :upload-fn="selectRechargeVoucher"
+            @update:model-value="onRechargeVoucherChange" transfer :limit="1" :max-size-mb="20"
+            accept="image/jpeg,image/png,image/webp,application/pdf" button-text="选择图片 / PDF" />
+          <span class="preview-hint">银行流水或转账截图，必填，不超过 20MB</span>
         </el-form-item>
         <el-form-item label="说明">
           <el-input v-model="rechargeDialog.remark" type="textarea" :rows="2" maxlength="500" placeholder="如：银行转账到账" />
@@ -455,7 +451,7 @@ const {
   canOperateCustomer, handleProvinceChange, resetFilters,
   saving, dialog, options, openDialog, save,
   rechargeDialog, openRecharge, confirmRecharge,
-  onRechargeVoucherChange, onRechargeVoucherRemove, onRechargeVoucherExceed,
+  selectRechargeVoucher, onRechargeVoucherChange,
   initDialog, openInit, confirmInit,
   adjustDialog, openAdjust, confirmAdjust,
   ledgerState, ledgerDrawer, ledgerTypeLabel, openLedger, loadLedger, changeLedgerSize,
