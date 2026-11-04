@@ -175,8 +175,9 @@ export function useInvoiceManagePage() {
   }
 
   async function validateAndSync(id) {
-    const outcome = await validateThenSync(id, showIssues)
-    if (outcome !== INVOICE_SYNC_OUTCOME.DUPLICATE) await refreshUpdate()
+    const ticket = readTicket()
+    const outcome = await validateThenSync(id, showIssues, { isCurrent: () => currentRead(ticket) })
+    if (currentRead(ticket) && outcome !== INVOICE_SYNC_OUTCOME.DUPLICATE) await refreshUpdate()
   }
 
   async function resolveUncertain(row, resolution) {

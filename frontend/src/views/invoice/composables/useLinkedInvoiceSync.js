@@ -1,5 +1,5 @@
 import { newRequestKey } from '../../../utils/requestKey.js'
-import { msgSuccessText, msgError, msgWarning, promptAction } from '@/utils/feedback'
+import { msgSuccessText, msgError, msgWarning, msgInfo, promptAction } from '@/utils/feedback'
 import { ref } from 'vue'
 
 import { resolveInvoiceLinked, closeInvoiceLinked, getInvoiceLinked, runInvoiceLinked, saveInvoiceLinked } from '@/api/invoice'
@@ -65,23 +65,39 @@ export function useLinkedInvoiceSync(onSaved) {
     if (!operation.value || busy.value) return
     const id = operation.value.invoice_id
     const identity = operation.value.id
+    const current = () => activeId === id && operation.value?.id === identity
     busy.value = true
     try {
-      const result = await runInvoiceLinked(id, identity, recheck)
-      if (activeId === id) operation.value = result
+      let result
+      try { result = await runInvoiceLinked(id, identity, recheck, { suppressToast: true }) } catch (error) {
+        if (!current()) return null
+        if ([401, 403, 404].includes(error.response?.status)) {
+          msgError(error.response?.data?.detail || '当前账号无权继续同步，请刷新订单', error)
+          return null
+        }
+        // A lost response must not trigger another POST. Read the original durable result.
+        result = await getInvoiceLinked(id, { suppressToast: true }).catch(() => null)
+      }
+      if (!current()) return null
+      if (!result || result.id !== identity || String(result.invoice_id) !== String(id)) {
+        msgWarning('修改已保存，暂时无法确认原同步结果，请刷新结果；无需重复保存')
+        return null
+      }
+      operation.value = result
       const outbound = result.steps?.outbound
-      if (outbound?.message && result.steps?.order?.status === 'done') {
+      if (result.status === 'done') msgSuccessText('修改已保存，订单及关联单据已同步完成')
+      else if (['pending', 'running'].includes(result.status)) msgInfo('修改已保存，系统正在继续同步，无需重复提交')
+      else if (result.status === 'uncertain') msgWarning('修改已保存，原同步结果待核对；系统不会重复提交，请查看下方处理结果')
+      else if (result.status === 'failed') {
+        const step = Object.values(result.steps || {}).find(item => item.status === 'failed')
+        msgWarning(`修改已保存，${step?.message || '同步尚未完成，请查看下方处理结果'}`)
+      } else if (outbound?.message && result.steps?.order?.status === 'done') {
         const feedback = outbound.status === 'done' ? msgSuccessText : msgWarning
         feedback(`出库：${outbound.message}`)
       }
-      await onSaved?.(id)
-      return result
-    } catch {
-      // A lost response must not trigger another POST. Read the durable result.
-      const result = await getInvoiceLinked(id).catch(() => null)
-      if (result && activeId === id) operation.value = result
-      if (['done', 'manual'].includes(result?.status)) await onSaved?.(id)
-      msgWarning('同步结果尚未确认，请刷新结果；不要重复保存')
+      try { await onSaved?.(id) } catch (error) {
+        msgError('同步结果已保留，订单页面刷新未完成，请刷新查看', error)
+      }
       return result
     } finally { busy.value = false }
   }

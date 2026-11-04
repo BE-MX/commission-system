@@ -10,6 +10,27 @@ from test_mysql_linked_execution import prepared, request
 from mysql_current_fixture import current_queue_schema  # noqa: F401
 
 
+def test_list_sync_conflict_can_continue_original_task_without_ordinary_post(editor, monkeypatch, tmp_path):
+    c = prepared(editor, monkeypatch, tmp_path)
+    original = request(c, c.get_route, 'GET')
+    assert original.status_code == 200
+    assert original.json()['data']['active'] is True
+    assert original.json()['data']['id'] == c.identity
+    # A client can race another save after its first lookup. The final write
+    # boundary identifies this exact conflict without sending an ordinary push.
+    conflict = request(c, f'/api/invoice/invoices/{editor.invoice_id}/sync')
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.headers['X-Ark-Linked-Sync'] == 'pending'
+    assert c.posts == []
+    resumed = request(c)
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()['data']['steps']['order']['status'] == 'done'
+    assert resumed.json()['data']['active'] is False
+    assert len(c.posts) == 1
+    assert request(c).status_code == 200
+    assert len(c.posts) == 1
+
+
 def test_busy_saved_quantity_sync_is_pending_then_background_finishes_once(editor, monkeypatch, tmp_path):
     c = prepared(editor, monkeypatch, tmp_path)
     with Session(editor.ctx.engine) as other:

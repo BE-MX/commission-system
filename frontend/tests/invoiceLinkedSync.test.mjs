@@ -50,3 +50,37 @@ test('lost run response reads durable result without another POST', async () => 
   await vm.save(1, {}, 'version'); await vm.run()
   assert.equal(posts, 1); assert.equal(gets, 1); assert.equal(vm.operation.value.status, 'running')
 })
+
+test('lost response recovered as done shows success without a misleading warning', async () => {
+  const warnings = [], successes = []
+  let posts = 0, refreshed = 0
+  const vm = setup({ ElMessage: { warning: message => warnings.push(message), success: message => successes.push(message) },
+    runInvoiceLinked: async (id, identity, recheck, options) => {
+      assert.equal(options.suppressToast, true); posts++; throw Error('lost response')
+    }, getInvoiceLinked: async () => ({ id: 'op', invoice_id: 1, status: 'done' }),
+  }, async () => { refreshed++ })
+  await vm.save(1, {}, 'version')
+  assert.equal((await vm.run()).status, 'done')
+  assert.equal(posts, 1); assert.equal(refreshed, 1)
+  assert.deepEqual(warnings, [])
+  assert.match(successes[0], /同步完成/)
+})
+
+test('queued run explains automatic continuation without a failure warning', async () => {
+  const warnings = [], infos = []
+  const vm = setup({ ElMessage: { warning: value => warnings.push(value), info: value => infos.push(value) },
+    runInvoiceLinked: async () => ({ id: 'op', invoice_id: 1, status: 'pending' }) })
+  await vm.save(1, {}, 'version'); await vm.run()
+  assert.deepEqual(warnings, [])
+  assert.match(infos[0], /修改已保存.*继续同步/)
+})
+
+test('a different latest task cannot complete the original lost response', async () => {
+  const refreshed = []
+  const vm = setup({ runInvoiceLinked: async () => { throw Error('timeout') },
+    getInvoiceLinked: async () => ({ id: 'different', invoice_id: 1, status: 'done' }) }, id => refreshed.push(id))
+  await vm.save(1, {}, 'version')
+  assert.equal(await vm.run(), null)
+  assert.equal(vm.operation.value.id, 'op')
+  assert.deepEqual(refreshed, [])
+})

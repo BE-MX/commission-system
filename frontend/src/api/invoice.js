@@ -161,12 +161,12 @@ export function deleteInvoiceWithRelated(id, data) {
   }))
 }
 
-export function validateInvoice(id) {
-  return unwrap(request.post(`/invoices/${id}/validate`, null, { loadingText: '正在校验发票...' }))
+export function validateInvoice(id, options = {}) {
+  return unwrap(request.post(`/invoices/${id}/validate`, null, { loadingText: '正在校验发票...', ...options }))
 }
 
-export function syncInvoice(id) {
-  return unwrap(request.post(`/invoices/${id}/sync`, null, { loadingText: '正在同步订单及出库...', timeout: 300000 }))
+export function syncInvoice(id, options = {}) {
+  return unwrap(request.post(`/invoices/${id}/sync`, null, { loadingText: '正在同步订单及出库...', timeout: 300000, ...options }))
 }
 
 export function resolveInvoiceSyncUncertain(id, data) {
@@ -325,9 +325,9 @@ export function fetchInvoicePrintHtml(id) {
 
 
 export const saveInvoiceLinked = (id, body) => unwrap(request.post(`/invoices/${id}/linked-sync`, body))
-export const getInvoiceLinked = id => unwrap(request.get(`/invoices/${id}/linked-sync`, { showLoading: false }))
-export const runInvoiceLinked = (id, operationId, recheck = false) => unwrap(request.post(
-  `/invoices/${id}/linked-sync/${operationId}/run`, null, { params: { recheck }, timeout: 300000, showLoading: false }))
+export const getInvoiceLinked = (id, options = {}) => unwrap(request.get(`/invoices/${id}/linked-sync`, { showLoading: false, ...options }))
+export const runInvoiceLinked = (id, operationId, recheck = false, options = {}) => unwrap(request.post(
+  `/invoices/${id}/linked-sync/${operationId}/run`, null, { params: { recheck }, timeout: 300000, showLoading: false, ...options }))
 export const closeInvoiceLinked = (id, operationId) => unwrap(request.post(`/invoices/${id}/linked-sync/${operationId}/close`))
 
 export const resolveInvoiceLinked = (id, identity, body) => unwrap(request.post(`/invoices/${id}/linked-sync/${identity}/resolve`, body))

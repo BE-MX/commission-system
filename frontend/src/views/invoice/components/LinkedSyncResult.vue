@@ -1,6 +1,7 @@
 <template>
   <section v-if="operation" class="linked-result" aria-live="polite">
     <div class="linked-heading"><strong>关联单据同步结果</strong><StatusBadge :type="operation.status === 'done' ? 'success' : 'warning'">{{ labels[operation.status] || operation.status }}</StatusBadge></div>
+    <p v-if="['pending', 'running'].includes(operation.status)">修改已保存，系统正在继续同步。无需重复保存或重新提交，完成后这里会自动更新。</p>
     <p>订单金额：{{ formatMoney(operation.before.total_amount, { missing: '—' }) }} → {{ formatMoney(operation.after.total_amount, { missing: '—' }) }} {{ operation.after.currency }}；手续费：{{ formatMoney(operation.before.surcharge_amount, { missing: '—' }) }} → {{ formatMoney(operation.after.surcharge_amount, { missing: '—' }) }}</p>
     <div v-for="(step, key) in operation.steps" :key="key" class="linked-step">
       <strong>{{ names[key] }}</strong><StatusBadge size="small" :type="step.status === 'done' ? 'success' : 'info'">{{ labels[step.status] || step.status }}</StatusBadge><span>{{ step.message }}</span>
@@ -10,7 +11,7 @@
     </div>
     <div class="linked-actions">
       <el-button :disabled="busy" @click="$emit('refresh')">刷新结果</el-button>
-      <el-button v-if="['pending', 'failed'].includes(operation.status)" v-permission="'invoice:sync'" :loading="busy" type="primary" @click="$emit('retry')">{{ operation.status === 'pending' ? '继续同步' : '重试未完成步骤' }}</el-button>
+      <el-button v-if="operation.status === 'failed'" v-permission="'invoice:sync'" :loading="busy" type="primary" @click="$emit('retry')">继续未完成的同步</el-button>
       <el-button v-if="['done', 'manual'].includes(operation.status) && operation.steps.order.status === 'done'" v-permission="'invoice:sync'" :loading="busy" @click="$emit('recheck')">重新核对关联单据</el-button>
       <el-button v-if="operation.status === 'failed'" v-permission="'invoice:sync'" :disabled="busy" @click="$emit('close')">保留结果并结束本次同步</el-button>
       <el-button v-if="operation.status === 'uncertain'" v-permission="'invoice:admin'" :disabled="busy" @click="$emit('resolve')">人工核对后结束</el-button>
@@ -31,7 +32,7 @@ watch(() => [props.active, props.operation?.id, props.operation?.status, props.b
   polling.update, { immediate: true })
 onBeforeUnmount(polling.stop)
 const names = { order: '小满订单', outbound: '出库单', receipt: '回款单', resolution: '人工核对记录' }
-const labels = { pending: '待处理', running: '同步中', sending: '发送中', done: '已完成', failed: '未完成', uncertain: '待核对', manual: '需要处理' }
+const labels = { pending: '等待自动处理', running: '同步中', sending: '发送中', done: '已完成', failed: '需要处理', uncertain: '待核对', manual: '需要处理' }
 </script>
 <style scoped>
 .linked-result { margin: 16px 0; padding: 16px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-bg); }

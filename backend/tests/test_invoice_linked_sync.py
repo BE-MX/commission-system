@@ -44,6 +44,44 @@ def add_valid_item(db, order):
     db.commit()
 
 
+def test_active_task_read_follows_document_pointer_instead_of_newer_history(db, order):
+    active = operation(db, order)
+    newer = InvoiceLinkedSync(id='newer-history', invoice_id=order.id, request_key='newer-request',
+        request_hash='b'*64, created_by=1, status='done', before=active.before, after=active.after,
+        steps=active.steps, created_at=beijing_now()+timedelta(seconds=1))
+    db.add(newer); db.commit()
+    assert linked.current(db, order).id == active.id
+    order.linked_sync_id = None; db.commit()
+    assert linked.current(db, order).id == newer.id
+
+
+def test_active_task_read_rejects_missing_or_cross_order_pointer(db, order):
+    order.linked_sync_id = 'missing'; db.commit()
+    with pytest.raises(ValueError, match='关联同步记录'):
+        linked.current(db, order)
+    row = operation(db, order)
+    row.invoice_id = order.id + 1
+    db.commit()
+    with pytest.raises(ValueError, match='关联同步记录'):
+        linked.current(db, order)
+
+
+def test_ordinary_push_classifies_active_task_before_sending(db, order):
+    from app.invoice import order_sync_execution as execution
+    from unittest.mock import Mock
+    from fastapi import HTTPException
+    operation(db, order)
+    def blocked(*args):
+        linked.ensure_idle(order)
+    from unittest.mock import patch
+    with patch.object(execution, 'prepare', blocked):
+        with pytest.raises(HTTPException) as error:
+            execution.run.__wrapped__(Mock(), order.id, {'id': 1})
+    assert error.value.status_code == 409
+    assert error.value.headers['X-Ark-Linked-Sync'] == 'pending'
+    assert '关联同步' in error.value.detail
+
+
 def successful_reads(monkeypatch):
     monkeypatch.setattr(remote, "read", lambda *a: {})
     monkeypatch.setattr(outbound, "summarize", lambda *a: {"status": "manual", "message": "Preserved shipped records"})

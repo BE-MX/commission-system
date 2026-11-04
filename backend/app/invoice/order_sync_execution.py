@@ -398,6 +398,11 @@ def run(db,invoice_id,user,*,linked_id=None,linked_token=None,follow_outbound=Tr
             result["outbound_sync"]=outbound_followup_service.safely_run(db,reference,actor,force_authority=True)
             db.rollback();db.expire_all()
         return response(db,invoice_id,user,result)
+    except linked.LinkedSyncPending as error:
+        db.rollback()
+        raise HTTPException(409, str(error), headers={
+            "Cache-Control": "private, no-store", "X-Ark-Linked-Sync": "pending",
+            "X-Ark-Linked-Sync-Id": error.identity}) from None
     except invoice_link.ReceiptSyncBlocked as error:
         db.rollback()
         logger.warning("Receipt preflight blocks order push")

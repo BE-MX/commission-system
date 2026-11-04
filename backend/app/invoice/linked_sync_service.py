@@ -17,11 +17,19 @@ from app.invoice.presale_order_revision import business_config
 logger = logging.getLogger(__name__)
 
 
+class LinkedSyncPending(ValueError):
+    """A saved workflow owns the document; callers must continue that workflow."""
+
+    def __init__(self, identity):
+        self.identity = identity
+        super().__init__("修改已保存，订单关联同步尚未结束，请继续原同步任务")
+
+
 def ensure_idle(invoice, linked_id=None):
     from app.invoice.lifecycle_guard import ensure_active
     ensure_active(invoice)
     if invoice.linked_sync_id and invoice.linked_sync_id != linked_id:
-        raise ValueError("订单关联同步尚未结束，请先查看处理结果")
+        raise LinkedSyncPending(invoice.linked_sync_id)
 
 
 def edit_version(invoice, *, include_inspection=True):
@@ -78,6 +86,16 @@ def observed_status(row):
 def latest(db, invoice_id):
     return db.query(InvoiceLinkedSync).filter_by(invoice_id=invoice_id).order_by(
         InvoiceLinkedSync.created_at.desc(), InvoiceLinkedSync.id.desc()).first()
+
+
+def current(db, invoice):
+    """Observe the active owner before history; never hide a broken pointer."""
+    if not invoice.linked_sync_id:
+        return latest(db, invoice.id)
+    row = db.get(InvoiceLinkedSync, invoice.linked_sync_id)
+    if row is None or row.invoice_id != invoice.id:
+        raise ValueError("订单关联同步记录异常，请管理员核对原任务")
+    return row
 
 
 def replay(db, invoice, body, actor):

@@ -1982,12 +1982,14 @@ Agent research context now includes `fact_contract.version=registered_research_f
 |方法|路径（/api/invoice前缀）|说明|
 |---|---|---|
 |POST|/invoices/{id}/linked-sync|保存并登记；invoice、request_key、expected_version内容哈希；write+sync|
-|GET|/invoices/{id}/linked-sync|只读最新结果，过期运行租约显示待核对；当前read/write/sync任一权限，不申请写锁或修改任务|
+|GET|/invoices/{id}/linked-sync|只读活动任务（无活动任务时最新历史），返回active布尔值；过期运行租约显示待核对；当前read/write/sync任一权限，不申请写锁或修改任务|
 |POST|/invoices/{id}/linked-sync/{operation}/run|继续未完成步骤；recheck=true仅重新核对；sync|
 |POST|/invoices/{id}/linked-sync/{operation}/close|结束明确失败任务，保留已成功结果；sync|
 |POST|/invoices/{id}/linked-sync/{operation}/resolve|管理员人工核对留证结束；reason、confirmed；admin|
 
 均校验发票可见范围；回款摘要另校验回款动作及数据范围。发票详情增加edit_version。 PORTAL_ENABLED开启时，普通PUT、linked-save、close、resolve按当前数据库员工角色/权限及对象范围校验，旧JWT不保留全量权限。新编辑若需远端回款，锁外取证、最终短事务重核绑定与本地保护；失败安全503、绑定冲突409。linked-save同key/invoice/actor/hash成功回放在初次和最终事务均优先于取证/版本冲突，异载荷409、当前撤权仍拒绝。close/resolve不调用远端，保留原失败/不确定状态、租约与分摊检查。边界及恢复见[invoice-linked-sync.md](invoice-linked-sync.md)。
+
+2026-11-04：活动指针缺失或指向其他订单时，GET返回409，不能回退历史成功任务。普通`POST /invoices/{id}/sync`遇活动关联任务时，返回409及`X-Ark-Linked-Sync: pending`、`X-Ark-Linked-Sync-Id: <原任务ID>`，发生于外发之前；前端只读核对该身份并衔接原任务，不把其他409或未知发送结果视为可重发。所有结果保留`Cache-Control: private, no-store`。
 
 
 ### 小程序验货上传重试（2026-09-20）

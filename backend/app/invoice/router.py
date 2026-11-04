@@ -85,7 +85,7 @@ def _can_read_all(current_user) -> bool:
     )
 
 
-def _ensure_invoice_visible(db: Session, invoice, current_user) -> None:
+def _ensure_invoice_visible(db: Session, invoice, current_user, *, read_permissions=("invoice:read", "invoice:write")) -> None:
     """数据范围守卫：不可见的发票按不存在处理（防拿 ID 探测，tracking 同口径）。
 
     created_by 为 NULL 的历史发票只有 read_all/super_admin 可见。
@@ -96,7 +96,8 @@ def _ensure_invoice_visible(db: Session, invoice, current_user) -> None:
     if user_id is None or not delegation_service.can_access_invoice(db, user_id, invoice):
         raise HTTPException(404, "发票不存在")
     from app.invoice.native_visibility import local_invoice_scope
-    if not db.query(Invoice.id).filter(Invoice.id == invoice.id, local_invoice_scope(db, current_user)).first():
+    if not db.query(Invoice.id).filter(Invoice.id == invoice.id,
+            local_invoice_scope(db, current_user, read_permissions=read_permissions)).first():
         raise HTTPException(404, '发票不存在')
 
 
@@ -1222,6 +1223,8 @@ def _linked_result(row, invoice, user):
     from app.invoice import linked_sync_service as linked
     from app.receipt import access
     result = linked.describe(row)
+    if result:
+        result["active"] = invoice.linked_sync_id == row.id
     action = "super_admin" in user.get("roles", []) or bool(
         {"receipt:read", "receipt:write", "receipt:sync", "receipt:admin"} & set(user.get("permissions", [])))
     if result and not (action and (access.all_access(user) or invoice.sales_user_id == access.user_id(user))):
@@ -1254,8 +1257,11 @@ def get_linked(invoice_id: int, db: Session = Depends(get_db),
     invoice = service.get_invoice(db, invoice_id)
     if invoice is None:
         raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(db, invoice, user)
-    row = linked.latest(db, invoice_id)
+    _ensure_invoice_visible(db, invoice, user, read_permissions=("invoice:read", "invoice:write", "invoice:sync"))
+    try:
+        row = linked.current(db, invoice)
+    except ValueError as error:
+        raise HTTPException(409, str(error), headers=read_authority.PRIVATE_HEADERS) from None
     result = _linked_result(row, invoice, user)
     if result:
         result["status"] = linked.observed_status(row)
