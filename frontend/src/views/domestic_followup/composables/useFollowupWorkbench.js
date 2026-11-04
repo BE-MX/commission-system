@@ -1,52 +1,12 @@
-import { computed, reactive, ref } from 'vue'
+import { ref } from 'vue'
 import { apiError, followupApi } from '@/api/domesticFollowup'
 import { msgError, msgSuccessText } from '@/utils/feedback'
 import { newRequestId } from '../followupDraft'
+import { useFollowupWorkbenchData } from './useFollowupWorkbenchData'
 
-export function useFollowupWorkbench() {
-  const summary = reactive({ receipt: 0, plan: 0, issue: 0, urgent: 0, upcoming: 0 })
-  const typeFilter = ref('') // '' | receipt | plan | issue
-  const dueTasks = ref([])
-  const upcomingTasks = ref([])
-  const drafts = ref([])
-  const records = reactive({ items: [], total: 0, page: 1, pageSize: 20, loading: false, error: '', loaded: false })
-  const loading = ref(false)
-  const error = ref('')
-  const loaded = ref(false)
-
-  const filtered = computed(() => ({
-    due: typeFilter.value ? dueTasks.value.filter(t => matchType(t, typeFilter.value)) : dueTasks.value,
-    upcoming: typeFilter.value ? upcomingTasks.value.filter(t => matchType(t, typeFilter.value)) : upcomingTasks.value,
-  }))
-
-  function matchType(task, type) {
-    return type === 'issue' ? ['issue', 'suggestion'].includes(task.task_type) : task.task_type === type
-  }
-
-  async function loadTasks() {
-    loading.value = true
-    error.value = ''
-    try {
-      const [s, due, upcoming, d] = await Promise.all([
-        followupApi.summary(), followupApi.tasks({ due: 'today', page_size: 200 }),
-        followupApi.tasks({ due: 'upcoming', page_size: 100 }), followupApi.drafts(),
-      ])
-      Object.assign(summary, s)
-      dueTasks.value = due.items
-      upcomingTasks.value = upcoming.items
-      drafts.value = d
-      loaded.value = true
-    } catch (e) { error.value = apiError(e, '待办加载失败') } finally { loading.value = false }
-  }
-
-  async function loadRecords(page = 1) {
-    records.loading = true
-    records.error = ''
-    try {
-      const res = await followupApi.followups({ mine: true, page, page_size: records.pageSize })
-      Object.assign(records, { items: res.items, total: res.total, page, loaded: true })
-    } catch (e) { records.error = apiError(e, '记录加载失败') } finally { records.loading = false }
-  }
+export function useFollowupWorkbench(potentialOnly = ref(false)) {
+  const data = useFollowupWorkbenchData(followupApi, potentialOnly)
+  const { loadTasks } = data
 
   async function snooze(task, days) {
     try {
@@ -71,5 +31,5 @@ export function useFollowupWorkbench() {
     }
   }
 
-  return { summary, typeFilter, filtered, drafts, records, loading, loaded, error, loadTasks, loadRecords, snooze, receiptOk }
+  return { ...data, snooze, receiptOk }
 }

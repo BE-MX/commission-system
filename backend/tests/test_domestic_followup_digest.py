@@ -92,10 +92,12 @@ def test_send_uses_work_notifier(monkeypatch):
 
     notifier.send_to_users = fake_send
     monkeypatch.setattr("app.dingtalk.work_notify.get_work_notifier", lambda: notifier)
+    async def identity_claim(message):
+        return message
     ok_ids, failed = asyncio.run(digest_service.send([
         {"digest_id": 1, "dingtalk_id": "dt-ok", "title": "t", "markdown": "m"},
         {"digest_id": 2, "dingtalk_id": "dt-bad", "title": "t", "markdown": "m"},
-    ]))
+    ], identity_claim))
     assert ok_ids == [1] and failed == [2]
 
 

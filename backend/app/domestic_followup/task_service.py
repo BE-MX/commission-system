@@ -216,9 +216,11 @@ def serialize_tasks(db: Session, rows: list[Task], today: date) -> list[dict]:
 
 def list_tasks(db: Session, current_user: dict, *, scope: str = "mine", status: str = "todo",
                task_type: str | None = None, customer_id: int | None = None, due: str = "all",
-               page: int = 1, page_size: int = 50, today: date | None = None) -> dict:
+               page: int = 1, page_size: int = 50, today: date | None = None, potential_only: bool = False) -> dict:
     today = today or beijing_today()
     query = db.query(Task)
+    if potential_only:
+        query = query.filter(Task.customer_id.in_(visibility.potential_customer_ids()))
     if scope == "mine":
         query = query.filter(Task.assignee_user_id == visibility.uid(current_user))
     else:
@@ -242,12 +244,15 @@ def list_tasks(db: Session, current_user: dict, *, scope: str = "mine", status: 
     return {"items": serialize_tasks(db, rows, today), "total": total, "page": page, "page_size": page_size}
 
 
-def summary(db: Session, current_user: dict, *, today: date | None = None) -> dict:
+def summary(db: Session, current_user: dict, *, today: date | None = None, potential_only: bool = False) -> dict:
     """「我的」未完成待办计数：今天及以前到期的按类型计，未来到期的计入 upcoming。"""
     today = today or beijing_today()
-    rows = db.query(Task.task_type, Task.due_date, Task.payload).filter(
+    query = db.query(Task.task_type, Task.due_date, Task.payload).filter(
         Task.assignee_user_id == visibility.uid(current_user), Task.status == "todo"
-    ).all()
+    )
+    if potential_only:
+        query = query.filter(Task.customer_id.in_(visibility.potential_customer_ids()))
+    rows = query.all()
     result = {"receipt": 0, "plan": 0, "issue": 0, "urgent": 0, "upcoming": 0}
     for task_type, due_date, payload in rows:
         if due_date > today:
@@ -261,11 +266,14 @@ def summary(db: Session, current_user: dict, *, today: date | None = None) -> di
 
 def list_items(db: Session, current_user: dict, *, status: str = "open", kind: str | None = None,
                category: str | None = None, customer_id: int | None = None, mine: bool = False,
-               page: int = 1, page_size: int = 50) -> dict:
+               page: int = 1, page_size: int = 50, potential_only: bool = False) -> dict:
     """异常意见看板：open 含 handling；按创建时间倒序。"""
     from app.domestic_followup.followup_service import serialize_item  # 序列化口径与时间线一致
 
-    query = db.query(DomesticFollowupItem).filter(DomesticFollowupItem.kind.in_(TRACKED_KINDS))
+    query = db.query(DomesticFollowupItem).filter(DomesticFollowupItem.kind.in_(TRACKED_KINDS),
+                                                DomesticFollowupItem.status != "withdrawn")
+    if potential_only:
+        query = query.filter(DomesticFollowupItem.customer_id.in_(visibility.potential_customer_ids()))
     if status == "open":
         query = query.filter(DomesticFollowupItem.status.in_(OPEN_ITEM_STATES))
     elif status:

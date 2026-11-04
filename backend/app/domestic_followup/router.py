@@ -1,5 +1,6 @@
 """内贸客户跟进 API（/api/domestic-followup）。业务逻辑全在 service 层（红线 2）。"""
 from contextlib import contextmanager
+from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
@@ -9,11 +10,11 @@ from app.auth.dependencies import require_permission
 from app.core.database import get_db
 from app.core.response import ok
 from app.domestic_followup import (
-    ai_parse_service, attachment_service, config_service, dict_service, followup_service, jobs, task_service,
+    ai_parse_service, attachment_service, config_service, dict_service, edit_service, followup_service, jobs, task_service,
     visibility,
 )
 from app.domestic_followup.schemas import (
-    ConfirmIn, DirectSaveIn, DraftCreateIn, ItemResolveIn, ProspectIn, ReceiptOkIn, SnoozeIn, TransferIn,
+    ConfirmIn, DirectSaveIn, DraftCreateIn, EditFollowupIn, ItemResolveIn, ProspectIn, ReceiptOkIn, SnoozeIn, TransferIn,
 )
 
 router = APIRouter()
@@ -114,9 +115,42 @@ def direct_save(payload: DirectSaveIn, background: BackgroundTasks, db: Session 
 
 @router.get("/followups")
 def list_followups(customer_id: int | None = None, mine: bool = False, page: int = Query(1, ge=1),
-                   page_size: int = Query(20, ge=1, le=100), db: Session = Depends(get_db), user=Depends(_require_read)):
-    return ok(followup_service.list_followups(db, user, customer_id=customer_id, mine=mine,
-                                              page=page, page_size=page_size))
+                   page_size: int = Query(20, ge=1, le=100), author_user_id: int | None = Query(None, ge=1),
+                   keyword: str = Query("", max_length=100), date_from: date | None = None,
+                   date_to: date | None = None, potential_only: bool = False,
+                   db: Session = Depends(get_db), user=Depends(_require_read)):
+    with _errors():
+        return ok(followup_service.list_followups(db, user, customer_id=customer_id, mine=mine,
+                                                  page=page, page_size=page_size, author_user_id=author_user_id,
+                                                  keyword=keyword, date_from=date_from, date_to=date_to,
+                                                  potential_only=potential_only))
+
+
+@router.get("/followups/authors")
+def list_followup_authors(potential_only: bool = False, db: Session = Depends(get_db), user=Depends(_require_read)):
+    return ok(followup_service.list_authors(db, user, potential_only=potential_only))
+
+
+@router.get("/followups/{followup_id}")
+def followup_detail(followup_id: int, db: Session = Depends(get_db), user=Depends(_require_read)):
+    with _errors():
+        return ok(edit_service.detail(db, user, followup_id))
+
+
+@router.get("/followups/{followup_id}/history")
+def followup_history(followup_id: int, db: Session = Depends(get_db), user=Depends(_require_read)):
+    with _errors():
+        return ok(edit_service.history(db, user, followup_id))
+
+
+@router.put("/followups/{followup_id}")
+def edit_followup(followup_id: int, payload: EditFollowupIn, background: BackgroundTasks,
+                  db: Session = Depends(get_db), user=Depends(_require_write)):
+    with _errors(db):
+        row, pending_ocr = edit_service.update(db, user, followup_id, payload)
+    if pending_ocr:
+        background.add_task(_submit_job, attachment_service.run_ocr, pending_ocr)
+    return ok(followup_service.serialize(db, row), message="跟进已修改，关联待办已同步")
 
 
 @router.post("/drafts")
@@ -130,8 +164,8 @@ def create_draft(payload: DraftCreateIn, background: BackgroundTasks, db: Sessio
 
 
 @router.get("/drafts")
-def list_drafts(db: Session = Depends(get_db), user=Depends(_require_read)):
-    return ok(followup_service.list_drafts(db, user))
+def list_drafts(potential_only: bool = False, db: Session = Depends(get_db), user=Depends(_require_read)):
+    return ok(followup_service.list_drafts(db, user, potential_only=potential_only))
 
 
 @router.get("/drafts/{followup_id}")
@@ -157,15 +191,16 @@ def discard_draft(followup_id: int, db: Session = Depends(get_db), user=Depends(
 @router.get("/tasks")
 def list_tasks(scope: str = Query("mine", pattern="^(mine|visible)$"), status: str = "todo",
                task_type: str | None = None, customer_id: int | None = None,
-               due: str = Query("today", pattern="^(today|upcoming|all)$"), page: int = Query(1, ge=1),
+               due: str = Query("today", pattern="^(today|upcoming|all)$"), page: int = Query(1, ge=1), potential_only: bool = False,
                page_size: int = Query(50, ge=1, le=200), db: Session = Depends(get_db), user=Depends(_require_read)):
     return ok(task_service.list_tasks(db, user, scope=scope, status=status, task_type=task_type,
-                                      customer_id=customer_id, due=due, page=page, page_size=page_size))
+                                      customer_id=customer_id, due=due, page=page, page_size=page_size,
+                                      potential_only=potential_only))
 
 
 @router.get("/tasks/summary")
-def task_summary(db: Session = Depends(get_db), user=Depends(_require_read)):
-    return ok(task_service.summary(db, user))
+def task_summary(potential_only: bool = False, db: Session = Depends(get_db), user=Depends(_require_read)):
+    return ok(task_service.summary(db, user, potential_only=potential_only))
 
 
 @router.post("/tasks/{task_id}/snooze")
@@ -185,10 +220,11 @@ def receipt_ok(task_id: int, payload: ReceiptOkIn, db: Session = Depends(get_db)
 
 @router.get("/items")
 def list_items(status: str = "open", kind: str | None = None, category: str | None = None,
-               customer_id: int | None = None, mine: bool = False, page: int = Query(1, ge=1),
+               customer_id: int | None = None, mine: bool = False, page: int = Query(1, ge=1), potential_only: bool = False,
                page_size: int = Query(50, ge=1, le=200), db: Session = Depends(get_db), user=Depends(_require_read)):
     return ok(task_service.list_items(db, user, status=status, kind=kind, category=category,
-                                      customer_id=customer_id, mine=mine, page=page, page_size=page_size))
+                                      customer_id=customer_id, mine=mine, page=page, page_size=page_size,
+                                      potential_only=potential_only))
 
 
 @router.post("/items/{item_id}/resolve")

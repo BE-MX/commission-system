@@ -3,7 +3,7 @@ import { domesticFollowupClient as client } from './clients'
 // 页面自己给反馈（utils/feedback），不走全局 loading / toast
 const quiet = { showLoading: false, suppressToast: true }
 const data = res => res.data
-const get = (url, params) => client.get(url, { ...quiet, params }).then(data)
+const get = (url, params, options) => client.get(url, { ...quiet, ...options, params }).then(data)
 const post = (url, body) => client.post(url, body, quiet).then(data)
 
 export const followupApi = {
@@ -25,14 +25,18 @@ export const followupApi = {
     return URL.createObjectURL(res.data)
   },
   directSave: body => post('/followups', body),
-  followups: params => get('/followups', params),
+  followups: (params, options) => get('/followups', params, options),
+  followupAuthors: (params, options) => get('/followups/authors', params, options),
+  followup: id => get(`/followups/${id}`),
+  editFollowup: (id, body) => client.put(`/followups/${id}`, body, quiet).then(data),
+  followupHistory: id => get(`/followups/${id}/history`),
   createDraft: body => post('/drafts', body),
-  drafts: () => get('/drafts'),
+  drafts: params => get('/drafts', params),
   draft: id => get(`/drafts/${id}`),
   confirmDraft: (id, body) => post(`/drafts/${id}/confirm`, body),
   discardDraft: id => client.delete(`/drafts/${id}`, quiet).then(data),
   tasks: params => get('/tasks', params),
-  summary: () => get('/tasks/summary'),
+  summary: params => get('/tasks/summary', params),
   snooze: (id, days) => post(`/tasks/${id}/snooze`, { days }),
   receiptOk: (id, requestId) => post(`/tasks/${id}/receipt-ok`, { request_id: requestId }),
   items: params => get('/items', params),

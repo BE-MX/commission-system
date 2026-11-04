@@ -22,12 +22,17 @@
     <div class="wb-panel lg-card is-static">
       <div class="action-bar">
         <div class="wb-actions">
+          <el-checkbox v-model="potentialOnly">仅显示潜在客户</el-checkbox>
           <GlassButton v-permission="'domestic_followup:write'" variant="primary" left-icon="EditPen" @click="composer.open()">记一条跟进</GlassButton>
           <GlassButton v-permission="'domestic_followup:admin'" variant="outline" left-icon="Setting" @click="configRef.open()">跟进设置</GlassButton>
         </div>
         <GlassButton v-if="tab === 'tasks'" variant="ghost" left-icon="Refresh" :loading="w.loading.value" @click="w.loadTasks">刷新</GlassButton>
       </div>
       <el-tabs v-model="tab" class="wb-tabs">
+        <el-tab-pane :label="canReadAll ? '管理总览' : '跟进总览'" name="overview" lazy>
+          <FollowupOverview ref="overviewRef" :potential-only="potentialOnly" @timeline="id => timelineRef.open(id)"
+                            @edit="id => editorRef.open(id)" @history="id => historyRef.open(id)" />
+        </el-tab-pane>
         <el-tab-pane label="待办" name="tasks">
           <ListPageStatus :error="w.error.value" :has-data="w.loaded.value" :loading="w.loading.value" :paged="false" @retry="w.loadTasks" />
           <div v-loading="w.loading.value" class="wb-cards">
@@ -48,7 +53,7 @@
           </el-collapse>
         </el-tab-pane>
         <el-tab-pane label="异常意见" name="items" lazy>
-          <IssueBoard :categories="composer.dicts.domestic_followup_category" @timeline="id => timelineRef.open(id)" @changed="w.loadTasks" />
+          <IssueBoard ref="issuesRef" :potential-only="potentialOnly" :categories="composer.dicts.domestic_followup_category" @timeline="id => timelineRef.open(id)" @changed="w.loadTasks" />
         </el-tab-pane>
         <el-tab-pane label="我的记录" name="records" lazy>
           <div ref="recordsPanel" class="table-card">
@@ -66,6 +71,13 @@
                 <template #default="{ row }">{{ row.summary || row.raw_text }}</template>
               </el-table-column>
               <el-table-column v-if="visibleRecordKeys.includes('next_date')" label="下次" prop="next_date" min-width="110" />
+              <el-table-column label="操作" class-name="table-action-column" min-width="180" fixed="right">
+                <template #default="{ row }">
+                  <GlassButton variant="link" @click.stop="myRecordDetail = row">详情</GlassButton>
+                  <GlassButton v-if="mayEditFollowup(auth.user, row)" v-permission="'domestic_followup:write'" variant="link" @click.stop="editorRef.open(row.id)">修改</GlassButton>
+                  <GlassButton variant="link" @click.stop="historyRef.open(row.id)">修改历史</GlassButton>
+                </template>
+              </el-table-column>
             </el-table>
             <el-pagination
               v-model:page-size="w.records.pageSize" :current-page="w.records.page" :total="w.records.total"
@@ -78,15 +90,23 @@
     </div>
 
     <FollowupComposer :composer="composer" />
-    <CustomerTimelineDrawer ref="timelineRef" @record="customer => composer.open({ customer })" />
+    <CustomerTimelineDrawer ref="timelineRef" @record="customer => composer.open({ customer })"
+                            @edit="id => editorRef.open(id)" @history="id => historyRef.open(id)" />
     <FollowupConfigDialog ref="configRef" />
+    <FollowupEditDialog ref="editorRef" @saved="afterEdit" />
+    <FollowupHistoryDrawer ref="historyRef" />
+    <FollowupRecordDrawer :record="myRecordDetail" @close="myRecordDetail = null"
+                          @timeline="id => { myRecordDetail = null; timelineRef.open(id) }"
+                          @edit="id => { myRecordDetail = null; editorRef.open(id) }"
+                          @history="id => { myRecordDetail = null; historyRef.open(id) }" />
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Box, Calendar, ChatDotRound, Warning } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import GlassButton from '@/components/GlassButton.vue'
 import OverviewMetricCard from '@/components/OverviewMetricCard.vue'
 import TableTools from '@/components/TableTools.vue'
@@ -97,6 +117,11 @@ import CustomerTimelineDrawer from './components/CustomerTimelineDrawer.vue'
 import FollowupConfigDialog from './components/FollowupConfigDialog.vue'
 import FollowupComposer from './components/FollowupComposer.vue'
 import FollowupTaskCard from './components/FollowupTaskCard.vue'
+import FollowupOverview from './components/FollowupOverview.vue'
+import FollowupEditDialog from './components/FollowupEditDialog.vue'
+import FollowupHistoryDrawer from './components/FollowupHistoryDrawer.vue'
+import FollowupRecordDrawer from './components/FollowupRecordDrawer.vue'
+import { mayEditFollowup } from './followupEdit'
 import IssueBoard from './components/IssueBoard.vue'
 import { useFollowupComposer } from './composables/useFollowupComposer'
 import { useFollowupWorkbench } from './composables/useFollowupWorkbench'
@@ -114,13 +139,21 @@ const recordColumns = [
 ]
 const { density: recordDensity, densityClass: recordDensityClass, visibleKeys: visibleRecordKeys,
   panelRef: recordsPanel, isFullscreen: recordsFullscreen, toggleFullscreen: toggleRecordsFullscreen } = useTableView('domestic-followup-records', recordColumns)
-const tab = ref('tasks')
+const auth = useAuthStore()
+const canReadAll = computed(() => auth.hasPermission('domestic_followup:read_all'))
+const tab = ref(canReadAll.value ? 'overview' : 'tasks')
+const overviewRef = ref(null)
 const timelineRef = ref(null)
 const configRef = ref(null)
+const editorRef = ref(null), historyRef = ref(null), issuesRef = ref(null), myRecordDetail = ref(null)
+const potentialOnly = ref(false)
 const upcomingOpen = ref([])  // 「即将到期」默认折叠；点计数卡展开/收起
-const w = useFollowupWorkbench()
+const w = useFollowupWorkbench(potentialOnly)
 const composer = useFollowupComposer({
-  onSaved: () => { if (tab.value === 'records') w.loadRecords(1) },
+  onSaved: () => {
+    if (tab.value === 'records') w.loadRecords(1)
+    overviewRef.value?.refresh()
+  },
   onClosed: () => w.loadTasks(),
 })
 
@@ -154,7 +187,23 @@ function openFromQuery() {
 // 改盯 fullPath：客户列表的「跟进」带 t=时间戳，同一客户重复点也会变
 watch(() => route.fullPath, openFromQuery, { flush: 'post' })
 // 每次切到「我的记录」都刷新第一页：刚确认的记录要能马上看到
-watch(tab, value => { if (value === 'records') w.loadRecords(1) })
+watch(tab, value => {
+  if (value === 'records') w.loadRecords(1)
+  if (value === 'overview') overviewRef.value?.refresh()
+})
+watch(potentialOnly, () => {
+  w.resetScope()
+  myRecordDetail.value = null
+  w.loadTasks()
+  if (tab.value === 'records') w.loadRecords(1)
+}, { flush: 'sync' })
+function afterEdit() {
+  myRecordDetail.value = null
+  w.loadTasks()
+  if (w.records.loaded || tab.value === 'records') w.loadRecords(w.records.page)
+  overviewRef.value?.refresh()
+  issuesRef.value?.refresh()
+}
 onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // 看板分类筛选要字典
 </script>
 

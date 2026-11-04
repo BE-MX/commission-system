@@ -56,7 +56,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
@@ -65,7 +65,7 @@ import { formatBeijingDate } from '@/utils/datetime'
 import { isFeedbackCancelled, msgError, msgSuccessText, promptAction } from '@/utils/feedback'
 import { SEVERITY_STATUS } from '../followupStatus'
 
-defineProps({ categories: { type: Array, default: () => [] } })
+const props = defineProps({ categories: { type: Array, default: () => [] }, potentialOnly: Boolean })
 const emit = defineEmits(['timeline', 'changed'])
 const STATE_OPTIONS = [{ label: '未处理', value: 'open' }, { label: '已解决', value: 'resolved' }, { label: '不处理', value: 'closed_no_action' }]
 const query = reactive({ status: 'open', kind: '', category: '', mine: false })
@@ -84,20 +84,28 @@ const error = ref('')
 const loaded = ref(false)
 const dataPage = ref(1)
 const users = ref([])
+let request = 0
 const transfer = reactive({ visible: false, item: null, toUserId: null, note: '', saving: false })
 
 async function load(p = page.value) {
+  const run = ++request
   page.value = p
   loading.value = true
   error.value = ''
   try {
-    const res = await followupApi.items({ ...query, kind: query.kind || undefined, category: query.category || undefined, page: p, page_size: pageSize.value })
+    const res = await followupApi.items({ ...query, kind: query.kind || undefined, category: query.category || undefined,
+      potential_only: props.potentialOnly, page: p, page_size: pageSize.value })
+    if (run !== request) return
     rows.value = res.items
     total.value = res.total
     loaded.value = true
     dataPage.value = p
-  } catch (e) { error.value = apiError(e, '异常意见加载失败') } finally { loading.value = false }
+  } catch (e) { if (run === request) error.value = apiError(e, '异常意见加载失败') }
+  finally { if (run === request) loading.value = false }
 }
+
+watch(() => props.potentialOnly, () => { rows.value = []; total.value = 0; loaded.value = false; load(1) }, { flush: 'sync' })
+onUnmounted(() => { request++ })
 
 async function resolve(row) {
   try {
@@ -130,7 +138,7 @@ async function submitTransfer() {
 }
 
 onMounted(() => load(1))
-defineExpose({ load })
+defineExpose({ load, refresh: () => load() })
 </script>
 
 <style scoped>

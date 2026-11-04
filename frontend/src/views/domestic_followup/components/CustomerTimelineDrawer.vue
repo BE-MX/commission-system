@@ -28,6 +28,10 @@
             <div v-if="e.data.attachments.length" class="tl-shots">
               <GlassButton v-for="a in e.data.attachments" :key="a.id" variant="link" @click="preview(a)">截图 {{ a.seq }}</GlassButton>
             </div>
+            <div class="tl-actions">
+              <GlassButton v-if="mayEditFollowup(auth.user, e.data)" v-permission="'domestic_followup:write'" variant="link" @click="recordAction('edit', e.data.id)">修改</GlassButton>
+              <GlassButton variant="link" @click="recordAction('history', e.data.id)">修改历史</GlassButton>
+            </div>
           </template>
         </el-timeline-item>
       </el-timeline>
@@ -44,11 +48,15 @@ import GlassButton from '@/components/GlassButton.vue'
 import { apiError, followupApi } from '@/api/domesticFollowup'
 import { msgError } from '@/utils/feedback'
 import { ITEM_KIND_STATUS } from '../followupStatus'
+import { useAuthStore } from '@/stores/auth'
+import { mayEditFollowup } from '../followupEdit'
 
-defineEmits(['record'])
+const emit = defineEmits(['record', 'edit', 'history'])
+const auth = useAuthStore()
 const visible = ref(false)
 const data = ref(null)
 const previewUrl = ref('')
+function recordAction(action, id) { visible.value = false; emit(action, id) }
 
 const isOverdue = computed(() => {
   const c = data.value?.customer

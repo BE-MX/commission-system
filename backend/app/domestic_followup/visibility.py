@@ -60,6 +60,10 @@ def scoped_customer_ids(user_id: int):
     return owned.union(commission)
 
 
+def potential_customer_ids():
+    return select(DomesticCustomer.id).where(DomesticCustomer.lifecycle_status == PROSPECT_LIFECYCLE)
+
+
 def followup_filter(current_user: dict):
     """确认记录的可见条件；read_all 返回 None 表示不加过滤。"""
     if can_read_all(current_user):

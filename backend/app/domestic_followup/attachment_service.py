@@ -59,20 +59,30 @@ def upload(db: Session, user_id: int, filename: str, mime_type: str, content: by
     return att
 
 
+def lock_rows(db: Session, followup_id: int, attachment_ids: list[int]) -> list[DomesticFollowupAttachment]:
+    """Caller holds the parent record lock; lock exact PKs to avoid secondary-index gap cycles."""
+    existing = db.query(DomesticFollowupAttachment.id).filter(
+        DomesticFollowupAttachment.followup_id == followup_id).all()
+    ids = sorted(set(attachment_ids) | {row[0] for row in existing})
+    rows = []
+    for attachment_id in ids:
+        row = (db.query(DomesticFollowupAttachment).filter(DomesticFollowupAttachment.id == attachment_id)
+               .populate_existing().with_for_update().first())
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
 def bind(db: Session, user_id: int, followup_id: int, attachment_ids: list[int]) -> list[DomesticFollowupAttachment]:
     ids = list(dict.fromkeys(attachment_ids or []))
     if len(ids) > MAX_ATTACHMENTS:
         raise ValueError(f"一次最多 {MAX_ATTACHMENTS} 张截图")
-    followup = db.get(DomesticFollowup, followup_id)
+    followup = (db.query(DomesticFollowup).filter(DomesticFollowup.id == followup_id)
+                .populate_existing().with_for_update().first())
     if followup is None or followup.author_user_id != user_id or followup.status != "draft":
         raise PermissionError("只能给自己未确认的记录添加截图")
-    # 重复提交时，本次没选的旧附件解绑，回到「未使用」
-    for stale in db.query(DomesticFollowupAttachment).filter(
-        DomesticFollowupAttachment.followup_id == followup_id,
-        DomesticFollowupAttachment.id.not_in(ids or [0]),
-    ).all():
-        stale.followup_id = None
-    rows = db.query(DomesticFollowupAttachment).filter(DomesticFollowupAttachment.id.in_(ids or [0])).all()
+    # Both draft and edit paths lock the same ordered attachment rows before checking ownership.
+    rows = lock_rows(db, followup_id, ids)
     by_id = {row.id: row for row in rows}
     for seq, att_id in enumerate(ids, start=1):
         att = by_id.get(att_id)
@@ -84,6 +94,9 @@ def bind(db: Session, user_id: int, followup_id: int, attachment_ids: list[int])
             raise PermissionError("该截图已用于另一条记录，请重新上传")
         att.followup_id = followup_id
         att.seq = seq
+    for stale in rows:
+        if stale.followup_id == followup_id and stale.id not in ids:
+            stale.followup_id = None
     db.flush()
     return [by_id[i] for i in ids]
 
@@ -91,7 +104,8 @@ def bind(db: Session, user_id: int, followup_id: int, attachment_ids: list[int])
 def list_for(db: Session, followup_ids: list[int]) -> dict[int, list[dict]]:
     rows = (
         db.query(DomesticFollowupAttachment)
-        .filter(DomesticFollowupAttachment.followup_id.in_(followup_ids or [0]))
+        .filter(DomesticFollowupAttachment.followup_id.in_(followup_ids or [0]),
+                DomesticFollowupAttachment.archived_at.is_(None))
         .order_by(DomesticFollowupAttachment.followup_id, DomesticFollowupAttachment.seq)
         .all()
     )

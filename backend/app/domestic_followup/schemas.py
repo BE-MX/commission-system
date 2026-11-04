@@ -69,6 +69,34 @@ class ReceiptOkIn(BaseModel):
     request_id: str = Field(..., min_length=8, max_length=64)
 
 
+class EditItemIn(ItemIn):
+    id: int | None = Field(None, gt=0)
+
+
+class EditFollowupIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    version: int = Field(..., ge=1)
+    request_id: str = Field(..., min_length=8, max_length=64)
+    reason: str = Field(..., min_length=1, max_length=500)
+    raw_text: str | None = Field(None, max_length=20000)
+    followup_date: dt.date
+    channel: str | None = Field(None, max_length=16)
+    summary: str | None = Field(None, max_length=500)
+    state_changes: list[str] = Field(default_factory=list, max_length=10)
+    next_date: dt.date | None = None
+    next_plan: str | None = Field(None, max_length=500)
+    next_method: str | None = Field(None, max_length=16)
+    items: list[EditItemIn] = Field(default_factory=list, max_length=30)
+    attachment_ids: list[int] = Field(default_factory=list, max_length=9)
+
+    @field_validator("reason")
+    @classmethod
+    def nonempty_reason(cls, value):
+        if not value.strip():
+            raise ValueError("请填写修改原因")
+        return value.strip()
+
+
 class SnoozeIn(BaseModel):
     days: int = Field(1, ge=1, le=7)
 
