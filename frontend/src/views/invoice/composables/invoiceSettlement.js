@@ -19,7 +19,22 @@ export const PAYMENT_METHOD_RATES = {
   TT: 0,
 }
 // 快递渠道（2026-09-23）：改为必填单选，不默认选中
-export const EXPRESS_CHANNEL_OPTIONS = ['DHL', 'FEDEX', '顺丰', '其他快递']
+export const EXPRESS_CHANNEL_OPTIONS = ['DHL普货', 'FEDEX普货', 'DHL9610', 'FEDEX9610', '顺丰', '其他快递']
+
+// 存量订单使用旧文本存值，打开编辑时回显到新的普货选项。
+export function normalizeStoredExpressChannel(channel) {
+  if (channel === 'DHL') return 'DHL普货'
+  if (channel === 'FEDEX') return 'FEDEX普货'
+  return channel || ''
+}
+
+export function paymentChannelError(method, channel) {
+  const convenient = String(method || '').includes('便捷发货')
+  const customs9610 = String(channel || '').includes('9610')
+  if (convenient && !customs9610) return '付款方式包含“便捷发货”时，快递渠道必须包含“9610”，请修改快递渠道'
+  if (customs9610 && !convenient) return '快递渠道包含“9610”时，付款方式必须包含“便捷发货”，请选择对应付款方式'
+  return ''
+}
 
 // 命中返回费率（含 0），未登记返回 null（手填，不自动算）。
 export function handlingFeeRate(method) {

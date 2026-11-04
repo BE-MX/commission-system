@@ -128,6 +128,41 @@ async function run(fn, request) {
   try { await fn(h) } finally { h.stop() }
 }
 
+for (const entry of ['create', 'edit', 'saveAndSync']) {
+  for (const [method, channel, message] of [
+    ['大莱莎信保（便捷发货）', 'DHL普货', /快递渠道必须包含“9610”/],
+    ['PayPal', 'FEDEX9610', /付款方式必须包含“便捷发货”/],
+  ]) {
+    test(`${entry} blocks inconsistent payment/channel before API or sync and allows correction: ${channel}`, async t => {
+      const h = await harness(undefined, undefined, { express_channel: 'DHL', invoice_no: 'CHANNEL-TEST' })
+      t.after(h.stop)
+      if (entry === 'edit') await h.editor.openEdit(12)
+      else await h.editor.onCustomerChange(customer('C1'))
+      Object.assign(h.editor.form, { internal_payment_method: method, express_channel: channel })
+      const save = () => entry === 'saveAndSync' ? h.editor.saveAndSync() : h.editor.saveDraft()
+      await save()
+      assert.equal(h.saved.length, 0)
+      assert.equal(h.synced.length, 0)
+      assert.match(h.warnings.at(-1), message)
+      Object.assign(h.editor.form, { internal_payment_method: '小莱莎信保（便捷发货）', express_channel: 'FEDEX9610' })
+      await save()
+      assert.equal(h.saved.length, 1)
+      assert.equal(h.saved[0].express_channel, 'FEDEX9610')
+      assert.equal(h.saved[0].internal_payment_method, '小莱莎信保（便捷发货）')
+    })
+  }
+}
+
+for (const [stored, selected] of [['DHL', 'DHL普货'], ['FEDEX', 'FEDEX普货']]) {
+  test(`opening legacy ${stored} selects ordinary cargo and keeps the editor clean`, async t => {
+    const h = await harness(undefined, undefined, { express_channel: stored })
+    t.after(h.stop)
+    await h.editor.openEdit(12)
+    assert.equal(h.editor.form.express_channel, selected)
+    assert.equal(h.editor.hasUnsavedChanges.value, false)
+  })
+}
+
 test('complete customer details collapse, can reopen, and remain expanded while filling a cleared field', () => run(async h => {
   assert.equal(h.editor.contactDetailsExpanded.value, true)
   await h.editor.onCustomerChange(customer('C1'))
@@ -728,7 +763,7 @@ function concurrentInvoice() {
       bank_charge: 0, collection_date: '2026-10-27', payment_type: 'Other', purpose: 'ordinary',
       attachment_ids: [], remark: '', receipt_version: 1 },
     edit_version: 'v1', item_groups_version: 'g1', status: 'ready', sync_status: 'synced',
-    xiaoman_order_id: 'REMOTE', express_channel: 'FEDEX', customer_name: 'Customer C1',
+    xiaoman_order_id: 'REMOTE', express_channel: 'FEDEX普货', customer_name: 'Customer C1',
   }
 }
 

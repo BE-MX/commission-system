@@ -17,6 +17,7 @@ from app.invoice import accessory_price_service, delegation_service, item_group_
 from app.invoice.customer_profile_service import get_customer_grade, save_customer_grade
 from app.invoice.models import CustomerProfile, Invoice, InvoiceDelegateGrant, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
+from app.invoice.shipping_policy import validate_payment_channel
 from app.invoice.screenshot_token import verify_preview_token
 from app.invoice.screenshot_source import external_source_key, is_external_source_key
 from app.invoice.time_utils import beijing_now, to_beijing_time
@@ -467,6 +468,7 @@ def create_invoice(
     allow_external_source: bool = False,
     allow_portal_source: bool = False,
 ) -> Invoice:
+    validate_payment_channel(body.internal_payment_method, body.express_channel)
     if allow_portal_source and (allow_external_source or allow_screenshot_source):
         raise ValueError("发票创建入口来源授权冲突")
     if (body.source_type == "portal") != allow_portal_source:
@@ -579,6 +581,7 @@ def create_invoice(
 
 
 def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None, *, linked_change=False, receipt_rows=None) -> Invoice:
+    validate_payment_channel(body.internal_payment_method, body.express_channel)
     if invoice.transaction_mode == 'local':
         if body.transaction_route == 'legacy':
             raise ValueError('本地订单不能通过旧路线编辑入口保存，请保持原办理路线')

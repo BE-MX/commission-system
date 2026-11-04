@@ -12,6 +12,8 @@ import {
   applyTotalDiscountToRows,
   computeHandlingFee,
   handlingFeeRate,
+  paymentChannelError,
+  normalizeStoredExpressChannel,
   normalizeDiscount,
   settlementMatchesTotal,
   splitDiscountCents,
@@ -71,10 +73,32 @@ test('settlement options use the approved fixed values', () => {
     'TT',
     '现金', '支付宝', '微信', '对公转账（莱莎）', '对公转账（旭和）',
   ])
-  assert.deepEqual(EXPRESS_CHANNEL_OPTIONS, ['DHL', 'FEDEX', '顺丰', '其他快递'])
+  assert.deepEqual(EXPRESS_CHANNEL_OPTIONS, ['DHL普货', 'FEDEX普货', 'DHL9610', 'FEDEX9610', '顺丰', '其他快递'])
   // 新增付款方式均无自动费率：手续费手填
   for (const method of ['现金', '支付宝', '微信', '对公转账（莱莎）', '对公转账（旭和）']) {
     assert.equal(handlingFeeRate(method), null)
+  }
+})
+
+test('payment and channel must both use convenient shipping / 9610 or neither', () => {
+  for (const method of PAYMENT_METHOD_OPTIONS) {
+    for (const channel of [...EXPRESS_CHANNEL_OPTIONS, 'DHL', 'FEDEX', '', null]) {
+      const expected = method.includes('便捷发货') !== String(channel || '').includes('9610')
+      assert.equal(Boolean(paymentChannelError(method, channel)), expected, `${method} / ${channel}`)
+    }
+  }
+  assert.match(paymentChannelError('任意便捷发货方式', 'DHL普货'), /快递渠道必须包含“9610”/)
+  assert.match(paymentChannelError(null, 'FEDEX9610'), /付款方式必须包含“便捷发货”/)
+  assert.equal(paymentChannelError(null, null), '')
+  assert.equal(paymentChannelError('任意便捷发货方式', '其他9610渠道'), '')
+})
+
+test('stored legacy channels load as ordinary cargo without changing other channels', () => {
+  assert.equal(normalizeStoredExpressChannel('DHL'), 'DHL普货')
+  assert.equal(normalizeStoredExpressChannel('FEDEX'), 'FEDEX普货')
+  assert.equal(normalizeStoredExpressChannel(null), '')
+  for (const channel of [...EXPRESS_CHANNEL_OPTIONS, '历史自定义渠道']) {
+    assert.equal(normalizeStoredExpressChannel(channel), channel)
   }
 })
 

@@ -39,6 +39,7 @@ class LocalInvoiceDraft(DepartmentShares):
     contact_email: str | None = Field(None, max_length=256)
     delivery_address: str | None = Field(None, max_length=4000)
     express_channel: str | None = Field(None, max_length=64)
+    internal_payment_method: str | None = Field(None, max_length=64)
     shipping_fee: Decimal = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)
     surcharge_name: str | None = Field(None, max_length=128)
     surcharge_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)
