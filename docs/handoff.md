@@ -1,3 +1,9 @@
+## 2026-11-04 订单发票快递渠道与付款校验（Codex，Git 交付，未部署）
+
+- 工作区 `D:/MyProgram/commission-system-codex-express-9610`，分支 `codex/express-9610`，基于 main `679d9888`。DHL/FEDEX 选项改为 DHL普货/FEDEX普货，新增 DHL9610/FEDEX9610，保留顺丰与其他快递；存量旧值打开编辑映射为普货，不批量改库。整单粘贴保留 9610 标识。
+- 新建/业务编辑/保存同步在前端提交前及后端持久化前执行「便捷发货 ⇔ 9610」双向校验，不匹配返回明确提示。修补本地路线付款方式字段传递与落库，空付款的历史幂等请求摘要保持稳定。仅改明细分组的独立接口不改变业务字段。
+- 验证、独立审查和基线限制见 [实施与验证记录](reports/2026-11-04-invoice-payment-channel.md)。用户已授权本批提交、合并 main 与推送 origin；远端交付从最新 origin/main 整合本批差异，不夹带本地 main 原有 19 个未推送提交。无数据库迁移、生产数据写入或部署；主目录及他人 worktree 原有改动保留。
+
 ## 2026-11-03 改量后出库同步自动续跑（Codex，Git 交付，未部署）
 
 - 分支 `codex/order-outbound-sync`，工作区 `D:/MyProgram/commission-system-codex-order-outbound-sync`，基点 `6d32cca0`。库存锁忙时当前保存意图进入 pending，由后台自动续跑；自动建单逐单释放共享锁，优先尝试已保存关联任务。原出库已受理的安全缺行沿原计划有限补齐；v2 绑定只排除 Invoice.updated_at，旧 v1 仍严格验证；未知发送保留账本和 claim，禁止自动重发。

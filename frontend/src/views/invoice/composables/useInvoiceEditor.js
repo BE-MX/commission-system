@@ -30,6 +30,8 @@ import {
   calculateInvoiceTotal,
   computeHandlingFee,
   handlingFeeRate,
+  normalizeStoredExpressChannel,
+  paymentChannelError,
   normalizeDiscount,
   settlementMatchesTotal,
   sumLineNet,
@@ -344,6 +346,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     lastOrderDate.value = ''
     Object.assign(form, emptyInvoiceForm(), {
       ...data,
+      express_channel: normalizeStoredExpressChannel(data.express_channel),
       transaction_route: data.transaction_route || data.transaction_mode || 'legacy',
       local_customer_id: data.local_customer_id || (String(data.customer_id || '').startsWith('ark:') ? Number(String(data.customer_id).slice(4)) : null),
       receipt_draft: data.receipt_draft ? { ...data.receipt_draft, amount: data.receipt_draft.amount == null ? 0 : Number(data.receipt_draft.amount) } : null,
@@ -825,6 +828,11 @@ export function useInvoiceEditor({ onSaved } = {}) {
     if (!form.express_channel) missingRequired.push('快递渠道')
     if (missingRequired.length) {
       msgWarning(`请完善必填项：${missingRequired.join('、')}`)
+      return null
+    }
+    const channelError = paymentChannelError(form.internal_payment_method, form.express_channel)
+    if (channelError) {
+      msgWarning(channelError)
       return null
     }
     const quantityIssue = invoiceQuantityIssue(form.items, form.item_groups)

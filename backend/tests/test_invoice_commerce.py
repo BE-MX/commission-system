@@ -50,6 +50,66 @@ def action(key, version, warehouse=None):
                               warehouse_id=warehouse, reason="test")
 
 
+def test_local_payment_channel_survives_create_edit_and_failed_save(db, stock, buyer):
+    sku, _ = stock
+    customer, user = buyer
+    body = draft(customer, user, sku, internal_payment_method="大莱莎信保（便捷发货）",
+                 express_channel="DHL9610")
+    invoice = create_draft(db, body, user)
+    db.commit()
+    db.refresh(invoice)
+    assert (invoice.internal_payment_method, invoice.express_channel) == (body.internal_payment_method, "DHL9610")
+    edit = body.model_copy(update={"request_key": "edit-channel", "expected_version": 1,
+                                  "expected_authority_epoch": 1, "express_channel": "FEDEX9610"})
+    update_draft(db, invoice.id, edit, user)
+    db.commit()
+    db.refresh(invoice)
+    assert (invoice.internal_payment_method, invoice.express_channel) == (body.internal_payment_method, "FEDEX9610")
+    invalid = edit.model_copy(update={"request_key": "bad-channel", "expected_version": 2,
+                                      "internal_payment_method": "TT"})
+    with pytest.raises(ValueError, match="付款方式必须"):
+        update_draft(db, invoice.id, invalid, user)
+    db.refresh(invoice)
+    assert invoice.internal_payment_method == body.internal_payment_method
+    assert invoice.commerce_version == 2
+    assert len(db.scalars(select(InvoiceCommerceEvent)).all()) == 2
+
+
+def test_local_editor_translation_keeps_payment_method(stock, buyer):
+    from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload
+    from app.invoice.transition_editor import local_body
+    sku, _ = stock
+    customer, user = buyer
+    body = InvoiceCreate(invoice_date=date(2026, 11, 4), customer_id=f"ark:{customer.id}", customer_name=customer.display_name,
+        local_customer_id=customer.id, request_key="editor-9610", express_channel="DHL9610",
+        internal_payment_method="小莱莎信保（便捷发货）", items=[InvoiceItemPayload(
+            local_sku_id=sku.id, product_display="Local SKU", color="#1", quantity=1, price_per_piece=1)])
+    translated = local_body(body, int(user["sub"]))
+    assert translated.internal_payment_method == body.internal_payment_method
+    assert translated.express_channel == "DHL9610"
+
+
+def test_pre_payment_field_command_replays_but_new_payment_is_distinct(db, stock, buyer):
+    import hashlib
+    import json
+    sku, _ = stock
+    customer, user = buyer
+    body = draft(customer, user, sku)
+    invoice = create_draft(db, body, user)
+    event = db.scalar(select(InvoiceCommerceEvent))
+    # Reconstruct the persisted command shape used before the payment field existed.
+    historical_body = body.model_dump(mode="json")
+    historical_body.pop("internal_payment_method")
+    historical = {"action": "create", "invoice_id": None, "actor_id": int(user["sub"]), "body": historical_body}
+    historical_hash = hashlib.sha256(json.dumps(historical, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    assert event.request_hash == historical_hash
+    assert event.payload == historical
+    db.commit()
+    assert create_draft(db, body, user).id == invoice.id
+    with pytest.raises(ValueError, match="幂等键"):
+        create_draft(db, body.model_copy(update={"internal_payment_method": "TT"}), user)
+
+
 def test_draft_confirm_cancel_without_mirror_tables(db, stock, buyer):
     sku, (wh, _) = stock
     customer, user = buyer

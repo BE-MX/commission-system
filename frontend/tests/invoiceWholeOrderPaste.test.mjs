@@ -58,7 +58,7 @@ test('payment candidates resolve to payment method and express channel', () => {
   const parsed = parseWholeOrderClipboard(SAMPLE)
   // handling 行 D 列 PayPal → 付款方式；Paymetn term 行 D 列联邦普货 → 快递渠道
   assert.equal(parsed.payment_method, 'PayPal')
-  assert.equal(parsed.express_channel, 'FEDEX')
+  assert.equal(parsed.express_channel, 'FEDEX普货')
 })
 
 test('discount label containing after is not extracted', () => {
@@ -76,8 +76,13 @@ test('payment and express resolvers cover aliases and exact options', () => {
   assert.equal(resolvePaymentMethod('新莱莎信保 报关'), '新莱莎信保（报关）')
   assert.equal(resolvePaymentMethod('对公转账（莱莎）'), '对公转账（莱莎）')
   assert.equal(resolvePaymentMethod('联邦普货'), null)
-  assert.equal(resolveExpressChannel('联邦普货'), 'FEDEX')
-  assert.equal(resolveExpressChannel('dhl'), 'DHL')
+  assert.equal(resolveExpressChannel('联邦普货'), 'FEDEX普货')
+  assert.equal(resolveExpressChannel('dhl'), 'DHL普货')
+  assert.equal(resolveExpressChannel('DHL普货'), 'DHL普货')
+  assert.equal(resolveExpressChannel('FEDEX普货'), 'FEDEX普货')
+  assert.equal(resolveExpressChannel('dhl 9610'), 'DHL9610')
+  assert.equal(resolveExpressChannel('FedEx9610'), 'FEDEX9610')
+  assert.equal(resolveExpressChannel('联邦9610'), 'FEDEX9610')
   assert.equal(resolveExpressChannel('顺丰'), '顺丰')
   assert.equal(resolveExpressChannel('PayPal'), null)
 })

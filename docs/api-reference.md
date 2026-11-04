@@ -155,6 +155,12 @@ Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务�
 - `POST /api/portal/admin/v1/access-requests/{id}/review`：员工 `portal_access:admin`；approve 必须传现有 enabled + can_order 的 `access_id`，reject 不需要。批准复用邀请邮件 outbox，客户打开 `/activate#token=...` 后 `POST /auth/challenge` 请求验证码，`POST /auth/activate` 以验证码 + 新密码完成激活并登录。密码只进 SecretStr/bcrypt，不进入申请、日志或回执。
 
 
+## 订单发票付款方式与快递渠道（2026-11-04，待部署）
+
+发票新建与业务编辑保存（含截图导入、关联保存和本地订单）统一校验：`internal_payment_method` 包含「便捷发货」当且仅当 `express_channel` 包含 `9610`。任意一侧不匹配时返回 HTTP 400 与具体修改提示，拒绝保存。空付款方式不能搭配 9610；非 9610 与非便捷发货的组合沿用既有保存规则。仅调整明细分组的独立接口不改业务字段。
+
+订单编辑器渠道选项为 `DHL普货`、`FEDEX普货`、`DHL9610`、`FEDEX9610`、`顺丰`、`其他快递`，选项文本即存值。存量 `DHL` / `FEDEX` 打开编辑时分别回显为普货，下次业务保存使用新值，不批量改写历史数据；旧订单若使用便捷发货，业务保存前须选择 9610。Excel 整单粘贴识别普货与 9610。本地订单命令新增可选 `internal_payment_method`（最大 64 字符），保存并返回此值；未提供付款方式的旧请求保持原幂等摘要。
+
 ## 订单发票产品明细分组（2026-10-27）
 
 - 发票详情新增 `item_groups`、`item_groups_version`；产品行新增 `group_key` 和 `created_at`。创建/更新可携带同名可选字段。分组 key 创建后稳定，名称可自定义且同一订单内唯一，仅用于编辑器展示，不是发货批次，不参与金额、库存、出库、打印导出、门户或 OKKI 同步。旧调用省略时由服务端保留/创建默认分组。
