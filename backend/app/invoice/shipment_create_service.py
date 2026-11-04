@@ -317,6 +317,9 @@ def create(db, identity, body, user):
             raise ValueError('回款方式证据不完整')
         file_evidence = attachments.verify_storage(files) if body.payment else None
         db.commit()
+    except linked_outbound_service.OutboundListChanged:
+        raise HTTPException(409, '小满出库记录在核验期间发生变化，请重新获取报价',
+            headers={'Cache-Control':'private, no-store','Pragma':'no-cache'}) from None
     except (ValueError,TypeError,okki_client.OkkiApiError,SQLAlchemyError,OSError,StorageError,HTTPException) as error:
         result_unavailable(error)
     finally:

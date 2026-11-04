@@ -32,15 +32,12 @@ def _read_details(db, identities):
             if row is None else row for identity, row in zip(identities, rows)]
 
 
-def find_related(db, order):
-    if not isinstance(order, dict) or not order.get("order_id"):
-        raise ValueError("关联订单身份不完整")
-    stamp = str(order.get("create_time") or "")[:10]
-    datetime.strptime(stamp, "%Y-%m-%d")
-    # Match the existing managed creator: time_type=1 is update time, including
-    # older outbound records that were subsequently linked to this order.
-    params = dict(start_time=stamp + " 00:00:00", time_type=1, count=100, removed=0)
-    seen, found, expected = set(), [], None
+class OutboundListChanged(ValueError):
+    """Concurrent supplier edits require a fresh quote, never an absence result."""
+
+
+def _list_identities(db, params):
+    seen, identities, expected = set(), [], None
     for page in range(1, 501):
         data = remote.read(db, "/v1/invoices/outbound/list", {**params, "start_index": page})
         if not isinstance(data, dict):
@@ -50,18 +47,42 @@ def find_related(db, order):
             raise ValueError("出库单列表不完整，请稍后重新核对")
         count = int(count)
         if expected is not None and count != expected:
-            raise ValueError("出库单列表已变化，请重新核对")
+            raise OutboundListChanged("出库单列表已变化，请重新核对")
         expected = count
-        identities = []
         for row in rows:
             if not isinstance(row, dict):
                 raise ValueError("出库单列表记录无效")
             identity = str(row.get("outbound_invoice_id") or "")
-            if not identity or identity in seen:
-                raise ValueError("出库单分页重复或缺少ID，请重新核对")
+            if not identity:
+                raise ValueError("出库单列表缺少ID，请重新核对")
+            if identity in seen:
+                raise OutboundListChanged("出库单分页已变化，请重新核对")
             seen.add(identity)
             identities.append(identity)
-        for identity, detail in zip(identities, _read_details(db, identities)):
+        if len(seen) == expected:
+            return identities
+        if not rows or len(seen) > expected:
+            break
+    raise ValueError("出库单扫描未完成，未判定关联状态")
+
+
+def find_related(db, order):
+    if not isinstance(order, dict) or not order.get("order_id"):
+        raise ValueError("关联订单身份不完整")
+    stamp = str(order.get("create_time") or "")[:10]
+    datetime.strptime(stamp, "%Y-%m-%d")
+    # Enumerate consecutive pages before slow detail reads. Interleaving them
+    # let ordinary updates move IDs across page boundaries during long scans.
+    # Keep update-time coverage and cross-customer links; neither is filterable.
+    params = dict(start_time=stamp + " 00:00:00", time_type=1, count=100, removed=0)
+    identities = _list_identities(db, params)
+    found = []
+    for offset in range(0, len(identities), 100):
+        batch = identities[offset:offset + 100]
+        details = _read_details(db, batch)
+        if len(details) != len(batch):
+            raise ValueError("出库单详情未完整读取")
+        for identity, detail in zip(batch, details):
             if not isinstance(detail, dict):
                 raise ValueError("出库单详情格式不完整")
             records = detail.get("record_list")
@@ -71,14 +92,11 @@ def find_related(db, order):
                 raise ValueError("出库明细关联订单身份不完整，不能判定无关联")
             if any(str(r["order_id"]) == str(order["order_id"]) for r in records):
                 found.append(detail)
-        if len(seen) == expected:
-            latest = remote.read(db, "/v1/invoices/outbound/list", {**params, "start_index": 1})
-            if not isinstance(latest, dict) or int(latest.get("count", -1)) != expected:
-                raise ValueError("出库单数量已变化，请重新核对")
-            return found
-        if not rows or len(seen) > expected:
-            break
-    raise ValueError("出库单扫描未完成，未判定关联状态")
+    # A matching count alone misses a delete plus insert. Ordering may change
+    # after an ordinary update, but membership must remain complete and equal.
+    if set(_list_identities(db, params)) != set(identities):
+        raise OutboundListChanged("出库单列表已变化，请重新核对")
+    return found
 
 
 def summarize(db, invoice, order):
