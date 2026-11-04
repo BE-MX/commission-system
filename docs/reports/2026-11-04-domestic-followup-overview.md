@@ -1,6 +1,6 @@
 # 客户跟进总览、已提交编辑与潜在客户筛选
 
-日期：2026-11-04。分支 `codex/followup-overview`，工作区 `D:/MyProgram/commission-system-codex-followup-overview`，基点 `679d9888`。本批已获提交、合并 main 和推送 origin 授权，进入 Git 交付；基于远端 main `ea3e7bad` 整合本批差异，不推送本地 main 原有 21 个提交，未部署。新增迁移 `249_followup_revisions`，仅在本任务独立测试 MySQL 上执行；未修改生产库或业务数据。
+日期：2026-11-04。分支 `codex/followup-overview`，工作区 `D:/MyProgram/commission-system-codex-followup-overview`，基点 `679d9888`。本批已获提交、合并 main 和推送 origin 授权，进入 Git 交付；基于最新远端 main（含内贸参考图粘贴上传）整合本批差异，不推送本地 main 原有 21 个提交，未部署。新增迁移 `249_followup_revisions`，仅在本任务独立测试 MySQL 上执行；未修改生产库或业务数据。
 
 ## 最终行为
 
