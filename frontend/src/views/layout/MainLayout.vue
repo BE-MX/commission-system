@@ -43,9 +43,9 @@
               </div>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="profile"><el-icon><User /></el-icon> 个人设置</el-dropdown-item>
-                  <el-dropdown-item command="password"><el-icon><Key /></el-icon> 修改密码</el-dropdown-item>
-                  <el-dropdown-item divided command="logout"><el-icon><SwitchButton /></el-icon> 退出登录</el-dropdown-item>
+                  <el-dropdown-item command="profile"><el-icon class="account-menu-icon"><KubaiIcon :name="KUBAI_ACCOUNT_ICONS.profile" /></el-icon> 个人设置</el-dropdown-item>
+                  <el-dropdown-item command="password"><el-icon class="account-menu-icon"><KubaiIcon :name="KUBAI_ACCOUNT_ICONS.password" /></el-icon> 修改密码</el-dropdown-item>
+                  <el-dropdown-item divided command="logout"><el-icon class="account-menu-icon"><KubaiIcon :name="KUBAI_ACCOUNT_ICONS.logout" /></el-icon> 退出登录</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -106,6 +106,8 @@ import { NAV_ENTRIES } from '@/config/navigation'
 import NavigationTabs from './NavigationTabs.vue'
 import SidebarNavigation from './SidebarNavigation.vue'
 import QuickNavigation from './QuickNavigation.vue'
+import KubaiIcon from '@/components/kubai/KubaiIcon.vue'
+import { KUBAI_ACCOUNT_ICONS } from './kubaiNavIcons'
 import { navigationRouteTitle } from '@/composables/useNavigationConfig'
 import { useNavigationTabs } from './navigationTabs'
 import { getRouteTabKey, getTabButtonId, getTabPanelId } from './navigationTabState'
@@ -180,6 +182,7 @@ function handleUserCommand(command) {
 </script>
 
 <style scoped>
+.account-menu-icon { font-size: 20px; }
 .main-layout { height: 100vh; height: 100dvh; }
 .right-container {
   position: relative;

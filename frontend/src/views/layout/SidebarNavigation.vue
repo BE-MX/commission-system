@@ -47,7 +47,7 @@
         @keydown.enter.prevent.stop="activateMenuItem"
         @keydown.space.prevent.stop="activateMenuItem"
       >
-        <el-icon class="nav-group-icon"><component :is="item.icon" /><NavigationTextBadge :item="item" icon /></el-icon>
+        <el-icon class="nav-group-icon" :class="{ 'is-kubai': kubaiTopLevelIcon(item.name, item.icon) }"><KubaiIcon v-if="kubaiTopLevelIcon(item.name, item.icon)" :name="kubaiTopLevelIcon(item.name, item.icon)" /><component :is="item.icon" v-else /><NavigationTextBadge :item="item" icon /></el-icon>
         <template #title>
           <span :title="item.title">{{ item.title }}</span><NavigationTextBadge :item="item" />
           <button
@@ -94,6 +94,8 @@ import { quickNavigationItems, filterNavigationSections, normalizeNavigationQuer
 import FavoriteNavigation from './FavoriteNavigation.vue'
 import NavigationMenuBranch from './NavigationMenuBranch.vue'
 import NavigationTextBadge from './NavigationTextBadge.vue'
+import KubaiIcon from '@/components/kubai/KubaiIcon.vue'
+import { kubaiTopLevelIcon } from './kubaiNavIcons'
 
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
@@ -179,6 +181,7 @@ function rememberClosedGroup(key) {
 .nav-review-badge :deep(.el-badge__content) { font-variant-numeric: tabular-nums; }
 
 .nav-group-icon { position: relative; overflow: visible; }
+.nav-group-icon.is-kubai { font-size: 24px; margin-right: 8px; }
 
 
 .aside {
@@ -312,6 +315,12 @@ function rememberClosedGroup(key) {
   font-weight: 600;
 }
 :deep(.el-menu-item.is-active .el-icon) { color: var(--card-bg); }
+/* A gold icon would wash out on the gold active fill: lift it onto a light tile instead. */
+.el-menu-item.is-active .nav-group-icon.is-kubai {
+  width: 28px; height: 28px; margin-left: -2px; margin-right: 6px; border-radius: 7px;
+  background: rgba(255, 255, 255, 0.92); box-shadow: 0 1px 3px rgba(74, 46, 6, 0.3);
+}
+.el-menu--collapse .el-menu-item.is-active .nav-group-icon.is-kubai { margin: 0 -2px; }
 :deep(.el-menu-item.is-active:hover) {
   color: var(--card-bg);
   background: linear-gradient(135deg, var(--color-gold), var(--color-primary-hover));

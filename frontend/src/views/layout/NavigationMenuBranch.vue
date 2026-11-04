@@ -2,11 +2,11 @@
   <el-sub-menu ref="branch" :index="group.key" popper-class="ark-navigation-popup" :aria-label="group.title" tabindex="0"
     :data-nav-group-trigger="group.key" @keydown.enter.self.prevent.stop="activateGroup" @keydown.space.self.prevent.stop="activateGroup" @keydown.esc.prevent.stop="closeGroup">
     <template #title>
-      <el-icon class="nav-group-icon"><component :is="group.icon" /><NavigationTextBadge v-if="group.iconBadge" :item="{ textBadge: group.iconBadge, badgePlace: 'icon', badgeTone: 'gold' }" icon /><NavigationTextBadge :item="group" icon /></el-icon>
+      <el-icon class="nav-group-icon" :class="{ 'is-kubai': groupKubai }"><KubaiIcon v-if="groupKubai" :name="groupKubai" /><component :is="group.icon" v-else /><NavigationTextBadge v-if="group.iconBadge" :item="{ textBadge: group.iconBadge, badgePlace: 'icon', badgeTone: 'gold' }" icon /><NavigationTextBadge :item="group" icon /></el-icon>
       <span class="nav-title" :title="group.title">{{ group.title }}</span><NavigationTextBadge :item="group" />
     </template>
     <template v-for="item in group.items" :key="item.key || item.path">
-      <NavigationMenuBranch v-if="item.items" :group="item" :collapsed="collapsed" :pending-reviews="pendingReviews"
+      <NavigationMenuBranch v-if="item.items" nested :group="item" :collapsed="collapsed" :pending-reviews="pendingReviews"
         :document-anomalies="documentAnomalies" :document-badge-title="documentBadgeTitle"
         @quick-add="(event, entry) => emit('quick-add', event, entry)" @outbound-problems="emit('outbound-problems')" />
       <a v-else-if="item.external" class="el-menu-item external-item" :data-nav-group="group.key" :href="item.path" target="_blank" rel="noopener noreferrer" :aria-label="item.title">
@@ -26,10 +26,14 @@
   </el-sub-menu>
 </template>
 <script setup>
-import { nextTick, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { TopRight } from '@element-plus/icons-vue'
 import NavigationTextBadge from './NavigationTextBadge.vue'
-const props = defineProps({ group: { type: Object, required: true }, collapsed: Boolean, pendingReviews: { default: null }, documentAnomalies: { type: Object, default: () => ({}) }, documentBadgeTitle: { type: Function, required: true } })
+import KubaiIcon from '@/components/kubai/KubaiIcon.vue'
+import { kubaiGroupIcon } from './kubaiNavIcons'
+const props = defineProps({ group: { type: Object, required: true }, collapsed: Boolean, nested: Boolean, pendingReviews: { default: null }, documentAnomalies: { type: Object, default: () => ({}) }, documentBadgeTitle: { type: Function, required: true } })
+// Kubai drawings mark first-level groups only; a group moved under another stays a line icon.
+const groupKubai = computed(() => (props.nested ? null : kubaiGroupIcon(props.group.key, props.group.icon)))
 const branch = ref(null)
 function closeGroup(event) {
   const element = branch.value?.$el
@@ -53,6 +57,7 @@ async function activateGroup(event) {
 
 <style scoped>
 .nav-group-icon { position: relative; overflow: visible; }
+.nav-group-icon.is-kubai { font-size: 24px; margin-right: 8px; }
 .nav-title { display: inline-block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 .external-item { text-decoration: none; }
 .nav-review-badge { margin-right: 22px; line-height: 20px; }
