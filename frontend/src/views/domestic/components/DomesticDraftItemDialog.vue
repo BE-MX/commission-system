@@ -45,8 +45,8 @@
             <GlassButton variant="link" link-tone="danger" :disabled="busy" @click="item[section.imageKey].splice(index, 1)">移除图片</GlassButton>
           </div>
         </div>
-        <AppUpload :model-value="item[section.imageKey]" :upload-fn="file => uploadReference(section.imageKey, file)" :disabled="saving" :show-list="false" multiple
-          accept=".jpg,.jpeg,.png,.webp" :max-size-mb="20" button-text="添加参考图" />
+        <AppUpload v-if="!saving" :model-value="item[section.imageKey]" :upload-fn="file => uploadReference(section.imageKey, file)" :show-list="false" multiple transfer
+          accept="image/jpeg,image/png,image/webp" :max-size-mb="20" button-text="选择参考图" />
       </el-form-item>
     </el-form>
     <template #footer>
