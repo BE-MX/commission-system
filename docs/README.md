@@ -29,6 +29,8 @@
 
 内贸客户跟进一期：[功能规格](requirements/2026-10-30-domestic-customer-followup.md)（AI 整理草稿、跟进任务、收货回访、异常/意见闭环，末尾附实施偏差表；本地实现，未部署）；[交互原型](requirements/domestic-followup-prototype/index.html)保留为设计参考；[实施计划](superpowers/plans/2026-10-30-domestic-customer-followup-phase1.md)记录任务拆解与执行过程偏差。
 
+私海助理（客户经营精简重做）：[设计文档](requirements/2026-11-04-private-sea-assistant-design.md)（一页「我的私海」+ 钉钉早报，规则选候选、Agent 逐客户分析，一期方舟内单次调用、二期经 agent_runtime 上 DSH；旧经营类功能冻结；设计稿，未开发）。
+
 完整枚举见[文档目录](document-catalog.md)；本页只保留常用入口。最近整理见[2026-10-31 报告](reports/2026-10-31-project-knowledge-tidy.md)。日期型设计、计划和验收报告代表当时范围，不自动代表当前生产状态。当前状态查[交接文档](handoff.md)，历史追溯查[2026-10-31 完整快照](archive/handoff-main-2026-10-31.md)及[早期归档](archive/handoff-2026-09-17.md)。
 
 | 文档 | 用途 | 适合谁 |

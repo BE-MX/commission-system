@@ -2,7 +2,7 @@
 
 盘点日期：2026-10-31。覆盖本次可随 Git 交付的 Markdown；其他任务的未跟踪材料只参与本机盘点，不加入发布目录；不包含凭据、运行数据、依赖与外部项目。目录用于查找，不把设计稿、原型、旧计划或验收报告当作当前运行状态。常用入口见[文档导航](README.md)，当前状态见[交接文档](handoff.md)。
 
-本索引列出 **452 份文档**（不含本索引；连同本页共 453 份）。每份文件只归入一类；Git 列为本次提交时的跟踪状态，不代表业务完成或生产发布。
+本索引列出 **453 份文档**（不含本索引；连同本页共 454 份）。每份文件只归入一类；Git 列为本次提交时的跟踪状态，不代表业务完成或生产发布。
 
 | 分类 | 数量 |
 | --- | ---: |
@@ -10,7 +10,7 @@
 | [平台参考与集成](#平台参考与集成) | 23 |
 | [部署与服务](#部署与服务) | 27 |
 | [客户门户专题](#客户门户专题) | 11 |
-| [需求与实施约定](#需求与实施约定) | 103 |
+| [需求与实施约定](#需求与实施约定) | 104 |
 | [原型与专项验收](#原型与专项验收) | 40 |
 | [报告与日期型评估](#报告与日期型评估) | 118 |
 | [设计规格](#设计规格) | 33 |
@@ -212,6 +212,7 @@
 | [预售整单修订与已发调价](<requirements/2026-10-23-presale-whole-order-revision.md>) | `docs/requirements/2026-10-23-presale-whole-order-revision.md` | 已跟踪 |
 | [Kindle personal dashboard](<requirements/2026-10-25-kindle-dashboard.md>) | `docs/requirements/2026-10-25-kindle-dashboard.md` | 已跟踪 |
 | [外贸退货单功能设计](<requirements/2026-10-30-sales-return-order-design.md>) | `docs/requirements/2026-10-30-sales-return-order-design.md` | 已跟踪 |
+| [私海助理：客户经营精简重做（设计文档）](<requirements/2026-11-04-private-sea-assistant-design.md>) | `docs/requirements/2026-11-04-private-sea-assistant-design.md` | 已跟踪 |
 | [色板数据库重构：公库 / 私库 + 色差仪测量](<requirements/swatch-library-redesign/2026-10-27-swatch-library-redesign.md>) | `docs/requirements/swatch-library-redesign/2026-10-27-swatch-library-redesign.md` | 已跟踪 |
 
 ## 原型与专项验收
