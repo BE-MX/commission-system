@@ -1,4 +1,5 @@
-import { ref } from 'vue'
+import { h, ref } from 'vue'
+import { ElOption, ElSelect } from 'element-plus'
 import { createCustomerTagValue } from '@/api/customerMedia'
 import { confirmAction, isFeedbackCancelled, msgError, msgWarning } from '@/utils/feedback'
 import { collectDroppedFiles, dropHasDirectory, webkitPathSegments } from '../droppedFiles'
@@ -21,23 +22,40 @@ export function useCustomerMediaFolderUpload({
   }
 
   async function confirmCreate(name) {
+    const dimensions = getTagDimensions().filter(dim => !dim.is_managed && dim.is_visible !== 0 && dim.is_visible !== false)
+    if (!dimensions.length) throw new Error('没有可新建标签的客户维度，请在标签维度管理中启用一个非系统托管的客户维度')
+    const defaultDimension = dimensions.find(dim => dim.name === 'customer_general')
+      || (dimensions.length === 1 ? dimensions[0] : null)
+    const dimensionId = ref(defaultDimension?.id ?? null)
     try {
-      await confirmAction(`发现新标签，是否自动创建并选中？\n标签名称：${name}`, '发现新标签', {
+      await confirmAction(() => h('div', [
+        h('p', { style: { overflowWrap: 'anywhere' } }, `标签名称：${name}`),
+        h('p', { id: 'folder-tag-dimension-label' }, '标签维度'),
+        h(ElSelect, {
+          modelValue: dimensionId.value,
+          'onUpdate:modelValue': value => { dimensionId.value = value },
+          'aria-labelledby': 'folder-tag-dimension-label',
+          placeholder: '请选择标签维度', style: { width: '100%' },
+        }, () => dimensions.map(dim => h(ElOption, { key: dim.id, label: dim.label, value: dim.id }))),
+      ]), '发现新标签', {
         type: 'info', confirmButtonText: '创建并选中', cancelButtonText: '取消',
         closeOnClickModal: false,
+        beforeClose(action, instance, done) {
+          if (action === 'confirm' && !dimensions.some(dim => dim.id === dimensionId.value)) {
+            msgWarning('请选择新标签所属的维度')
+            return
+          }
+          done()
+        },
       })
-      return true
+      return dimensions.find(dim => dim.id === dimensionId.value)
     } catch (error) {
       if (isFeedbackCancelled(error)) return false
       throw error
     }
   }
 
-  async function createTag(name) {
-    const dimensions = getTagDimensions().filter(dim => !dim.is_managed)
-    const dimension = dimensions.find(dim => dim.name === 'customer_general')
-      || (dimensions.length === 1 ? dimensions[0] : null)
-    if (!dimension) throw new Error('未找到可用的客户标签维度，请先在标签维度管理中配置「客户标签」')
+  async function createTag(name, dimension) {
     const { data } = await createCustomerTagValue(getContext(), dimension.id, name)
     onTagCreated({ dimension_id: dimension.id, value: data })
     return getCustomerTags().find(tag => tag.tag_value_id === data.id)

@@ -1,3 +1,11 @@
+## 2026-11-05 客户素材文件夹新标签创建（Codex，本地修复，未部署）
+
+- 工作区 `D:/MyProgram/commission-system-codex-folder-tag-create`，分支 `codex/folder-tag-create`，基于 main `6cacc6fa`。修复设计管理上传客户拍摄素材时，拖入新文件夹、确认创建标签后提示“未找到可用的客户标签维度”的问题。
+- 原因：前端将创建目标限定为 `customer_general` 或唯一非托管维度；配置 Product type / Textures type / Color names 等多个维度时无法创建。确认框现在展示可写客户维度，选定后按该维度调用原创建接口；单一维度或既有通用维度保留默认选择，多个维度无明确默认时先选择再创建。隐藏/系统托管维度不提供创建；完全没有可写维度时在弹出创建确认前提示配置问题。
+- 文件夹选择与拖拽共用修复，子目录不参与标签匹配、取消不创建、锁定标签保留等既有行为不变。无 API、数据库或生产数据变更。
+- 33 项 Node 回归通过（`node --test tests/customerMediaFolderCreation.test.mjs tests/customerMediaFolderTags.test.mjs tests/customerMediaFolderUpload.test.mjs tests/customerMediaTagSelection.test.mjs`）；新增用例修改前失败、修改后通过，增量约定检查与 `git diff --check` 通过。`npm run build` 通过（32s，仅已有大包/混合导入警告），Git 巡检为 `--no-fetch` 本地快照。
+- Chrome Computer Use 本地 fixture 交互通过：未选维度阻止创建；选 Color names 后唯一创建请求 `dimension_id=3` 且文件清单保留锁定标签；取消无新增请求/清单；已有标签匹配保留锁定标签且不请求创建。证据与复验 harness 在 `tmp/folder-tag-browser/`，服务已停止。浏览器使用构造 File + webkitRelativePath 进入真实 `onFolderSelected`，未操作系统文件夹选择器或真实拖放；拖拽入口由 Node 回归覆盖。用户已授权本次提交、合并 main、推送与部署；实际发布结果以发布记录为准。
+
 ## 2026-11-04 私海助理（Codex，本地实现，默认关闭）
 
 工作目录 `D:/MyProgram/commission-system-codex-private-sea-assistant`，分支 `codex/private-sea-assistant`。私海页面、四表迁移250、来源授权、规则/模型队列、早报票据和 P0 评测/统计已实现。54项定向回归、隔离MySQL迁移与来源SQL、前端build、桌面/窄屏浏览器走查和独立审查问题复核已完成。开关默认关闭。

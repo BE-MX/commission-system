@@ -15,8 +15,9 @@ export async function queueFolderFiles(rawItems, {
   for (const [name, files] of groups) {
     let tag = getCustomerTags().find(item => item.value.replace(/\s/g, '') === name)
     if (!tag) {
-      if (!await confirmCreate(name)) continue
-      tag = await createTag(name)
+      const dimension = await confirmCreate(name)
+      if (!dimension) continue
+      tag = await createTag(name, dimension)
     }
     const tags = selectFolderTag(tag)
     addFiles(files, tags)
