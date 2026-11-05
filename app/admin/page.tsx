@@ -132,15 +132,6 @@ export default function AdminPage() {
     setNotice("客户身份、店面和备注已更新"); await load();
   };
 
-  const resetRetailTryOn = async (customer: CustomerProfile) => {
-    if (!window.confirm(`确认重新开放 ${customer.phone} 的一次免费 AI 试戴机会？`)) return;
-    const response = await fetch("/api/retail-ai-tryon/admin", {
-      method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: customer.phone }),
-    });
-    const data = await response.json();
-    setNotice(response.ok ? "该零售客户已重新获得一次免费 AI 试戴机会" : (data.error ?? "重置失败"));
-  };
-
   const shipOrder = async (order: Order) => {
     const trackingNo = window.prompt("请输入物流单号", order.trackingNo || `SF${Date.now()}`);
     if (!trackingNo) return;
@@ -239,7 +230,7 @@ export default function AdminPage() {
             </tbody></table></div>
           </section>
           <section className="admin-panel customer-control"><div className="panel-head"><div><strong>客户权限与店面资料</strong><span>可修改等级、店面名称、来源销售、客服和后台备注</span></div></div>
-            <div className="customer-card-grid">{customers.map((customer) => <article key={customer.id}><header><div><small>{customer.channel === "wholesale" ? "批发账户" : "零售账户"}</small><strong>{customer.storeName || customer.displayName}</strong><span>{customer.phone}</span></div><select value={customer.level} onChange={(e) => updateCustomer(customer, { level: e.target.value as LevelCode })}><option value="retail">零售</option><option value="a">批发A</option><option value="b">批发B</option></select></header><div className="customer-fields"><label>店面名称<input defaultValue={customer.storeName} onBlur={(e) => e.target.value !== customer.storeName && updateCustomer(customer, { storeName: e.target.value })} /></label><label>来源销售员<input defaultValue={customer.salesPerson} onBlur={(e) => e.target.value !== customer.salesPerson && updateCustomer(customer, { salesPerson: e.target.value })} /></label><label>专属客服<input defaultValue={customer.customerService} onBlur={(e) => e.target.value !== customer.customerService && updateCustomer(customer, { customerService: e.target.value })} /></label><label>后台备注<input defaultValue={customer.note} onBlur={(e) => e.target.value !== customer.note && updateCustomer(customer, { note: e.target.value })} /></label></div><footer><span>推广码 {customer.referralCode}</span><div>{customer.channel === "retail" && <button className="tryon-reset" onClick={() => resetRetailTryOn(customer)}>重置AI试戴</button>}<button onClick={() => updateCustomer(customer, { status: customer.status === "active" ? "disabled" : "active" })}>{customer.status === "active" ? "停用账户" : "启用账户"}</button></div></footer></article>)}</div>
+            <div className="customer-card-grid">{customers.map((customer) => <article key={customer.id}><header><div><small>{customer.channel === "wholesale" ? "批发账户" : "零售账户"}</small><strong>{customer.storeName || customer.displayName}</strong><span>{customer.phone}</span></div><select value={customer.level} onChange={(e) => updateCustomer(customer, { level: e.target.value as LevelCode })}><option value="retail">零售</option><option value="a">批发A</option><option value="b">批发B</option></select></header><div className="customer-fields"><label>店面名称<input defaultValue={customer.storeName} onBlur={(e) => e.target.value !== customer.storeName && updateCustomer(customer, { storeName: e.target.value })} /></label><label>来源销售员<input defaultValue={customer.salesPerson} onBlur={(e) => e.target.value !== customer.salesPerson && updateCustomer(customer, { salesPerson: e.target.value })} /></label><label>专属客服<input defaultValue={customer.customerService} onBlur={(e) => e.target.value !== customer.customerService && updateCustomer(customer, { customerService: e.target.value })} /></label><label>后台备注<input defaultValue={customer.note} onBlur={(e) => e.target.value !== customer.note && updateCustomer(customer, { note: e.target.value })} /></label></div><footer><span>推广码 {customer.referralCode}</span><div><button onClick={() => updateCustomer(customer, { status: customer.status === "active" ? "disabled" : "active" })}>{customer.status === "active" ? "停用账户" : "启用账户"}</button></div></footer></article>)}</div>
           </section>
         </>}
 
