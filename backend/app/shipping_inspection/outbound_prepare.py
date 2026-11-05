@@ -191,7 +191,7 @@ def evidence(db, record, local, business, desired_serial_id, number_only, expect
         plan['requires_recheck'] = bool(
             (plan['remark_changed'] or recheck.uncovered(plan, before, pairs))
             and inspection and inspection['media_ids'])
-        if read_outbound(db, record['outbound_invoice_id']) != before or read_order(db, local['dto'], local['products']) != order:
+        if read_outbound(db, record['outbound_invoice_id']) != before or not plans.orders_match(read_order(db, local['dto'], local['products']), order):
             reject(409, '取证期间原订单或出库单已变化')
         plan.update(before=deepcopy(before), invoice_id=local['invoice_id'], invoice_no=local['invoice_no'],
             invoice_version=local['invoice_version'], order=deepcopy(order), source_items=local['source_items'],

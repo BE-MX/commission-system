@@ -1095,8 +1095,18 @@ def _partial_additions(db, sync_case, monkeypatch):
     return user, fake, record, actor
 
 
-def test_partial_additions_are_repaired_one_at_a_time_and_printable(db, sync_case, monkeypatch):
+@pytest.mark.parametrize('receipt_progress', [False, True])
+def test_partial_additions_are_repaired_one_at_a_time_and_printable(db, sync_case, monkeypatch, receipt_progress):
+    if receipt_progress:
+        sync_case[3]['order']['status'] = 13972831656
     user, fake, record, actor = _partial_additions(db, sync_case, monkeypatch)
+    if receipt_progress:
+        # Payment and provider relation summaries can change after a partial POST.
+        # The frozen product/price/customer/status evidence remains unchanged.
+        fake['order'].update(status_name='已结清', link_status=[21, 32, 40, 60, 50, 10],
+            collect_amount_rmb=3438.84, collect_amount_usd=516.08,
+            not_collect_amount_rmb=-2.57, not_collect_amount_usd=0,
+            percentage_rmb=100.07, percentage_usd=100)
     first = _synchronize(db, record, actor, None, repair=True)
     assert first['status'] == 'sync_uncertain' and first['repairable']
     assert len(fake['posts']) == 2
@@ -1107,6 +1117,49 @@ def test_partial_additions_are_repaired_one_at_a_time_and_printable(db, sync_cas
     assert {row['order_record_id'] for row in fake['outbound']['record_list']} == {100, 101, 102, 103}
     with _pc_client(db, user, PERMS) as client:
         assert client.get(f'{BASE}/OB001/print-data').status_code == 200
+
+
+def test_payment_progress_during_preview_and_send_keeps_reviewed_version(db, sync_case, monkeypatch):
+    user, _, _, fake = sync_case
+    fake['order']['status'] = 13972831656
+    actor = {'sub': str(user.id), 'permissions': PERMS}
+    record = outbound_service.get_outbound_record(db, 'OB001')
+    scans = []
+    def related(*args):
+        # Payment progress advances between the two actual supplier reads,
+        # both while preparing the preview and immediately before POST.
+        scans.append(1)
+        fake['order'].update(collect_amount_usd=len(scans), percentage_usd=len(scans),
+            status_name='部分回款', link_status=[21, 31, len(scans)])
+        return [deepcopy(fake['outbound'])]
+    monkeypatch.setattr(sync.linked_outbound_service, 'find_related', related)
+    preview = _preview(db, record, actor)
+    fake['order']['not_collect_amount_usd'] = 0
+    result = _synchronize(db, record, actor, preview['version'])
+    assert result['status'] == 'sync_done'
+    assert len(fake['posts']) == 1 and len(scans) >= 3
+
+
+@pytest.mark.parametrize('drift', ['status', 'remark', 'update_time', 'unknown', 'product_name', 'status_name', 'link_status'])
+def test_payment_summary_exception_keeps_business_drift_fenced_before_send(db, sync_case, monkeypatch, drift):
+    user, _, _, fake = sync_case
+    actor = {'sub': str(user.id), 'permissions': PERMS}
+    record = outbound_service.get_outbound_record(db, 'OB001')
+    preview = _preview(db, record, actor)
+    def token(db):
+        if drift == 'product_name':
+            fake['order']['product_list'][0]['product_name'] = 'Changed supplier product'
+        else:
+            key, value = {'status': ('status', 999), 'remark': ('remark', 'New commercial instruction'),
+                'update_time': ('update_time', '2026-09-23 12:00:00'),
+                'unknown': ('new_business_field', 'Changed supplier term'),
+                'status_name': ('status_name', '已作废'), 'link_status': ('link_status', [99])}[drift]
+            fake['order'][key] = value
+        return 'test'
+    monkeypatch.setattr(sync.okki_client, 'ensure_access_token', token)
+    with pytest.raises(HTTPException, match='发送前原供应商订单已变化'):
+        _synchronize(db, record, actor, preview['version'])
+    assert fake['posts'] == []
 
 
 def test_replace_all_rows_partial_result_recovers_to_printable(db, sync_case, monkeypatch):

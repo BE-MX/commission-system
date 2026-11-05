@@ -4,6 +4,28 @@ import json
 from decimal import Decimal, InvalidOperation
 
 
+def order_business_snapshot(order):
+    """Keep business evidence; exclude provider-derived payment/relation summaries.
+
+    link_status summarizes linked document progress and can change after this
+    very outbound POST. The actual order status and the live outbound status,
+    identity, rows and header remain independently fenced. Unknown fields stay
+    in the comparison, as do all local receipt/authority bindings.
+    """
+    derived = {'collect_amount_rmb', 'collect_amount_usd', 'not_collect_amount_rmb',
+               'not_collect_amount_usd', 'percentage_rmb', 'percentage_usd'}
+    # Without a trustworthy state ID the labels may be the only state evidence.
+    # Keep them strict for incomplete supplier responses, including old plans.
+    status = order.get('status')
+    if type(status) is int and status > 0:
+        derived.update(('status_name', 'link_status'))
+    return {key: value for key, value in order.items() if key not in derived}
+
+
+def orders_match(before, after):
+    return order_business_snapshot(before) == order_business_snapshot(after)
+
+
 def physical(row):
     return str(row.get('product_name') or '').strip().casefold() != 'other items'
 
@@ -31,7 +53,8 @@ def version_digest(plan):
     The mirror may catch up between preview and send without changing what the
     operator reviewed; only the product/quantity/header evidence may reject it.
     """
-    return digest({key: value for key, value in plan.items() if key != 'item_links'})
+    return digest({key: order_business_snapshot(value) if key == 'order' else value
+                   for key, value in plan.items() if key != 'item_links'})
 
 
 def canonical_identity(value):

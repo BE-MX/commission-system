@@ -62,7 +62,7 @@ def before_send(db,attempt,local_data):
     try:
         plan=attempt.data['plan']
         order=read_order(db,local_data['dto'],local_data['products'])
-        if order!=plan['order']:prepare.reject(409,'发送前原供应商订单已变化')
+        if not plans.orders_match(order,plan['order']):prepare.reject(409,'发送前原供应商订单已变化')
         related=legacy.linked_outbound_service.find_related(db,order)
         if not isinstance(related,list) or any(not isinstance(row,dict) or not row.get('outbound_invoice_id') for row in related):
             prepare.reject(503,'发送前关联出库证据不完整')
@@ -75,7 +75,7 @@ def before_send(db,attempt,local_data):
             occupant=okki_client.find_outbound_by_serial(db,plan['serial_after'])
             if occupant and plans.canonical_identity(occupant['outbound_invoice_id'])!=plans.canonical_identity(expected['outbound_invoice_id']):
                 prepare.reject(409,'发送前新出库单号已被占用')
-        if read_order(db,local_data['dto'],local_data['products'])!=order or prepare.read_outbound(db,expected['outbound_invoice_id'])!=expected:
+        if not plans.orders_match(read_order(db,local_data['dto'],local_data['products']),order) or prepare.read_outbound(db,expected['outbound_invoice_id'])!=expected:
             prepare.reject(409,'发送前订单回读已变化')
         from app.invoice.stock_reservations import require_additional
         try:
@@ -308,7 +308,7 @@ def repair_missing(db,record,user,warehouse,previous):
     plan=previous.data['plan']
     try:
         order=read_order(db,local_data['dto'],local_data['products'])
-        if order!=plan['order']:prepare.reject(409,'补齐前原订单商业资料已变化')
+        if not plans.orders_match(order,plan['order']):prepare.reject(409,'补齐前原订单商业资料已变化')
         related=legacy.linked_outbound_service.find_related(db,order)
         if not isinstance(related,list) or any(not isinstance(row,dict) or not row.get('outbound_invoice_id') for row in related):
             prepare.reject(503,'补齐前关联出库证据不完整')
@@ -327,7 +327,7 @@ def repair_missing(db,record,user,warehouse,previous):
         payload={'outbound_invoice_id':current['outbound_invoice_id'],'handler':[str(row['user_id']) for row in current['handler_info']],
                  'remark':plan['remark_after'],'record_list':rows}
         if not payload['handler']:prepare.reject(409,'原出库处理人缺失')
-        if prepare.read_outbound(db,current['outbound_invoice_id'])!=current or read_order(db,local_data['dto'],local_data['products'])!=order:
+        if prepare.read_outbound(db,current['outbound_invoice_id'])!=current or not plans.orders_match(read_order(db,local_data['dto'],local_data['products']),order):
             prepare.reject(409,'补齐证据回读已变化')
     except (ValueError,KeyError,TypeError):prepare.reject(409,'原单不是可安全补齐的新增缺行')
     except okki_client.OkkiApiError:unavailable()
