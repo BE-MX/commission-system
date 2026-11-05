@@ -38,9 +38,11 @@ from app.expo.schemas import (
 logger = logging.getLogger("commission.expo")
 
 from app.expo.prompt_router import router as prompt_router, prompt_transaction
+from app.expo.retail_router import router as retail_router
 
 router = APIRouter()
 router.include_router(prompt_router)
+router.include_router(retail_router, prefix="/retail", tags=["零售商城 AI 试戴"])
 
 
 def _commit_or_500(db: Session, context: str) -> None:
