@@ -4,6 +4,10 @@ import { getChatGPTUser } from "../chatgpt-auth";
 
 const ADMIN_COOKIE = "leshine_admin_session";
 
+function normalizeAdminPassword(value: string) {
+  return value.toLocaleLowerCase("en-US");
+}
+
 async function digest(value: string) {
   const bytes = new TextEncoder().encode(value);
   const hash = await crypto.subtle.digest("SHA-256", bytes);
@@ -25,13 +29,16 @@ function cookieValue(cookieHeader: string, name: string) {
 export async function verifyAdminPassword(password: string) {
   const configured = (env as unknown as { ADMIN_PASSWORD?: string }).ADMIN_PASSWORD ?? "";
   if (!configured || !password) return false;
-  const [submittedHash, configuredHash] = await Promise.all([digest(password), digest(configured)]);
+  const [submittedHash, configuredHash] = await Promise.all([
+    digest(normalizeAdminPassword(password)),
+    digest(normalizeAdminPassword(configured)),
+  ]);
   return safeEqual(submittedHash, configuredHash);
 }
 
 export async function adminSessionCookie() {
   const configured = (env as unknown as { ADMIN_PASSWORD?: string }).ADMIN_PASSWORD ?? "";
-  const token = await digest(configured);
+  const token = await digest(normalizeAdminPassword(configured));
   return `${ADMIN_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=604800`;
 }
 
@@ -51,7 +58,7 @@ export async function adminAuthResult() {
   if (configuredPassword) {
     const requestHeaders = await headers();
     const submitted = cookieValue(requestHeaders.get("cookie") ?? "", ADMIN_COOKIE);
-    const expected = await digest(configuredPassword);
+    const expected = await digest(normalizeAdminPassword(configuredPassword));
     if (submitted && safeEqual(submitted, expected)) {
       return { ok: true as const, user: { userId: "password-admin", displayName: "管理员", email: "", fullName: "管理员" } };
     }
