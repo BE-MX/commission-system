@@ -167,6 +167,17 @@ test('editing an OCR duplicate clears the warning and allows checking a correcte
   assert.equal(h.submissions.length, 1)
 })
 
+test('blurring an unchanged duplicate preserves its existing-shipment link without another request', async () => {
+  const h = setup(undefined, { check: async no => ({ exists: true, data: { waybill_no: no, carrier: 'FedEx' } }) })
+  await h.paste([picture()]).done
+  const duplicate = h.state.duplicateInfo.value
+  const count = h.checks.length
+  await h.state.onWaybillBlur()
+  assert.equal(h.state.duplicateInfo.value, duplicate)
+  assert.equal(h.checks.length, count)
+  assert.equal(h.state.checkingDuplicate.value, false)
+})
+
 test('clearing an OCR number preserves image and recipient, and empty input cannot submit', async () => {
   const h = setup()
   await h.paste([picture()]).done

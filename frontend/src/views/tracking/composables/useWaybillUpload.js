@@ -240,6 +240,7 @@ export function useWaybillUpload({ defaults = {}, submit = createWaybill, onSucc
     if (submitting.value || ocrLoading.value) return
     form.waybill_no = normalizeWaybill(form.waybill_no)
     if (!form.waybill_no) return
+    if (duplicateInfo.value?.waybill_no === form.waybill_no) return
     if (mode.value !== 'ocr') mode.value = 'manual'
 
     const detected = detectCarrier(form.waybill_no)
