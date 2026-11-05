@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
-from app.auth.service import get_user_permissions, get_user_roles
+from app.auth.service import get_user_permissions, get_user_roles, get_live_user_authorization
 from app.auth.utils import hash_token
 from app.core.time import beijing_now
 from app.integration.models import IntegrationApp, InvoiceIngestRequest
@@ -73,7 +73,7 @@ def user_has_invoice_write(user: ArkUser) -> bool:
     )
 
 
-def _active_owner(db: Session, user_id: int) -> ArkUser:
+def _active_owner(db: Session, user_id: int, scopes=None) -> ArkUser:
     user = db.query(ArkUser).filter(
         ArkUser.id == user_id,
         ArkUser.deleted_at.is_(None),
@@ -82,8 +82,12 @@ def _active_owner(db: Session, user_id: int) -> ArkUser:
         raise HTTPException(status_code=404, detail="目标账号不存在")
     if not user.is_active:
         raise HTTPException(status_code=400, detail="目标账号已停用，不能绑定接入应用")
-    if not user_has_invoice_write(user):
-        raise HTTPException(status_code=400, detail="目标账号当前缺少 invoice:write 权限")
+    required = set(scopes if scopes is not None else [INVOICE_SCOPE])
+    roles, permissions = get_live_user_authorization(db, user.id)
+    if "super_admin" not in roles:
+        missing = required - set(permissions)
+        if missing:
+            raise HTTPException(status_code=400, detail="目标账号当前缺少权限: " + ", ".join(sorted(missing)))
     return user
 
 
@@ -500,7 +504,7 @@ def create_app(
     *,
     created_by: int,
 ) -> dict:
-    owner = _active_owner(db, request.owner_user_id)
+    owner = _active_owner(db, request.owner_user_id, request.scopes)
     if request.expires_at is not None and request.expires_at <= beijing_now():
         raise HTTPException(status_code=400, detail="过期时间必须晚于当前北京时间")
 
@@ -511,7 +515,7 @@ def create_app(
         owner_user_id=owner.id,
         token_hash=hash_token(token),
         token_suffix=token[-6:],
-        scopes=[INVOICE_SCOPE],
+        scopes=list(request.scopes),
         expires_at=request.expires_at,
         created_by=created_by,
     )
@@ -537,7 +541,7 @@ def rotate_app_token(db: Session, app_id: int, *, current_token_suffix: str) -> 
         raise HTTPException(status_code=409, detail="接入应用已过期，不能轮换，请新建凭证")
     if row.token_suffix != current_token_suffix:
         raise HTTPException(status_code=409, detail="凭证已被其他请求轮换，请刷新后重试")
-    owner = _active_owner(db, row.owner_user_id)
+    owner = _active_owner(db, row.owner_user_id, row.scopes)
 
     token = _plain_token()
     row.token_hash = hash_token(token)

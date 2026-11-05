@@ -1,5 +1,17 @@
 # 莱莎方舟 数据库表参考
 
+## 阿里 Feed P1（251_alibaba_feed，本地实现，待发布）
+
+接 `250_client_desk`，仅在方舟写库新增三表，不改业务镜像、客户或私海数据。原始包为私有 MEDIUMBLOB，无公开文件接口；时间为北京时间 DATETIME(6)。MySQL 8 的 `utf8mb4_0900_bin` 保留逻辑 ID 大小写及尾空格差异。
+
+| 表 | 字段及约束 |
+| --- | --- |
+| `ark_alibaba_feed_sources` | 来源 UID 唯一，Integration App 外键且唯一；ingest/consent、固定禁用 private_feed/CRM/AI、采集代次、授权及并发 version |
+| `ark_alibaba_feed_batches` | 批次、来源、run_id、原始/语义 hash、原文、固化消息限额、来源/处理状态、观察时间、计数、问题与租约；来源+run_id 唯一；队列和接收时间索引 |
+| `ark_alibaba_feed_items` | 批次+原数组索引唯一；来源/代次/type/inquiry_id/观察时间逻辑索引；私有快照 JSON/hash、outcome、当前指针、窗口质量与问题 |
+
+逐条事务先核对 batch 租约，再锁来源串行推进版本。冻结迁移核验已有结构后支持半完成 DDL 续建，差异拒绝；不 stamp/downgrade 掩盖问题。详细实现和隔离迁移证据见[P1 实现说明](requirements/2026-11-05-alibaba-feed-integration/implementation.md)，生产迁移仅由指定发布入口执行。
+
 ## 私海助理（250_client_desk，本地实现，待发布）
 
 新增 `ark_client_desk_states`（本人×客户人工状态与 AI 画像）、`ark_client_desk_followups`（手工跟进）、`ark_client_desk_suggestions`（全量候选、分析租约、独立质量反馈/行动事实及早报发送状态）、`ark_client_desk_wa_links`（手工会话关联与忽略）。客户键 BIGINT，用户外键与 ark_users 一致；会话关联用 generated active_slot 保证仅一条有效版本。公司等级复用发票 profile，业务镜像只读。

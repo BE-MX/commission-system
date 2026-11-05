@@ -13,6 +13,8 @@
 
 ## 近期专题入口
 
+阿里询盘 / TM Feed：[整体设计](requirements/2026-11-05-alibaba-feed-integration/design.md) · [接口契约](requirements/2026-11-05-alibaba-feed-integration/contract.md) · [P1 接收层实现与验收](requirements/2026-11-05-alibaba-feed-integration/implementation.md)（本地实现、默认关闭，未部署；私海助理继续关闭）。
+
 | 业务 | 操作与约定入口 |
 | --- | --- |
 | 绩效目标与薪资 | [目标契约](requirements/2026-10-23-performance-goal-management.md) · [API 入口](api-reference.md) · [表结构](database.md) |

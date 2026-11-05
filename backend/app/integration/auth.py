@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.auth.dependencies import get_current_user
 from app.auth.models import ArkUser
-from app.auth.service import get_user_permissions, get_user_roles
+from app.auth.service import get_user_permissions, get_user_roles, get_live_user_authorization
 from app.auth.utils import hash_token
 from app.core.database import get_db
 from app.core.time import beijing_now
@@ -112,13 +112,13 @@ def resolve_submission_principal(
     with db.no_autoflush:
         row = db.query(IntegrationApp).filter(
             IntegrationApp.token_hash == hash_token(token)
-        ).first()
+        ).populate_existing().first()
         if row is None or not row.is_active:
             _fail("站点 access token 无效或已被吊销")
         if row.expires_at is not None and row.expires_at <= beijing_now():
             _fail("站点 access token 已过期")
 
-        owner = db.query(ArkUser).filter(ArkUser.id == row.owner_user_id).first()
+        owner = db.query(ArkUser).filter(ArkUser.id == row.owner_user_id).populate_existing().first()
         if owner is None or not owner.is_active or owner.deleted_at is not None:
             _fail("站点 access token 对应账号不存在或已停用")
 
@@ -127,8 +127,9 @@ def resolve_submission_principal(
         if required_scope not in scopes:
             _fail(f"站点凭证缺少权限: {required_scope}", forbidden=True)
 
-        roles = set(get_user_roles(owner))
-        permissions = set(get_user_permissions(owner))
+        live_roles, live_permissions = get_live_user_authorization(db, owner.id)
+        roles = set(live_roles)
+        permissions = set(live_permissions)
         if "super_admin" not in roles and required_scope not in permissions:
             _fail(f"站点凭证所有人的权限已被撤回: {required_scope}", forbidden=True)
 

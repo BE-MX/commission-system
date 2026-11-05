@@ -20,6 +20,19 @@ _PublicPoolQuota = Annotated[int, Field(gt=0, le=100)]
 
 
 class Settings(BaseSettings):
+    # External Alibaba ingestion is enrolled separately from the private-sea assistant.
+    ALIBABA_FEED_ENABLED: bool = False
+    ALIBABA_FEED_WORKER_ENABLED: bool = False
+    ALIBABA_FEED_MAX_BODY_BYTES: Annotated[int, Field(gt=0)] = 10 * 1024 * 1024
+    ALIBABA_FEED_MAX_COMPRESSED_BYTES: Annotated[int, Field(gt=0)] = 2 * 1024 * 1024
+    ALIBABA_FEED_MAX_RATIO: Annotated[int, Field(gt=0)] = 100
+    ALIBABA_FEED_MAX_RECORDS: Annotated[int, Field(gt=0)] = 1000
+    ALIBABA_FEED_MAX_MESSAGES: Annotated[int, Field(gt=0)] = 50000
+    ALIBABA_FEED_MAX_MESSAGES_PER_RECORD: Annotated[int, Field(gt=0)] = 5000
+    ALIBABA_FEED_MAX_MESSAGE_BYTES: Annotated[int, Field(gt=0)] = 65536
+    ALIBABA_FEED_SOURCE_PENDING_LIMIT: Annotated[int, Field(gt=0)] = 2
+    ALIBABA_FEED_SOURCE_REQUESTS_PER_MINUTE: Annotated[int, Field(gt=0)] = 10
+    ALIBABA_FEED_LEASE_SECONDS: Annotated[int, Field(ge=10, le=3600)] = 120
     # Private-sea assistant remains opt-in until the offline pilot is accepted.
     CLIENT_DESK_ENABLED: bool = False
     CLIENT_DESK_PILOT_USER_IDS: list[int] = Field(default_factory=list)

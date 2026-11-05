@@ -1,5 +1,11 @@
 # 莱莎方舟 API 参考
 
+## 阿里 Feed P1（2026-11-05，本地实现，默认关闭）
+
+机器接口：POST `/api/alibaba-feed/v1/batches`、GET `/api/alibaba-feed/v1/runs/{run_id}`、GET `/api/alibaba-feed/v1/batches/{batch_id}`。仅接受绑定来源的 feed 专用 Integration App token，实时校验 `alibaba_feed:write/read`，与发票 scope 互斥。正文为当前 v1 JSON，必需 `Idempotency-Key=run.run_id`；耐久接收 202，同内容重放 200，同键异体 409。GET 只查同来源回执，问题分页 `issue_offset/issue_limit`。
+
+JWT 管理入口 POST `/api/alibaba-feed/sources`、PATCH `/api/alibaba-feed/sources/{source_uid}` 实时要求 `alibaba_feed:admin`，后者必需 `expected_version`。来源默认关闭，P1 不放行私海、CRM 或模型。字段、恢复、错误和验收见[实现说明](requirements/2026-11-05-alibaba-feed-integration/implementation.md)；本次未部署，不代表线上已开放。
+
 ## 私海助理（2026-11-04，本地实现，默认关闭）
 
 入口 `/api/client-desk`，普通读写接口使用 `client_desk:read/write`，同时校验试点名单、本人 OKKI 私海和当前来源授权。`read_all` 仅预留，不扩展查询范围。

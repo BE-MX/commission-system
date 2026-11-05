@@ -1,3 +1,11 @@
+## 2026-11-05 阿里 Feed P1 接收层（Codex，Git 交付，默认关闭）
+
+工作区 `D:/MyProgram/commission-system-codex-alibaba-feed-p1`，分支 `codex/alibaba-feed-p1`，基于 `6cacc6fa`。当前 JSON 原文上传、来源专用凭据、语义幂等、耐久后台队列和安全分页回执已实现；新增冻结迁移251（三表，接250）。接收与 worker 独立默认关闭，私海助理关闭配置保留，未接入客户投影、CRM、AI 或消息发送。
+
+隔离 MySQL8.4 实测半完成 DDL 恢复及漂移拒绝、6并发同键仅1批次、5新键按名额2接收/3退避、大小写/尾空格ID与微秒版本、等锁过期拒写及同批恢复通过。真实附件仅在隔离库经 HTTP/worker/GET/重放验证：49记录、1520消息、30日期精度不确定，业务关联与AI资格均0。来源/时间/租约与接口独立审查已修复复核。共享发票旧并发测试缺 `ark_commerce_transition_policy`，基点service代码同样复现，未扩大修改。详见[实现与验收](requirements/2026-11-05-alibaba-feed-integration/implementation.md)。
+
+亮哥已明确授权本批提交、合并 main 与推送 origin/main；交付仅含 P1 接收层及对应设计/验收文档，主目录其他未提交修改保留。私海助理、feed 接收与 worker 默认关闭；本次不部署、不执行生产迁移、不发行生产凭据，未连接生产数据库，Accio 定时任务实推未执行。
+
 ## 2026-11-05 客户素材文件夹新标签创建（Codex，本地修复，未部署）
 
 - 工作区 `D:/MyProgram/commission-system-codex-folder-tag-create`，分支 `codex/folder-tag-create`，基于 main `6cacc6fa`。修复设计管理上传客户拍摄素材时，拖入新文件夹、确认创建标签后提示“未找到可用的客户标签维度”的问题。

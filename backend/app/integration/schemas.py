@@ -5,7 +5,7 @@ from decimal import Decimal
 import re
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 from app.core.time import to_beijing_naive
 
@@ -36,6 +36,15 @@ class IntegrationAppCreate(StrictSchema):
     name: str = Field(min_length=2, max_length=100)
     owner_user_id: int = Field(ge=1)
     expires_at: datetime | None = None
+    scopes: list[Literal["invoice:write", "alibaba_feed:read", "alibaba_feed:write"]] = Field(default_factory=lambda: ["invoice:write"], min_length=1)
+
+    @model_validator(mode="after")
+    def isolated_scopes(self):
+        if len(set(self.scopes)) != len(self.scopes):
+            raise ValueError("授权范围不能重复")
+        if "invoice:write" in self.scopes and len(self.scopes) != 1:
+            raise ValueError("feed 凭据不能包含 invoice:write")
+        return self
 
     @field_validator("expires_at")
     @classmethod

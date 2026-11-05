@@ -310,6 +310,9 @@ def seed_role_permissions(db: Session):
         ("supervisor:read",  "supervisor", "read",  "查看主管关系"),
         ("supervisor:write", "supervisor", "write", "设置/变更/导入主管关系"),
         # 客户管理
+        ("alibaba_feed:read", "alibaba_feed", "read", "查询阿里 Feed 接收回执"),
+        ("alibaba_feed:write", "alibaba_feed", "write", "提交指定来源的阿里 Feed 快照"),
+        ("alibaba_feed:admin", "alibaba_feed", "admin", "配置阿里 Feed 接收来源"),
         ("client_desk:read", "client_desk", "read", "查看我的私海及个人建议"),
         ("client_desk:write", "client_desk", "write", "维护本人私海跟进资料与会话关联"),
         ("client_desk:admin", "client_desk", "admin", "管理私海助理试点运行"),

@@ -430,6 +430,10 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
         trigger="cron", day_of_week="*", hour=6, minute=0,
         id=JOB_COLOR_SALES_AGGREGATE, replace_existing=True,
     )
+    if settings.ALIBABA_FEED_ENABLED and settings.ALIBABA_FEED_WORKER_ENABLED:
+        from app.schedulers.alibaba_feed import worker_job as feed_worker_job
+        scheduler.add_job(feed_worker_job, trigger="interval", seconds=15,
+            id="alibaba_feed_worker", replace_existing=True, max_instances=1, coalesce=True)
     if settings.CLIENT_DESK_ENABLED:
         from app.schedulers.client_desk import candidates_job, worker_job, report_job
         scheduler.add_job(candidates_job, trigger="cron", hour=6, minute=30,
