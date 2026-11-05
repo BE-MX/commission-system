@@ -478,8 +478,22 @@ def build_customer_sources(
     }
 
 
-def analysis_input(db, user_id, company_id, now=None):
-    return build_customer_sources(db, user_id, company_id, for_ai=True)
+def analysis_input(db, user_id, company_id, now=None, *, feed_item_ids=None):
+    source = build_customer_sources(db, user_id, company_id, for_ai=True)
+    if feed_item_ids:
+        from app.alibaba_feed.business_service import select_for_analysis
+
+        selected = select_for_analysis(db, user_id, company_id, feed_item_ids)
+        source["refs"] = (source.get("refs") or {}) | selected["refs"]
+        source["messages"] = (source.get("messages") or []) + selected["messages"]
+        source["source_dependencies"] = source["source_dependencies"] | {
+            "alibaba_feed": selected["dependencies"]
+        }
+        source["coverage_gaps"] = (source.get("coverage_gaps") or []) + selected[
+            "coverage_gaps"
+        ]
+        source["analysis_policy"] = "manual_only_v1"
+    return source
 
 
 def scan_inputs(db, user_id, now=None):

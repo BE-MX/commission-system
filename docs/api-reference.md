@@ -1,5 +1,11 @@
 # 莱莎方舟 API 参考
 
+## 阿里 Feed P2（2026-11-05，本地实现，默认关闭）
+
+原批次接收入口新增登记 `ark_alibaba_feed_v1.1`，规范消息按来源/代次/会话/消息 ID 去重，独立处理商机、会话和消息版本、覆盖及撤回。JWT 业务入口 `/api/alibaba-feed/business` 提供 GET `/records`、`/records/{item_id}`、`/customers`、`/customers/{company_id}/records` 与 POST `/links`、DELETE `/links/{link_id}?expected_version=...`；实时要求 `client_desk:read/write` 和本人当前资料范围。
+
+来源管理增加 GET `/api/alibaba-feed/sources`、`/owners`，PATCH支持精确映射与授权/能力核验版本。单客 `/api/client-desk/customers/{company_id}/reanalyze` 可显式传 `feed_item_ids`，沿用每日三次手动额度，持久人工策略，不能进入自动早报。业务读取、复制草稿与旧 AF 引用均需当前依赖有效。资格计算与自动执行分开，自动开关和私海助理仍为 false。详见[P2 实现与验收](requirements/2026-11-05-alibaba-feed-integration/p2-implementation.md)。
+
 ## 阿里 Feed P1（2026-11-05，本地实现，默认关闭）
 
 机器接口：POST `/api/alibaba-feed/v1/batches`、GET `/api/alibaba-feed/v1/runs/{run_id}`、GET `/api/alibaba-feed/v1/batches/{batch_id}`。仅接受绑定来源的 feed 专用 Integration App token，实时校验 `alibaba_feed:write/read`，与发票 scope 互斥。正文为当前 v1 JSON，必需 `Idempotency-Key=run.run_id`；耐久接收 202，同内容重放 200，同键异体 409。GET 只查同来源回执，问题分页 `issue_offset/issue_limit`。

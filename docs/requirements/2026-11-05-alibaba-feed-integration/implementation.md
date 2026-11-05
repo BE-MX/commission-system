@@ -1,5 +1,7 @@
 # 阿里 Feed P1 接收层实现与验收
 
+本文件记录P1阶段；后续人工关联/查阅、v1.1接入与规则闸门见[P2实现与验收](p2-implementation.md)，不以P1阶段限制替代P2当前契约。
+
 2026-11-05。本地工作区 `D:/MyProgram/commission-system-codex-alibaba-feed-p1`，分支 `codex/alibaba-feed-p1`，实现基点 `6cacc6fa`。实现验收后亮哥明确授权本批提交、整合最新 main 并推送 origin/main；Git 交付不包含部署、生产迁移或凭据发放。私海助理及 feed 开关继续默认关闭，未连接生产数据库。设计全文中的 P2、v1.1、人工关联、员工映射和业务查询不属于本次接收层交付。
 
 ## 已实现范围

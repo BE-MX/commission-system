@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { latestRequestGate, safeDestination, normalizeDetail, analysisLabel, REASON_FILTERS } from '../src/views/client_desk/deskController.js'
+import { latestRequestGate, safeDestination, normalizeDetail, analysisLabel, REASON_FILTERS, revalidatedDraft, copyOrFallback } from '../src/views/client_desk/deskController.js'
 
 test('late customer / evidence responses lose authority after customer or filter changes', () => {
   const gate = latestRequestGate()
@@ -25,4 +25,25 @@ test('uncertain analysis and source rules remain distinct from model success', (
   assert.match(analysisLabel('ambiguous'), /未确认/)
   assert.match(analysisLabel('rule_only'), /规则/)
   assert.deepEqual(REASON_FILTERS.map(x => x.value), ['R1_UNREPLIED','R7_AWAITING_CUSTOMER','R2_FOLLOWUP_DUE','R8_NEW_LEAD'])
+})
+
+test('copy revalidates the exact current suggestion and refuses revoked or changed sources', async () => {
+  let reads = 0
+  const read = async id => { reads++; assert.equal(id, '101'); return { suggestion: { id: '7', draft_message: 'Fresh authorized draft' } } }
+  assert.equal((await revalidatedDraft(read, '101', '7', () => true)).suggestion.draft, 'Fresh authorized draft')
+  assert.equal(reads, 1)
+  await assert.rejects(revalidatedDraft(async () => ({ suggestion: null }), '101', '7', () => true))
+  await assert.rejects(revalidatedDraft(read, '101', '8', () => true))
+  await assert.rejects(revalidatedDraft(read, '101', '7', () => false))
+  await assert.rejects(revalidatedDraft(async () => { throw new Error('permission revoked') }, '101', '7', () => true))
+})
+
+test('a delayed clipboard denial cannot open a different customer draft', async () => {
+  let current = true, rejectClipboard
+  const pending = copyOrFallback('Authorized A', () => new Promise((resolve, reject) => { rejectClipboard = reject }), () => current)
+  current = false
+  rejectClipboard(new Error('permission denied'))
+  assert.equal(await pending, null)
+  assert.deepEqual(await copyOrFallback('Authorized A', async () => { throw new Error('denied') }, () => true),
+    { copied: false, text: 'Authorized A' })
 })

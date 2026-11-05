@@ -1,3 +1,11 @@
+## 2026-11-05 阿里 Feed P2（Codex，Git 交付，保持关闭）
+
+工作区 `D:/MyProgram/commission-system-codex-alibaba-feed-p2` / `codex/alibaba-feed-p2`，基点 `3d05c413`。按亮哥选择同时实现当前v1人工关联/查阅/显式重分析，以及v1.1稳定消息接入与规则资格闸门；252新增个人关联与规范消息，来源映射/能力、item覆盖、手动选择均持久化。manual_only闭包阻止例行/早报/自动派生，撤销/转出/撤回后旧正文与证据失效。私海助理、业务资料及自动开关默认关闭，无新增自动消费任务。
+
+Git交付前后端联合309通过，已知旧发票race fixture缺表1项排除；前端24项相关检查及build通过，先前本地fixture浏览器关键流程/390px复验通过。隔离MySQL252保留既有来源、重复核验、autoincrement漂移拒绝、真实HTTP鉴权、4同键并发关联1行、大整数客户ID、tombstone旧依赖及旧RR快照失效通过。实际镜像范围与浏览器网络未冒称在该MySQL/fixture中验收，边界和基线告警见[完整实现记录](requirements/2026-11-05-alibaba-feed-integration/p2-implementation.md)。
+
+亮哥已明确授权本批提交、合并 main 并推送 origin/main；交付仅包含本次 P2 代码与相关文档，主目录其他未提交修改保留。私海助理、业务资料及自动能力继续默认关闭。本次不部署、不执行生产迁移，不调用业务模型或外发、不发行生产凭据。真实Accio v1.1能力仍需核验，生产授权/自动能力另行放行。
+
 ## 2026-11-05 阿里 Feed P1 接收层（Codex，Git 交付，默认关闭）
 
 工作区 `D:/MyProgram/commission-system-codex-alibaba-feed-p1`，分支 `codex/alibaba-feed-p1`，基于 `6cacc6fa`。当前 JSON 原文上传、来源专用凭据、语义幂等、耐久后台队列和安全分页回执已实现；新增冻结迁移251（三表，接250）。接收与 worker 独立默认关闭，私海助理关闭配置保留，未接入客户投影、CRM、AI 或消息发送。

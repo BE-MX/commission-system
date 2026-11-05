@@ -130,6 +130,7 @@ def all_events(db, user, company_id):
                 "manual": True,
             }
         )
+    events.extend(feed_events(db, user, company_id))
     for e in events:
         value = e["occurred_at"]
         if not isinstance(value, datetime):
@@ -185,3 +186,48 @@ def event(db, user, company_id, event_key):
     if found is None:
         raise HTTPException(404, "来源事件已不可见")
     return found
+
+
+def feed_events(db, user, company_id):
+    from .models import ClientDeskSuggestion
+    from .access import dependencies_valid
+    from .source_policy import restricted_row
+    from app.alibaba_feed.business_service import select_for_analysis
+
+    events = {}
+    rows = (
+        db.query(ClientDeskSuggestion)
+        .filter_by(
+            user_id=user_id(user), company_id=int(company_id), status="succeeded"
+        )
+        .filter(ClientDeskSuggestion.run_seq > 0)
+        .all()
+    )
+    for row in rows:
+        if not restricted_row(row) or not row.selected_feed_item_ids:
+            continue
+        if not dependencies_valid(db, user, company_id, row.source_dependencies):
+            continue
+        try:
+            material = select_for_analysis(
+                db, user, company_id, row.selected_feed_item_ids
+            )
+        except HTTPException as exc:
+            if exc.status_code in (403, 404, 409):
+                continue
+            raise
+        if material["dependencies"] != row.source_dependencies.get("alibaba_feed"):
+            continue
+        for message in material["messages"]:
+            event_key = message["event_key"]
+            events[event_key] = {
+                "id": message["key"],
+                "event_key": event_key,
+                "source": "alibaba_feed",
+                "occurred_at": message["at"],
+                "title": "TM历史快照（仅人工参考）",
+                "messages": [message],
+                "analysis_policy": "manual_only_v1",
+                "coverage_gaps": material["coverage_gaps"],
+            }
+    return list(events.values())

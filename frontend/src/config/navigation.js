@@ -367,6 +367,12 @@ export const NAV_ENTRIES = [
   },
   // ── 客户经营 ───────────────────────────────────────────
   {
+    path: '/alibaba-feed', name: 'AlibabaFeed', title: 'TM 资料',
+    component: () => import('@/views/alibaba_feed/AlibabaFeed.vue'),
+    permission: 'client_desk:read',
+    menu: { group: 'customerOperations', title: 'TM 资料', icon: ChatDotRound, order: -5, permission: 'client_desk:read' },
+  },
+  {
     path: '/customer-hub/customers',
     name: 'CustomerHubProfiles',
     component: () => import('@/views/customer_hub/CustomerProfiles.vue'),

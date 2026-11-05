@@ -101,6 +101,7 @@ class ClientDeskSuggestion(Audit, Base):
     biz_date = Column(Date, nullable=False, comment="北京业务日")
     run_seq = Column(Integer, nullable=False, default=0, comment="0例行1至3手动")
     client_request_id = Column(String(80), comment="手动请求键")
+    selected_feed_item_ids = Column(JSON, nullable=True, comment="显式选择的历史快照")
     rule_codes = Column(JSON, nullable=False, default=list, comment="命中规则")
     rule_details = Column(JSON, nullable=False, default=list, comment="规则明细")
     rank_score = Column(

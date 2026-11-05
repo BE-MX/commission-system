@@ -49,7 +49,8 @@ def version_candidate(item):
     )
 
 
-def process_item(db, batch_id, token, index, record, window, duplicate=False, *, now=None, lease_seconds=120):
+def process_item(db, batch_id, token, index, record, window, duplicate=False, *, now=None, lease_seconds=120,
+                 schema_version="ark_alibaba_feed_v1", run_coverage=None):
     def clock():
         return now if now is not None else beijing_now()
 
@@ -70,6 +71,11 @@ def process_item(db, batch_id, token, index, record, window, duplicate=False, *,
             raise FeedError(409, "LEASE_LOST")
         existing = db.query(AlibabaFeedItem).filter_by(batch_id=batch.id, record_index=index).first()
         if existing:
+            renew_and_commit(batch, original_expiry)
+            return
+        if schema_version == "ark_alibaba_feed_v1.1":
+            from .v11_worker import process_record
+            process_record(db, source, batch, index, record, window, run_coverage, duplicate, clock)
             renew_and_commit(batch, original_expiry)
             return
         window_result, issues = record_quality(record, window, batch.max_message_bytes)
@@ -179,7 +185,8 @@ def process_next_batch(db, *, now=None, lease_seconds=120):
         for index, record in records:
             process_item(db, batch_id, token, index, record, data["run"]["window"],
                          counts[(record["type"], record["inquiry_id"])] > 1,
-                         now=now, lease_seconds=lease_seconds)
+                         now=now, lease_seconds=lease_seconds,
+                         schema_version=data["schema"], run_coverage=data["run"].get("coverage"))
         batch = fence(db, batch_id, token, now)
         original_expiry = batch.lease_expires_at
         batch.issues = batch_issues(data)

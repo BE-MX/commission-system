@@ -28,3 +28,16 @@ export function normalizeDetail(data) {
   const suggestion = data.suggestion ? { ...data.suggestion, draft: data.suggestion.draft_message ?? data.suggestion.draft } : null
   return { ...data, personal_state: { ...data.personal_state, brief_md: data.brief_md ?? data.personal_state?.brief_md, last_analyzed_at: data.last_analyzed_at ?? data.personal_state?.last_analyzed_at }, suggestion }
 }
+
+export async function revalidatedDraft(loadCustomer, customerId, suggestionId, isCurrent) {
+  const fresh = normalizeDetail(await loadCustomer(customerId))
+  if (!isCurrent() || String(fresh.suggestion?.id) !== String(suggestionId) || !fresh.suggestion?.draft) {
+    throw new Error('草稿或来源已变化，请重新查看客户资料。')
+  }
+  return fresh
+}
+
+export async function copyOrFallback(text, writeText, isCurrent) {
+  try { await writeText(text); return isCurrent() ? { copied: true, text } : null }
+  catch { return isCurrent() ? { copied: false, text } : null }
+}

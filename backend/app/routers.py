@@ -197,3 +197,5 @@ def register_routers(app: FastAPI) -> None:
     from app.alibaba_feed.source_router import router as alibaba_feed_source_router
     app.include_router(alibaba_feed_router, prefix="/api/alibaba-feed/v1", tags=["阿里 Feed 接收"])
     app.include_router(alibaba_feed_source_router, prefix="/api/alibaba-feed", tags=["阿里 Feed 来源管理"])
+    from app.alibaba_feed.business_router import router as alibaba_feed_business_router
+    app.include_router(alibaba_feed_business_router, prefix="/api/alibaba-feed/business", tags=["阿里 TM 资料"])

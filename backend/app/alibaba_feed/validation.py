@@ -46,6 +46,9 @@ def parse_envelope(raw, idempotency_key, now, limits=None):
     if not idempotency_key:
         raise FeedError(400, "IDEMPOTENCY_KEY_REQUIRED")
     data = parse_json(raw)
+    if isinstance(data, dict) and data.get("schema") == "ark_alibaba_feed_v1.1":
+        from .v11_validation import validate
+        return validate(data, idempotency_key, now, limits)
     keys(data, "schema run stats by_assignee records", "$")
     require(data.get("schema") == "ark_alibaba_feed_v1", "schema", "SCHEMA_UNSUPPORTED")
     run = data.get("run")

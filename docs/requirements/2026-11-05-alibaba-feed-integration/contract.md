@@ -1,6 +1,6 @@
 # 阿里 Feed 接口契约草案
 
-版本0.1，2026-11-05。与[总体设计](design.md)配套。P1 接收接口已本地实现、默认关闭、尚未上线；当前边界以[实现说明](implementation.md)为准。v1.1、人工关联、业务接入与保留期仍为后续拟定契约。
+版本0.1，2026-11-05。与[总体设计](design.md)配套。P1接收层已Git交付、默认关闭，见[P1实现说明](implementation.md)。v1.1、人工关联/查阅和显式重分析已本地实现，当前边界及实际端点以[P2实现说明](p2-implementation.md)为准；自动执行、真实来源能力与保留期仍待单独确认。
 
 ## 1. 接口清单
 
@@ -160,7 +160,7 @@ v1以带时区的run.reply_status_snapshot_at作近似观察版本。更高时�
 
 ## 6. v1.1最小采集扩展
 
-schema拟为 `ark_alibaba_feed_v1.1`，保留原字段，并增加下列明确结构。缺少某项能力可继续归档，但相应资格保持false。真实平台无法提供的值使用null/unknown，禁止用姓名hash或位置号伪造稳定ID。
+schema为 `ark_alibaba_feed_v1.1`，保留原字段，并增加下列明确结构。缺少某项能力可继续归档，但相应资格保持false。真实平台无法提供的值使用null/unknown，禁止用姓名hash或位置号伪造稳定ID。可选run.collection_generation若提供必须匹配服务器当前代次，不能由上传方推动代次。
 
 ```json
 {

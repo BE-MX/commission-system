@@ -94,4 +94,5 @@ export const commerceTransitionClient = createApiClient({ baseURL: '/api/commerc
 export const commerceShadowClient = createApiClient({ baseURL: '/api/commerce-shadow', timeout: 120000 })
 
 export const clientDeskClient = createApiClient({ baseURL: '/api/client-desk' })
+export const alibabaFeedClient = createApiClient({ baseURL: '/api/alibaba-feed' })
 export const clientDeskPublicClient = createApiClient({ baseURL: '/api/client-desk', redirectOnUnauthorized: false })

@@ -95,6 +95,10 @@ def _line(value):
 
 
 def _view(db, uid, row, now):
+    from .source_policy import restricted_row
+
+    if restricted_row(row):
+        return {}, None
     source = sources.build_customer_sources(db, uid, row.company_id, for_ai=False)
     state = db.query(State).filter_by(user_id=uid, company_id=row.company_id).first()
     return source, visible_suggestion(db, row, source, state, now)
@@ -102,8 +106,11 @@ def _view(db, uid, row, now):
 
 def report_rows(rows):
     by_company = {}
+    from .source_policy import restricted_row
+
     for row in rows:
-        by_company.setdefault(row.company_id, []).append(row)
+        if not restricted_row(row):
+            by_company.setdefault(row.company_id, []).append(row)
     result = {}
     for cid, runs in by_company.items():
         if not any(r.run_seq == 0 for r in runs) or any(r.done_at for r in runs):
@@ -235,6 +242,12 @@ async def send_report(db, user, now=None):
             .one()
         )
         current_source, current_view = _view(db, uid, current_row, beijing_now())
+        if not current_view:
+            db.query(Row).filter_by(id=anchor_id, send_status="sending").update(
+                {Row.send_status: "cancelled"}
+            )
+            db.commit()
+            return "cancelled"
         fingerprint = digest(
             current_source.get(
                 "ai_source_dependencies", current_source["source_dependencies"]
@@ -297,6 +310,8 @@ def redeem(db, user, ticket, now=None):
     if not row:
         raise HTTPException(410, "入口已失效")
     source, view = _view(db, uid, row, now)
+    if not view:
+        raise HTTPException(410, "来源策略或授权已变更")
     anchor = (
         db.query(Row)
         .filter_by(user_id=uid, report_key=claims["r"])

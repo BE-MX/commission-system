@@ -53,6 +53,17 @@ class Candidate:
 
 
 def evaluate(source, state, now, user_id, config=None, calendar=None):
+    from .source_policy import manual_only
+
+    if manual_only(state.get("brief_dependencies")):
+        state = state | {
+            "recheck_date": None,
+            "recheck_condition": None,
+            "recheck_count": 0,
+            "activity_watermark": None,
+            "last_analyzed_at": None,
+            "rule_cooldowns": {},
+        }
     cfg = config or {}
     today = now.date()
     due = as_day(state.get("next_followup_date"))

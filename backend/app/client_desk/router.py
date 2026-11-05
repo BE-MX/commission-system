@@ -118,7 +118,9 @@ def reanalyze(
     service.scoped(db, user, company_id, True)
     from app.client_desk.queue import enqueue_manual
 
-    result = enqueue_manual(db, user, company_id, payload.client_request_id)
+    result = enqueue_manual(
+        db, user, company_id, payload.client_request_id, payload.feed_item_ids
+    )
     db.commit()
     return ok(result)
 

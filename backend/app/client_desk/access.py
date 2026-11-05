@@ -34,7 +34,15 @@ def dependencies_valid(db, user, company_id, dependencies):
     from app.client_desk.sources import build_customer_sources
 
     current = build_customer_sources(db, user, company_id, for_ai=True, realtime=False)
-    return current["source_dependencies"] == dependencies
+    expected = dict(dependencies)
+    feed = expected.pop("alibaba_feed", None)
+    if current["source_dependencies"] != expected:
+        return False
+    if feed is not None:
+        from app.alibaba_feed.business_service import dependencies_valid as feed_valid
+
+        return feed_valid(db, user, company_id, feed)
+    return True
 
 
 def require_enabled(db, user, write=False):
