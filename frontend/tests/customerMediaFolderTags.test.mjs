@@ -12,7 +12,7 @@ function setup(tags = [oldTag, wedding]) {
     getCustomerTags: () => state.tags,
     getSelectedTags: () => state.selected,
     selectFolderTag: tag => { state.selected = [tag]; return state.selected },
-    confirmCreate: async name => { state.prompts.push(name); return true },
+    confirmCreate: async names => { state.prompts.push(names); return new Map(names.map(name => [name, { id: 3 }])) },
     createTag: async name => {
       state.created.push(name)
       const tag = { dimension_id: 3, tag_value_id: 20 + state.created.length, value: name }
@@ -37,7 +37,7 @@ test('top folder name removes all whitespace, replaces selection and tags every 
 test('a matching child directory cannot override a new top folder tag', async () => {
   const { state, options } = setup()
   await queueFolderFiles([raw('a.jpg', '新 客 户', '婚纱')], options)
-  assert.deepEqual(state.prompts, ['新客户'])
+  assert.deepEqual(state.prompts, [['新客户']])
   assert.deepEqual(state.created, ['新客户'])
   assert.equal(state.queued[0].tags[0].value, '新客户')
   assert.deepEqual(state.selected, state.queued[0].tags)
@@ -45,7 +45,7 @@ test('a matching child directory cannot override a new top folder tag', async ()
 
 test('cancel skips the folder without creating, selecting or queuing it', async () => {
   const { state, options } = setup()
-  options.confirmCreate = async () => false
+  options.confirmCreate = async () => null
   await queueFolderFiles([raw('a.jpg', '新标签')], options)
   assert.deepEqual(state.selected, [oldTag])
   assert.deepEqual(state.created, [])

@@ -13,12 +13,12 @@ const dimensions = [
   { id: 3, name: 'color_names', label: 'Color names' },
 ]
 
-function setup({ dims = dimensions, confirm, failCreate = false } = {}) {
-  const tags = [], calls = [], queued = [], errors = [], warnings = [], prompts = []
-  const imports = { ref: vue.ref, h: vue.h, ...droppedFiles, queueFolderFiles, ElSelect: 'select', ElOption: 'option',
+function setup({ dims = dimensions, confirm, failOnCall, tags = [] } = {}) {
+  const calls = [], queued = [], errors = [], warnings = [], prompts = []
+  const imports = { ref: vue.ref, h: vue.h, ...droppedFiles, queueFolderFiles, ElCheckbox: 'checkbox', ElSelect: 'select', ElOption: 'option',
     createCustomerTagValue: async (...args) => {
       calls.push(args)
-      if (failCreate) throw new Error('network error')
+      if (calls.length === failOnCall) throw new Error('network error')
       return { data: { id: 10 + calls.length, value: args[2] } }
     },
     confirmAction: async (message, title, options) => { prompts.push({ message, options }); await confirm?.(message, options) },
@@ -124,20 +124,63 @@ test('no writable dimension reports configuration issue before offering creation
   assert.deepEqual(state.calls, [])
 })
 
-test('each new folder has its own dimension choice', async () => {
-  let index = 0
-  const state = setup({ confirm: message => state.select(message, [2, 3][index++]) })
+test('one shared choice applies to all unique missing tags and files retain their folder tag', async () => {
+  const known = { dimension_id: 1, tag_value_id: 1, value: '产品' }
+  const state = setup({ tags: [known], confirm: message => {
+    assert.equal(message().children.find(child => child.type === 'p').children, '标签名称：红色、蓝色')
+    state.select(message, 3)
+  } })
+  await state.add('红 色', '产品', '红色', '蓝色')
+  assert.deepEqual(state.errors, [])
+  assert.equal(state.prompts.length, 1)
+  assert.deepEqual(state.calls.map(call => call.slice(1)), [[3, '红色'], [3, '蓝色']])
+  assert.deepEqual(state.queued.map(item => [item.selected[0].value, item.files.length]), [['红色', 2], ['产品', 1], ['蓝色', 1]])
+})
+
+test('mixed dimensions can be assigned in the same confirmation', async () => {
+  const state = setup({ confirm: (message, options) => {
+    message().children.find(child => child.type === 'checkbox').props['onUpdate:modelValue'](false)
+    const rows = message().children.at(-1).children
+    let closed = false
+    rows[0].children[1].props['onUpdate:modelValue'](2)
+    options.beforeClose('confirm', {}, () => { closed = true })
+    assert.equal(closed, false)
+    rows[1].children[1].props['onUpdate:modelValue'](3)
+    options.beforeClose('confirm', {}, () => { closed = true })
+    assert.equal(closed, true)
+  } })
   await state.add('新纹理', '新颜色')
   assert.deepEqual(state.errors, [])
+  assert.equal(state.prompts.length, 1)
   assert.deepEqual(state.calls.map(call => call[1]), [2, 3])
   assert.deepEqual(state.queued.map(item => item.selected[0].dimension_id), [2, 3])
 })
 
 test('creation failure releases busy state and never queues under an old tag', async () => {
-  const state = setup({ failCreate: true, confirm: message => state.select(message, 3) })
+  const state = setup({ failOnCall: 1, confirm: message => state.select(message, 3) })
   await state.add('新颜色')
   assert.equal(state.calls.length, 1)
   assert.match(state.errors[0], /network error/)
   assert.deepEqual(state.queued, [])
   assert.equal(state.preparingFolders.value, false)
+})
+
+test('retry after partial creation only requests still-missing tags', async () => {
+  const state = setup({ failOnCall: 2, confirm: message => state.select(message, 3) })
+  await state.add('A', 'B', 'C')
+  assert.match(state.errors[0], /「B」/)
+  assert.deepEqual(state.queued.map(item => item.selected[0].value), ['A'])
+  await state.add('A', 'B', 'C')
+  assert.equal(state.prompts.length, 2)
+  assert.deepEqual(state.calls.map(call => call[2]), ['A', 'B', 'B', 'C'])
+  assert.deepEqual(state.queued.slice(-3).map(item => item.selected[0].value), ['A', 'B', 'C'])
+})
+
+test('cancelling bulk creation still queues folders with existing tags', async () => {
+  const known = { dimension_id: 1, tag_value_id: 1, value: '已有' }
+  const state = setup({ tags: [known], confirm: () => { throw 'cancel' } })
+  await state.add('A', '已有', 'B')
+  assert.equal(state.prompts.length, 1)
+  assert.deepEqual(state.calls, [])
+  assert.deepEqual(state.queued.map(item => item.selected[0]), [known])
 })
