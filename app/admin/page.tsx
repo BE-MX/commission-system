@@ -33,6 +33,7 @@ export default function AdminPage() {
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [adminAccess, setAdminAccess] = useState<"checking" | "allowed" | "denied">("checking");
 
   const load = async () => {
@@ -149,7 +150,7 @@ export default function AdminPage() {
   };
 
   if (adminAccess === "checking") return <main className="admin-access-state"><div><span>莱</span><h1>正在验证管理员身份</h1><p>请稍候…</p></div></main>;
-  if (adminAccess === "denied") return <main className="admin-access-state"><div><span>锁</span><h1>莱莎经营后台</h1><p>请输入后台管理密码后继续。</p><form onSubmit={submitAdminLogin}><input type="password" value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} placeholder="后台管理密码" autoComplete="current-password" required />{notice && <div className="login-message">{notice}</div>}<button type="submit" disabled={saving}>{saving ? "正在登录…" : "进入管理后台"}</button></form><a href="/">返回前台</a></div></main>;
+  if (adminAccess === "denied") return <main className="admin-access-state"><div><span>锁</span><h1>莱莎经营后台</h1><p>请输入后台管理密码后继续。</p><form onSubmit={submitAdminLogin}><div className="admin-password-field"><input type={showAdminPassword ? "text" : "password"} value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} placeholder="后台管理密码" autoComplete="current-password" required /><button className="admin-password-toggle" type="button" onClick={() => setShowAdminPassword((visible) => !visible)} aria-label={showAdminPassword ? "隐藏密码" : "显示密码"} aria-pressed={showAdminPassword} title={showAdminPassword ? "隐藏密码" : "显示密码"}>{showAdminPassword ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.6 10.7a2 2 0 0 0 2.7 2.7M9.9 4.2A10.7 10.7 0 0 1 12 4c5.5 0 9 5 9 5s-1.2 1.8-3.3 3.3M6.2 6.2C4.1 7.5 3 9 3 9s3.5 5 9 5c1 0 1.9-.2 2.7-.4" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-5 9-5 9 5 9 5-3.5 5-9 5-9-5-9-5Z" /><circle cx="12" cy="12" r="2.6" /></svg>}</button></div>{notice && <div className="login-message">{notice}</div>}<button type="submit" disabled={saving}>{saving ? "正在登录…" : "进入管理后台"}</button></form><a href="/">返回前台</a></div></main>;
 
   return (
     <div className="admin-shell">
