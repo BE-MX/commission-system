@@ -16,6 +16,7 @@ import {
 import { readSessionItem } from '@/utils/safeSessionStorage'
 import { isShippingInspectionPath, isShippingStationPath, shippingStationLogin } from './shippingStationRoute'
 import { FX_APP_PATH, FX_DESKTOP_PATH, isFxSettlementPath, fxSettlementLogin } from './fxSettlementRoute'
+import { captureRetailTryOnSession } from '@/views/expo/retailTryOnSession'
 
 // NAV_ENTRIES 中每条记录映射成 vue-router 的 children 路由
 // path 去掉前导 '/' 因为父路由是 '/'
@@ -47,6 +48,17 @@ const routes = [
     name: 'Login',
     component: () => import('@/views/auth/LoginPage.vue'),
     meta: { title: '登录', public: true },
+  },
+  {
+    // 零售商城专属试戴。短期 grant 只进入 /api/expo/retail，和展会设备会话隔离。
+    path: '/expo/retail',
+    name: 'RetailTryOn',
+    component: () => import('@/views/expo/RetailTryOn.vue'),
+    meta: { title: 'AI 智能试戴', public: true },
+    beforeEnter() {
+      captureRetailTryOnSession()
+      return true
+    },
   },
   {
     // 展会试戴 kiosk — 独立于 MainLayout 的全屏页（展位 iPad 全天运行）

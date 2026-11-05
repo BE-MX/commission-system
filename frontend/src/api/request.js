@@ -18,7 +18,7 @@ const loading = useLoading()
  *   - blob response: 直接返回完整 response (调用方可拿 headers + blob)
  *   - 业务码: response.data.code 非 2xx 时弹错误
  *
- * @param {{ baseURL: string, timeout?: number, getAuthorization?: Function,
+ * @param {{ baseURL: string, timeout?: number, getAuthorization?: Function, getBaseURL?: Function,
  *   redirectOnUnauthorized?: boolean }} options
  * @returns {import('axios').AxiosInstance}
  */
@@ -26,6 +26,7 @@ export function createApiClient({
   baseURL,
   timeout = 60000,
   getAuthorization = null,
+  getBaseURL = null,
   redirectOnUnauthorized = true,
 } = {}) {
   const service = axios.create({ baseURL, timeout })
@@ -49,9 +50,13 @@ export function createApiClient({
   }
 
   service.interceptors.request.use(config => {
+    if (getBaseURL) config.baseURL = getBaseURL(config) || config.baseURL
     if (getAuthorization) {
       const authorization = getAuthorization()
-      if (typeof config.headers?.set === 'function'
+      if (authorization === undefined) {
+        const token = getAccessToken()
+        if (token) config.headers.Authorization = `Bearer ${token}`
+      } else if (typeof config.headers?.set === 'function'
           && typeof config.headers?.delete === 'function') {
         if (authorization) config.headers.set('Authorization', authorization)
         else config.headers.delete('Authorization')

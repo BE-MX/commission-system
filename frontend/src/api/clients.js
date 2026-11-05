@@ -9,6 +9,10 @@
  */
 import { createApiClient } from './request'
 import { getInviteAuthorization } from '@/views/customer-image/inviteSession'
+import {
+  getRetailTryOnAuthorization,
+  isRetailTryOnPage,
+} from '@/views/expo/retailTryOnSession'
 
 export const v1Client = createApiClient({ baseURL: '/api/v1' })
 export const inkboardClient = createApiClient({ baseURL: '/api/inkboard' })
@@ -33,7 +37,14 @@ export const whatsappTranslationClient = createApiClient({
   baseURL: '/api/whatsapp-translation',
   timeout: 30000,
 })
-export const expoClient = createApiClient({ baseURL: '/api/expo', timeout: 300000 })
+export const expoClient = createApiClient({
+  baseURL: '/api/expo',
+  timeout: 300000,
+  // Undefined deliberately means "use the normal Ark bearer" in request.js.
+  // A retail page gets its own narrow grant and a separate API prefix.
+  getAuthorization: () => isRetailTryOnPage() ? getRetailTryOnAuthorization() : undefined,
+  getBaseURL: () => isRetailTryOnPage() ? '/api/expo/retail' : '/api/expo',
+})
 export const aftersalesClient = createApiClient({ baseURL: '/api/aftersales', timeout: 300000 })
 export const adminClient = createApiClient({ baseURL: '/api/auth', timeout: 30000 }) // 用户/角色/绑定等管理端点（登录语义仍走 auth.js）
 export const publicStockClient = createApiClient({ baseURL: '/api/public/stock', timeout: 30000 }) // 对外库存查询（无登录，全公开）
