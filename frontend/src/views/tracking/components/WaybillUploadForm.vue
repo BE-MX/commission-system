@@ -14,7 +14,7 @@
           accept="image/jpeg,image/png,image/webp"
           :before-upload="handleBeforeUpload"
           :on-change="handleFileChange"
-          :disabled="mode === 'manual' || ocrLoading || submitting || successVisible"
+          :disabled="mode === 'manual' || ocrLoading || submitting || successVisible || linking"
         >
           <div class="dragger-body">
           <template v-if="previewUrl">
@@ -24,7 +24,7 @@
                 <el-button
                   type="danger"
                   plain
-                  :disabled="ocrLoading || submitting"
+                  :disabled="ocrLoading || submitting || linking"
                   @click.stop="clearImage"
                 >
                   删除图片
@@ -58,7 +58,7 @@
         <el-input
           v-model="form.waybill_no"
           placeholder="输入运单号，失焦后自动识别物流商"
-          :disabled="mode === 'ocr'"
+          :disabled="mode === 'ocr' || submitting || linking"
           clearable
           @focus="onWaybillFocus"
           @blur="onWaybillBlur"
@@ -101,12 +101,12 @@
             <template v-else-if="linkable">
               一张运单可以装多张出库单，确认是同一票货就直接关联。
               <div class="duplicate-actions">
-                <GlassButton variant="primary" :loading="linking" @click="$emit('link-existing', duplicateInfo)">
+                <GlassButton variant="primary" :loading="linking" :disabled="submitting || checkingDuplicate" @click="$emit('link-existing', duplicateInfo)">
                   关联这张已有运单
                 </GlassButton>
               </div>
             </template>
-            <template v-else>如需修改请联系管理员。</template>
+            <template v-else>若识别有误，请修改下方运单号；如需修改已有运单，请联系管理员。</template>
           </template>
         </el-alert>
 
@@ -138,14 +138,14 @@
           ref="formRef"
           :model="form"
           :rules="formRules"
-          :disabled="!!duplicateInfo"
+          :disabled="submitting || linking"
         >
           <el-form-item label="运单号" prop="waybill_no">
             <el-input
               v-model="form.waybill_no"
-              :disabled="mode === 'ocr' || !!duplicateInfo"
               placeholder="运单号"
               clearable
+              @blur="onWaybillBlur"
             />
           </el-form-item>
 
@@ -195,7 +195,7 @@
               variant="primary"
               full-width
               :loading="submitting"
-              :disabled="!!duplicateInfo || checkingDuplicate"
+              :disabled="!!duplicateInfo || linking"
               @click="handleSubmit"
             >
               {{ submitting ? '提交中...' : submitText }}

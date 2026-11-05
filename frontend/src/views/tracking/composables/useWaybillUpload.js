@@ -18,7 +18,7 @@ import { msgInfo, msgError, msgSuccessText, msgWarning } from '@/utils/feedback'
  *   - onSuccess: 入库成功回调（拿到接口 data）
  *   - enabled:  粘贴识别是否生效；常驻页面上的弹框传「弹框是否打开」，避免列表页粘贴误触发 OCR
  */
-import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, watch, onMounted, onBeforeUnmount } from 'vue'
 
 import { uploadOCR, checkWaybill, createWaybill } from '@/api/tracking'
 import { beijingCalendarDate } from '@/utils/datetime'
@@ -64,6 +64,16 @@ export function useWaybillUpload({ defaults = {}, submit = createWaybill, onSucc
   let currentFile = null
 
   const form = reactive({ ...baseForm(), entry_source: 'manual' })
+  let duplicateRequest = 0
+  const normalizeWaybill = value => (value || '').trim().replace(/\s+/g, '')
+
+  function invalidateDuplicate() {
+    duplicateRequest += 1
+    duplicateInfo.value = null
+    checkingDuplicate.value = false
+  }
+  // 改号立即撤掉旧重复提示/关联入口，迟到的请求不得覆盖新号码。
+  watch(() => form.waybill_no, invalidateDuplicate, { flush: 'sync' })
 
   const resultData = reactive({
     waybill_no: '',
@@ -98,7 +108,7 @@ export function useWaybillUpload({ defaults = {}, submit = createWaybill, onSucc
     ocrLoading.value = false
     ocrPartial.value = false
     ocrError.value = ''
-    duplicateInfo.value = null
+    invalidateDuplicate()
   }
 
   function resetAll() {
@@ -131,6 +141,7 @@ export function useWaybillUpload({ defaults = {}, submit = createWaybill, onSucc
 
   onMounted(() => document.addEventListener('paste', handlePaste))
   onBeforeUnmount(() => {
+    invalidateDuplicate()
     document.removeEventListener('paste', handlePaste)
     if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   })
@@ -226,15 +237,16 @@ export function useWaybillUpload({ defaults = {}, submit = createWaybill, onSucc
   }
 
   function onWaybillBlur() {
+    if (submitting.value || ocrLoading.value) return
+    form.waybill_no = normalizeWaybill(form.waybill_no)
     if (!form.waybill_no) return
-    form.waybill_no = form.waybill_no.trim().replace(/\s+/g, '')
-    mode.value = 'manual'
+    if (mode.value !== 'ocr') mode.value = 'manual'
 
     const detected = detectCarrier(form.waybill_no)
     if (!form.carrier) {
       form.carrier = detected
     }
-    checkDuplicate(form.waybill_no)
+    return checkDuplicate(form.waybill_no)
   }
 
   function clearManualInput() {
@@ -247,33 +259,39 @@ export function useWaybillUpload({ defaults = {}, submit = createWaybill, onSucc
 
   // ── Duplicate ──────────────────────────────────────
   async function checkDuplicate(waybillNo) {
-    if (!waybillNo) return
+    if (!waybillNo) return false
+    const request = ++duplicateRequest
+    const isCurrent = () => request === duplicateRequest && waybillNo === normalizeWaybill(form.waybill_no)
     checkingDuplicate.value = true
     duplicateInfo.value = null
 
     try {
       const res = await checkWaybill(waybillNo)
+      if (!isCurrent()) return false
       if (res.exists) {
         duplicateInfo.value = res.data
       }
+      return !res.exists
     } catch (err) {
       console.warn('去重检查失败:', err.message)
+      if (isCurrent()) msgWarning('运单号查重失败，请重试后提交')
+      return false
     } finally {
-      checkingDuplicate.value = false
+      if (isCurrent()) checkingDuplicate.value = false
     }
   }
 
   // ── Submit ─────────────────────────────────────────
   async function handleSubmit() {
-    if (!formRef.value) return
-
-    const valid = await formRef.value.validate().catch(() => false)
-    if (!valid) return
-
-    form.waybill_no = form.waybill_no.trim().replace(/\s+/g, '')
+    if (!formRef.value || submitting.value || ocrLoading.value) return
     submitting.value = true
 
     try {
+      form.waybill_no = normalizeWaybill(form.waybill_no)
+      const valid = await formRef.value.validate().catch(() => false)
+      if (!valid) return
+      // 不依赖 blur 先于点击完成；最终号码必须查重通过，后端仍负责并发唯一性。
+      if (!await checkDuplicate(form.waybill_no)) return
       const res = await submit({
         waybill_no: form.waybill_no,
         carrier: form.carrier,
