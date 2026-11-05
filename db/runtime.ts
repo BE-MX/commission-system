@@ -98,6 +98,15 @@ async function initialize() {
       access_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_retail_access_logs_time ON retail_access_logs(access_at)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS retail_tryon_entitlements (
+      phone TEXT PRIMARY KEY,
+      grant_token TEXT NOT NULL UNIQUE,
+      grant_expires_at TEXT NOT NULL,
+      generation_claim TEXT,
+      used_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_retail_tryon_grant ON retail_tryon_entitlements(grant_token)"),
     db.prepare(`CREATE TABLE IF NOT EXISTS customer_profiles (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT NOT NULL UNIQUE,
@@ -194,6 +203,11 @@ async function initialize() {
   if (!productColumnNames.has("scenarios")) await db.prepare("ALTER TABLE products ADD COLUMN scenarios TEXT NOT NULL DEFAULT '[]'").run();
   if (!productColumnNames.has("images")) await db.prepare("ALTER TABLE products ADD COLUMN images TEXT NOT NULL DEFAULT '[]'").run();
   if (!productColumnNames.has("video_url")) await db.prepare("ALTER TABLE products ADD COLUMN video_url TEXT NOT NULL DEFAULT ''").run();
+
+  const tryonColumns = await db.prepare("PRAGMA table_info(retail_tryon_entitlements)").all<{ name: string }>();
+  if (!tryonColumns.results.some((item) => item.name === "generation_claim")) {
+    await db.prepare("ALTER TABLE retail_tryon_entitlements ADD COLUMN generation_claim TEXT").run();
+  }
 
   await db.prepare("PRAGMA optimize").run();
 

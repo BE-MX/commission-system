@@ -1,0 +1,1 @@
+ALTER TABLE `retail_tryon_entitlements` ADD `generation_claim` text;

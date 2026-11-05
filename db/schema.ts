@@ -80,6 +80,15 @@ export const retailAccessLogs = sqliteTable("retail_access_logs", {
   accessAt: text("access_at").notNull(),
 }, (table) => [index("idx_retail_access_logs_time").on(table.accessAt)]);
 
+export const retailTryonEntitlements = sqliteTable("retail_tryon_entitlements", {
+  phone: text("phone").primaryKey(),
+  grantToken: text("grant_token").notNull().unique(),
+  grantExpiresAt: text("grant_expires_at").notNull(),
+  generationClaim: text("generation_claim"),
+  usedAt: text("used_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [index("idx_retail_tryon_grant").on(table.grantToken)]);
+
 export const customerProfiles = sqliteTable("customer_profiles", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   phone: text("phone").notNull().unique(),
