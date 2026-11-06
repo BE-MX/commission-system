@@ -10,6 +10,11 @@ export function getStockOverview(params, config = {}) {
   return stockApi.get('/overview', { showLoading: false, ...config, params })
 }
 
+export function syncProductInventory(productId) {
+  return stockApi.post(`/overview/${productId}/sync-inventory`, null,
+    { showLoading: false, suppressToast: true, timeout: 180000 })
+}
+
 // ── 筛选维度可选值(全部产品) ────────────────────────────
 export function getFilterOptions(config = {}) {
   return stockApi.get('/filter-options', { showLoading: false, ...config })

@@ -102,6 +102,10 @@ class PortalLoginIn(BaseModel):
         return _email(value)
 
 
+class PortalArchiveIn(BaseModel):
+    asset_ids: list[PositiveInt] = Field(min_length=1, max_length=5000)
+
+
 # ── 客户标签 ────────────────────────────────────────────
 
 class CustomerMediaTagItem(BaseModel):

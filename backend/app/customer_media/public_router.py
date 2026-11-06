@@ -1,14 +1,19 @@
 """media.leshine.cloud 客户只读门户 API。"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import FileResponse
+from anyio import CancelScope
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.response import ok
 from app.customer_media import service
+from app.customer_media import archive_service
 from app.customer_media.router import _asset
-from app.customer_media.schemas import PortalLoginIn
+from app.customer_media.schemas import PortalArchiveIn, PortalLoginIn
+from app.core.storage.cos import ObjectMissing, StorageError
 from app.customer_media.storage import storage_for
 from app.pm.auth import EntryRateLimiter, client_ip
 
@@ -150,6 +155,41 @@ def library(
 def tags(request: Request, db: Session = Depends(get_db)):
     account = _session_account(request, db)
     return ok(service.portal_used_tags(db, account))
+
+
+class _ArchiveResponse(FileResponse):
+    def __init__(self, archive):
+        self.archive = archive
+        super().__init__(archive.path, media_type="application/zip", filename=archive.filename,
+                         headers=PORTAL_HEADERS)
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            # Release private disk/reservation even when the browser disconnects mid-response.
+            with CancelScope(shield=True):
+                await run_in_threadpool(self.archive.close)
+
+
+@router.post("/downloads/zip")
+# require_permission exemption: 外部门户 Cookie 鉴权；服务逐项校验客户/发布状态，打包后重验会话。
+def download_zip(data: PortalArchiveIn, request: Request, db: Session = Depends(get_db)):
+    account = _session_account(request, db)
+    try:
+        archive = archive_service.prepare_portal_archive(
+            db, account, data.asset_ids, request.cookies.get(settings.CUSTOMER_MEDIA_COOKIE_NAME), client_ip(request),
+        )
+    except archive_service.ArchiveTooLarge as exc:
+        raise HTTPException(413, str(exc)) from exc
+    except ObjectMissing:
+        raise HTTPException(404, "Some selected files are missing. Refresh the library and try again.") from None
+    except (StorageError, OSError):
+        raise HTTPException(503, "Unable to prepare the ZIP right now. Please try again later.",
+                            headers={"Retry-After": "10"}) from None
+    except Exception as exc:
+        _error(exc)
+    return _ArchiveResponse(archive)
 
 
 @router.get("/assets/{asset_id}/content")

@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -245,6 +246,13 @@ class LocalMediaStorage:
         if object_key:
             self.resolve(object_key).unlink(missing_ok=True)
 
+    @contextmanager
+    def materialize_original(self, asset, directory):
+        path = self.resolve(asset.object_key)
+        if not path.is_file():
+            raise ObjectMissing("Media original is missing")
+        yield path
+
     def response(self, asset, *, download: bool = False, variant: str | None = None):
         from fastapi import HTTPException
         from fastapi.responses import FileResponse
@@ -315,6 +323,16 @@ class CosMediaStorage:
     def delete(self, object_key):
         if object_key:
             self.store.delete(object_key)
+
+    @contextmanager
+    def materialize_original(self, asset, directory):
+        path = Path(directory) / "original"
+        try:
+            self.store.download(asset.object_key, path, max_bytes=max(1, asset.file_size),
+                                expected_sha256=asset.sha256)
+            yield path
+        finally:
+            path.unlink(missing_ok=True)
 
     def response(self, asset, *, download=False, variant=None):
         from fastapi import HTTPException

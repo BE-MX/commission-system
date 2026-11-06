@@ -55,12 +55,18 @@ def capture(db,invoice,payload):
             tuple(state(proof) for proof in proofs))
 
 
+def require_valid(issues):
+    if issues:
+        reasons = list(dict.fromkeys(str(issue.get("message") or issue.get("field") or "未知校验项") for issue in issues))
+        raise HTTPException(409, "订单同步校验未通过：" + "；".join(reasons))
+
+
 def prepare(db,invoice_id,user,linked_id=None,linked_token=None):
     invoice,actor=edit_authority.prepare_recovery(db,invoice_id,user,"invoice:sync")
     linked.ensure_idle(invoice,linked_id);ensure_mutable(db,invoice)
     if linked_id:linked.ensure_running(db,invoice,linked_id,linked_token)
     if facts.unresolved(db,invoice):raise HTTPException(409,"原推单存在未核对执行记录，请先恢复原任务")
-    if service.validate_invoice(invoice):raise HTTPException(409,"发票未通过同步前校验")
+    require_valid(service.validate_invoice(invoice))
     for item in invoice.items:
         if item.xiaoman_unique_id is not None:
             uncertain_recovery._canonical_uid(item.xiaoman_unique_id)
@@ -77,7 +83,7 @@ def prepare(db,invoice_id,user,linked_id=None,linked_token=None):
         logger.warning("Local product reconciliation unavailable; existing generic mapping retained")
         print("[invoice-push] local product reconciliation unavailable", flush=True)
     payload,_,issues=xiaoman_service.build_push_payload(db,invoice)
-    if issues:raise HTTPException(409,"产品映射、业务归属或推单设置尚未完整核对")
+    require_valid(issues)
     identifiers=[row["unique_id"] for row in payload["product_list"] if row.get("unique_id")]
     if len(identifiers)!=len(set(identifiers)):
         raise HTTPException(409,"原推单明细身份重复，请先核对")

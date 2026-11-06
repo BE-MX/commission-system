@@ -85,7 +85,7 @@
         <el-table-column
           v-for="column in visibleColumns"
           :key="column.key"
-          :prop="column.prop || (column.key === 'created_by' ? 'created_by_name' : column.key)" sortable="custom"
+          :prop="column.prop || (column.key === 'created_by' ? 'created_by_name' : column.key)" :sortable="column.sortable === false ? false : 'custom'"
           :label="column.label"
           :min-width="column.minWidth"
           :max-width="column.maxWidth"
@@ -94,14 +94,33 @@
           :class-name="column.className"
           :show-overflow-tooltip="Boolean(column.tooltip)"
         >
+          <template #header>
+            <span :title="column.sortable === false ? column.label : `按${column.sortLabel || column.label}排序`">{{ column.label }}</span>
+          </template>
           <template #default="{ row }">
-            <span v-if="column.key === 'invoice_no'" class="invoice-detail-entry"><button type="button" class="invoice-number invoice-number-button" @click="invoiceDetailRef.open(row)">{{ row.invoice_no }} ↗</button><InvoiceAnomalyBadge :anomalies="row.anomalies || []" /></span>
-            <StatusBadge v-else-if="column.key === 'order_type'" size="small" :type="orderTypeTone(row.order_type)" effect="plain">{{ orderTypeLabel(row.order_type) }}</StatusBadge>
-            <template v-else-if="column.key === 'order_amount' || column.key === 'total_amount'"><span v-if="row.currency && row.currency.toUpperCase() !== 'USD'">{{ row.currency }} </span>{{ money(row[column.key]) }}</template>
-            <StatusBadge v-else-if="column.key === 'status'" size="small" :type="statusType(row.status)" effect="plain">{{ invoiceIsLocal(row) ? businessLabel(row.commerce_status) : statusText(row.status) }}</StatusBadge>
+            <div v-if="column.key === 'invoice_no'" class="invoice-pair">
+              <div class="invoice-number-line">
+                <button type="button" class="invoice-number invoice-number-button" @click="invoiceDetailRef.open(row)">{{ row.invoice_no }}</button>
+                <button type="button" class="invoice-copy-button" :aria-label="`复制发票号 ${row.invoice_no}`" title="复制发票号" @click.stop="copyInvoiceNo(row.invoice_no)"><el-icon><CopyDocument /></el-icon></button>
+              </div>
+              <div class="invoice-meta-line"><StatusBadge size="small" :type="orderTypeTone(row.order_type)" effect="plain">{{ orderTypeLabel(row.order_type) }}</StatusBadge><span class="invoice-secondary">（{{ row.invoice_date }}）</span></div>
+              <InvoiceAnomalyBadge :anomalies="row.anomalies || []" />
+            </div>
+            <span v-else-if="column.key === 'item_count'" class="invoice-model-quantity" :title="`型号：${row.item_count ?? '—'} 行（含配件）；数量：${row.total_quantity ?? '—'}`">{{ row.item_count ?? '—' }} / {{ row.total_quantity ?? '—' }}</span>
+            <template v-else-if="column.key === 'order_amount' || column.key === 'total_amount'">
+              <span class="invoice-money"><span v-if="row.currency && row.currency.toUpperCase() !== 'USD'">{{ row.currency }} </span>{{ money(row[column.key]) }}</span>
+            </template>
+            <template v-else-if="column.key === 'received_amount'">
+              <span class="invoice-money invoice-received" :class="`invoice-received--${receivedAmountTone(row.received_amount, row.total_amount)}`"><span v-if="receivedAmountTone(row.received_amount, row.total_amount) !== 'unknown' && row.currency && row.currency.toUpperCase() !== 'USD'">{{ row.currency }} </span>{{ receivedAmountTone(row.received_amount, row.total_amount) === 'unknown' ? '待核验' : money(row.received_amount) }}</span>
+            </template>
+            <div v-else-if="column.key === 'status'" class="invoice-pair invoice-statuses">
+              <div class="invoice-status-main">
+                <StatusBadge size="small" :type="statusType(row.status)" effect="plain">{{ invoiceIsLocal(row) ? businessLabel(row.commerce_status) : statusText(row.status) }}</StatusBadge>
+              </div>
+              <span class="invoice-secondary invoice-sync-text" :class="`invoice-sync-text--${syncType(row.sync_status)}`">小满：{{ invoiceIsLocal(row) ? '无需小满同步' : syncText(row.sync_status) }}</span>
+            </div>
             <StatusBadge v-else-if="column.key === 'transaction_route'" size="small" type="info">{{ routeLabel(row.transaction_route || row.transaction_mode) }}</StatusBadge>
             <StatusBadge v-else-if="column.key === 'shadow_status'" size="small" type="info">{{ shadowLabel(row.shadow_status) }}</StatusBadge>
-            <StatusBadge v-else-if="column.key === 'sync_status'" size="small" :type="syncType(row.sync_status)" effect="plain">{{ invoiceIsLocal(row) ? '无需小满同步' : syncText(row.sync_status) }}</StatusBadge>
             <template v-else-if="column.key === 'created_by'">{{ row.created_by_name || '-' }}</template>
             <template v-else-if="column.key === 'created_at'">{{ formatDateTime(row.created_at) }}</template>
             <template v-else>{{ row[column.prop] }}</template>
@@ -441,7 +460,10 @@ import { useInvoiceShipments, orderTypeLabel } from './composables/useInvoiceShi
 import { useInvoiceImportDialogs } from './composables/useInvoiceImportDialogs'
 import InvoiceLifecycle from './components/InvoiceLifecycle.vue'
 import { computed, nextTick, onDeactivated, ref, watch } from 'vue'
-import { ArrowDown, Box, Calendar, DArrowLeft, DArrowRight, Delete, Document, Download, Edit, Refresh, RefreshLeft, Search, Tools } from '@element-plus/icons-vue'
+import { ArrowDown, Box, Calendar, CopyDocument, DArrowLeft, DArrowRight, Delete, Document, Download, Edit, Refresh, RefreshLeft, Search, Tools } from '@element-plus/icons-vue'
+import { copyText } from '@/utils/clipboard'
+import { notifyFeedback } from '@/utils/feedback'
+import { receivedAmountTone } from './invoiceListPresentation'
 import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
 import { useRouter, useRoute } from 'vue-router'
 import { useInvoiceEditor } from './composables/useInvoiceEditor'
@@ -489,6 +511,10 @@ const {
   columnDefs, density, densityClass, isFullscreen, panelRef, toggleFullscreen, visibleColumns, visibleKeys,
 } = listPage
 const router = useRouter(), route = useRoute()
+async function copyInvoiceNo(invoiceNo) {
+  const copied = await copyText(invoiceNo)
+  notifyFeedback(copied ? 'success' : 'error', copied ? '发票号已复制' : '复制失败，请重试')
+}
 const editor = useInvoiceEditor({ onSaved: handleSaved })
 const {
   drawerVisible, legacyVisible, customerLoading, customerOptions, salesUserOptions, selectedCustomer, customerRule,

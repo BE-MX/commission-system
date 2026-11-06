@@ -17,11 +17,11 @@ from app.core.time import beijing_today
 from io import BytesIO
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.core.database import get_db
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.response import ok as _ok
 from app.stock import service
@@ -43,6 +43,16 @@ from app.stock.schemas import (
 
 logger = logging.getLogger("stock")
 router = APIRouter()
+
+
+@router.post('/overview/{product_id}/sync-inventory')
+def sync_inventory(
+    product_id: int = Path(..., gt=0),
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission('stock:read', 'stock:write')),
+):
+    from app.stock.inventory_sync_service import sync_product_inventory
+    return _ok(sync_product_inventory(db, product_id, user))
 
 
 def _get_user_id(user: dict) -> int:
