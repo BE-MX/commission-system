@@ -1,5 +1,11 @@
 # 莱莎方舟 数据库表参考
 
+## 单产品库存同步审计（253_inventory_sync_audit，本地实现，待发布）
+
+接 `252_alibaba_feed_business`，新增方舟库 `ark_inventory_sync_logs`：`id`、`product_id`、`created_by`、`observed_at`、`before_data`、`after_data`、`created_at`，按产品与创建时间索引。前后库存快照为 JSON；时间为北京时间，`observed_at` 是小满拉取开始时间，防止把拉取期间新发生的占库误判为已反映。
+
+不修改小满镜像表结构。行级同步是受限写例外：仅写选中产品的 `okki_inventory` 数量、停用状态、观察时间及新增 SKU/仓库键；保留现有行的编号、单位等元数据，缺失旧仓库拒绝而不删除。库存和审计同事务提交；外部同步期间映射或库存改变会拒绝本次落库。线上已有镜像表字段/主键经只读信息架构查询核对，尚未执行生产迁移或生产同步写入。
+
 ## 阿里 Feed P2（252_alibaba_feed_business，本地实现，待发布）
 
 接251，新增个人关联 `ark_alibaba_feed_links`（用户/来源/代次/记录类型/记录ID/generated active_slot有效唯一，用户/请求键幂等唯一）和 `ark_alibaba_feed_messages`（来源/代次/会话/消息ID唯一，顺序、修订/会话版本、观察时间、冲突、最高tombstone及规范正文）。来源增加精确负责人JSON、映射/能力版本、核验依据和旧身份阻断；item增加schema/会话/商机/覆盖版本；私海建议增加 `selected_feed_item_ids`。

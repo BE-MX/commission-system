@@ -6,6 +6,7 @@ from app.commission.models import CommissionBasis, CommissionEventProjection  # 
 from app.trade.models import TradeProjection, SalesRoster  # noqa: F401
 from app.production.local_models import ProductionEvent, ProductionSupply, ProductionMaterial  # noqa: F401
 from app.inventory.models import Warehouse, StockBalance, StockDocument, StockLedger, StockReservation  # noqa: F401
+from app.stock.inventory_sync_models import InventorySyncLog  # noqa: F401
 from app.ai_gateway.models import GatewayApp, GatewayAppPreset, GatewayRequest  # noqa: F401
 from app.announcement.models import AnnouncementConfig, Announcement, AnnouncementMeta, Publication, Delivery, WeeklyReport  # noqa: F401
 

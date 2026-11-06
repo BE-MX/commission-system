@@ -948,6 +948,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
     - `POST /customer-radar/profiles/{profile_id}/notes` — 添加手动备注
     - `POST /customer-radar/actions/refresh` — 重新生成当日行动推荐
 - `/api/stock` — 备货管理（销量备货一览/安全库存设置/日报）
+  - `POST /overview/{product_id}/sync-inventory` — 单产品即时同步小满库存，需 `stock:read` 和 `stock:write`，并在拉取前后重查当前账号权限。只接受正整数小满产品 ID，本地/已转本地或冻结的产品拒绝。按镜像产品 SKU 集合逐项调用实时库存接口，校验每个 SKU 完整仓库列表、精确产品身份、数量及停用状态后，在一个事务内更新/新增该产品 `okki_inventory` 并写 `ark_inventory_sync_logs`；不删除缺失仓库、不将未知当零。返回 `{product_id, inventory_rows, synced_at}`，时间是保守的拉取开始北京时间。拉取期间释放事务，落库前锁定并比较原映射/库存；变化返回409。外部接口异常502、保存异常503；不返回伪成功或自动重试。每个SKU超过100条/返回不完整时拒绝整次同步，当前不做截断保存。成功后前端保持已应用筛选、分页与排序刷新列表和汇总（筛选后末页为空会自动回退有效页）；同步成功但列表刷新失败单独提示。
   - `GET /overview` — 销量备货一览（分页+状态筛选+排序+搜索，型号/类型/尺寸/颜色/克重支持逗号分隔多选；返回项已包含 `stock_status` / `stock_items` / `production_in_transit`，前端无需再调 `/production/stock-status`；另返回 `free_stock`（现货自由库存，可为 null）与 `free_stock_synced_at`（参与计算的最早小满库存同步时间，北京时间）。自由库存合计启用仓库现货，默认仓库扣除尚未被小满承接的待出库保留，不含生产在途；未知提交、缺少 SKU/默认仓库库存/同步时间、原生占库后镜像未刷新时返回 null。仅补充当前页，无远程请求，不支持按该列排序）
   - `GET /safety` — 安全库存列表（用于设置页，型号/类型/尺寸/颜色/克重支持逗号分隔多选；返回项同样含 `stock_status` / `stock_items`）
   - `POST /safety` — 批量保存安全库存（乐观锁+UPSERT）

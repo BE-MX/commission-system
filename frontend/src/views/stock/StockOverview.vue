@@ -181,6 +181,16 @@
             <span v-else class="text-muted">—</span>
           </template>
         </el-table-column>
+        <el-table-column label="操作" min-width="140" fixed="right" class-name="table-action-column">
+          <template #default="{ row }">
+            <GlassButton v-permission="'stock:write'" variant="link" :left-icon="RefreshRight"
+              :loading="syncingProducts.has(row.product_id)"
+              :disabled="!/^\d+$/.test(String(row.product_id))"
+              @click="syncInventory(row)">
+              {{ syncingProducts.has(row.product_id) ? '同步中…' : '库存同步' }}
+            </GlassButton>
+          </template>
+        </el-table-column>
       </el-table>
       <el-pagination v-model:current-page="pagination.page" v-model:page-size="pagination.page_size" :total="pagination.total"
         :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" class="pager"
@@ -268,6 +278,7 @@ import { useAsyncResource } from '@/composables/useAsyncResource'
 import { loadStockFilterOptions, loadStockProgress } from './composables/stockResources'
 
 import { useStockOverviewTable } from './composables/useStockOverviewTable'
+import { useProductInventorySync } from './composables/useProductInventorySync'
 import TableTools from '@/components/TableTools.vue'
 
 // 表格视图状态（列显隐/密度/全屏），columnDefs 仅供 TableTools 列显隐面板
@@ -289,6 +300,7 @@ const initialFilters = {
   weight: [],
 }
 const listState = useListPage(fetchStockList, { searchForm: initialFilters, sortParams: { sort: 'sales_30d', order: 'desc' } })
+const { syncingProducts, syncInventory } = useProductInventorySync(listState)
 const filters = listState.searchForm
 const loading = listState.loading; const tableData = listState.list
 const pagination = reactive({ total: listState.total, page: listState.page, page_size: listState.pageSize })

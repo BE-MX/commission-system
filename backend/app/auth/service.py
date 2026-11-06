@@ -388,7 +388,7 @@ def seed_role_permissions(db: Session):
         ("insight_minutes:write", "insight", "write",         "上传/管理周会纪要"),
         # 备货管理（2026-07-12 日报页拆独立码，stock:read 保留给销量备货一览）
         ("stock:read",            "stock",   "read",          "查看销量备货一览"),
-        ("stock:write",           "stock",   "write",         "设置安全库存 / AI 生成建议"),
+        ("stock:write",           "stock",   "write",         "设置安全库存 / AI 生成建议 / 同步小满库存"),
         ("stock:admin",           "stock",   "admin",         "手动触发日报生成 / 调试推送"),
         ("catalog:read",          "catalog", "read",          "查看本地产品和 SKU"),
         ("catalog:write",         "catalog", "write",         "维护本地产品和 SKU"),
