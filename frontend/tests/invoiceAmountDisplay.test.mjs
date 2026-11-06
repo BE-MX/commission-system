@@ -26,3 +26,16 @@ for (const key of ['order_amount', 'total_amount']) {
     }
   })
 }
+
+for (const [key, expected, other] of [['order_amount', '1,234.56', '1,254.81'], ['total_amount', '1,254.81', '1,234.56']]) {
+  test(`${key} stays in its own single-line column`, async () => {
+    const html = await renderToString(Vue.createSSRApp({
+      render,
+      data: () => ({ column: { key }, row: { currency: 'EUR', order_amount: 1234.56, total_amount: 1254.81 }, money: formatMoney }),
+    }))
+    assert.ok(html.includes(expected))
+    assert.ok(!html.includes(other))
+    assert.equal((html.match(/EUR/g) || []).length, 1)
+    assert.doesNotMatch(html, /invoice-pair/)
+  })
+}

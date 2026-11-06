@@ -52,18 +52,16 @@ export function useInvoiceManagePage() {
 
   // 列配置数组：TableTools 列显隐的数据源 + 表格渲染驱动（Action Bar Spec / List Page Spec 第 9 节）
   const columnDefs = [
-    { key: 'invoice_no', label: '发票号', prop: 'invoice_no', minWidth: 220, maxWidth: 320, className: 'invoice-number-column', fixed: 'left' },
-    { key: 'customer_name', label: '客户', prop: 'customer_name', minWidth: 180, maxWidth: 260, tooltip: true, fixed: 'left' },
-    { key: 'order_type', label: '类型', minWidth: 110, maxWidth: 130 },
-    { key: 'invoice_date', label: '日期', prop: 'invoice_date', minWidth: 116, maxWidth: 150 },
-    { key: 'item_count', label: '明细', prop: 'item_count', minWidth: 80, maxWidth: 120, align: 'right' },
-    { key: 'order_amount', label: '订单金额', minWidth: 150, maxWidth: 190, align: 'right' },
-    { key: 'total_amount', label: '应付合计', minWidth: 150, maxWidth: 190, align: 'right' },
-    { key: 'status', label: '状态', minWidth: 160, maxWidth: 180, tooltip: true },
-    { key: 'transaction_route', label: '正式来源', minWidth: 120 },
-    { key: 'shadow_status', label: '对比状态', minWidth: 125 },
-    { key: 'sync_status', label: '同步', minWidth: 110, maxWidth: 130, tooltip: true },
-    { key: 'created_by', label: '创建人', minWidth: 84, maxWidth: 120, tooltip: true },
+    { key: 'invoice_no', label: '发票号', prop: 'invoice_no', minWidth: 230, maxWidth: 340, className: 'invoice-number-column', fixed: 'left' },
+    { key: 'customer_name', label: '客户', prop: 'customer_name', minWidth: 160, maxWidth: 240, tooltip: true },
+    { key: 'item_count', label: '型号/数量', sortLabel: '型号行数', prop: 'item_count', minWidth: 112, maxWidth: 150, align: 'right' },
+    { key: 'order_amount', label: '订单金额（GMV）', minWidth: 168, maxWidth: 220, align: 'right', tooltip: true },
+    { key: 'total_amount', label: '应付合计', minWidth: 136, maxWidth: 190, align: 'right', tooltip: true },
+    { key: 'received_amount', label: '已回款', minWidth: 128, maxWidth: 190, align: 'right', tooltip: true, sortable: false },
+    { key: 'status', label: '订单/小满状态', minWidth: 184, maxWidth: 240, tooltip: true },
+    { key: 'transaction_route', label: '正式来源', minWidth: 120, defaultVisible: false },
+    { key: 'shadow_status', label: '对比状态', minWidth: 125, defaultVisible: false },
+    { key: 'created_by', label: '创建人', minWidth: 90, maxWidth: 120, tooltip: true, defaultVisible: false },
     { key: 'created_at', label: '创建时间', minWidth: 130, maxWidth: 160, tooltip: true, defaultVisible: false },
   ]
   // 表格视图状态（列显隐/密度/全屏）走全局基建 useTableView（Action Bar Spec）

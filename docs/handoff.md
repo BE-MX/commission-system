@@ -1,3 +1,11 @@
+## 2026-11-06 订单发票指定列布局（Codex，带横线版，未部署）
+
+- 最终选择：用户确认采用带横线版并授权合并、推送。恢复订单行间 `1px solid var(--border-hover)` 分隔线，贯通固定列；竖向列线、表头分隔和已确认列布局保留。不部署。无横线图仅保留在 `invoice-list-no-row-lines-20261106/` 作试版对照。
+- 继续使用 `D:/MyProgram/commission-system-codex-invoice-list-density` / `codex/invoice-list-density`。按用户最新方案取消四组双行：发票号与类型/括号日期合并、号码后可复制；客户独立；明细改“型号/数量”；GMV、应付、已回款独立；业务/小满状态上下合并。来源与对比默认隐藏，创建人/时间保留本轮前默认隐藏、90/130px 及已有偏好。删除旧类型/日期/同步独立列及四组配对样式和元数据。
+- 回款颜色按分币比较，等额主文字色/400、超额黄色/700、少额红色/700、缺失待核验；新增纯展示 helper 与边界测试，覆盖浮点 0.1+0.2、半分 1.005 和负值显示一致性。已回款暂不开放后端排序，型号按既有 item_count 排序，GMV 按 order_amount。复制复用共享 copyText，成功/失败均反馈且不打开详情、不改变路由。
+- 本轮仅 UI 预览：真实列表 API 尚无 total_quantity / received_amount。截图与 fixture 全部为模拟数据，含配件明细3行、累计9件和回款三种颜色/未知示例；未把 internal_received 或未核验回款当作财务事实，未修改后端或数据库。后续接入需明确预售归档明细口径、有效回款/退款/独立运费与回款权限，批量投影避免 N+1。
+- 27项相关 Node/金额渲染/偏好检查、前端构建、增量约定与独立风险审查通过；浏览器验证列布局、复制成功/失败、金额颜色/字重、未知不造0、排序及列设置/旧偏好。1920 client/scroll=1436/1436，1366=1066/1338，1440=1140/1338，按指定列保留横滚。预览与日志 `C:/Users/windb/.codex/visualizations/2026/11/04/01a1a59e-8001-79c3-9f3a-e4c57b29dbd1/invoice-list-requested-layout-20261106/`。本轮交付范围为提交、合并 main 及推送 origin/main；不部署，未访问真实业务接口或写业务数据。
+
 ## 2026-11-06 普通订单保存明细身份修复（Codex，Git 交付，待发布）
 
 - 工作区 `D:/MyProgram/commission-system-codex-invoice-line-identity`，分支 `codex/invoice-line-identity`。普通订单保存复用已有明细 ID，过期/外单 ID 拒绝保存，实际删行才记录待删除小满行号，复制行不复用远端身份。

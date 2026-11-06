@@ -11,14 +11,14 @@
   --invoice-gold: var(--color-primary);
   --invoice-gold-light: var(--color-primary-light, rgba(212, 148, 28, 0.08));
   --invoice-warn-bg: var(--color-warning-light, rgba(230, 162, 60, 0.1));
-  padding: 24px 28px;
+  /* MainLayout already supplies the page gutters. */
+  padding: 0;
   color: var(--invoice-ink);
   /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
   position: relative;
 }
-.invoice-detail-entry{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:4px 0;width:100%}
-.invoice-detail-entry>.invoice-anomaly{order:-1;align-self:flex-end}
-.invoice-number-button{border:0;background:transparent;padding:0;color:var(--button-primary-link);font:inherit;font-weight:600;cursor:pointer;text-align:left;min-height:24px;overflow-wrap:anywhere}
+.invoice-number-button{border:0;background:transparent;padding:0;color:var(--text-primary);font:inherit;font-size:14px;font-weight:600;line-height:24px;cursor:pointer;text-align:left;min-height:24px;overflow-wrap:anywhere}
+.invoice-number-button:hover{color:var(--button-primary-link)}
 .invoice-number-button:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}
 @media(hover:none){.invoice-number-button{min-height:44px}}
 
@@ -124,6 +124,100 @@
   width: 100%;
 }
 
+.invoice-pair {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.invoice-number-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.invoice-number-line .invoice-number-button {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.invoice-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  min-height: 24px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.invoice-copy-button:hover { color: var(--button-primary-link); }
+.invoice-copy-button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+@media (hover: none) { .invoice-copy-button { flex-basis: 44px; min-height: 44px; } }
+
+.invoice-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.invoice-secondary {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.invoice-money {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.invoice-money > span {
+  margin-right: 4px;
+}
+
+.invoice-model-quantity { font-variant-numeric: tabular-nums; }
+.invoice-received--equal { color: var(--text-primary); font-weight: 400; }
+.invoice-received--overpaid { color: var(--color-warning-text); font-weight: 700; }
+.invoice-received--underpaid { color: var(--tag-danger-text); font-weight: 700; }
+.invoice-received--unknown { color: var(--text-secondary); font-weight: 400; }
+
+.invoice-status-main {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+}
+
+.invoice-sync-text--danger {
+  color: var(--tag-danger-text);
+}
+
+.invoice-sync-text--warning {
+  color: var(--tag-warning-text);
+}
+
+/* Element Plus .cell owns the horizontal gutter; do not also pad its td/th. */
+.invoice-panel :deep(.invoice-table .el-table__header th.el-table__cell),
+.invoice-panel :deep(.invoice-table .el-table__body td.el-table__cell) {
+  padding-inline: 0;
+}
+
+/* Separate orders with one continuous rule, including the fixed columns. */
+.invoice-panel :deep(.invoice-table .el-table__body tr:not(:last-child) > td.el-table__cell) {
+  border-bottom: 1px solid var(--border-hover) !important;
+}
+
 .invoice-number {
   white-space: normal;
   overflow-wrap: anywhere;
@@ -147,17 +241,13 @@
   color: var(--invoice-muted);
 }
 
-/* 列表全局样式对 .cell 强制单行省略；发票号需要完整换行。 */
-.invoice-panel :deep(.invoice-number-column .cell) {
-  white-space: normal !important;
-  word-break: normal !important;
-  overflow: visible;
-  text-overflow: clip;
-}
-
 /* 分页已全局化为 .table-card > .pager（app.css），本页不覆写 */
 
 /* 全屏态：面板自身滚动 */
+.invoice-panel.table-card--fullscreen {
+  background: var(--card-bg);
+}
+
 .invoice-panel:fullscreen {
   overflow: auto;
 }
