@@ -24,17 +24,17 @@
     <el-dialog :model-value="!!dialog" @update:model-value="v => { if (!v && !saving) dialog = '' }" :title="dialogTitles[dialog]" width="480px" :close-on-click-modal="!saving" :close-on-press-escape="!saving" destroy-on-close><el-form label-position="top" @submit.prevent="save"><template v-if="dialog === 'note'"><el-form-item label="关键备注 · 仅本人"><el-input v-model="form.remark" type="textarea" :rows="5" maxlength="600" show-word-limit /></el-form-item></template><template v-if="dialog === 'date'"><el-form-item label="下次跟进日期（可清空）"><el-date-picker v-model="form.next_followup_date" value-format="YYYY-MM-DD" /></el-form-item><el-form-item label="跟进说明"><el-input v-model="form.next_followup_remark" type="textarea" /></el-form-item></template><template v-if="dialog === 'grade'"><el-alert title="分级为公司共享信息，其他归属业务员也会看到。" :closable="false" /><el-form-item label="客户等级"><el-select v-model="form.grade"><el-option v-for="grade in detail.grade_options || []" :key="grade.value || grade" :label="grade.label || grade" :value="grade.value || grade" /></el-select></el-form-item><p v-if="!detail.grade_options?.length">等级字典不可用，请联系管理员。</p></template><template v-if="dialog === 'snooze'"><el-form-item label="稍后提醒日期"><el-date-picker v-model="form.date" value-format="YYYY-MM-DD" :disabled-date="d => formatBeijingDate(d) <= currentBeijingDate()" /></el-form-item></template><template v-if="dialog === 'record'"><el-form-item label="渠道"><el-select v-model="form.channel" @change="sampleDate"><el-option v-for="(label,key) in CHANNELS" :key="key" :label="label" :value="key" /></el-select></el-form-item><el-form-item label="跟进内容" required><el-input v-model="form.content" type="textarea" :rows="4" maxlength="4000" /></el-form-item><el-form-item label="发生时间 · 北京时间" required><el-input v-model="form.happened_at" type="datetime-local" step="1" @change="sampleDate" /></el-form-item><el-form-item label="下次跟进（选填，可清空）"><el-date-picker v-model="form.next_followup_date" value-format="YYYY-MM-DD" /></el-form-item><p v-if="form.channel === 'sample'" class="muted">寄样默认 10 个工作日后跟进，可修改或清空。</p></template><template v-if="dialog === 'link'"><el-form-item label="搜索本人私海客户"><el-input v-model="linkKeyword" @input="searchLinks" clearable /></el-form-item><el-form-item label="手动确认客户" required><el-select v-model="form.company_id" filterable><el-option v-for="customer in linkOptions" :key="customer.company_id" :label="customer.name" :value="String(customer.company_id)" /></el-select></el-form-item></template><el-alert v-if="saveError" :title="saveError" type="error" :closable="false" /><div v-if="conflict" class="conflict"><p>记录已被更新。本地输入已保留，请核对最新版本后重试。</p><pre>{{ JSON.stringify(conflict, null, 2) }}</pre><el-button @click="reloadConflict">载入最新版本号，保留我的内容</el-button></div><div class="dialog-actions"><el-button :disabled="saving" @click="dialog = ''">取消</el-button><el-button type="primary" native-type="submit" :loading="saving" :disabled="dialog === 'grade' && !detail.grade_options?.length">保存</el-button></div></el-form></el-dialog>
     <el-dialog v-model="evidenceOpen" title="来源证据" width="640px" destroy-on-close><p v-if="evidenceLoading">正在核验来源权限…</p><el-alert v-else-if="evidenceError" :title="evidenceError" type="error" :closable="false" /><template v-else-if="evidence"><h3>{{ evidence.title }}</h3><p class="muted">{{ shortTime(evidence.occurred_at) }}</p><p class="evidence-text">{{ evidence.content || evidence.text || evidence.summary || readable(evidence.result) }}</p><div v-for="message in evidence.messages || []" :key="message.id" class="evidence-message"><small>{{ message.sender_name }} · {{ shortTime(message.occurred_at || message.sent_at || message.at) }}</small><p>{{ message.content || message.text }}</p></div></template></el-dialog>
     <el-dialog v-model="waOpen" title="确认 WhatsApp 联系目标" width="480px"><p>草稿由你核对并亲自发送；打开聊天不会标记已跟进。</p><div v-for="target in detail?.wa_targets || []" :key="target.conversation_uid" class="wa-target"><span>{{ target.name || target.display_name || target.phone_masked }}</span><el-button @click="openWhatsApp(target)">打开 ↗</el-button></div><el-alert v-if="waError" :title="waError" type="error" :closable="false" /></el-dialog>
-    <el-dialog v-model="copyOpen" title="复制草稿" width="480px"><el-input :model-value="suggestion?.draft" type="textarea" :rows="7" readonly aria-label="请选中并复制草稿" /></el-dialog>
+    <el-dialog v-model="copyOpen" title="复制草稿" width="480px"><el-input :model-value="copyText" type="textarea" :rows="7" readonly aria-label="请选中并复制草稿" /></el-dialog>
   </main>
 </template>
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Search } from '@element-plus/icons-vue'
 import { currentBeijingDate, formatBeijingDate, formatBeijingShortDateTime as shortTime } from '@/utils/datetime'
 import { clientDeskApi } from '@/api/clientDesk'
 import { msgSuccessText } from '@/utils/feedback'
-import { REASON_FILTERS as reasons, CHANNELS, SOURCES, analysisLabel, safeDestination } from './deskController'
+import { REASON_FILTERS as reasons, CHANNELS, SOURCES, analysisLabel, safeDestination, revalidatedDraft, copyOrFallback } from './deskController'
 import { useClientDesk } from './useClientDesk'
 const route = useRoute()
 const desk = useClientDesk(route)
@@ -42,10 +42,32 @@ const { mode, filter, keyword, page, pageSize, total, rows, today, selected, det
 const tabs = [{ key: 'suggested', label: '今日建议' }, { key: 'all', label: '全部客户' }, { key: 'unlinked', label: '未关联会话' }]
 const grades = [{ value: 'grade:S,A', label: 'S / A' }, { value: 'grade:B', label: 'B' }, { value: 'ungraded', label: '未分级' }]
 const dialogTitles = { note: '关键备注', date: '下次跟进', grade: '客户分级', record: '记一笔', snooze: '稍后提醒', link: '关联到我的客户' }
-const queueEl = ref(null), waOpen = ref(false), waError = ref(''), copyOpen = ref(false)
+const queueEl = ref(null), waOpen = ref(false), waError = ref(''), copyOpen = ref(false), copyText = ref('')
+watch([selected, () => suggestion.value?.id], () => { copyOpen.value = false; copyText.value = '' })
 const initials = name => String(name || 'WA').split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase()
 async function back() { reading.value = false; await nextTick(); queueEl.value?.querySelector('.selected')?.focus({ preventScroll: true }) }
-async function copyDraft() { try { await navigator.clipboard.writeText(suggestion.value.draft); msgSuccessText('草稿已复制') } catch { copyOpen.value = true } }
+async function copyDraft() {
+  const customer = selected.value, suggestionId = suggestion.value?.id
+  copyOpen.value = false
+  copyText.value = ''
+  try {
+    // Copy is a new disclosure boundary: re-read live dependencies, including
+    // TM tombstones and revoked links, rather than copying the cached draft.
+    const fresh = await revalidatedDraft(clientDeskApi.customer, customer, suggestionId,
+      () => selected.value === customer && String(suggestion.value?.id) === String(suggestionId))
+    detail.value = fresh
+    const result = await copyOrFallback(fresh.suggestion.draft, text => navigator.clipboard.writeText(text),
+      () => selected.value === customer && String(suggestion.value?.id) === String(suggestionId)
+        && suggestion.value?.draft === fresh.suggestion.draft)
+    if (result?.copied) msgSuccessText('草稿已复制')
+    else if (result) { copyText.value = result.text; copyOpen.value = true }
+  } catch {
+    if (selected.value === customer && String(suggestion.value?.id) === String(suggestionId)) {
+      detail.value = null
+      detailError.value = '草稿、资料或授权已变化，请重新查看客户资料。'
+    }
+  }
+}
 async function openWhatsApp(target) {
   waError.value = ''
   // Reserve the user-initiated tab before awaiting live authorization to avoid popup blocking.

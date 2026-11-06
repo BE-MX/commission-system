@@ -52,8 +52,11 @@ def build_pack(source, state, codes, day, correction=False):
         "research_summary": source.get("research_summary"),
         "previous_brief": None,
     }
-    if state.get("brief_dependencies") == deps:
-        data["previous_brief"] = state.get("brief_md")
+    from .source_policy import previous_brief
+
+    data["previous_brief"] = previous_brief(state, deps)
+    data["coverage_gaps"] = source.get("coverage_gaps", [])
+    data["analysis_policy"] = source.get("analysis_policy")
     refs = {
         k: dict(v) for k, v in (source.get("refs") or {}).items() if v.get("event_key")
     }
@@ -78,10 +81,12 @@ def build_pack(source, state, codes, day, correction=False):
             "company_id": source["company_id"],
         }
     messages = sorted(
-        (k for k in refs if k.startswith("M-")),
+        (k for k in refs if k.startswith(("M-", "AF-"))),
         key=lambda k: (str(refs[k].get("at", "")), k),
     )
-    optional = sorted((k for k in refs if not k.startswith("M-")), reverse=True)
+    optional = sorted(
+        (k for k in refs if not k.startswith(("M-", "AF-"))), reverse=True
+    )
     instruction = canonical(
         {
             "biz_date": str(day),

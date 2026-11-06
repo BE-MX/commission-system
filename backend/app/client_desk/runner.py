@@ -5,6 +5,8 @@ import secrets
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from sqlalchemy import case
+from fastapi import HTTPException
+from .source_policy import manual_only
 
 from app.ai.service import chat
 from app.ai.text_snapshot import prepare_text_chat
@@ -91,15 +93,39 @@ def run_job(db, job):
     called = False
     answered = False
     usage = {"input": 0, "output": 0}
+    selection = None
+    initial_dependencies = None
     try:
         for attempt in range(2):
             now = beijing_now()
             cfg = active(db, uid)
-            source = sources.analysis_input(db, uid, cid, now)
-            row = guarded(db, job, now).first()
+            row = guarded(db, job, now).populate_existing().first()
             if not row:
                 db.rollback()
                 return
+            selected = sorted(row.selected_feed_item_ids or [])
+            if selection is not None and selected != selection:
+                _stop(db, job, "rule_only", "source_changed")
+                return
+            selection = selected
+            if selection and row.run_seq <= 0:
+                _stop(db, job, "rule_only", "manual_selection_required")
+                return
+            source = sources.analysis_input(
+                db, uid, cid, now, **({"feed_item_ids": selection} if selection else {})
+            )
+            if selection and (row.source_dependencies or {}).get(
+                "alibaba_feed"
+            ) != source["source_dependencies"].get("alibaba_feed"):
+                _stop(db, job, "rule_only", "source_changed")
+                return
+            if (
+                initial_dependencies is not None
+                and initial_dependencies != source["source_dependencies"]
+            ):
+                _stop(db, job, "rule_only", "source_changed")
+                return
+            initial_dependencies = source["source_dependencies"]
             day, codes = row.biz_date, list(row.rule_codes or [])
             state = db.query(State).filter_by(user_id=uid, company_id=cid).first()
             personal = state_data(state)
@@ -172,7 +198,20 @@ def run_job(db, job):
             break
         db.rollback()
         active(db, uid)
-        fresh = sources.analysis_input(db, uid, cid, beijing_now())
+        current_row = guarded(db, job, beijing_now()).populate_existing().first()
+        if not current_row:
+            db.rollback()
+            return
+        if sorted(current_row.selected_feed_item_ids or []) != selection:
+            _stop(db, job, "rule_only", "source_changed")
+            return
+        fresh = sources.analysis_input(
+            db,
+            uid,
+            cid,
+            beijing_now(),
+            **({"feed_item_ids": selection} if selection else {}),
+        )
         if fresh["source_dependencies"] != pack.dependencies:
             _stop(db, job, "rule_only", "source_changed")
             return
@@ -224,11 +263,19 @@ def run_job(db, job):
                 pack.dependencies,
                 digest(pack.dependencies),
             )
-            state.brief_at, state.last_analyzed_at, state.last_applied_run = (
-                finished,
-                finished,
-                version,
-            )
+            state.brief_at, state.last_applied_run = finished, version
+            # Historical v1 output may update the manual profile only. It cannot
+            # schedule rechecks, suppress future automatic analysis, or cool rules.
+            if manual_only(pack.dependencies):
+                db.commit()
+                return
+            if manual_only(personal.get("brief_dependencies")):
+                # Old persisted state may predate the write-side policy guard.
+                # Rebuild automatic state from this clean run, never its counters.
+                state.recheck_count = 0
+                state.activity_watermark = None
+                state.rule_cooldowns = {}
+            state.last_analyzed_at = finished
             watermark = source.get("activity_watermark")
             if state.activity_watermark != watermark:
                 state.recheck_count = 0
@@ -249,6 +296,20 @@ def run_job(db, job):
                     c: until for c in codes
                 }
         db.commit()
+    except HTTPException as exc:
+        changed = exc.status_code in (403, 404, 409, 503)
+        logger.warning(
+            "private desk source access %s: HTTP %s", job[0], exc.status_code
+        )
+        print(
+            f"[CLIENT_DESK] source access {job[0]}: HTTP {exc.status_code}", flush=True
+        )
+        _stop(
+            db,
+            job,
+            "rule_only" if changed else "failed",
+            "source_changed" if changed else "execution_failed",
+        )
     except Exception as exc:
         status = "ambiguous" if called and not answered else "failed"
         logger.warning("private desk execution %s: %s", job[0], type(exc).__name__)

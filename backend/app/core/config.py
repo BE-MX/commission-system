@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # External Alibaba ingestion is enrolled separately from the private-sea assistant.
     ALIBABA_FEED_ENABLED: bool = False
     ALIBABA_FEED_WORKER_ENABLED: bool = False
+    # Human record access is a separate enrollment from transport and AI execution.
+    ALIBABA_FEED_BUSINESS_ENABLED: bool = False
+    ALIBABA_FEED_AUTOMATION_ENABLED: bool = False
+    ALIBABA_FEED_MAX_OBSERVATION_AGE_HOURS: Annotated[int, Field(gt=0, le=168)] = 30
     ALIBABA_FEED_MAX_BODY_BYTES: Annotated[int, Field(gt=0)] = 10 * 1024 * 1024
     ALIBABA_FEED_MAX_COMPRESSED_BYTES: Annotated[int, Field(gt=0)] = 2 * 1024 * 1024
     ALIBABA_FEED_MAX_RATIO: Annotated[int, Field(gt=0)] = 100
@@ -289,6 +293,8 @@ class Settings(BaseSettings):
     EXPO_UPLOAD_SIGN_SECRET: str = "leshine-expo-upload-secret"
     # 上传页“美颜生成”使用的图片编辑 preset；提示词正文由 expo 版本表管理。
     EXPO_BEAUTIFY_PRESET_NAME: str = "expo_wig_composite"
+    # 零售商城 AI 试戴授权核验。/expo/kiosk 不读取此配置，继续使用原设备登录。
+    EXPO_RETAIL_GRANT_INTROSPECTION_URL: str = "https://leshine-wig-platform.pages.dev/api/retail-ai-tryon/introspect"
 
     # ── 客户售后管理 ─────────────────────────────────────────
     AFTERSALES_STORAGE_ROOT: str = "D:\\WORKSOURCE\\aftersales"

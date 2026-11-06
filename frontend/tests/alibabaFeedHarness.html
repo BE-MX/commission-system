@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TM资料本地验收</title></head><body><div id="app"></div>
+<script type="module">
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import ElementPlus from 'element-plus'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import 'element-plus/dist/index.css'
+import '/src/styles/tokens.css'
+import '/src/styles/liquid-glass.css'
+import '/src/styles/app.css'
+import '/src/styles/table-actions.css'
+import * as icons from '@element-plus/icons-vue'
+import AlibabaFeed from '/src/views/alibaba_feed/AlibabaFeed.vue'
+import { alibabaFeedClient, clientDeskClient } from '/src/api/clients.js'
+import { useAuthStore } from '/src/stores/auth.js'
+import { registerPermissionDirectives } from '/src/directives/permission.js'
+import GlassButton from '/src/components/GlassButton.vue'
+import StatusBadge from '/src/components/StatusBadge.vue'
+import FilterBar from '/src/components/FilterBar.vue'
+import ListPageStatus from '/src/components/ListPageStatus.vue'
+import DetailDrawer from '/src/components/DetailDrawer.vue'
+import { installFeedFixture } from './alibabaFeedFixture.mjs'
+const app = createApp(AlibabaFeed), pinia = createPinia()
+app.use(pinia)
+const auth = useAuthStore()
+auth.user = { id: 1, permissions: ['client_desk:read', 'client_desk:write', 'alibaba_feed:admin'], roles: [] }
+window.__feedAuth = auth
+window.__feedFixture = installFeedFixture(alibabaFeedClient, clientDeskClient, { disabled: new URLSearchParams(location.search).has('disabled'), placeholders: new URLSearchParams(location.search).has('placeholders') })
+app.use(createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }, { path: '/client-desk', component: { template: '<p>客户深链 · 仅本地验收</p>' } }] }))
+app.use(ElementPlus, { locale: zhCn })
+for (const [name, component] of Object.entries({ ...icons, GlassButton, StatusBadge, FilterBar, ListPageStatus, DetailDrawer })) app.component(name, component)
+registerPermissionDirectives(app)
+app.directive('sticky-scrollbar', {})
+app.mount('#app')
+</script>
+<style>body{margin:0;padding:24px;background:var(--page-bg);font-family:var(--font-body);color:var(--text-primary)}</style>
+</body></html>

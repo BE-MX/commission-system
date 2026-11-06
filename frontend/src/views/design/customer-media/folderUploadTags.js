@@ -12,12 +12,23 @@ export async function queueFolderFiles(rawItems, {
     if (!groups.has(name)) groups.set(name, [])
     groups.get(name).push(item)
   }
+  const matched = new Map()
+  for (const tag of getCustomerTags()) {
+    const name = tag.value.replace(/\s/g, '')
+    if (!matched.has(name)) matched.set(name, tag)
+  }
+  const missing = [...groups.keys()].filter(name => !matched.has(name))
+  const choices = missing.length ? await confirmCreate(missing) : null
   for (const [name, files] of groups) {
-    let tag = getCustomerTags().find(item => item.value.replace(/\s/g, '') === name)
+    let tag = matched.get(name)
     if (!tag) {
-      const dimension = await confirmCreate(name)
+      const dimension = choices?.get(name)
       if (!dimension) continue
-      tag = await createTag(name, dimension)
+      try {
+        tag = await createTag(name, dimension)
+      } catch (error) {
+        throw new Error(`创建标签「${name}」失败，请重新添加文件夹：${error.message || '请求失败'}`, { cause: error })
+      }
     }
     const tags = selectFolderTag(tag)
     addFiles(files, tags)

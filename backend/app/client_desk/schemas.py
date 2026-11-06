@@ -2,7 +2,7 @@
 
 from datetime import date as Date, datetime
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, field_validator
 
 
 class Payload(BaseModel):
@@ -40,6 +40,7 @@ class FollowupPost(Payload):
 
 class ReanalyzePost(Payload):
     client_request_id: str = Field(min_length=8, max_length=80)
+    feed_item_ids: list[PositiveInt] = Field(default_factory=list, max_length=25)
 
 
 class FeedbackPost(Payload):

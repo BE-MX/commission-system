@@ -27,6 +27,11 @@ def log_failure(action, error):
 def accept_batch(db, source, raw_body, idempotency_key, *, now=None, limits=None):
     now = now or beijing_now()
     data = parse_envelope(raw_body, idempotency_key, now, limits)
+    if data.get("source_account_uid", source.source_account_uid) != source.source_account_uid:
+        raise FeedError(403, "SOURCE_SCOPE_DENIED")
+    declared_generation = data["run"].get("collection_generation")
+    if declared_generation is not None and declared_generation != getattr(source, "generation", None):
+        raise FeedError(409, "SOURCE_GENERATION_RETIRED")
     body_hash = digest(data)
     # This service owns its short ingestion transaction. Discard the authentication
     # read snapshot before locking; MySQL repeatable-read must see concurrent posts.

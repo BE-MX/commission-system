@@ -22,4 +22,14 @@ def create_source(request: SourceCreate, db: Session = Depends(get_db),
 @router.patch("/sources/{source_uid}")
 def update_source(source_uid: str, request: SourcePatch, db: Session = Depends(get_db),
                   current_user: dict = Depends(require_current_feed_admin)):
-    return ok(source_service.update_source(db, source_uid, request))
+    return ok(source_service.update_source(db, source_uid, request, actor_id=int(current_user["sub"])))
+
+
+@router.get("/sources")
+def list_sources(db: Session = Depends(get_db), current_user: dict = Depends(require_current_feed_admin)):
+    return ok(source_service.list_sources(db))
+
+
+@router.get("/owners")
+def list_owners(db: Session = Depends(get_db), current_user: dict = Depends(require_current_feed_admin)):
+    return ok(source_service.list_owners(db))

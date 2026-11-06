@@ -85,8 +85,7 @@ def test_rotate_keeps_source_and_optimistic_update(feed):
     with pytest.raises(HTTPException) as error:
         update_source(db, "shop-a", SourcePatch(expected_version=1, name="Stale"))
     assert error.value.status_code == 409
-    with pytest.raises(ValidationError):
-        SourcePatch(expected_version=active["version"], crm_shared=True)
+    assert SourcePatch(expected_version=active["version"], crm_shared=True).crm_shared is True
     with pytest.raises(ValidationError):
         SourcePatch(expected_version=active["version"], source_account_uid="shop-b")
 

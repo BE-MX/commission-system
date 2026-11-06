@@ -1,5 +1,11 @@
 # 莱莎方舟 数据库表参考
 
+## 阿里 Feed P2（252_alibaba_feed_business，本地实现，待发布）
+
+接251，新增个人关联 `ark_alibaba_feed_links`（用户/来源/代次/记录类型/记录ID/generated active_slot有效唯一，用户/请求键幂等唯一）和 `ark_alibaba_feed_messages`（来源/代次/会话/消息ID唯一，顺序、修订/会话版本、观察时间、冲突、最高tombstone及规范正文）。来源增加精确负责人JSON、映射/能力版本、核验依据和旧身份阻断；item增加schema/会话/商机/覆盖版本；私海建议增加 `selected_feed_item_ids`。
+
+旧来源JSON回填为空，授权默认关闭；外键用户unsigned匹配，ID精确比较、审计北京时间DATETIME(6)。冻结迁移核验类型、计算列、唯一键、FK、索引及AUTO_INCREMENT后续建，漂移拒绝，不删除既有审计作降级。正文读取始终过滤撤回与版本冲突，旧快照/原包不能绕过。实际MySQL边界和数据保留证据见[P2 实现与验收](requirements/2026-11-05-alibaba-feed-integration/p2-implementation.md)。
+
 ## 阿里 Feed P1（251_alibaba_feed，本地实现，待发布）
 
 接 `250_client_desk`，仅在方舟写库新增三表，不改业务镜像、客户或私海数据。原始包为私有 MEDIUMBLOB，无公开文件接口；时间为北京时间 DATETIME(6)。MySQL 8 的 `utf8mb4_0900_bin` 保留逻辑 ID 大小写及尾空格差异。

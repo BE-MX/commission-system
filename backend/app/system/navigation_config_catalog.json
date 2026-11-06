@@ -1,5 +1,5 @@
 {
-  "source_sha256": "dd86b888407b7f499cc465d2155d798ef64e8d27776ace95f545e84090b20060",
+  "source_sha256": "179f9c9d8e0b44beb83df1d3870a94bfe82f0dd17147ce70287abf8c2d07b5a8",
   "nodes": [
     {
       "id": "customerPortal",
@@ -861,6 +861,26 @@
       "badgeTone": "gold",
       "titleSync": false,
       "path": "/client-desk",
+      "external": false,
+      "rule": "client_desk:read / client_desk:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "business": "",
+      "phase": false
+    },
+    {
+      "id": "AlibabaFeed",
+      "kind": "page",
+      "label": "TM 资料",
+      "icon": "ChatDotRound",
+      "parent": "customerOperations",
+      "order": -5,
+      "visible": true,
+      "builtin": true,
+      "protected": false,
+      "badge": "",
+      "badgePlace": "text",
+      "badgeTone": "gold",
+      "titleSync": false,
+      "path": "/alibaba-feed",
       "external": false,
       "rule": "client_desk:read / client_desk:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",

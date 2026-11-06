@@ -139,7 +139,7 @@ test('folder queue uses the locked-plus-folder selection for each matched or cre
     getCustomerTags: () => state.customerTags.value,
     getSelectedTags: () => state.selectedTags.value,
     selectFolderTag: state.selectFolderTag,
-    confirmCreate: async () => true,
+    confirmCreate: async names => new Map(names.map(name => [name, { id: 3 }])),
     createTag: async name => {
       const tag = { dimension_id: 3, tag_value_id: 14, value: name }
       state.customerTags.value.push(tag)

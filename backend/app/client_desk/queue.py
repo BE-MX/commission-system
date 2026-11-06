@@ -250,13 +250,18 @@ def scan_user(db, user, now=None, *, prepared=None):
     return len(candidates)
 
 
-def enqueue_manual(db, user, company_id, client_request_id):
+def enqueue_manual(db, user, company_id, client_request_id, feed_item_ids=None):
     from .service import lock_state
     from .private_scope import assert_company_access
 
     uid = actor_id(user)
     active(db, uid)
     assert_company_access(db, uid, company_id)
+    selected = sorted(set(feed_item_ids or []))
+    if len(selected) > 25 or any(
+        type(item) is not int or item <= 0 for item in selected
+    ):
+        raise HTTPException(422, "请选择最多25条有效历史快照")
     now = beijing_now()
     lock_state(db, uid, int(company_id))
     existing = (
@@ -274,6 +279,15 @@ def enqueue_manual(db, user, company_id, client_request_id):
     count = max([r.run_seq for r in history] + [0])
     if existing and existing.company_id != int(company_id):
         raise HTTPException(409, "请求键已用于其他客户")
+    if existing and sorted(existing.selected_feed_item_ids or []) != selected:
+        raise HTTPException(409, "请求键已用于不同的历史快照选择")
+    feed_dependencies = None
+    if selected:
+        from app.alibaba_feed.business_service import select_for_analysis
+
+        feed_dependencies = select_for_analysis(db, uid, company_id, selected)[
+            "dependencies"
+        ]
     if not existing:
         if count >= 3:
             raise HTTPException(429, "今日重分析次数已用完")
@@ -285,6 +299,10 @@ def enqueue_manual(db, user, company_id, client_request_id):
             biz_date=now.date(),
             run_seq=count,
             client_request_id=client_request_id,
+            selected_feed_item_ids=selected,
+            source_dependencies=(
+                {"alibaba_feed": feed_dependencies} if selected else None
+            ),
             rule_codes=(routine.rule_codes if routine else []),
             rank_score=routine.rank_score if routine else 0,
             cohort=routine.cohort if routine else "ineligible",
@@ -327,9 +345,18 @@ def visible_suggestion(db, row, source, state, now):
         and not row.quality_feedback
     ):
         return None
+    from .source_policy import restricted_row
+    from .access import dependencies_valid
+
+    matching = row.source_dependencies == source.get(
+        "ai_source_dependencies", source.get("source_dependencies")
+    )
+    if restricted_row(row):
+        matching = dependencies_valid(
+            db, row.user_id, row.company_id, row.source_dependencies
+        )
     stale = row.status == "succeeded" and (
-        row.source_dependencies
-        != source.get("ai_source_dependencies", source.get("source_dependencies"))
+        not matching
         or (R1 in row.rule_codes) != (R1 in codes)
         or row.cohort == "holdout"
     )
@@ -390,8 +417,11 @@ def auto_done(db, user, now=None):
         .all()
     )
     by_company = {}
+    from .source_policy import restricted_row
+
     for row in rows:
-        by_company.setdefault(row.company_id, []).append(row.id)
+        if not restricted_row(row):
+            by_company.setdefault(row.company_id, []).append(row.id)
     for cid, row_ids in by_company.items():
         try:
             with db.begin_nested():
@@ -426,6 +456,10 @@ def _complete_company(db, uid, cid, row_ids, now):
         .filter(Row.id.in_(row_ids), Row.done_at.is_(None))
         .with_for_update()
     ):
+        from .source_policy import restricted_row
+
+        if restricted_row(row):
+            continue
         after = [
             at for at in outbound if (row.snapshot_at or row.created_at) < at <= now
         ]

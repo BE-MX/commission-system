@@ -1,5 +1,5 @@
 import { h, ref } from 'vue'
-import { ElOption, ElSelect } from 'element-plus'
+import { ElCheckbox, ElOption, ElSelect } from 'element-plus'
 import { createCustomerTagValue } from '@/api/customerMedia'
 import { confirmAction, isFeedbackCancelled, msgError, msgWarning } from '@/utils/feedback'
 import { collectDroppedFiles, dropHasDirectory, webkitPathSegments } from '../droppedFiles'
@@ -21,36 +21,58 @@ export function useCustomerMediaFolderUpload({
     return accepted
   }
 
-  async function confirmCreate(name) {
+  async function confirmCreate(names) {
     const dimensions = getTagDimensions().filter(dim => !dim.is_managed && dim.is_visible !== 0 && dim.is_visible !== false)
     if (!dimensions.length) throw new Error('没有可新建标签的客户维度，请在标签维度管理中启用一个非系统托管的客户维度')
     const defaultDimension = dimensions.find(dim => dim.name === 'customer_general')
       || (dimensions.length === 1 ? dimensions[0] : null)
     const dimensionId = ref(defaultDimension?.id ?? null)
+    const shared = ref(true)
+    const individual = ref(new Map())
+    const multiple = names.length > 1
+    const chosenId = name => shared.value ? dimensionId.value : individual.value.get(name)
+    function selector(id, value, onChange) {
+      return h(ElSelect, {
+        modelValue: value, 'onUpdate:modelValue': onChange, 'aria-labelledby': id,
+        placeholder: '请选择标签维度', style: { width: '100%' },
+      }, () => dimensions.map(dim => h(ElOption, { key: dim.id, label: dim.label, value: dim.id })))
+    }
+    const listStyle = { maxHeight: '32vh', overflowY: 'auto', overflowWrap: 'anywhere' }
     try {
       await confirmAction(() => h('div', [
-        h('p', { style: { overflowWrap: 'anywhere' } }, `标签名称：${name}`),
-        h('p', { id: 'folder-tag-dimension-label' }, '标签维度'),
-        h(ElSelect, {
-          modelValue: dimensionId.value,
-          'onUpdate:modelValue': value => { dimensionId.value = value },
-          'aria-labelledby': 'folder-tag-dimension-label',
-          placeholder: '请选择标签维度', style: { width: '100%' },
-        }, () => dimensions.map(dim => h(ElOption, { key: dim.id, label: dim.label, value: dim.id }))),
-      ]), '发现新标签', {
-        type: 'info', confirmButtonText: '创建并选中', cancelButtonText: '取消',
+        multiple && h(ElCheckbox, {
+          modelValue: shared.value, 'onUpdate:modelValue': value => {
+            if (!value && !individual.value.size) {
+              for (const name of names) individual.value.set(name, dimensionId.value)
+            }
+            shared.value = value
+          },
+        }, () => '所有新标签使用同一维度'),
+        ...(shared.value ? [
+          h('p', { style: listStyle }, `标签名称：${names.join('、')}`),
+          h('p', { id: 'folder-tag-dimension-label' }, '标签维度'),
+          selector('folder-tag-dimension-label', dimensionId.value, value => { dimensionId.value = value }),
+        ] : [h('div', { style: listStyle }, names.map((name, index) => {
+          const id = `folder-tag-dimension-${index}`
+          return h('div', { key: name }, [
+            h('p', { id }, name),
+            selector(id, individual.value.get(name), value => { individual.value.set(name, value) }),
+          ])
+        }))]),
+      ].filter(Boolean)), multiple ? `创建 ${names.length} 个新标签` : '发现新标签', {
+        type: 'info', confirmButtonText: multiple ? '批量创建' : '创建并选中', cancelButtonText: '取消',
         closeOnClickModal: false,
         beforeClose(action, instance, done) {
-          if (action === 'confirm' && !dimensions.some(dim => dim.id === dimensionId.value)) {
+          if (action === 'confirm' && names.some(name => !dimensions.some(dim => dim.id === chosenId(name)))) {
             msgWarning('请选择新标签所属的维度')
             return
           }
           done()
         },
       })
-      return dimensions.find(dim => dim.id === dimensionId.value)
+      return new Map(names.map(name => [name, dimensions.find(dim => dim.id === chosenId(name))]))
     } catch (error) {
-      if (isFeedbackCancelled(error)) return false
+      if (isFeedbackCancelled(error)) return null
       throw error
     }
   }
