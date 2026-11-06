@@ -89,6 +89,19 @@ export const retailTryonEntitlements = sqliteTable("retail_tryon_entitlements", 
   updatedAt: text("updated_at").notNull(),
 }, (table) => [index("idx_retail_tryon_grant").on(table.grantToken)]);
 
+export const retailAiTryonGrants = sqliteTable("retail_ai_tryon_grants", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  phone: text("phone").notNull().unique(),
+  token: text("token").notNull().unique(),
+  expiresAt: text("expires_at").notNull(),
+  claimId: text("claim_id").unique(),
+  claimedAt: text("claimed_at"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("idx_retail_ai_tryon_token_expiry").on(table.token, table.expiresAt),
+]);
+
 export const customerProfiles = sqliteTable("customer_profiles", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   phone: text("phone").notNull().unique(),

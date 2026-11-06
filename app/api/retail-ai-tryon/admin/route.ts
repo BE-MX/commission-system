@@ -10,6 +10,10 @@ export async function DELETE(request: Request) {
   const phone = String(body.phone ?? "").replace(/\D/g, "");
   if (!/^1\d{10}$/.test(phone)) return Response.json({ error: "手机号格式不正确" }, { status: 400 });
   await ensureDatabase();
-  const result = await getD1().prepare("DELETE FROM retail_tryon_entitlements WHERE phone = ?").bind(phone).run();
-  return Response.json({ reset: true, existed: Number(result.meta.changes ?? 0) > 0 });
+  const db = getD1();
+  const results = await db.batch([
+    db.prepare("DELETE FROM retail_ai_tryon_grants WHERE phone = ?").bind(phone),
+    db.prepare("DELETE FROM retail_tryon_entitlements WHERE phone = ?").bind(phone),
+  ]);
+  return Response.json({ reset: true, existed: results.some((result) => Number(result.meta.changes ?? 0) > 0) });
 }

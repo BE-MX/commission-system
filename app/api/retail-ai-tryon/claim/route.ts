@@ -1,29 +1,22 @@
-import { ensureDatabase, getD1 } from "../../../../db/runtime";
+import { claimTryonGrant, readTryonToken } from "../../../lib/retail-tryon-grant";
+import { requireRetailTryonService } from "../../../lib/retail-tryon-service";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const authorization = request.headers.get("authorization") ?? "";
-  const match = authorization.match(/^TryOn\s+([0-9a-f-]{36})$/i);
-  if (!match) return Response.json({ claimed: false }, { status: 401 });
+  if (!requireRetailTryonService(request)) return Response.json({ error: "服务身份无效" }, { status: 401 });
+  const token = readTryonToken(request);
+  if (!token) return Response.json({ error: "试戴授权无效" }, { status: 401 });
   const body = await request.json().catch(() => ({})) as { claimId?: string };
-  const claimId = String(body.claimId ?? "").trim();
+  const claimId = String(body.claimId ?? "");
   if (!/^expo-session:\d{1,20}$/.test(claimId)) {
-    return Response.json({ claimed: false }, { status: 400 });
+    return Response.json({ error: "试戴请求标识无效" }, { status: 400 });
   }
 
-  await ensureDatabase();
-  const now = new Date().toISOString();
-  const db = getD1();
-  await db.prepare(`UPDATE retail_tryon_entitlements SET generation_claim = ?, updated_at = ?
-    WHERE grant_token = ? AND grant_expires_at > ? AND generation_claim IS NULL`)
-    .bind(claimId, now, match[1], now).run();
-  const row = await db.prepare(`SELECT generation_claim FROM retail_tryon_entitlements
-    WHERE grant_token = ? AND grant_expires_at > ? LIMIT 1`)
-    .bind(match[1], now).first<{ generation_claim: string | null }>();
-  if (!row) return Response.json({ claimed: false }, { status: 401 });
-  if (row.generation_claim !== claimId) {
-    return Response.json({ claimed: false }, { status: 409 });
+  const grant = await claimTryonGrant(token, claimId);
+  if (!grant) return Response.json({ error: "试戴授权已过期" }, { status: 401 });
+  if (grant.claim_id !== claimId) {
+    return Response.json({ error: "本账号的一次 AI 试戴机会已使用" }, { status: 409 });
   }
-  return Response.json({ claimed: true }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json({ claimed: true, claimId, claimedAt: grant.claimed_at });
 }

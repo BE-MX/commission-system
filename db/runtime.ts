@@ -107,6 +107,17 @@ async function initialize() {
       updated_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_retail_tryon_grant ON retail_tryon_entitlements(grant_token)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS retail_ai_tryon_grants (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT NOT NULL UNIQUE,
+      token TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      claim_id TEXT UNIQUE,
+      claimed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_retail_ai_tryon_token_expiry ON retail_ai_tryon_grants(token, expires_at)"),
     db.prepare(`CREATE TABLE IF NOT EXISTS customer_profiles (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT NOT NULL UNIQUE,

@@ -57,6 +57,13 @@
       "when": 1793874791377,
       "tag": "0007_amazing_grey_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1793956779335,
+      "tag": "0008_safe_starjammers",
+      "breakpoints": true
     }
   ]
 }
