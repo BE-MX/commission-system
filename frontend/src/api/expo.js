@@ -5,6 +5,7 @@
 import { expoClient } from './clients'
 import { getAccessToken, useAuthStore } from '@/stores/auth'
 import { createKioskAuthRecovery } from './expoKioskAuth'
+import { isRetailTryOnPage } from '@/views/expo/retailTryOnSession'
 
 export const KIOSK_AUTH_EXPIRED_EVENT = 'expo:kiosk-auth-expired'
 
@@ -13,7 +14,9 @@ const recoverKioskAuth = createKioskAuthRecovery({
   getAccessToken,
   onExpired: () => window.dispatchEvent(new Event(KIOSK_AUTH_EXPIRED_EVENT)),
 })
-expoClient.interceptors.response.use(undefined, error => recoverKioskAuth(error, config => expoClient(config)))
+expoClient.interceptors.response.use(undefined, error => (
+  isRetailTryOnPage() ? Promise.reject(error) : recoverKioskAuth(error, config => expoClient(config))
+))
 
 // ── 试戴主流程（展位设备） ──
 // kiosk 是客户共享屏：所有流程端点必须 suppressToast，禁止拦截器把 axios 原始
@@ -70,6 +73,10 @@ export function createSession(customerId, photoBlob, mode = 'tryon', pendingName
     headers: { 'Content-Type': 'multipart/form-data' },
     ...KIOSK,
   })
+}
+
+export function resumeRetailTryon() {
+  return expoClient.get('/resume', { ...KIOSK })
 }
 
 export function getSession(sessionId, { internal = false } = {}) {

@@ -295,6 +295,7 @@ class Settings(BaseSettings):
     EXPO_BEAUTIFY_PRESET_NAME: str = "expo_wig_composite"
     # 零售商城 AI 试戴授权核验。/expo/kiosk 不读取此配置，继续使用原设备登录。
     EXPO_RETAIL_GRANT_INTROSPECTION_URL: str = "https://leshine-wig-platform.pages.dev/api/retail-ai-tryon/introspect"
+    EXPO_RETAIL_GRANT_SERVICE_SECRET: str = ""
 
     # ── 客户售后管理 ─────────────────────────────────────────
     AFTERSALES_STORAGE_ROOT: str = "D:\\WORKSOURCE\\aftersales"

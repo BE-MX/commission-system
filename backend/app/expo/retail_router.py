@@ -23,6 +23,8 @@ from app.expo.schemas import CustomerRegister, GenerateRequest, ReactionRequest
 
 logger = logging.getLogger("commission.expo.retail")
 router = APIRouter()
+# Auth exemption: this isolated customer surface uses require_retail_tryon_grant,
+# never Ark's employee require_permission dependency.
 
 
 def _grant_tag(grant: RetailGrant) -> str:
@@ -42,6 +44,31 @@ def _owned_session(db: Session, session_id: int, grant: RetailGrant) -> ExpoSess
         raise HTTPException(404, "会话不存在")
     _owned_customer(db, session.customer_id, grant)
     return session
+
+
+def _claimed_session_id(grant: RetailGrant) -> int | None:
+    prefix = "expo-session:"
+    if not grant.claim_id or not grant.claim_id.startswith(prefix):
+        return None
+    value = grant.claim_id[len(prefix):]
+    return int(value) if value.isdigit() else None
+
+
+def _discard_unclaimed_session(db: Session, session: ExpoSession) -> None:
+    """Remove a losing concurrent session before any paid AI work starts."""
+    if getattr(session, "_idempotent_replay", False):
+        return
+    from app.expo import storage
+    photo_path = ai_pipeline.REPO_ROOT / session.photo_path
+    beautified_path = ai_pipeline.REPO_ROOT / session.beautified_photo_path if session.beautified_photo_path else None
+    db.delete(session)
+    db.commit()
+    try:
+        storage.remove(photo_path)
+        if beautified_path:
+            storage.remove(beautified_path)
+    except OSError as exc:
+        logger.warning("[expo-retail] unclaimed session file cleanup skipped: %s", exc)
 
 
 def _commit_or_500(db: Session, context: str) -> None:
@@ -134,6 +161,14 @@ def create_session(
         raise HTTPException(exc.status_code, str(exc)) from None
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from None
+    try:
+        # Bind the grant before face analysis or beautification can spend AI quota.
+        # Replays of the same client request use the same session id and remain idempotent.
+        claim_retail_tryon_generation(grant, f"expo-session:{session.id}")
+    except HTTPException as exc:
+        if exc.status_code in (401, 409):
+            _discard_unclaimed_session(db, session)
+        raise
     upload_service.sweep_stale()
     replay = bool(getattr(session, "_idempotent_replay", False))
     if not replay:
@@ -141,6 +176,24 @@ def create_session(
     if photo_processing_mode == "beauty" and not replay:
         beautify_service.start(session.id)
     return ok({"session_id": session.id}, code=200 if replay else 201)
+
+
+@router.get("/resume", summary="恢复当前零售账号唯一的试戴会话")
+def resume(
+    db: Session = Depends(get_db),
+    # Retail grant is the scoped customer auth; Ark require_permission is intentionally inapplicable.
+    grant: RetailGrant = Depends(require_retail_tryon_grant),
+):
+    session_id = _claimed_session_id(grant)
+    if session_id is None:
+        return ok({"claimed": False})
+    session = _owned_session(db, session_id, grant)
+    return ok({
+        "claimed": True,
+        "customer_id": session.customer_id,
+        "session_id": session.id,
+        "session": service.serialize_session(db, session, include_internal=False),
+    })
 
 
 @router.get("/beautify-availability", summary="零售试戴美颜可用性")

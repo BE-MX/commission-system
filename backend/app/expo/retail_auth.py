@@ -1,6 +1,7 @@
 """Narrow bearer grant used only by the retail-mall try-on surface."""
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import re
 import threading
 import time
@@ -23,6 +24,28 @@ class RetailGrant:
     subject: str
     phone: str
     expires_at: str
+    claim_id: str | None = None
+
+
+def _service_headers(token: str) -> dict[str, str]:
+    settings = get_settings()
+    secret = settings.EXPO_RETAIL_GRANT_SERVICE_SECRET.strip()
+    if not secret:
+        raise HTTPException(503, "零售试戴服务密钥未配置")
+    return {
+        "Authorization": f"TryOn {token}",
+        "X-Retail-Tryon-Service": secret,
+    }
+
+
+def _cache_ttl(expires_at: str) -> float:
+    try:
+        expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        return max(0.0, min(float(_CACHE_SECONDS), expiry.timestamp() - time.time()))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _cached(token: str) -> RetailGrant | None:
@@ -55,7 +78,7 @@ def require_retail_tryon_grant(authorization: str | None = Header(None)) -> Reta
     try:
         response = httpx.get(
             url,
-            headers={"Authorization": f"TryOn {token}"},
+            headers=_service_headers(token),
             timeout=8.0,
             follow_redirects=False,
         )
@@ -76,9 +99,13 @@ def require_retail_tryon_grant(authorization: str | None = Header(None)) -> Reta
         subject=subject,
         phone=phone,
         expires_at=str(payload.get("expiresAt") or ""),
+        claim_id=str(payload.get("claimId") or "") or None,
     )
+    ttl = _cache_ttl(grant.expires_at)
+    if ttl <= 0:
+        raise HTTPException(401, "本次免费试戴资格已失效")
     with _cache_lock:
-        _cache[token] = (time.monotonic() + _CACHE_SECONDS, grant)
+        _cache[token] = (time.monotonic() + ttl, grant)
     return grant
 
 
@@ -89,7 +116,7 @@ def claim_retail_tryon_generation(grant: RetailGrant, claim_id: str) -> None:
     try:
         response = httpx.post(
             claim_url,
-            headers={"Authorization": f"TryOn {grant.token}"},
+            headers=_service_headers(grant.token),
             json={"claimId": claim_id},
             timeout=8.0,
             follow_redirects=False,
@@ -98,5 +125,9 @@ def claim_retail_tryon_generation(grant: RetailGrant, claim_id: str) -> None:
         raise HTTPException(503, "免费试戴资格暂时无法确认，请稍后重试") from exc
     if response.status_code == 409:
         raise HTTPException(409, "本次免费试戴已经生成过效果，如需再次体验请联系专属客服")
-    if response.status_code != 200:
+    if response.status_code == 401:
         raise HTTPException(401, "本次免费试戴资格已失效")
+    if response.status_code != 200:
+        raise HTTPException(503, "免费试戴资格暂时无法确认，请稍后重试")
+    with _cache_lock:
+        _cache.pop(grant.token, None)

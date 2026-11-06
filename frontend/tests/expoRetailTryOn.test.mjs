@@ -56,3 +56,14 @@ test('retail API uses an isolated prefix and the kiosk keeps the original prefix
   assert.match(source, /isRetailTryOnPage\(\) \? '\/api\/expo\/retail' : '\/api\/expo'/)
   assert.match(source, /isRetailTryOnPage\(\) \? getRetailTryOnAuthorization\(\) : undefined/)
 })
+
+test('retail flow restores the claimed session and hides second-generation controls', () => {
+  const flow = fs.readFileSync(path.join(root, 'src/views/expo/composables/useTryOnFlow.js'), 'utf8')
+  const result = fs.readFileSync(path.join(root, 'src/views/expo/kiosk/ResultScreen.vue'), 'utf8')
+  const retail = fs.readFileSync(path.join(root, 'src/views/expo/RetailTryOn.vue'), 'utf8')
+  assert.match(flow, /async function resumeRetailSession\(\)/)
+  assert.match(flow, /restored\.session_id/)
+  assert.match(result, /v-if="!flow\.retailMode" class="actions"/)
+  assert.match(retail, /useTryOnFlow\(\{ retail: true \}\)/)
+  assert.match(retail, /await flow\.resumeRetailSession\(\)/)
+})

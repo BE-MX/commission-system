@@ -14,7 +14,8 @@
         <span v-for="stage in generationStages" :key="stage.label" :class="{ on: stage.on, done: stage.done }">{{ stage.done ? '✓ ' : '' }}{{ stage.label }}</span>
       </div>
       <Transition name="bcard" mode="out-in"><div class="brand-card" :key="brandIdx"><b>{{ BRAND_CARDS[brandIdx].tag }}</b><span>{{ BRAND_CARDS[brandIdx].text }}</span></div></Transition>
-      <div v-if="!flow.generating.value" class="wait-actions"><button class="xk-btn ghost" @click="retryGenerate">重新生成</button><button class="xk-btn" @click="flow.openSales()">呼叫顾问</button></div>
+      <div v-if="!flow.generating.value && !flow.retailMode" class="wait-actions"><button class="xk-btn ghost" @click="retryGenerate">重新生成</button><button class="xk-btn" @click="flow.openSales()">呼叫顾问</button></div>
+      <p v-if="!flow.generating.value && flow.retailMode" class="result-note">本次免费体验已结束，如需再次试戴请返回商城联系客服</p>
     </div>
     <template v-else>
       <header class="result-heading"><p class="xk-eyebrow">MADE FOR YOUR MOMENT</p><h2 class="xk-title">这一刻，更喜欢自己</h2></header>
@@ -42,7 +43,8 @@
           <div class="result-thumbs" aria-label="切换试戴效果"><button v-for="(r, i) in doneList" :key="r.id" :aria-label="`查看第 ${i + 1} 张效果`" :aria-pressed="currentIndex === i" :class="{ on: currentIndex === i }" @click="currentIndex = i; flow.touch()"><img :src="r.display_url || r.image_url" @error="fallbackThumbnail($event, r)" alt="" /><span>{{ i + 1 }}</span></button></div>
           <div class="reacts"><button class="react" :class="{ liked: current.reaction === 'loved' }" :aria-pressed="current.reaction === 'loved'" @click="flow.react(current.id, 'loved')">♡ 心动</button><button class="react" :class="{ liked: current.reaction === 'soso' }" :aria-pressed="current.reaction === 'soso'" @click="flow.react(current.id, 'soso')">再看看</button></div>
           <div v-if="shareUrl" class="share-row"><div class="qr-card"><canvas ref="qrEl" width="112" height="112" aria-label="扫码保存效果图" /><div class="qr-txt"><b>扫码带走效果</b><span>存入手机，随时回看</span><a :href="shareUrl" target="_blank" rel="noopener">打开分享页 ↗</a></div></div></div>
-          <div class="actions"><button v-if="isScene" class="xk-btn ghost" :disabled="flow.generating.value" @click="flow.reselectScenes()">再选场景</button><button v-else class="xk-btn ghost" :disabled="flow.generating.value" @click="flow.backToMatching()">试试其他发型</button><button class="xk-btn" @click="flow.openSales()">请顾问过来</button></div>
+          <div v-if="!flow.retailMode" class="actions"><button v-if="isScene" class="xk-btn ghost" :disabled="flow.generating.value" @click="flow.reselectScenes()">再选场景</button><button v-else class="xk-btn ghost" :disabled="flow.generating.value" @click="flow.backToMatching()">试试其他发型</button><button class="xk-btn" @click="flow.openSales()">请顾问过来</button></div>
+          <p v-else class="result-note">该商城账号的一次免费生成机会已使用，效果图可在此继续查看和保存</p>
           <button class="xk-btn ghost print" @click="printCurrent">打印这张 <span aria-hidden="true">↗</span></button>
           <div v-if="!isScene" class="evidence"><b>久戴如新</b><span>同款保鳞原生辫发 · 12-18 个月光泽如初 · SGS 安全认证</span></div><div v-else class="evidence"><b>专属大片</b><span>以您此刻的佩戴状态生成 · 扫码带走随时分享</span></div>
           <p class="result-note">AI 试戴效果仅供参考，请以实际佩戴为准</p>

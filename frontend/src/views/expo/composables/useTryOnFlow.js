@@ -11,7 +11,7 @@ import { newRequestKey } from '../../../utils/requestKey.js'
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import {
   createSession, generateResults, getBeautifyAvailability, getScenes,
-  getSession, getWigColors, registerCustomer, retryBeautify, setReaction, submitFeedback, updateCustomer,
+  getSession, getWigColors, registerCustomer, resumeRetailTryon, retryBeautify, setReaction, submitFeedback, updateCustomer,
 } from '@/api/expo'
 import { normalisePhone } from './expoPhone'
 import { useAiIssueSupport } from './useAiIssueSupport'
@@ -26,7 +26,8 @@ const NET_CONGESTION_HINT = '现场网络拥堵，生成仍在继续，请稍候
 //（用户指令 2026-07-07 result / 2026-07-08 matching——挑款看图不能被清场）
 const NO_IDLE_STEPS = ['analyzing', 'matching', 'result']
 
-export function useTryOnFlow() {
+export function useTryOnFlow({ retail = false } = {}) {
+  const retailMode = retail
   const step = ref('attract')
   const mode = ref('tryon')          // tryon=AI 换发试戴 / scene=佩戴实拍场景大片
   const photoProcessingMode = ref('original') // 上传页唯一的面部处理选择
@@ -141,6 +142,39 @@ export function useTryOnFlow() {
     step.value = 'register'
     loadBeautyAvailability()
     touch()
+  }
+
+  async function resumeRetailSession() {
+    if (!retailMode) return false
+    try {
+      const response = await resumeRetailTryon()
+      const restored = response.data
+      if (!restored?.claimed || !restored.session_id || !restored.session) return false
+      customerId.value = restored.customer_id
+      sessionId.value = restored.session_id
+      session.value = restored.session
+      mode.value = 'tryon'
+      photoProcessingMode.value = restored.session.photo_processing_mode || 'original'
+      const status = restored.session.status
+      if (status === 'pending') {
+        step.value = 'analyzing'
+        startPolling()
+      } else if (status === 'analyzed') {
+        step.value = 'matching'
+        matchPage.value = 0
+        selectWig((restored.session.matches || [])[0]?.wig_id || null)
+      } else {
+        step.value = 'result'
+        generating.value = status === 'generating'
+        if (status === 'generating') startPolling()
+        if (status === 'failed') errorText.value = '本次生成未成功，请联系客服协助处理'
+      }
+      touch()
+      return true
+    } catch (e) {
+      errorText.value = '上次试戴记录暂时无法恢复，请稍后重试'
+      return false
+    }
   }
 
   async function loadBeautyAvailability() {
@@ -582,13 +616,13 @@ export function useTryOnFlow() {
   })
 
   return {
-    step, mode, photoProcessingMode, beautyAvailable, regForm, errorText, generating, waitingForBeautify,
+    step, mode, retailMode, photoProcessingMode, beautyAvailable, regForm, errorText, generating, waitingForBeautify,
     session, analysis, matches, results, doneResults, aiIssue,
     selectedWigId, selectWig, canSwapMatches, swapMatches, backToMatching, goBack,
     customerId, sessionId,
     hairColors, selectedColorId, scenes, selectedSceneKeys, guideShown,
     tryonScenes, selectedTryonScene, loadTryonScenes,
-    start, submitRegister, submitPhoto, generate, react,
+    start, resumeRetailSession, submitRegister, submitPhoto, generate, react,
     loadScenes, toggleScene, generateScenes, reselectScenes,
     openSales, submitSales, contactAdmin, contactAdminPending, resetAll, touch,
     qrUrl, qrExpiresAt, pendingName, openQr, closeQr, setPendingHandler,
