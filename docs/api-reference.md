@@ -1383,6 +1383,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | GET | `/portal/tags` | 门户 Cookie | 返回该客户已发布素材实际用到的标签维度与标签，包含稳定的维度 `name`，外部站据此识别 `product_type` 并分组。 |
 | GET | `/portal/library` | 门户 Cookie | 按账号 customer_id 返回该客户已发布批次，包含与业务预览一致的任务标题、拍摄类型和素材。 |
 | GET | `/portal/assets/{asset_id}/content?download=` | 门户 Cookie | 再校验客户归属和批次发布状态；下载时写下载审计。 |
+| POST | `/portal/downloads/zip` | 门户 Cookie | 请求 `{"asset_ids":[1,2]}`（1～5000 项），一次返回 `LeShine-materials.zip`。仅包含所选、属于当前客户且已发布的原件；任何一个不可用则整包失败。目录依次取 Product type / Textures type / Color names 的标签值，缺层跳过，多标签按组合分别存放。按去重素材记录下载。超过 10000 个归档条目或单包磁盘预算返回 413。 |
 
 业务预览页面位于 `/design/media/portal`，左侧客户导航只展示 API 已授权的门户；右侧直接渲染详情响应，不模拟草稿或审核中素材。`search` 只是授权结果集上的名称、客户 ID、登录邮箱过滤条件，不能扩大数据范围。
 

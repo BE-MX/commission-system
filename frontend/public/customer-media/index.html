@@ -93,7 +93,7 @@
         <div class="bulk-download-bar hidden" id="bulk-bar">
           <label><input type="checkbox" id="select-all" /> Select all visible</label>
           <span id="selected-count">0 selected across this page</span>
-          <button id="download-selected" disabled>Download selected ↓</button>
+          <button id="download-selected" disabled>Download selected ZIP ↓</button>
         </div>
 
         <div class="sku-library" id="library"></div>
@@ -123,7 +123,8 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script>
+  <script type="module">
+    import { requestArchive, saveArchive } from './archive-download.js';
     'use strict';
     const API = '/api/customer-media/portal';
     const previewMode = new URLSearchParams(window.location.search).get('preview') === '1' && window.parent !== window;
@@ -139,6 +140,7 @@
     let selectedProductTypes = new Set();
     let libraryRequestVersion = 0;
     let toastTimer = 0;
+    let archiveController = null;
 
     async function request(path, opt = {}) {
       const r = await fetch(API + path, { credentials: 'same-origin', ...opt });
@@ -169,9 +171,9 @@
       if (!v) return '—';
       return new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
     }
-    function showToast(msg) {
+    function showToast(msg, success = true) {
       const el = $('toast');
-      el.textContent = '✓ ' + msg;
+      el.textContent = (success ? '✓ ' : '') + msg;
       el.classList.remove('hidden');
       window.clearTimeout(toastTimer);
       toastTimer = window.setTimeout(() => el.classList.add('hidden'), 2400);
@@ -346,7 +348,9 @@
       const pickedVisible = visibleIds.filter(id => selected.has(id));
       $('select-all').checked = visibleIds.length > 0 && pickedVisible.length === visibleIds.length;
       $('selected-count').textContent = `${selected.size} selected across this page`;
-      $('download-selected').disabled = selected.size === 0;
+      $('download-selected').disabled = selected.size === 0 || !!archiveController;
+      $('download-selected').textContent = archiveController ? 'Preparing ZIP…' : 'Download selected ZIP ↓';
+      $('download-selected').setAttribute('aria-busy', String(!!archiveController));
     }
 
     // 灯箱
@@ -452,6 +456,7 @@
       }
     };
     $('logout').onclick = async () => {
+      archiveController?.abort();
       if (previewMode) return;
       libraryRequestVersion++;
       await request('/logout', { method: 'POST' }).catch(() => {});
@@ -513,19 +518,25 @@
       render();
     };
     $('download-selected').onclick = async () => {
+      if (archiveController) return;
+      if (previewMode) { showToast('ZIP download is available in the customer portal.', false); return; }
       const byId = new Map(allAssets().map(a => [a.id, a]));
       const items = [...selected].map(id => byId.get(id)).filter(Boolean);
       if (!items.length) return;
-      for (const asset of items) {
-        const link = document.createElement('a');
-        link.href = downloadUrl(asset.content_url);
-        link.download = asset.file_name;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        await new Promise(resolve => window.setTimeout(resolve, 180));
+      const controller = new AbortController();
+      archiveController = controller;
+      render();
+      try {
+        const archive = await requestArchive(items.map(asset => asset.id), controller.signal);
+        if (controller.signal.aborted) return;
+        saveArchive(archive);
+        showToast('ZIP download started');
+      } catch (error) {
+        if (!controller.signal.aborted) showToast(error.message || 'Unable to download ZIP. Please try again.', false);
+      } finally {
+        archiveController = null;
+        render();
       }
-      showToast(`${items.length} downloads started`);
     };
     $('lb-close').onclick = () => { $('lightbox').classList.add('hidden'); previewState = null; };
     $('lb-prev').onclick = e => { e.stopPropagation(); stepPreview(-1); };

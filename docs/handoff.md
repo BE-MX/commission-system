@@ -1,3 +1,9 @@
+## 2026-11-05 客户素材门户批量 ZIP（Codex，本地实现）
+
+- 分支 `codex/media-zip-tags`。勾选或按筛选结果全选后，一次下载一个 ZIP。目录按 Product type → Textures type → Color names 取标签值；缺层跳过，无三类标签的原件在根目录，多值进入每个对应组合。保留原件内容，同目录重名自动编号。单文件下载入口不变。
+- 打包前后验证客户授权、会话与发布状态；存储读取或原件校验失败不返回残缺 ZIP。无数据库迁移。接口见 [API 参考](api-reference.md) 的客户拍摄素材门户章节。
+- 验证：49 项后端测试（含实际生成并解包的 ZIP 和标签回归）、10 项前端下载测试、Chrome 本地模拟 API 的勾选/筛选全选/重试流程、前端构建通过。尚未合并、推送或部署。
+
 ## 2026-11-05 阿里 Feed P1 接收层（Codex，Git 交付，默认关闭）
 
 工作区 `D:/MyProgram/commission-system-codex-alibaba-feed-p1`，分支 `codex/alibaba-feed-p1`，基于 `6cacc6fa`。当前 JSON 原文上传、来源专用凭据、语义幂等、耐久后台队列和安全分页回执已实现；新增冻结迁移251（三表，接250）。接收与 worker 独立默认关闭，私海助理关闭配置保留，未接入客户投影、CRM、AI 或消息发送。
