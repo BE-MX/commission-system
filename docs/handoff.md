@@ -1,3 +1,11 @@
+## 2026-11-06 普通订单保存明细身份修复（Codex，Git 交付，待发布）
+
+- 工作区 `D:/MyProgram/commission-system-codex-invoice-line-identity`，分支 `codex/invoice-line-identity`。普通订单保存复用已有明细 ID，过期/外单 ID 拒绝保存，实际删行才记录待删除小满行号，复制行不复用远端身份。
+- 修复了“全删重建改变 ID → 旧 ID 再次提交被当成新增 → 原行号丢失”的可复现缺陷。Wasan 1751 生产当次具体页面操作无法从现存记录完整还原；该单之前的数据恢复与本轮代码修复分开记录。
+- 同步预检显示基础字段和映射的具体原因；同 SKU 缺独立小满行号时明确指出行号和恢复/分次新增处理方式。无前端业务源码改动，无迁移，本轮无生产写入。
+- 相关回归 221 passed / 3 skipped；增量补齐后，明细身份专门测试 15 passed，推单回归 52 项通过。前端保存/同步原 112 项通过，新增错误展示后所在文件 12 passed（共覆盖 113 项）。独立审查及增量复审无阻断问题。约定检查、差异检查通过，Git 巡检为 `--no-fetch` 本地快照。
+- 亮哥已授权本修复提交、合并回 main 并推送 origin；生产部署另行授权，无迁移。详见[修复报告](reports/2026-11-06-invoice-line-identity.md)。
+
 ## 2026-11-06 销量备货单产品库存同步（Codex，Git 交付，待发布）
 
 - 工作区 `D:/MyProgram/commission-system-codex-stock-product-sync`，分支 `codex/stock-product-sync`。列表最右新增「库存同步」，有 `stock:write` 的用户可操作；每行独立加载并防重复点击。成功后刷新库存、建议备货量、状态和汇总；失败保留原库存，刷新失败与同步失败分开提示。

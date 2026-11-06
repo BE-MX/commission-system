@@ -35,6 +35,18 @@ test('uncertain original result never submits another write', async () => {
   assert.match(c.messages.at(-1).message, /核对/)
 })
 
+test('ordinary sync displays the concrete preflight reason and does not retry', async () => {
+  const detail = '订单同步校验未通过：第 2、3 行为同一产品/SKU，缺少可用的独立小满行号'
+  let posts = 0
+  const c = setup({ syncInvoice: async () => {
+    posts++
+    throw { response: { status: 409, data: { detail } } }
+  } })
+  assert.equal(await c.run(), 'failed')
+  assert.equal(posts, 1)
+  assert.deepEqual(c.messages, [{ type: 'warning', message: detail }])
+})
+
 test('lost continuation response reads completed original result without another POST or failure toast', async () => {
   let reads = 0, posts = 0
   const c = setup({ getInvoiceLinked: async () => task(++reads === 1 ? 'pending' : 'done'),

@@ -531,11 +531,20 @@ def _build_product_rows(
         for row in rows:
             if not row.get("unique_id"):
                 fresh_counts[(row["product_id"], row["sku_id"])] += 1
-        if not reconciling and any(count > 1 for count in fresh_counts.values()):
-            issues.append({
-                "field": "items",
-                "message": "编辑推单一次只能新增一条相同产品的明细（OKKI 按产品去重会静默合并）：请先推送保存，再添加下一条后重推",
-            })
+        if not reconciling:
+            positions = {id(item): index for index, item in enumerate(projected_items, start=1)}
+            for pair, count in fresh_counts.items():
+                if count <= 1:
+                    continue
+                indices = sorted(positions[id(item)] for items, row in line_binding
+                    if not row.get("unique_id") and (row["product_id"], row["sku_id"]) == pair
+                    for item in items)
+                issues.append({
+                    "field": "items",
+                    "message": f"第 {'、'.join(map(str, indices))} 行为同一产品/SKU，缺少可用的独立小满行号。"
+                        "编辑推单一次只能新增一条相同产品的明细，否则小满会自动合并。"
+                        "若为原订单已有明细，请联系管理员核对并恢复行号；若确为新增，请分次添加并同步。",
+                })
         # 纵深防御：payload 内 unique_id 重复即拦截——两行同 uid 会被 OKKI 互相覆盖
         row_uid_counts: dict[int, int] = defaultdict(int)
         for row in rows:

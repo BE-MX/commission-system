@@ -923,8 +923,12 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
     if body.order_type != "production" and any(item.item_type == "custom" for item in body.items):
         raise ValueError("库存单不能包含定制产品，请改为生产单或选择已有产品")
     from app.invoice import item_group_service
-    group_for = item_group_service.prepare_replace(db, invoice, body)
     previous_items = {item.id: item for item in invoice.items if item.id}
+    if body.order_type != "presale":
+        for index, payload in enumerate(body.items, start=1):
+            if payload.id is not None and payload.id not in previous_items:
+                raise ValueError(f"第 {index} 行明细已变化或不存在，请刷新订单后重新编辑；本次未保存")
+    group_for = item_group_service.prepare_replace(db, invoice, body)
     stock_pairs = {
         (int(item.product_id), int(item.sku_id))
         for item in body.items
@@ -974,7 +978,11 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
             if not item.presale_archived and item.id not in echoed_ids:
                 invoice.items.remove(item)
     else:
-        invoice.items.clear()
+        # Retain saved row identity: old editors must never turn an update into
+        # a delete/add pair and silently lose the remote unique_id.
+        for item in list(invoice.items):
+            if item.id not in echoed_ids:
+                invoice.items.remove(item)
     carried_ids: set[int] = set()
     seen_payload_ids: set[int] = set()
     for idx, payload in enumerate(body.items, start=1):
@@ -988,8 +996,9 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
             seen_payload_ids.add(payload.id)
         previous = previous_items.get(payload.id) if first_echo else None
         group = group_for(payload)
-        item = InvoiceItem(
+        values = dict(
             xiaoman_unique_id=carried.xiaoman_unique_id if carried else None,
+            custom_product_id=None,
             group_id=group.id if group else None,
             sort_order=idx,
             product_kind=payload.product_kind,
@@ -1012,6 +1021,9 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
                 if payload.semifinished_enabled else None
             ),
         )
+        item = previous if previous is not None and not rolling else InvoiceItem()
+        for field, value in values.items():
+            setattr(item, field, value)
         if previous is not None:
             item.created_at = previous.created_at
         if payload.item_type == "custom" and _custom_line_complete(payload):
@@ -1089,10 +1101,13 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
             presale_lines.apply_current(carried, item)
             revision_pairs.append((carried,payload.id))
         else:
-            invoice.items.append(item)
+            if rolling or previous is None:
+                invoice.items.append(item)
             revision_pairs.append((item,payload.id))
     if rolling:
         revisions.finish_edit(db,invoice,revision_context,revision_pairs,user_id)
+    else:
+        invoice.items.sort(key=lambda item: item.sort_order)
 
 
 def _append_removed_lines(invoice: Invoice, removed: list[dict]) -> None:
