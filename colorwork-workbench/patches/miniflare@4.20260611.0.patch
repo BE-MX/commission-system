@@ -1,0 +1,14 @@
+diff --git a/dist/src/index.js b/dist/src/index.js
+index 5e4e9ca33ca30b38eeca37286eb4e3f28054a48d..527fcc39afb078c2c2a8016c00a109eceb0859f9 100644
+--- a/dist/src/index.js
++++ b/dist/src/index.js
+@@ -81432,7 +81432,8 @@ function getGlobalServices({
+       }
+     });
+   }
+-  const r2PublicService = getR2PublicService(allWorkerOpts ?? []);
++  // Ark authorizes reads in its own routes; do not serve R2 objects directly.
++  const r2PublicService = undefined;
+   if (r2PublicService !== void 0) {
+     serviceEntryBindings.push({
+       name: CoreBindings.SERVICE_R2_PUBLIC,
