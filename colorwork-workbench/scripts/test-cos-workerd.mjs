@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, get } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
@@ -8,6 +8,40 @@ import ts from 'typescript';
 const require = createRequire(import.meta.url);
 const wranglerRequire = createRequire(require.resolve('wrangler/package.json'));
 const { Miniflare } = wranglerRequire('miniflare');
+
+test('private R2 files can only be read through the application worker', async () => {
+  const mf = new Miniflare({ compatibilityDate: '2026-05-15', r2Buckets: { FILES: 'site-creator-r2' }, modules: true,
+    script: `export default { async fetch(request, env) {
+      if (new URL(request.url).pathname === '/worker-read') {
+        return new Response((await env.FILES.get('private-probe.jpg')).body);
+      }
+      return new Response('Not found', { status: 404 });
+    } };` });
+  try {
+    const url = await mf.ready;
+    const object = 'private fixture bytes';
+    const bucket = await mf.getR2Bucket('FILES');
+    await bucket.put('private-probe.jpg', object);
+    assert.equal(await (await mf.dispatchFetch(new URL('/worker-read', url))).text(), object);
+    const direct = '/cdn-cgi/local/r2/public/site-creator-r2/private-probe.jpg';
+    for (const path of [direct, '/api/colorwork/workbench/..\\..\\..\\' + direct.slice(1),
+      '/api/colorwork/workbench/%2e%2e/%2e%2e/%2e%2e' + direct]) {
+      const result = await new Promise((resolve, reject) => {
+        get({ hostname: url.hostname, port: url.port, path }, async (response) => {
+          try {
+            const chunks = [];
+            for await (const chunk of response) chunks.push(chunk);
+            resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString() });
+          } catch (error) { reject(error); }
+        }).once('error', reject);
+      });
+      assert.equal(result.status, 404, path);
+      assert.notEqual(result.body, object, path);
+    }
+  } finally {
+    await mf.dispose();
+  }
+});
 
 test('real workerd streams completed R2 multipart to loopback with bounded length and retries', async () => {
   let received; let failed=false; const identities=[];
