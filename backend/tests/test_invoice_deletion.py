@@ -13,7 +13,7 @@ from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.core.time import beijing_now
 from app.invoice import deletion_router, deletion_service as deletion, lifecycle_remote, linked_outbound_service, okki_client
-from app.invoice.models import Invoice, InvoiceSyncLog, OkkiOutboundTask
+from app.invoice.models import Invoice, InvoiceItem, InvoiceSyncLog, OkkiOutboundTask
 from app.invoice.xiaoman_service import FIELD_ORDER_TYPE
 from app.receipt import remote
 from app.receipt.models import Receipt, ReceiptLog
@@ -267,6 +267,35 @@ def test_api_requires_invoice_delete_and_explicit_confirmation(client, db, invoi
     assert client.post(path, json={"expected_version": version}).status_code == 409
     assert client.post(path, json={"expected_version": version, "confirmed": False}).status_code == 409
     assert live["posts"] == []
+
+
+def test_api_deletion_preview_tracks_invoice_item_changes(client, db, invoice, receipt, live):
+    item = InvoiceItem(invoice_id=invoice.id, product_name="Test product",
+                       product_display="Test product", color="1B", quantity=1)
+    db.add(item)
+    db.commit()
+    path = f"/api/invoice/invoices/{invoice.id}/deletion"
+
+    response = client.get(path)
+    assert response.status_code == 200
+    original = response.json()["data"]
+    assert original["blockers"] == []
+    assert live["posts"] == []
+
+    item.quantity = 2
+    db.commit()
+    stale = client.post(path, json={"expected_version": original["version"], "confirmed": True})
+    assert stale.status_code == 409
+    assert live["posts"] == []
+
+    refreshed = client.get(path)
+    assert refreshed.status_code == 200
+    version = refreshed.json()["data"]["version"]
+    assert version != original["version"]
+    result = client.post(path, json={"expected_version": version, "confirmed": True})
+    assert result.status_code == 200
+    assert result.json()["data"]["status"] == "remote_deleted"
+    assert live["posts"] == ["outbound", "receipt", "order"]
 
 
 def test_api_invoice_data_scope_blocks_other_salesperson(client, db, invoice, receipt, live, user):

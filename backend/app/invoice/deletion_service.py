@@ -99,8 +99,7 @@ def collect(db, invoice, user):
     local = _local_rows(db, invoice)
     identity = invoice.id
     local_stamp = _local_stamp(local)
-    invoice = SimpleNamespace(**{column.key: deepcopy(getattr(invoice, column.key)) for column in Invoice.__table__.columns},
-        items=[SimpleNamespace(**{column.key: deepcopy(getattr(item, column.key)) for column in item.__table__.columns}) for item in invoice.items])
+    invoice = SimpleNamespace(**{column.key: deepcopy(getattr(invoice, column.key)) for column in Invoice.__table__.columns})
     local = [SimpleNamespace(**{column.key: deepcopy(getattr(row, column.key)) for column in Receipt.__table__.columns}) for row in local]
     db.commit()  # Authorized capture only; no financial locks across provider reads.
     detail = lifecycle_remote.read(db, "order", invoice.xiaoman_order_id) if invoice.xiaoman_order_id else None
@@ -185,7 +184,7 @@ def collect(db, invoice, user):
     plan = {"invoice": stamp, "order": order, "outbounds": outbounds, "receipts": details,
             "local": _local_stamp(local),
             "blockers": sorted(set(blockers))}
-    version = hashlib.sha256(json.dumps({"edit": edit_version(invoice), "order_id": invoice.xiaoman_order_id,
+    version = hashlib.sha256(json.dumps({"edit": stamp["edit"], "order_id": invoice.xiaoman_order_id,
         "status": invoice.status, "sync_status": invoice.sync_status, "plan": plan,
         "progress": _workflow(invoice).get("steps", {})}, sort_keys=True, default=str).encode()).hexdigest()
     return plan, records, version

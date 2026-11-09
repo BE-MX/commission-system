@@ -170,6 +170,43 @@ def test_list_invoices_created_by_filter(db):
 # ── 端点级集成：守卫接线不许回归 ─────────────────────────
 
 
+def test_invoice_list_hides_deleted_and_cancelled_before_pagination(db):
+    from tests.authority_helpers import seed_authority
+
+    records = [
+        Invoice(invoice_no=number, status=status, xiaoman_order_id=order_id,
+                customer_id="123456", customer_name="Customer A", sales_user_id=5,
+                created_by=5, invoice_date=date(2026, 7, 13), currency="USD")
+        for number, status, order_id in [
+            ("SC-01", "cancelled", "12345"),
+            ("SC-02~DEL~2", "deleted", None),
+            ("SC-03", "cancel_pending", "12346"),
+            ("SC-04", "synced", "12347"),
+        ]
+    ]
+    db.add_all(records)
+    db.commit()
+    cancelled_id = records[0].id
+    seed_authority(db, 5, "invoice:read")
+
+    path = "/api/invoice/invoices"
+    with _client(db, sub="5", permissions=["invoice:read"]) as client:
+        for page, expected in [(1, "SC-03"), (2, "SC-04")]:
+            data = client.get(path, params={"page": page, "page_size": 1,
+                                           "sort_field": "invoice_no", "sort_order": "asc"}).json()["data"]
+            assert data["total"] == 2
+            assert [row["invoice_no"] for row in data["items"]] == [expected]
+
+        for params in [{"keyword": "SC-01"}, {"order_id": "12345"}, {"status": "cancelled"},
+                       {"keyword": "SC-02"}, {"status": "deleted"}]:
+            data = client.get(path, params=params).json()["data"]
+            assert data["total"] == 0 and data["items"] == []
+
+        detail = client.get(f"{path}/{cancelled_id}")
+        assert detail.status_code == 200
+        assert detail.json()["data"]["status"] == "cancelled"
+
+
 def test_endpoint_scope_wiring(db):
     mine = service.create_invoice(db, _create_payload(), user_id=5)
     db.commit()
