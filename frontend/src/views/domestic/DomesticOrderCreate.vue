@@ -302,10 +302,12 @@
         <div class="item-sec__title item-sec__title--gap">要求与备注</div>
 
         <el-row :gutter="16">
-          <el-col v-for="section in detailSections" :key="section.key" :span="12">
+          <el-col v-for="section in detailSections" :key="section.key"
+            :class="{ 'business-detail-col': !isProduction }" :span="isProduction ? 12 : section.key === 'remark' ? 24 : 8">
             <el-form-item :label="section.label">
               <el-input
-                v-model="item[section.key]" type="textarea" :rows="2"
+                v-model="item[section.key]" type="textarea" :rows="!isProduction && section.key === 'remark' ? 4 : 2"
+                :input-style="!isProduction && section.key === 'remark' ? { paddingBlock: '10px' } : undefined"
                 :placeholder="section.placeholder"
               />
               <!-- show-list=false + uploadFn 自管状态：AppUpload 的 v-model 回写
@@ -487,7 +489,7 @@ const {
 }
 
 @media (max-width: 900px) {
-  .create-page :deep(.el-col) { flex: 0 0 50%; max-width: 50%; }
+  .create-page :deep(.el-col:not(.business-detail-col)) { flex: 0 0 50%; max-width: 50%; }
   .footer-panel, .footer-right { flex-wrap: wrap; gap: 12px; }
 }
 

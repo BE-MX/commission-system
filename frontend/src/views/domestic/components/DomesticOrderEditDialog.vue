@@ -79,9 +79,12 @@
           </el-form-item>
         </div>
         <p class="order-edit-hint">改规格只更新产品属性，成交价格保持不变（可在上方单独改价）；产品类型与工艺路线不可改。</p>
-        <div class="order-edit-grid">
-          <el-form-item v-for="section in sections" :key="section.key" :label="section.label">
-            <el-input v-model="itemDialog.form[section.key]" type="textarea" :rows="3" :maxlength="['hairstyle', 'color'].includes(section.key) ? 1000 : 2000" />
+        <div class="order-edit-grid" :class="{ 'order-edit-grid--business-details': !production }">
+          <el-form-item v-for="section in sections" :key="section.key" :label="section.label"
+            :class="{ 'order-edit-remark': !production && section.key === 'remark' }">
+            <el-input v-model="itemDialog.form[section.key]" type="textarea" :rows="!production && section.key === 'remark' ? 6 : 3"
+              :input-style="!production && section.key === 'remark' ? { paddingBlock: '10px' } : undefined"
+              :maxlength="['hairstyle', 'color'].includes(section.key) ? 1000 : 2000" />
             <div class="order-edit-images">
               <div v-for="(path, index) in itemDialog.form[section.imageKey]" :key="`${path}-${index}`">
                 <DomesticImages :paths="[path]" />
@@ -296,6 +299,8 @@ async function saveItem() {
 .order-edit-body { min-height: 140px; }
 .order-edit-summary { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 20px; }
 .order-edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
+.order-edit-grid--business-details { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.order-edit-remark { grid-column: 1 / -1; }
 .order-edit-grid :deep(.el-date-editor), .order-edit-grid :deep(.el-input-number), .order-edit-grid :deep(.el-select) { width: 100%; }
 .order-edit-actions { display: flex; justify-content: flex-end; margin-bottom: 24px; }
 .order-edit-hint { color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.6; margin: 8px 0; }

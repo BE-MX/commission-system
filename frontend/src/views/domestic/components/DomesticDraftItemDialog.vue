@@ -37,17 +37,22 @@
           </div>
         </template>
       </template>
-      <el-form-item v-for="section in sections" :key="section.key" :label="section.label">
-        <el-input v-model="item[section.key]" type="textarea" :rows="2" :maxlength="['hairstyle', 'color'].includes(section.key) ? 1000 : 2000" />
-        <div class="draft-item-images">
-          <div v-for="(file, index) in item[section.imageKey]" :key="`${file.path}-${index}`">
-            <DomesticImages :paths="[file.path]" />
-            <GlassButton variant="link" link-tone="danger" :disabled="busy" @click="item[section.imageKey].splice(index, 1)">移除图片</GlassButton>
+      <div :class="{ 'draft-item-grid draft-item-grid--details': !production }">
+        <el-form-item v-for="section in sections" :key="section.key" :label="section.label"
+          :class="{ 'draft-item-remark': !production && section.key === 'remark' }">
+          <el-input v-model="item[section.key]" type="textarea" :rows="!production && section.key === 'remark' ? 4 : 2"
+            :input-style="!production && section.key === 'remark' ? { paddingBlock: '10px' } : undefined"
+            :maxlength="['hairstyle', 'color'].includes(section.key) ? 1000 : 2000" />
+          <div class="draft-item-images">
+            <div v-for="(file, index) in item[section.imageKey]" :key="`${file.path}-${index}`">
+              <DomesticImages :paths="[file.path]" />
+              <GlassButton variant="link" link-tone="danger" :disabled="busy" @click="item[section.imageKey].splice(index, 1)">移除图片</GlassButton>
+            </div>
           </div>
-        </div>
-        <AppUpload v-if="!saving" :model-value="item[section.imageKey]" :upload-fn="file => uploadReference(section.imageKey, file)" :show-list="false" multiple transfer
-          accept="image/jpeg,image/png,image/webp" :max-size-mb="20" button-text="选择参考图" />
-      </el-form-item>
+          <AppUpload v-if="!saving" :model-value="item[section.imageKey]" :upload-fn="file => uploadReference(section.imageKey, file)" :show-list="false" multiple transfer
+            accept="image/jpeg,image/png,image/webp" :max-size-mb="20" button-text="选择参考图" />
+        </el-form-item>
+      </div>
     </el-form>
     <template #footer>
       <GlassButton variant="ghost" :disabled="busy" @click="close">取消</GlassButton>
@@ -155,6 +160,8 @@ async function save() {
 
 <style scoped>
 .draft-item-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
+.draft-item-grid--details { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.draft-item-remark { grid-column: 1 / -1; }
 .draft-item-grid :deep(.el-input-number), .draft-item-grid :deep(.el-select) { width: 100%; }
 .draft-item-hint { color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.6; }
 .draft-item-images { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
