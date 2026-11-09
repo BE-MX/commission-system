@@ -936,6 +936,21 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 
 同迁移种三个 `sys_dict` 值域初值（迁移不 import 业务代码，初值与 `app/domestic_followup/constants.py` 的 `DICT_SEEDS` 手动保持一致）：`domestic_followup_state_change`（订单减少/增长等 14 项）、`domestic_followup_category`（质量/发货物流/色差/尺寸/价格/售后退换/服务/产品需求/其他）、`domestic_followup_channel`（微信/电话/视频号/到店/展会/其他）。口径与盲区见[模块说明](module-notes.md)。
 
+### 跟进责任与接力协作（255_followup_collaboration）
+
+迁移接 `254_ai_provider_runtime`。新表仅存跟进业务，客户归属与提成快照继续使用原表。时间列使用北京时间。
+
+| 表 | 约束与用途 |
+| --- | --- |
+| `ark_dom_followup_responsibilities` | 客户 ID 主键。保存唯一主要跟进人、协作状态、阶段、责任版本、有效推进和计划日期。 |
+| `ark_dom_followup_scopes` | 用户和范围键唯一。授权指定客户，或指定省及可选城市。 |
+| `ark_dom_followup_collaborators` | 客户 ID 和用户 ID 组合主键。记录明确授予的协作关系。 |
+| `ark_dom_followup_handoffs` | `(customer_id,pending_marker)` 唯一，只有待接收单使用非空标记。保留双方、版本、原因、交接内容和待办核对快照。 |
+| `ark_dom_followup_collab_events` | `(customer_id,actor_user_id,idempotency_key)` 唯一。保存责任变更、原人及新人、原因、版本、任务结果和核实事件。 |
+| `ark_dom_followup_customer_profiles` | 客户 ID 主键。保存微信联系方式和人工成交核实结果、依据、人员及时间。 |
+
+`ark_domestic_followups` 增加沟通结果、障碍、证据类型、共享摘要、有效推进与责任版本。`ark_domestic_followup_tasks` 增加可空计划用途，历史任务保留未分类。迁移登记沟通结果和推进障碍字典。已存在协作数据、结构化记录、计划用途或协调配置时，迁移拒绝降级。
+
 # 本地产品与库存账（迁移 227，开发分支）
 
 | 表 | 用途与约束 |

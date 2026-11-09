@@ -428,6 +428,7 @@ def seed_role_permissions(db: Session):
         ("domestic_followup:write", "domestic_followup", "write", "录入客户跟进与处理待办"),
         ("domestic_followup:read_all", "domestic_followup", "read_all", "全部客户跟进范围"),
         ("domestic_followup:admin", "domestic_followup", "admin", "客户跟进配置（回访天数/推送接收人/频率）"),
+        ("domestic_followup:coordinate", "domestic_followup", "coordinate", "管理客户跟进协作范围与交接"),
         ("domestic_decision_finance:read", "domestic_decision_finance", "read", "内贸经营资金阅读"),
         ("domestic_decision_action:write", "domestic_decision_action", "write", "内贸经营行动记录"),
         ("domestic_decision_report:write", "domestic_decision_report", "write", "内贸经营简报与导出"),
@@ -725,7 +726,7 @@ def seed_role_permissions(db: Session):
         "customer:confirm_material_risk",
         "customer:read_all",
         "shipping_inspection:inspection_read_all",
-        "domestic_followup:read_all", "domestic_followup:admin",
+        "domestic_followup:read_all", "domestic_followup:admin", "domestic_followup:coordinate",
     }
     # 给 admin 角色补齐一般非 legacy 权限（跳过已下架和显式授权项）。
     admin_role = db.query(ArkRole).filter(ArkRole.name == "admin").first()

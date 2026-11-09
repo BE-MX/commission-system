@@ -13,6 +13,8 @@
 
 ## 近期专题入口
 
+内贸客户跟进协作：[客户总览与接力协作定稿](requirements/2026-11-09-domestic-followup-collaboration.md)，含 10 项业务口径、权限矩阵和 28 项验收场景。
+
 阿里 TM P2：[人工资料闭环、v1.1与规则闸门](requirements/2026-11-05-alibaba-feed-integration/p2-implementation.md)（本地实现，自动能力和私海助理保持关闭）。
 
 阿里询盘 / TM Feed：[整体设计](requirements/2026-11-05-alibaba-feed-integration/design.md) · [接口契约](requirements/2026-11-05-alibaba-feed-integration/contract.md) · [P1 接收层实现与验收](requirements/2026-11-05-alibaba-feed-integration/implementation.md)（本地实现、默认关闭，未部署；私海助理继续关闭）。

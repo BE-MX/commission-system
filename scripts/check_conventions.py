@@ -53,7 +53,7 @@ ALLOWED_PERM_ACTIONS = {
     "inspection_read_all",  # 发货检验内独立的验货单数据范围，不复用出库单 read_all
     "self_read", "read_all", "internal_read",         # 数据范围类
     "daily_report", "audit", "invoke", "print",       # 登记特例
-    "sync", "design", "import",
+    "sync", "design", "import", "coordinate",
     "review",                                         # 售后审核（2026-07-14 aftersales:review 拆分）
     "recharge",                                       # 门店额度充值（2026-08-05 expo_store:recharge）
     # legacy 回填行的历史动作（is_legacy=1，不再新增）

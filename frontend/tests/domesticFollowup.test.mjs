@@ -160,3 +160,27 @@ test('pollDecision waits for fallback OCR after AI failure, then applies', () =>
   assert.equal(pollDecision({ ai_status: 'failed', attachments: [{ ocr_status: 'done' }] }, 3), 'apply')
   assert.equal(pollDecision({ ai_status: 'done', attachments: [] }, 0), 'apply')
 })
+
+test('draft confirmation keeps employee-confirmed outcomes separate from responsibility changes', () => {
+  const draft = draftToForm({
+    id: 9, version: 1, customer_id: 42, followup_date: '2026-11-09',
+    result_code: '已报价', obstacles: ['价格'], evidence_kind: 'customer', shared_summary: '  等回复  ', effective_progress: true,
+  }, '2026-11-09')
+  const payload = formToPayload(draft)
+  assert.equal(payload.result_code, '已报价')
+  assert.deepEqual(payload.obstacles, ['价格'])
+  assert.equal(payload.evidence_kind, 'customer')
+  assert.equal(payload.shared_summary, '等回复')
+  assert.equal(payload.effective_progress, true)
+  assert.equal(payload.development_stage, null)
+  assert.equal(payload.responsibility_version, null)
+  assert.equal(payload.plan_purpose, null)
+})
+
+test('explicit plan assignee is only included for a dated managed plan', () => {
+  const form = { ...emptyForm('2026-11-09'), next_date: '2026-11-10', plan_purpose: 'maintenance', responsibility_version: 3, plan_assignee_user_id: 42 }
+  assert.equal(formToPayload(form).plan_assignee_user_id, 42)
+  for (const overrides of [{ next_date: null }, { historical_only: true }, { responsibility_version: null }, { plan_assignee_user_id: null }]) {
+    assert.equal(Object.hasOwn(formToPayload({ ...form, ...overrides }), 'plan_assignee_user_id'), false)
+  }
+})

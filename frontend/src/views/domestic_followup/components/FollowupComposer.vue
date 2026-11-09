@@ -3,7 +3,7 @@
     v-model="c.visible.value"
     :direction="isMobile ? 'btt' : 'rtl'"
     :size="isMobile ? '92%' : '640px'"
-    :title="c.step.value === 'review' ? '核对跟进记录' : '记一条跟进'"
+    :title="c.form.value.historical_only ? '补录历史沟通' : c.step.value === 'review' ? '核对跟进记录' : '记一条跟进'"
     class="followup-composer"
     append-to-body
     destroy-on-close
@@ -19,7 +19,7 @@
           <el-select
             v-model="c.form.value.customer_id" filterable remote clearable reserve-keyword
             :remote-method="c.searchCustomers" :loading="c.searching.value" placeholder="店名 / 编号 / 微信备注"
-            class="full" @change="c.loadCustomerContext"
+            :disabled="c.form.value.historical_only || !!c.form.value.source_task_id" class="full" @change="c.loadCustomerContext"
           >
             <el-option v-for="opt in c.customerOptions.value" :key="opt.id" :value="opt.id" :label="opt.shop_name"
                        :disabled="!opt.writable">
@@ -27,7 +27,7 @@
               <span class="option-meta">{{ optionMeta(opt) }}</span>
             </el-option>
           </el-select>
-          <GlassButton variant="link" left-icon="Plus" class="prospect-btn" @click="promptProspect">新客户，快速建档</GlassButton>
+          <GlassButton v-if="!c.form.value.historical_only && !c.form.value.source_task_id" variant="link" left-icon="Plus" class="prospect-btn" @click="prospectRef.open()">新客户，快速建档</GlassButton>
         </el-form-item>
         <div class="row-2">
           <el-form-item label="跟进日期">
@@ -65,7 +65,10 @@
             </div>
           </div>
         </div>
-        <div class="row-2">
+        <FollowupOutcomeFields :form="c.form.value" :dicts="c.dicts" :shareable="!c.form.value.historical_only && !c.taskOnly.value && !!c.form.value.customer_id"
+                               :progress="!!c.form.value.responsibility_version" :stage="!c.form.value.historical_only && !c.taskOnly.value && !!c.form.value.responsibility_version" />
+        <p v-if="c.form.value.historical_only" class="hint">填写今天以前的实际沟通日期，记录保存到客户历史。</p>
+        <div v-if="!c.form.value.historical_only && !c.taskOnly.value" class="row-2">
           <el-form-item label="下次跟进（可选，填了就生成待办）">
             <el-date-picker v-model="c.form.value.next_date" type="date" value-format="YYYY-MM-DD" clearable
                             :disabled-date="beforeFollowup" class="full" />
@@ -76,7 +79,8 @@
             </el-select>
           </el-form-item>
         </div>
-        <el-form-item v-if="c.form.value.next_date" label="下次跟进内容">
+        <FollowupPlanPurpose v-if="c.needsPlanPurpose.value" :form="c.form.value" :assignees="c.planAssignees.value" />
+        <el-form-item v-if="c.form.value.next_date && !c.form.value.historical_only && !c.taskOnly.value" label="下次跟进内容">
           <el-input v-model="c.form.value.next_plan" maxlength="500" />
         </el-form-item>
       </el-form>
@@ -99,7 +103,7 @@
       <el-form label-position="top">
         <el-form-item label="客户">
           <el-select v-model="c.form.value.customer_id" filterable remote clearable :remote-method="c.searchCustomers"
-                     :loading="c.searching.value" class="full" @change="c.loadCustomerContext">
+                     :loading="c.searching.value" :disabled="!!c.form.value.source_task_id" class="full" @change="c.loadCustomerContext">
             <el-option v-for="opt in c.customerOptions.value" :key="opt.id" :value="opt.id" :label="opt.shop_name"
                        :disabled="!opt.writable">
               <span>{{ opt.shop_name }}</span>
@@ -123,6 +127,8 @@
         <el-form-item label="一句话摘要">
           <el-input v-model="c.form.value.summary" maxlength="500" />
         </el-form-item>
+        <FollowupOutcomeFields :form="c.form.value" :dicts="c.dicts" :shareable="!c.taskOnly.value"
+                               :progress="!!c.form.value.responsibility_version" :stage="!c.taskOnly.value && !!c.form.value.responsibility_version" />
 
         <FollowupItemList title="跟进要点" kind="content" :rows="c.form.value.contents" :categories="[]"
                           @add="c.addRow('contents', 'content')" />
@@ -136,7 +142,7 @@
                         :checked="c.form.value.state_changes.includes(v)" @change="toggleState(v)">{{ v }}</el-check-tag>
         </el-form-item>
 
-        <div class="row-2">
+        <div v-if="!c.taskOnly.value" class="row-2">
           <el-form-item label="下次跟进日期">
             <el-date-picker v-model="c.form.value.next_date" type="date" value-format="YYYY-MM-DD" clearable
                             :disabled-date="beforeFollowup" class="full" />
@@ -147,11 +153,12 @@
             </el-select>
           </el-form-item>
         </div>
-        <p v-if="c.form.value.next_date" class="hint">
+        <FollowupPlanPurpose v-if="c.needsPlanPurpose.value" :form="c.form.value" :assignees="c.planAssignees.value" />
+        <p v-if="c.form.value.next_date && !c.taskOnly.value" class="hint">
           {{ weekdayLabel(c.form.value.next_date) }}<template v-if="c.form.value.nextExpression"> · 依据：原话「{{ c.form.value.nextExpression }}」</template>
         </p>
-        <p v-if="basisHint" class="hint hint-warn">{{ basisHint }}</p>
-        <el-form-item label="下次跟进内容">
+        <p v-if="basisHint && !c.taskOnly.value" class="hint hint-warn">{{ basisHint }}</p>
+        <el-form-item v-if="!c.taskOnly.value" label="下次跟进内容">
           <el-input v-model="c.form.value.next_plan" maxlength="500" placeholder="留空则不生成待办" />
         </el-form-item>
 
@@ -182,17 +189,18 @@
     <template #footer>
       <div class="dialog-footer composer-footer">
         <template v-if="c.step.value === 'input'">
-          <GlassButton :disabled="!c.canSubmit.value" :loading="c.saving.value" @click="c.saveDirect">直接保存</GlassButton>
-          <GlassButton variant="primary" left-icon="MagicStick" :disabled="!c.canSubmit.value" :loading="c.saving.value" @click="c.startAi">AI 整理</GlassButton>
+          <GlassButton :disabled="!c.canSubmit.value || !c.canSave.value" :loading="c.saving.value" @click="c.saveDirect">直接保存</GlassButton>
+          <GlassButton v-if="!c.form.value.historical_only" variant="primary" left-icon="MagicStick" :disabled="!c.canSubmit.value || !c.customerWritable.value" :loading="c.saving.value" @click="c.startAi">AI 整理</GlassButton>
         </template>
         <template v-else-if="c.step.value === 'review'">
           <GlassButton variant="link" @click="discardWithConfirm">作废草稿</GlassButton>
-          <GlassButton variant="primary" :loading="c.saving.value" :disabled="!c.customerWritable.value" @click="c.confirm">确认保存</GlassButton>
+          <GlassButton variant="primary" :loading="c.saving.value" :disabled="!c.canSave.value" @click="c.confirm">确认保存</GlassButton>
         </template>
         <GlassButton v-else @click="c.close()">稍后再看</GlassButton>
       </div>
     </template>
   </el-drawer>
+  <QuickProspectDialog ref="prospectRef" @created="c.selectProspect" @existing="c.selectProspect" />
 </template>
 
 <script setup>
@@ -200,12 +208,16 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
 import AppUpload from '@/components/AppUpload.vue'
 import { currentBeijingDate, formatCalendarDate } from '@/utils/datetime'
-import { confirmAction, isFeedbackCancelled, promptAction } from '@/utils/feedback'
+import { confirmAction, isFeedbackCancelled } from '@/utils/feedback'
 import { nextBasisHint, taskDueLabel, weekdayLabel } from '../followupDraft'
 import FollowupItemList from './FollowupItemList.vue'
+import FollowupOutcomeFields from './FollowupOutcomeFields.vue'
+import FollowupPlanPurpose from './FollowupPlanPurpose.vue'
+import QuickProspectDialog from './QuickProspectDialog.vue'
 
 const props = defineProps({ composer: { type: Object, required: true } })
 const c = props.composer
+const prospectRef = ref(null)
 // AppUpload 单独计算在途数量，传入已完成项避免重复占用名额；附件状态仍由 composer 管理。
 const uploadedAttachments = computed(() => c.attachments.value.filter(a => !a.uploading))
 
@@ -226,7 +238,7 @@ const isResolved = item => c.form.value.resolvedItems.some(r => r.item_id === it
 const resolvedRow = item => c.form.value.resolvedItems.find(r => r.item_id === item.id)
 
 function optionMeta(opt) {
-  if (opt.writable === false) return `归属 ${opt.owner_name || '他人'}，不能记录`
+  if (opt.writable === false) return `当前跟进人 ${opt.assignee_name || opt.owner_name || '待分配'} · 请在客户总览查看协作操作`
   return opt.matched_alias ? `别名：${opt.matched_alias}` : (opt.owner_name || '')
 }
 
@@ -259,15 +271,6 @@ function blockFileDrop(event) {
 function toggleState(value) {
   const list = c.form.value.state_changes
   c.form.value.state_changes = list.includes(value) ? list.filter(v => v !== value) : [...list, value]
-}
-
-async function promptProspect() {
-  try {
-    const { value } = await promptAction('输入店名，只建「潜在」档，其他资料以后再补', '新客户快速建档', {
-      inputValidator: v => Boolean(String(v || '').trim()) || '请输入店名',
-    })
-    await c.createProspect(value.trim())
-  } catch (e) { if (!isFeedbackCancelled(e)) throw e }
 }
 
 async function beforeClose(done) {

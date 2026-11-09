@@ -1,4 +1,4 @@
-import { newRequestId } from './followupDraft.js'
+import { followupOutcome, newRequestId } from './followupDraft.js'
 
 export function mayEditFollowup(user, record) {
   return Boolean(record && (user?.roles?.includes('super_admin') || (
@@ -11,6 +11,7 @@ export function recordToEditForm(record) {
     raw_text: record.raw_text || '', followup_date: record.followup_date, channel: record.channel,
     summary: record.summary || '', state_changes: [...(record.state_changes || [])],
     next_date: record.next_date, next_plan: record.next_plan || '', next_method: record.next_method,
+    ...followupOutcome(record),
     attachment_ids: record.attachments.map(a => a.id),
     items: record.items.map(item => ({
       id: item.id, kind: item.kind, text: item.text, category: item.category, severity: item.severity,

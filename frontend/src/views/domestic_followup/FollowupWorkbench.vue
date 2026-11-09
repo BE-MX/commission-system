@@ -5,13 +5,6 @@
       <div class="lg-aurora__blob lg-aurora__blob--amber" />
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
-    <div class="wb-stats">
-      <OverviewMetricCard v-for="s in STATS" :key="s.key" :label="s.label"
-                          :value="w.loaded.value ? w.summary[s.key] : '—'" :icon="s.icon" :tone="s.tone"
-                          :hint="s.key === 'issue' && w.summary.urgent ? `紧急 ${w.summary.urgent}` : ''"
-                          interactive :selected="isStatActive(s.key)" @click="toggleFilter(s.key)" />
-    </div>
-
     <el-alert v-if="w.drafts.value.length" type="info" :closable="false" class="wb-drafts">
       你有 {{ w.drafts.value.length }} 份草稿未确认：
       <GlassButton v-for="d in w.drafts.value.slice(0, 3)" :key="d.id" variant="link" @click="resumeDraft(d)">
@@ -22,18 +15,27 @@
     <div class="wb-panel lg-card is-static">
       <div class="action-bar">
         <div class="wb-actions">
-          <el-checkbox v-model="potentialOnly">仅显示潜在客户</el-checkbox>
+          <el-checkbox v-if="tab !== 'customers'" v-model="potentialOnly">仅显示潜在客户</el-checkbox>
           <GlassButton v-permission="'domestic_followup:write'" variant="primary" left-icon="EditPen" @click="composer.open()">记一条跟进</GlassButton>
+          <GlassButton v-permission="'domestic_followup:write'" variant="outline" left-icon="Plus" @click="prospectRef.open()">快速建客户</GlassButton>
           <GlassButton v-permission="'domestic_followup:admin'" variant="outline" left-icon="Setting" @click="configRef.open()">跟进设置</GlassButton>
+          <GlassButton v-permission="'domestic_followup:coordinate'" variant="outline" left-icon="Setting" @click="collaborationSettingsRef.open()">协作管理</GlassButton>
         </div>
         <GlassButton v-if="tab === 'tasks'" variant="ghost" left-icon="Refresh" :loading="w.loading.value" @click="w.loadTasks">刷新</GlassButton>
       </div>
       <el-tabs v-model="tab" class="wb-tabs">
-        <el-tab-pane :label="canReadAll ? '管理总览' : '跟进总览'" name="overview" lazy>
-          <FollowupOverview ref="overviewRef" :potential-only="potentialOnly" @timeline="id => timelineRef.open(id)"
-                            @edit="id => editorRef.open(id)" @history="id => historyRef.open(id)" />
+        <el-tab-pane label="客户总览" name="customers" lazy>
+          <CustomerOverview ref="customersRef" :default-scope="canReadAll ? 'authorized' : 'mine'"
+                            @detail="(row, action) => timelineRef.open(row.id, row, action)" @record="customer => composer.open({ customer })"
+                            @query-change="timelineRef?.close()" />
         </el-tab-pane>
         <el-tab-pane label="待办" name="tasks">
+          <div class="wb-stats">
+            <OverviewMetricCard v-for="s in STATS" :key="s.key" :label="s.label"
+                                :value="w.loaded.value ? w.summary[s.key] : '—'" :icon="s.icon" :tone="s.tone"
+                                :hint="s.key === 'issue' && w.summary.urgent ? `紧急 ${w.summary.urgent}` : ''"
+                                interactive :selected="isStatActive(s.key)" @click="toggleFilter(s.key)" />
+          </div>
           <ListPageStatus :error="w.error.value" :has-data="w.loaded.value" :loading="w.loading.value" :paged="false" @retry="w.loadTasks" />
           <div v-loading="w.loading.value" class="wb-cards">
             <FollowupTaskCard v-for="t in w.filtered.value.due" :key="t.id" :task="t" :on-receipt-ok="w.receiptOk"
@@ -51,6 +53,10 @@
               </div>
             </el-collapse-item>
           </el-collapse>
+        </el-tab-pane>
+        <el-tab-pane label="跟进明细" name="overview" lazy>
+          <FollowupOverview ref="overviewRef" :potential-only="potentialOnly" @timeline="id => timelineRef.open(id)"
+                            @edit="id => editorRef.open(id)" @history="id => historyRef.open(id)" />
         </el-tab-pane>
         <el-tab-pane label="异常意见" name="items" lazy>
           <IssueBoard ref="issuesRef" :potential-only="potentialOnly" :categories="composer.dicts.domestic_followup_category" @timeline="id => timelineRef.open(id)" @changed="w.loadTasks" />
@@ -90,9 +96,12 @@
     </div>
 
     <FollowupComposer :composer="composer" />
-    <CustomerTimelineDrawer ref="timelineRef" @record="customer => composer.open({ customer })"
+    <CustomerTimelineDrawer ref="timelineRef" @record="(customer, historical_only) => composer.open({ customer, historical_only })"
+                            @changed="afterEdit"
                             @edit="id => editorRef.open(id)" @history="id => historyRef.open(id)" />
+    <QuickProspectDialog ref="prospectRef" @created="afterProspect" @existing="customer => timelineRef.open(customer.id)" />
     <FollowupConfigDialog ref="configRef" />
+    <CollaborationSettingsDialog ref="collaborationSettingsRef" @changed="afterEdit" @inspect="id => timelineRef.open(id)" />
     <FollowupEditDialog ref="editorRef" @saved="afterEdit" />
     <FollowupHistoryDrawer ref="historyRef" />
     <FollowupRecordDrawer :record="myRecordDetail" @close="myRecordDetail = null"
@@ -118,6 +127,9 @@ import FollowupConfigDialog from './components/FollowupConfigDialog.vue'
 import FollowupComposer from './components/FollowupComposer.vue'
 import FollowupTaskCard from './components/FollowupTaskCard.vue'
 import FollowupOverview from './components/FollowupOverview.vue'
+import CustomerOverview from './components/CustomerOverview.vue'
+import QuickProspectDialog from './components/QuickProspectDialog.vue'
+import CollaborationSettingsDialog from './components/CollaborationSettingsDialog.vue'
 import FollowupEditDialog from './components/FollowupEditDialog.vue'
 import FollowupHistoryDrawer from './components/FollowupHistoryDrawer.vue'
 import FollowupRecordDrawer from './components/FollowupRecordDrawer.vue'
@@ -140,11 +152,14 @@ const recordColumns = [
 const { density: recordDensity, densityClass: recordDensityClass, visibleKeys: visibleRecordKeys,
   panelRef: recordsPanel, isFullscreen: recordsFullscreen, toggleFullscreen: toggleRecordsFullscreen } = useTableView('domestic-followup-records', recordColumns)
 const auth = useAuthStore()
-const canReadAll = computed(() => auth.hasPermission('domestic_followup:read_all'))
-const tab = ref(canReadAll.value ? 'overview' : 'tasks')
+const canReadAll = computed(() => auth.hasAnyPermission(['domestic_followup:read_all', 'domestic_followup:admin', 'domestic_followup:coordinate']))
+const tabs = ['customers', 'tasks', 'overview', 'items', 'records']
+const tab = ref(tabs.includes(route.query.tab) ? route.query.tab : 'customers')
+const customersRef = ref(null), prospectRef = ref(null)
 const overviewRef = ref(null)
 const timelineRef = ref(null)
 const configRef = ref(null)
+const collaborationSettingsRef = ref(null)
 const editorRef = ref(null), historyRef = ref(null), issuesRef = ref(null), myRecordDetail = ref(null)
 const potentialOnly = ref(false)
 const upcomingOpen = ref([])  // 「即将到期」默认折叠；点计数卡展开/收起
@@ -153,6 +168,7 @@ const composer = useFollowupComposer({
   onSaved: () => {
     if (tab.value === 'records') w.loadRecords(1)
     overviewRef.value?.refresh()
+    customersRef.value?.refresh()
   },
   onClosed: () => w.loadTasks(),
 })
@@ -178,6 +194,7 @@ async function resumeDraft(draft) {
 
 function openFromQuery() {
   if (route.name !== 'DomesticFollowups') return  // 页面缓存在后台时，别的页面换路由不该弹本页的抽屉
+  if (tabs.includes(route.query.tab)) tab.value = route.query.tab
   const id = Number(route.query.customer)
   if (!id) return
   timelineRef.value?.open(id)
@@ -202,7 +219,12 @@ function afterEdit() {
   w.loadTasks()
   if (w.records.loaded || tab.value === 'records') w.loadRecords(w.records.page)
   overviewRef.value?.refresh()
+  customersRef.value?.refresh()
   issuesRef.value?.refresh()
+}
+function afterProspect(customer) {
+  customersRef.value?.refresh()
+  timelineRef.value?.open(customer.id)
 }
 onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // 看板分类筛选要字典
 </script>
@@ -211,7 +233,7 @@ onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // �
 .followup-workbench { position: relative; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .wb-aurora { inset: -24px -28px; }
 .wb-stats, .wb-panel, .wb-drafts { position: relative; z-index: 1; }
-.wb-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.wb-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
 .wb-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .wb-panel { min-width: 0; --el-table-bg-color: transparent; --el-table-tr-bg-color: transparent; }
 .wb-panel > .action-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border-color); }

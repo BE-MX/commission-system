@@ -2,7 +2,8 @@ const STATUS = { todo: '未完成', done: '已完成', cancelled: '已取消', e
 const KIND = { content: '要点', issue: '异常', suggestion: '意见' }
 const text = value => Array.isArray(value) ? value.join('、') : (value || '—')
 const fields = { raw_text: '跟进原文', summary: '摘要', followup_date: '跟进日期', channel: '沟通方式',
-  state_changes: '客户变化', next_date: '下次日期', next_plan: '下次计划', next_method: '下次方式' }
+  state_changes: '客户变化', next_date: '下次日期', next_plan: '下次计划', next_method: '下次方式',
+  result_code: '本次结果', obstacles: '主要障碍', evidence_kind: '事实来源', shared_summary: '共享接手摘要', effective_progress: '有效推进' }
 
 export function revisionChanges(revision) {
   const { before, after } = revision

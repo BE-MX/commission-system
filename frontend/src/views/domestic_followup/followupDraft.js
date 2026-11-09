@@ -21,6 +21,8 @@ export function emptyForm(today) {
     contents: [], issues: [], suggestions: [], state_changes: [],
     next_date: null, next_plan: '', next_method: null, nextBasis: 'none', nextExpression: null,
     unreadable: [], closeTaskIds: [], resolvedItems: [], source_task_id: null,
+    ...followupOutcome(), development_stage: null, responsibility_version: null, plan_purpose: null,
+    plan_assignee_user_id: null, historical_only: false,
   }
 }
 
@@ -48,10 +50,18 @@ export function draftToForm(draft, today) {
     next_date: next.date || null, next_plan: next.plan || '', next_method: next.method || null,
     nextBasis: next.basis || 'none', nextExpression: next.expression || null,
     unreadable: ai.unreadable || [],
+    ...followupOutcome(draft),
   }
 }
 
 const clean = text => String(text || '').trim()
+
+export function followupOutcome(source = {}) {
+  return {
+    result_code: source.result_code || null, obstacles: [...(source.obstacles || [])], evidence_kind: source.evidence_kind || null,
+    shared_summary: clean(source.shared_summary) || null, effective_progress: Boolean(source.effective_progress),
+  }
+}
 
 export function formToPayload(form) {
   const items = [
@@ -74,6 +84,13 @@ export function formToPayload(form) {
     resolved_items: (form.resolvedItems || []).map(r => ({
       item_id: r.item_id, status: r.status || 'resolved', resolution: clean(r.resolution) || null,
     })),
+    ...followupOutcome(form),
+    development_stage: form.development_stage || null,
+    responsibility_version: form.responsibility_version || null,
+    plan_purpose: form.next_date ? form.plan_purpose || null : null,
+    ...(form.next_date && form.responsibility_version && !form.historical_only && form.plan_assignee_user_id
+      ? { plan_assignee_user_id: form.plan_assignee_user_id } : {}),
+    historical_only: Boolean(form.historical_only),
   }
 }
 

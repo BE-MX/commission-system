@@ -1,10 +1,10 @@
-"""三个描述性值域的唯一读取口：后台可增删，AI 与校验都从这里取（红线 7）。"""
+"""跟进描述性值域由字典管理，录入和 AI 复用同一读取口。"""
 from sqlalchemy.orm import Session
 
-from app.domestic_followup.constants import DICT_CATEGORY, DICT_CHANNEL, DICT_STATE_CHANGE
+from app.domestic_followup.constants import DICT_CATEGORY, DICT_CHANNEL, DICT_OBSTACLE, DICT_RESULT, DICT_STATE_CHANGE
 from app.system.models import SysDict
 
-DICT_TYPES = (DICT_STATE_CHANGE, DICT_CATEGORY, DICT_CHANNEL)
+DICT_TYPES = (DICT_STATE_CHANGE, DICT_CATEGORY, DICT_CHANNEL, DICT_RESULT, DICT_OBSTACLE)
 
 
 def load_values(db: Session) -> dict[str, list[str]]:

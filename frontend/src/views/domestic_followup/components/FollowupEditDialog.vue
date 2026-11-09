@@ -7,7 +7,8 @@
       </el-alert>
       <template v-if="e.form.value">
         <p>{{ e.record.value.shop_name }} · 原录入人：{{ e.record.value.author_name }}</p>
-        <el-alert title="未完成待办随修改同步；已完成回访和异常处理结果保留。客户和原录入人不变。" type="info" :closable="false" />
+        <el-alert :title="planningEditable ? '未完成待办随修改同步。' : '可以更正沟通内容。当前跟进安排请在新记录中更新。'"
+                  type="info" :closable="false" />
         <el-form label-position="top" :disabled="e.saving.value || e.uncertain.value" class="edit-form">
           <div class="edit-grid">
             <el-form-item label="跟进日期"><el-date-picker v-model="e.form.value.followup_date" class="edit-control" type="date" value-format="YYYY-MM-DD" /></el-form-item>
@@ -17,6 +18,7 @@
           </div>
           <el-form-item label="跟进原文"><el-input v-model="e.form.value.raw_text" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" maxlength="20000" /></el-form-item>
           <el-form-item label="摘要"><el-input v-model="e.form.value.summary" type="textarea" autosize maxlength="500" /></el-form-item>
+          <FollowupOutcomeFields :form="e.form.value" :dicts="e.dicts.value" />
           <el-form-item label="客户变化"><el-select v-model="e.form.value.state_changes" multiple clearable>
             <el-option v-for="v in states" :key="v" :value="v" :label="v" />
           </el-select></el-form-item>
@@ -48,12 +50,12 @@
             </div>
           </el-form-item>
           <div class="edit-grid">
-            <el-form-item label="下次跟进日期"><el-date-picker v-model="e.form.value.next_date" class="edit-control" type="date" value-format="YYYY-MM-DD" clearable /></el-form-item>
-            <el-form-item label="下次沟通方式"><el-select v-model="e.form.value.next_method" class="edit-control" clearable>
+            <el-form-item label="下次跟进日期"><el-date-picker v-model="e.form.value.next_date" :disabled="!planningEditable" class="edit-control" type="date" value-format="YYYY-MM-DD" clearable /></el-form-item>
+            <el-form-item label="下次沟通方式"><el-select v-model="e.form.value.next_method" :disabled="!planningEditable" class="edit-control" clearable>
               <el-option v-for="v in channels" :key="v" :value="v" :label="v" />
             </el-select></el-form-item>
           </div>
-          <el-form-item label="下次计划"><el-input v-model="e.form.value.next_plan" type="textarea" autosize maxlength="500" /></el-form-item>
+          <el-form-item label="下次计划"><el-input v-model="e.form.value.next_plan" :readonly="!planningEditable" type="textarea" autosize maxlength="500" /></el-form-item>
           <el-form-item label="修改原因" required><el-input v-model="e.form.value.reason" type="textarea" autosize maxlength="500" placeholder="说明本次更正内容" /></el-form-item>
         </el-form>
       </template>
@@ -70,16 +72,18 @@
 import { computed, ref } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
 import AppUpload from '@/components/AppUpload.vue'
+import FollowupOutcomeFields from './FollowupOutcomeFields.vue'
 import { followupApi, apiError } from '@/api/domesticFollowup'
 import { confirmAction, isFeedbackCancelled, msgError, msgSuccessText } from '@/utils/feedback'
 import { canRemoveEditItem, canToggleRecordOnly } from '../followupEdit'
 import { useFollowupEditor } from '../composables/useFollowupEditor'
 
 const emit = defineEmits(['saved'])
-const e = useFollowupEditor(followupApi, row => { msgSuccessText('跟进已修改，关联待办已同步'); emit('saved', row) })
+const e = useFollowupEditor(followupApi, row => { msgSuccessText('跟进已修改'); emit('saved', row) })
 const GROUPS = [{ kind: 'content', label: '跟进要点' }, { kind: 'issue', label: '异常' }, { kind: 'suggestion', label: '意见建议' }]
 const uploading = ref(false), uploads = ref([])
 const frozen = computed(() => e.saving.value || e.uncertain.value)
+const planningEditable = computed(() => e.record.value?.planning_editable !== false)
 const channels = computed(() => [...new Set([...(e.dicts.value.domestic_followup_channel || []), e.form.value?.channel, e.form.value?.next_method].filter(Boolean))])
 const categories = computed(() => e.dicts.value.domestic_followup_category || [])
 const states = computed(() => [...new Set([...(e.dicts.value.domestic_followup_state_change || []), ...(e.form.value?.state_changes || [])])])

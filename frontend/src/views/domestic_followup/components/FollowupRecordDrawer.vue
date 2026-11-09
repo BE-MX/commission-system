@@ -8,6 +8,10 @@
         <div><dt>沟通方式</dt><dd>{{ record.channel || '—' }}</dd></div>
       </dl>
       <section v-if="record.summary"><h3>摘要</h3><p>{{ record.summary }}</p></section>
+      <section v-if="record.result_code || record.obstacles?.length || record.evidence_kind">
+        <h3>本次结果与障碍</h3>
+        <p>{{ [record.result_code, ...(record.obstacles || []), evidenceLabels[record.evidence_kind]].filter(Boolean).join(' · ') }}</p>
+      </section>
       <section v-if="record.raw_text"><h3>跟进原文</h3><p>{{ record.raw_text }}</p></section>
       <section v-if="record.items?.length">
         <h3>跟进要点与异常意见</h3>
@@ -51,6 +55,7 @@ const props = defineProps({ record: { type: Object, default: null } })
 defineEmits(['close', 'timeline', 'edit', 'history'])
 const auth = useAuthStore()
 const ITEM_STATUS = { open: '未处理', handling: '处理中', resolved: '已解决', closed_no_action: '无需处理' }
+const evidenceLabels = { customer: '客户明确说', assessment: '我的判断' }
 const previewUrl = ref('')
 let previewRequest = 0
 function closePreview() {

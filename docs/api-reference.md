@@ -2848,6 +2848,28 @@ AI 整理走 `app.ai.service.chat` facade，预设 `domestic_followup_parse`（�
 
 `GET /followups`、`/followups/authors`、`/drafts`、`/tasks`、`/tasks/summary`、`/items` 均接受 `potential_only=true`（默认 false），与原有数据范围和筛选取交集，只返回客户**当前** `lifecycle_status=潜在` 的数据；无客户的草稿在勾选时不显示。此筛选不改变详情/历史的查看权限。
 
+### 客户总览与接力协作（255 迁移，本地开发）
+
+业务规则与权限矩阵见[已确认需求](requirements/2026-11-09-domestic-followup-collaboration.md)。下列路径沿用 `/api/domestic-followup` 前缀。
+
+| 方法 | 相对路径 | 请求与结果 |
+| --- | --- | --- |
+| GET | `/customer-overview` | 按客户分页。支持关键词、地区、成交、协作状态、当前跟进人、联系日期、生命周期及范围。返回 `items,total,page,page_size,counts,regions,assignees`。`deal_status` 为 `all/won/unwon/unknown/sample_only`，`scope` 为 `mine/authorized/collaborating/available/incoming`。统计保留成交以外的筛选及相同权限。 |
+| GET | `/customers/{id}/overview` | 客户级摘要。按权限投影联系方式、成交依据、最近联系和允许的动作。 |
+| PUT | `/customers/{id}/contact` | 窄字段更新，支持联系人、电话、微信、省市。疑似重复返回 409，只有有权查看的匹配客户才返回摘要。 |
+| PUT | `/customers/{id}/deal-verification` | 客户范围内的协调员提交 `deal_status` 和核实依据，保留事件。系统订单事实优先。 |
+| POST | `/customers/prospect` | 扩展原快速建档。店名必填，联系方式、省市和明确未成交确认可选。同事务建立客户和跟进责任。 |
+| GET | `/customers/{id}/timeline` | 以 `offset`、`event_type=all/followup/shipment` 分页读取授权历史，返回 `has_more`、`next_offset`。新增协作权限与发货读取分别判断。 |
+| GET | `/collaboration/{id}`、`/collaboration/{id}/events` | 当前责任、版本、动作和交接包，以及分页审计事件。 |
+| GET | `/collaboration/{id}/candidates`、`/collaboration/{id}/tasks` | 仅返回该客户的合格接收人及按任务类型裁剪的交接预览。 |
+| POST | `/collaboration/{id}/actions` | `action`、责任 `version`、`idempotency_key` 必填。待接收单另带交接 ID/版本。接手与已选任务同事务处理，版本或任务漂移返回 409。 |
+| GET/POST | `/collaboration/initialize` | 协调员在授权范围内生成初始化预览，提交选中客户及预览 token 逐条复核。 |
+| GET | `/collaboration/coordination` | 按协调员范围列出待处理、逾期及人员资格异常。 |
+| GET/POST/DELETE | `/collaboration/settings/scopes`、`/collaboration/settings/scopes/{id}` | 地区或客户范围配置。要求 `domestic_followup:admin` 和 `domestic_followup:coordinate`，或超级管理员。 |
+| GET/PUT | `/collaboration/settings/thresholds` | 读取和配置待接收提醒天数。权限同范围配置。用户选项使用 `GET /collaboration/settings/users`。 |
+
+`/followups` 和草稿确认支持结构化沟通结果、障碍、证据类型及明确共享的摘要。协作客户的新计划需声明用途和责任版本，`plan_assignee_user_id` 可指定在职且有该客户资格的现任负责人或协作人。历史补录只保存沟通事实。协作客户的旧记录编辑冻结关联计划字段，现任通过新跟进或待办更新安排。旧提醒和直接写入口都校验当前任务或跟进责任。
+
 # 本地产品与库存账（开发分支）
 
 员工操作页面为 `/stock/inventory`（备货管理→本地成品库存账）；客户公开库存展示使用 `/inventory`。两者路由与权限独立，本节 `/api/inventory` 接口前缀不受页面地址调整影响。

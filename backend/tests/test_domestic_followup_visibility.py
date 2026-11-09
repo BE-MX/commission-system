@@ -26,6 +26,7 @@ def test_followup_permissions_seeded_with_correct_kind_and_admin_grants(db):
     assert _admin_granted("domestic_followup:write")
     assert not _admin_granted("domestic_followup:read_all")
     assert not _admin_granted("domestic_followup:admin")
+    assert not _admin_granted("domestic_followup:coordinate")
 
 
 def test_config_defaults_and_update(db):
@@ -93,11 +94,12 @@ def test_customer_scope_owner_commission_and_read_all(db):
     assert visibility.can_write_customer(db, _user_ctx(owner), customer)
     assert visibility.can_write_customer(db, _user_ctx(partner), customer)
     assert not visibility.can_write_customer(db, _user_ctx(other), customer)
-    boss_ctx = _user_ctx(boss, ("domestic_followup:read", "domestic_followup:read_all"))
-    assert visibility.can_write_customer(db, boss_ctx, customer)
+    boss_ctx = _user_ctx(boss, ("domestic_followup:read", "domestic_followup:write", "domestic_followup:read_all"))
+    assert visibility.in_customer_scope(db, boss_ctx, customer.id)
+    assert not visibility.can_write_customer(db, boss_ctx, customer)
 
 
-def test_public_sea_and_task_assignee_can_write(db):
+def test_legacy_public_customer_can_be_recorded_but_task_assignment_is_not_a_general_grant(db):
     owner, creator, stranger = (make_user(db, f"fu_vis2_{n}") for n in ("o", "c", "s"))
     public = make_customer(db, None, "公海店", creator=owner)
     assert visibility.can_write_customer(db, _user_ctx(stranger), public)
@@ -106,7 +108,7 @@ def test_public_sea_and_task_assignee_can_write(db):
     db.add(DomesticFollowupTask(task_type="receipt", customer_id=owned.id, assignee_user_id=creator.id,
                                 source_key="receipt:t", title="t", due_date=__import__("datetime").date(2026, 11, 2)))
     db.flush()
-    assert visibility.can_write_customer(db, _user_ctx(creator), owned)
+    assert not visibility.can_write_customer(db, _user_ctx(creator), owned)
 
 
 def test_ensure_writable_reports_owner_name(db):
@@ -137,7 +139,7 @@ def test_create_prospect_and_conflicts(db):
     assert created["shop_name"] == "新潜在店"
     assert created["lifecycle_status"] == "潜在"
     assert created["owner_user_id"] == owner.id
-    with pytest.raises(ValueError, match="已存在（归属：fu_vis5_owner）"):
+    with pytest.raises(ValueError, match="可能已有档案，请联系管理员核实"):
         visibility.create_prospect(db, _user_ctx(other), "新潜在店")
 
 

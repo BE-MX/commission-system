@@ -10,14 +10,16 @@ from app.auth.dependencies import require_permission
 from app.core.database import get_db
 from app.core.response import ok
 from app.domestic_followup import (
-    ai_parse_service, attachment_service, config_service, dict_service, edit_service, followup_service, jobs, task_service,
-    visibility,
+    ai_parse_service, attachment_service, collaboration_router, config_service, customer_overview_router,
+    dict_service, edit_service, followup_service, jobs, task_service, visibility,
 )
 from app.domestic_followup.schemas import (
     ConfirmIn, DirectSaveIn, DraftCreateIn, EditFollowupIn, ItemResolveIn, ProspectIn, ReceiptOkIn, SnoozeIn, TransferIn,
 )
 
 router = APIRouter()
+router.include_router(customer_overview_router.router)
+router.include_router(collaboration_router.router)
 _require_read = require_permission("domestic_followup:read")
 _require_write = require_permission("domestic_followup:write")
 _require_admin = require_permission("domestic_followup:admin")
@@ -36,6 +38,10 @@ def _errors(db: Session | None = None):
         raise  # LookupError 的子类，属于代码 bug，不伪装成 404
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except visibility.ProspectDuplicateError as exc:
+        if db is not None:
+            db.rollback()
+        raise HTTPException(status_code=409, detail={"message": str(exc), "matches": exc.matches}) from exc
     except ValueError as exc:
         if db is not None:
             db.rollback()
@@ -75,13 +81,14 @@ def search_customers(q: str = Query("", max_length=60), db: Session = Depends(ge
 @router.post("/customers/prospect")
 def create_prospect(payload: ProspectIn, db: Session = Depends(get_db), user=Depends(_require_write)):
     with _errors(db):
-        return ok(visibility.create_prospect(db, user, payload.shop_name), message="已建潜在客户")
+        return ok(visibility.create_prospect(db, user, payload), message="已建潜在客户")
 
 
 @router.get("/customers/{customer_id}/timeline")
-def timeline(customer_id: int, db: Session = Depends(get_db), user=Depends(_require_read)):
+def timeline(customer_id: int, offset: int = Query(0, ge=0), event_type: str = Query("all", pattern="^(all|followup|shipment)$"),
+             db: Session = Depends(get_db), user=Depends(_require_read)):
     with _errors():
-        return ok(followup_service.timeline(db, user, customer_id))
+        return ok(followup_service.timeline(db, user, customer_id, offset=offset, event_type=event_type))
 
 
 @router.post("/attachments")
@@ -150,7 +157,7 @@ def edit_followup(followup_id: int, payload: EditFollowupIn, background: Backgro
         row, pending_ocr = edit_service.update(db, user, followup_id, payload)
     if pending_ocr:
         background.add_task(_submit_job, attachment_service.run_ocr, pending_ocr)
-    return ok(followup_service.serialize(db, row), message="跟进已修改，关联待办已同步")
+    return ok(followup_service.serialize(db, row), message="跟进已修改")
 
 
 @router.post("/drafts")

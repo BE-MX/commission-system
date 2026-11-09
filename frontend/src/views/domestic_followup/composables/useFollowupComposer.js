@@ -1,9 +1,9 @@
-import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { apiError, followupApi } from '@/api/domesticFollowup'
 import { currentBeijingDate } from '@/utils/datetime'
 import { msgError, msgSuccessText, msgWarning } from '@/utils/feedback'
 import {
-  clipboardHasText, draftToForm, emptyForm, formToPayload, imageFilesFromClipboard, imageFilesFromDrop,
+  clipboardHasText, draftToForm, emptyForm, followupOutcome, formToPayload, imageFilesFromClipboard, imageFilesFromDrop,
   mergeManualFields, newRequestId, pollDecision, POLL_LIMIT, POLL_MS,
 } from '../followupDraft'
 
@@ -21,6 +21,9 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   const openTasks = ref([])
   const openItems = ref([])
   const aiFailed = ref(false)
+  const taskOnly = ref(false)
+  const loadingContext = ref(false)
+  const planAssignees = ref([])
   let requestId = newRequestId()
   let pollTimer = null
   // 代际令牌：关闭/重开后旧轮询的回调可能还在路上，令牌不一致就作废，不能复活已关掉的抽屉
@@ -38,6 +41,9 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   const selectedCustomer = computed(() => customerOptions.value.find(o => o.id === form.value.customer_id) || null)
   // 选项里查不到时不拦（后端仍会校验）；明确不可写才禁用确认
   const customerWritable = computed(() => selectedCustomer.value?.writable !== false)
+  const needsPlanPurpose = computed(() => !!(form.value.responsibility_version && form.value.next_date && !taskOnly.value && !form.value.historical_only))
+  const canSave = computed(() => !loadingContext.value && customerWritable.value && (!needsPlanPurpose.value || Boolean(form.value.plan_purpose)))
+  watch(() => form.value.next_date, date => { if (!date) form.value.plan_assignee_user_id = null }, { flush: 'sync' })
 
   async function loadDicts() {
     if (dicts.domestic_followup_channel.length) return
@@ -57,6 +63,10 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     if (preset.customer) form.value.customer_id = preset.customer.id
     step.value = 'input'
     aiFailed.value = false
+    taskOnly.value = false
+    planAssignees.value = []
+    searching.value = false
+    loadingContext.value = false
     manualFields = null
     reviewSnapshot = null
     requestId = newRequestId()
@@ -122,17 +132,20 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
 
   async function searchCustomers(q) {
     searching.value = true
-    try { customerOptions.value = await followupApi.searchCustomers(q || '') } catch (e) { msgError(apiError(e, '客户搜索失败'), e) } finally { searching.value = false }
+    const gen = pollGen
+    try {
+      const options = await followupApi.searchCustomers(q || '')
+      if (gen !== pollGen) return
+      const selected = selectedCustomer.value
+      customerOptions.value = selected && !options.some(option => option.id === selected.id) ? [selected, ...options] : options
+    } catch (e) { if (gen === pollGen) msgError(apiError(e, '客户搜索失败'), e) }
+    finally { if (gen === pollGen) searching.value = false }
   }
 
-  async function createProspect(name) {
-    try {
-      const customer = await followupApi.createProspect(name)
-      customerOptions.value = [customer, ...customerOptions.value]
-      form.value.customer_id = customer.id
-      msgSuccessText(`已建潜在客户「${customer.shop_name}」`)
-      await loadCustomerContext(customer.id)
-    } catch (e) { msgError(apiError(e, '建档失败'), e) }
+  async function selectProspect(customer) {
+    customerOptions.value = [customer, ...customerOptions.value.filter(option => option.id !== customer.id)]
+    form.value.customer_id = customer.id
+    await loadCustomerContext(customer.id)
   }
 
   async function loadCustomerContext(customerId, gen = pollGen) {
@@ -141,7 +154,14 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     openItems.value = []
     form.value.closeTaskIds = []
     form.value.resolvedItems = []  // 换客户后旧客户的勾选会让后端报「不属于该客户」
-    if (!customerId) return
+    form.value.responsibility_version = null
+    form.value.development_stage = null
+    form.value.plan_assignee_user_id = null
+    planAssignees.value = []
+    taskOnly.value = false
+    loadingContext.value = false
+    if (!customerId || form.value.historical_only) return
+    loadingContext.value = true
     try {
       const [tasks, timeline] = await Promise.all([
         followupApi.tasks({ customer_id: customerId, scope: 'visible', due: 'all', page_size: 50 }),
@@ -152,14 +172,30 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
       openItems.value = timeline.open_items
       // AI 认出的客户不在搜索结果里时，用时间线头部补一个选项，下拉框才显示店名而不是 ID
       const head = timeline.customer
-      if (!customerOptions.value.some(o => o.id === head.id)) customerOptions.value = [head, ...customerOptions.value]
+      taskOnly.value = Boolean(form.value.source_task_id && !head.writable)
+      form.value.responsibility_version = head.responsibility_version
+      const selected = { ...customerOptions.value.find(option => option.id === head.id), ...head, writable: head.writable || taskOnly.value }
+      customerOptions.value = [selected, ...customerOptions.value.filter(option => option.id !== head.id)]
+      if (taskOnly.value) {
+        openTasks.value = openTasks.value.filter(task => task.id === form.value.source_task_id)
+        openItems.value = []
+        Object.assign(form.value, { next_date: null, next_plan: '', next_method: null, plan_purpose: null, shared_summary: null, effective_progress: false })
+      }
       // 从待办发起或当天到期的回访/约定，默认勾「本次一并完成」
       form.value.closeTaskIds = openTasks.value
         .filter(t => t.id === form.value.source_task_id || t.overdue_days > 0 || t.due_date <= form.value.followup_date)
         .map(t => t.id)
+      if (head.responsibility_version && head.writable) {
+        const details = await followupApi.collaboration(customerId)
+        if (seq !== contextSeq || gen !== pollGen) return
+        const primary = details.owner_user_id ? [{ user_id: details.owner_user_id, name: details.owner_name, primary: true }] : []
+        planAssignees.value = [...primary, ...(details.collaborators || []).filter(person => person.user_id !== details.owner_user_id)]
+      }
     } catch (e) {
       if (seq !== contextSeq || gen !== pollGen) return
       msgError(apiError(e, '客户待办加载失败'), e)
+    } finally {
+      if (seq === contextSeq && gen === pollGen) loadingContext.value = false
     }
   }
 
@@ -173,6 +209,8 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
 
   async function saveDirect() {
     if (!form.value.customer_id) return msgWarning('直接保存需要先选客户；不确定客户可以点「AI 整理」')
+    if (!canSave.value) return
+    if (form.value.historical_only && form.value.followup_date >= currentBeijingDate()) return msgWarning('请选择今天以前的实际沟通日期')
     saving.value = true
     try {
       await followupApi.directSave({
@@ -188,14 +226,15 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   async function startAi() {
     saving.value = true
     const gen = pollGen
-    const { channel, next_date, next_plan, next_method } = form.value
+    const { channel, next_date, next_plan, next_method, development_stage, plan_purpose, plan_assignee_user_id, customer_id, responsibility_version } = form.value
     try {
       const draft = await followupApi.createDraft({
         ...basePayload(), customer_id: form.value.customer_id || null,
         followup_date: form.value.followup_date, channel: form.value.channel,
+        ...followupOutcome(form.value),
       })
       if (gen !== pollGen) return  // 等接口时抽屉已关
-      manualFields = { channel, next_date, next_plan, next_method }
+      manualFields = { channel, next_date, next_plan, next_method, development_stage, plan_purpose, plan_assignee_user_id, customer_id, responsibility_version }
       form.value.id = draft.id
       step.value = 'parsing'
       poll(draft.id, 0)
@@ -242,7 +281,17 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     if (aiFailed.value) msgWarning(draft.ai_error || 'AI 整理未完成，请参考截图文字手动填写')
     step.value = 'review'
     await loadCustomerContext(form.value.customer_id, gen)
-    if (gen === pollGen) reviewSnapshot = JSON.stringify(form.value)  // 默认勾选也算初始状态
+    if (gen === pollGen) {
+      if (manualFields?.customer_id === form.value.customer_id && !taskOnly.value) {
+        form.value.development_stage = manualFields.development_stage
+        form.value.plan_purpose = manualFields.plan_purpose
+        if (form.value.next_date && planAssignees.value.some(person => person.user_id === manualFields.plan_assignee_user_id)) {
+          form.value.plan_assignee_user_id = manualFields.plan_assignee_user_id
+        }
+        if (manualFields.responsibility_version) form.value.responsibility_version = manualFields.responsibility_version
+      }
+      reviewSnapshot = JSON.stringify(form.value)
+    }
   }
 
   const reviewDirty = () => reviewSnapshot !== null && JSON.stringify(form.value) !== reviewSnapshot
@@ -250,6 +299,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   async function confirm() {
     if (!form.value.customer_id) return msgWarning('请选择客户')
     if (!customerWritable.value) return msgWarning('该客户不归你负责，不能记录跟进，请换一个客户')
+    if (!canSave.value) return
     saving.value = true
     try {
       await followupApi.confirmDraft(form.value.id, { version: form.value.version, ...formToPayload(form.value) })
@@ -264,8 +314,10 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
             finish(null)
             return
           }
-          form.value.version = latest.version
-          msgWarning('版本已刷新，请再点一次确认')
+          if (latest.version !== form.value.version) {
+            form.value.version = latest.version
+            msgWarning('版本已刷新，请再点一次确认')
+          } else msgWarning(apiError(e, '跟进责任已变化，请重新打开客户确认当前安排'))
         } catch (err) { msgError(apiError(err, '刷新草稿失败'), err) }
       } else {
         msgError(apiError(e, '确认失败'), e)
@@ -334,9 +386,9 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   onBeforeUnmount(stopPolling)
 
   return {
-    visible, step, saving, uploading, canSubmit, customerWritable, dicts, loadDicts, form, attachments,
+    visible, step, saving, uploading, canSubmit, canSave, customerWritable, taskOnly, needsPlanPurpose, planAssignees, dicts, loadDicts, form, attachments,
     customerOptions, searching, openTasks, openItems, aiFailed,
-    reviewDirty, open, resume, close, handleClosed, uploadAttachment, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, createProspect,
+    reviewDirty, open, resume, close, handleClosed, uploadAttachment, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, selectProspect,
     loadCustomerContext, saveDirect, startAi, confirm, discard, addRow, toggleResolved,
   }
 }

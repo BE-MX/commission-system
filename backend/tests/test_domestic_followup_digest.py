@@ -48,6 +48,42 @@ def test_pending_skips_users_without_dingtalk(db):
     assert digest.attempts == 5 and digest.last_error == "接收人未绑定钉钉"
 
 
+def test_daily_claim_refreshes_ownership_after_queueing(db):
+    original = make_user(db, "fu_dg_move1", dingtalk_id="dt-original")
+    incoming = make_user(db, "fu_dg_move2", dingtalk_id="dt-incoming")
+    retained = make_customer(db, original, "保留待办门店")
+    transferred = make_customer(db, original, "已交接门店")
+    _task(db, original, retained, "keep", "receipt", TODAY)
+    _task(db, original, transferred, "moved", "plan", TODAY)
+    db.flush()
+    digest_service.build_daily(db, TODAY)
+    queued = db.query(DomesticFollowupDigest).one()
+    db.query(DomesticFollowupTask).filter_by(source_key="moved").one().assignee_user_id = incoming.id
+    db.flush()
+
+    message = digest_service.claim(db, queued.id)
+    assert message["title"] == "今日客户跟进 1 项"
+    assert "保留待办门店" in message["markdown"]
+    assert "已交接门店" not in message["markdown"]
+    assert "/domestic/followups?tab=tasks" in message["markdown"]
+    assert digest_service.build_daily(db, TODAY) == 1
+
+
+def test_daily_claim_cancels_message_after_all_tasks_move(db):
+    original = make_user(db, "fu_dg_empty1", dingtalk_id="dt-original")
+    incoming = make_user(db, "fu_dg_empty2", dingtalk_id="dt-incoming")
+    customer = make_customer(db, original, "整包交接门店")
+    _task(db, original, customer, "all-moved", "plan", TODAY)
+    db.flush()
+    digest_service.build_daily(db, TODAY)
+    queued = db.query(DomesticFollowupDigest).one()
+    db.query(DomesticFollowupTask).one().assignee_user_id = incoming.id
+    db.flush()
+
+    assert digest_service.claim(db, queued.id) is None
+    assert digest_service.pending(db, "daily", TODAY) == []
+
+
 def test_enqueue_urgent_per_receiver_and_dedup(db):
     author = make_user(db, "fu_dg_d1")
     boss = make_user(db, "fu_dg_d2", dingtalk_id="dt-boss")

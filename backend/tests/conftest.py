@@ -33,6 +33,7 @@ from app.domestic import models as _domestic_models  # noqa: F401
 from app.domestic import shipment_models as _domestic_shipment_models  # noqa: F401
 # 跟进表 FK 指向内贸客户、发货批次与 ark_users，显式导入保证单跑测试文件时 create_all 覆盖到
 from app.domestic_followup import models as _domestic_followup_models  # noqa: F401
+from app.domestic_followup import collaboration_models as _domestic_followup_collab_models  # noqa: F401
 from app.design_image import models as _design_image_models  # noqa: F401
 from app.ai_chat import models as _ai_chat_models  # noqa: F401
 from app.sales_automation import models as _sales_automation_models  # noqa: F401

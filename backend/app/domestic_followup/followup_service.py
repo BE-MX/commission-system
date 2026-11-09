@@ -3,7 +3,7 @@
 三条落正式记录的路径共用 _apply_and_confirm，保证校验、任务、别名、紧急推送口径一致。
 """
 import logging
-from datetime import date, datetime, time, timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -12,10 +12,9 @@ from sqlalchemy.orm import Session
 from app.auth.models import ArkUser
 from app.core.time import beijing_now, beijing_today
 from app.domestic.models import DomesticCustomer
-from app.domestic.shipment_models import DomesticShipment, DomesticShipmentLine
 from app.domestic_followup import attachment_service, config_service, dict_service, task_service, visibility
 from app.domestic_followup.constants import (
-    DICT_CATEGORY, DICT_CHANNEL, DICT_STATE_CHANGE, RECEIPT_OK_TEXT, TRACKED_KINDS, URGENT,
+    DICT_CATEGORY, DICT_CHANNEL, DICT_OBSTACLE, DICT_RESULT, DICT_STATE_CHANGE, RECEIPT_OK_TEXT, TRACKED_KINDS, URGENT,
 )
 from app.domestic_followup.models import DomesticFollowup, DomesticFollowupItem, DomesticFollowupTask
 from app.domestic_followup.schemas import ConfirmIn, DirectSaveIn, DraftCreateIn, FollowupFields
@@ -23,8 +22,7 @@ from app.domestic_followup.schemas import ConfirmIn, DirectSaveIn, DraftCreateIn
 logger = logging.getLogger("commission")
 
 Followup = DomesticFollowup
-TIMELINE_LIMIT = 100
-SHIPMENT_LOOKBACK_DAYS = 90
+OUTCOME_FIELDS = ("result_code", "obstacles", "evidence_kind", "shared_summary", "effective_progress")
 
 
 class ConflictError(Exception):
@@ -62,6 +60,17 @@ def _validate(fields: FollowupFields, values: dict, followup_date) -> None:
         raise ValueError("下次跟进日期不能早于跟进日期")
 
 
+def validate_outcome(values, result, obstacles, effective, *, previous=None):
+    prior_result = previous.result_code if previous is not None else None
+    prior_obstacles = (previous.obstacles or []) if previous is not None else []
+    if result and result != prior_result and result not in values[DICT_RESULT]:
+        raise ValueError("本次沟通结果不在当前字典中")
+    if set(obstacles) - set(prior_obstacles) - set(values[DICT_OBSTACLE]):
+        raise ValueError("推进障碍不在当前字典中")
+    if effective and (not result or result in ("未接通", "未回复", "客户拒绝")):
+        raise ValueError("标记有效推进前，请选择有实际进展的沟通结果")
+
+
 def _active_user(db: Session, user_id: int) -> bool:
     return db.query(ArkUser.id).filter(ArkUser.id == user_id, ArkUser.is_active.is_(True),
                                        ArkUser.deleted_at.is_(None)).first() is not None
@@ -94,13 +103,17 @@ def _write_items(db: Session, followup: Followup, customer: DomesticCustomer, it
 def _apply_and_confirm(db: Session, current_user: dict, followup: Followup, fields: FollowupFields) -> Followup:
     if not fields.customer_id:
         raise ValueError("请选择客户")
-    customer = visibility.ensure_customer_writable(db, current_user, fields.customer_id)
+    from app.domestic_followup import record_access
+
     user_id = visibility.uid(current_user)
     if fields.followup_date:
         followup.followup_date = fields.followup_date
     if not fields.channel and followup.channel:  # 建草稿时带的沟通方式也要过字典校验
         fields = fields.model_copy(update={"channel": followup.channel})
-    _validate(fields, dict_service.load_values(db), followup.followup_date)
+    values = dict_service.load_values(db)
+    _validate(fields, values, followup.followup_date)
+    validate_outcome(values, fields.result_code, fields.obstacles, fields.effective_progress)
+    customer, responsibility, task_only = record_access.confirm_access(db, current_user, followup, fields)
 
     followup.customer_id = customer.id
     followup.channel = fields.channel or followup.channel
@@ -110,6 +123,9 @@ def _apply_and_confirm(db: Session, current_user: dict, followup: Followup, fiel
     followup.next_plan = fields.next_plan
     followup.next_method = fields.next_method
     followup.state_changes = list(dict.fromkeys(fields.state_changes)) or None
+    for name in OUTCOME_FIELDS:
+        setattr(followup, name, getattr(fields, name))
+    followup.responsibility_version = responsibility.version if responsibility else None
 
     _write_items(db, followup, customer, fields.items, user_id)
     for resolved in fields.resolved_items:
@@ -123,8 +139,11 @@ def _apply_and_confirm(db: Session, current_user: dict, followup: Followup, fiel
     if followup.source_task_id:
         close_ids.add(followup.source_task_id)
     task_service.close_tasks_for_followup(db, current_user, customer.id, close_ids, followup.id)
-    task_service.create_plan_task(db, followup, customer.shop_name)
-    visibility.learn_alias(db, customer.id, followup.chat_title, user_id)
+    if not task_only and not fields.historical_only:
+        plan_owner = record_access.plan_assignee(db, responsibility, fields)
+        task_service.create_plan_task(db, followup, customer.shop_name, assignee_id=plan_owner, purpose=fields.plan_purpose)
+        record_access.update_responsibility(db, responsibility, followup, fields)
+        visibility.learn_alias(db, customer.id, followup.chat_title, user_id)
 
     followup.status = "confirmed"
     followup.confirmed_at = beijing_now()
@@ -188,11 +207,15 @@ def create_draft(db: Session, current_user: dict, payload: DraftCreateIn) -> tup
         raise ValueError("请填写跟进内容或上传截图")
     try:
         if payload.customer_id:
-            visibility.ensure_customer_writable(db, current_user, payload.customer_id)
+            from app.domestic_followup import record_access
+            record_access.draft_access(db, current_user, payload.customer_id, payload.source_task_id)
+        validate_outcome(dict_service.load_values(db), payload.result_code, payload.obstacles, payload.effective_progress)
         followup, created = _new_followup(db, user_id, payload, ai_status="running")
         if not created:
             return followup, False
         followup.customer_id = payload.customer_id
+        for name in OUTCOME_FIELDS:
+            setattr(followup, name, getattr(payload, name))
         attachment_service.bind(db, user_id, followup.id, payload.attachment_ids)
         db.commit()
     except Exception:
@@ -231,6 +254,10 @@ def serialize(db: Session, followup: Followup, *, with_items: bool = True) -> di
         "author_user_id": followup.author_user_id, "author_name": author.real_name if author else None,
         "followup_date": followup.followup_date.isoformat(), "channel": followup.channel,
         "raw_text": followup.raw_text, "summary": followup.summary, "state_changes": followup.state_changes or [],
+        "result_code": followup.result_code, "obstacles": followup.obstacles or [],
+        "evidence_kind": followup.evidence_kind, "shared_summary": followup.shared_summary,
+        "effective_progress": followup.effective_progress,
+        "responsibility_version": followup.responsibility_version,
         "next_date": followup.next_date.isoformat() if followup.next_date else None,
         "next_plan": followup.next_plan, "next_method": followup.next_method, "chat_title": followup.chat_title,
         "source": followup.source, "status": followup.status, "ai_status": followup.ai_status,
@@ -308,7 +335,13 @@ def quick_receipt_ok(db: Session, current_user: dict, task_id: int, request_id: 
     if existing:
         return existing
     try:
-        task = db.query(DomesticFollowupTask).filter(DomesticFollowupTask.id == task_id).with_for_update().first()
+        from app.domestic_followup.collaboration_access import lock_customer
+        customer_id = db.scalar(select(DomesticFollowupTask.customer_id).where(DomesticFollowupTask.id == task_id))
+        if customer_id is None:
+            raise LookupError("回访待办不存在")
+        lock_customer(db, customer_id)
+        task = (db.query(DomesticFollowupTask).filter(DomesticFollowupTask.id == task_id)
+                .populate_existing().with_for_update().first())
         if task is None or task.task_type != "receipt":
             raise LookupError("回访待办不存在")
         if task.status != "todo":
@@ -396,61 +429,11 @@ def list_authors(db: Session, current_user: dict, *, potential_only: bool = Fals
     return [{"id": row.id, "real_name": row.real_name} for row in rows]
 
 
-def timeline(db: Session, current_user: dict, customer_id: int) -> dict:
-    """客户时间线：确认跟进 + 近 90 天发货，倒序；头部给跟进频率与未结异常（规格 4.6）。"""
-    customer = db.get(DomesticCustomer, customer_id)
-    if customer is None:
-        raise LookupError("客户不存在")
-    today = beijing_today()
-    writable = visibility.can_write_customer(db, current_user, customer)
-    # 可读 ≠ 可写：公海客户、只有待办的人可以记录，但只能看自己写过 / 被派任务的那几条（规格第六节）
-    readable = visibility.in_customer_scope(db, current_user, customer_id)
+def timeline(db: Session, current_user: dict, customer_id: int, *, offset: int = 0,
+             event_type: str = "all") -> dict:
+    from app.domestic_followup.timeline_service import customer_timeline
 
-    query = db.query(Followup).filter(Followup.customer_id == customer_id, Followup.status == "confirmed")
-    if not readable:
-        query = query.filter(visibility.followup_filter(current_user))
-    followups = query.order_by(Followup.followup_date.desc(), Followup.id.desc()).limit(TIMELINE_LIMIT).all()
-    if not readable and not writable and not followups:
-        raise PermissionError("无权查看该客户的跟进")
-    events = [{"type": "followup", "date": f.followup_date.isoformat(), "data": serialize(db, f)} for f in followups]
-
-    # 发货批次也是客户经营数据：不可读的人（公海/只有待办）只看自己相关的跟进，不看发货
-    shipments = []
-    if readable:
-        since = datetime.combine(today - timedelta(days=SHIPMENT_LOOKBACK_DAYS), time.min)
-        shipments = (db.query(DomesticShipment)
-                     .filter(DomesticShipment.customer_id == customer_id, DomesticShipment.cancelled_at.is_(None),
-                             DomesticShipment.ship_time >= since)
-                     .order_by(DomesticShipment.ship_time.desc()).limit(TIMELINE_LIMIT).all())
-    quantities = dict(db.query(DomesticShipmentLine.shipment_id, func.sum(DomesticShipmentLine.quantity))
-                      .filter(DomesticShipmentLine.shipment_id.in_([s.id for s in shipments] or [0]))
-                      .group_by(DomesticShipmentLine.shipment_id).all())
-    events += [{"type": "shipment", "date": s.ship_time.date().isoformat(),
-                "data": {"id": s.id, "shipment_no": s.shipment_no, "quantity": int(quantities.get(s.id) or 0),
-                         "received_date": s.received_date.isoformat() if s.received_date else None}}
-               for s in shipments]
-    # 同日：跟进排在发货之上（倒序读起来是「发货 → 回访」）
-    events.sort(key=lambda e: (e["date"], e["type"] == "followup"), reverse=True)
-
-    last = followups[0].followup_date if followups else None
-    frequency = config_service.get_config(db)["frequency_days"].get(customer.customer_level or "")
-    open_items = []
-    if readable:
-        open_items = (db.query(DomesticFollowupItem)
-                      .filter(DomesticFollowupItem.customer_id == customer_id,
-                              DomesticFollowupItem.status.in_(("open", "handling")))
-                      .order_by(DomesticFollowupItem.created_at).all())
-    return {
-        "customer": {
-            "id": customer.id, "shop_name": customer.shop_name, "customer_level": customer.customer_level,
-            "lifecycle_status": customer.lifecycle_status, "owner_user_id": customer.owner_user_id,
-            "last_followup_date": last.isoformat() if last else None,
-            "days_since_followup": (today - last).days if last else None,
-            "frequency_days": frequency, "writable": writable, "readable": readable,
-        },
-        "open_items": [serialize_item(i) for i in open_items],
-        "events": events[:TIMELINE_LIMIT],
-    }
+    return customer_timeline(db, current_user, customer_id, today=beijing_today(), offset=offset, event_type=event_type)
 
 
 def attachment_file(db: Session, current_user: dict, attachment_id: int):

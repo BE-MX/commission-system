@@ -7,7 +7,6 @@ import json
 import logging
 from datetime import datetime, time, timedelta
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.ai.service import chat
@@ -34,10 +33,7 @@ def _candidates(db: Session, current_user: dict) -> list[dict]:
     query = db.query(DomesticCustomer.id, DomesticCustomer.shop_name).filter(DomesticCustomer.status == 1)
     if not visibility.can_read_all(current_user):
         # 公海客户也可记录跟进，要能被 AI 认出来；自己的客户排前面
-        query = query.filter(or_(
-            DomesticCustomer.id.in_(visibility.scoped_customer_ids(visibility.uid(current_user))),
-            DomesticCustomer.owner_user_id.is_(None),
-        ))
+        query = query.filter(visibility.customer_search_scope(current_user))
     rows = (query.order_by(DomesticCustomer.owner_user_id.is_(None), DomesticCustomer.updated_at.desc())
             .limit(CANDIDATE_LIMIT).all())
     aliases: dict[int, list[str]] = {}
@@ -58,7 +54,7 @@ def _customer_context(db: Session, customer: DomesticCustomer, today, current_us
         query = query.filter(visibility.followup_filter(current_user))
     recent = query.order_by(DomesticFollowup.followup_date.desc()).limit(3).all()
     shipments = []
-    if readable:
+    if visibility.can_read_all(current_user) or visibility.in_legacy_customer_scope(db, current_user, customer_id):
         since = datetime.combine(today - timedelta(days=30), time.min)
         shipments = (db.query(DomesticShipment.shipment_no, DomesticShipment.ship_time)
                      .filter(DomesticShipment.customer_id == customer_id, DomesticShipment.cancelled_at.is_(None),

@@ -203,6 +203,9 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <p v-if="followupOwner" class="muted followup-owner-note">
+          当前跟进人 {{ followupOwner.assignee_name || '待分配' }}。保存归属销售后，当前跟进安排继续有效。
+        </p>
         <el-form-item label="提成分配">
           <DomesticCommissionEditor v-if="dialog.id" v-model="dialog.commission_allocations" :owners="options.owners" />
           <span v-else class="muted">保存后自动为所选归属销售配置 4% 提成，无需手动添加。</span>
@@ -415,8 +418,8 @@
 
 <script setup>
 import DomesticCommissionEditor from './components/DomesticCommissionEditor.vue'
-import { ref as deliveryRef } from 'vue'
-const deliveryDialog = deliveryRef(null)
+import { computed, ref, watch } from 'vue'
+const deliveryDialog = ref(null)
 
 import DomesticDeliveryDialog from './components/DomesticDeliveryDialog.vue'
 
@@ -425,8 +428,9 @@ import { useRouter } from 'vue-router'
 import { formatMoney } from '../../utils/money.js'
 
 /** 内贸客户管理。下单页可就地新建客户，这里做集中维护；逻辑在 composables/useDomesticCustomers.js。 */
-import { computed } from 'vue'
 import { CHINA_REGIONS } from '@/data/chinaRegions'
+import { followupApi } from '@/api/domesticFollowup'
+import { useAuthStore } from '@/stores/auth'
 import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
@@ -437,6 +441,7 @@ import { customersColumnDefs as columnDefs } from './domesticTableColumns'
 
 const chinaRegions = CHINA_REGIONS
 const router = useRouter()
+const auth = useAuthStore()
 // t 只为让同一客户重复点击也产生新路由，工作台据此重新打开时间线
 const openFollowup = row => router.push({ path: '/domestic/followups', query: { customer: row.id, t: Date.now() } })
 const { tableRef, filtersRef, tableHeight } = useOrderTableHeight()
@@ -460,6 +465,20 @@ const {
   membershipPreview,
 } = listPageState
 
+const followupOwner = ref(null)
+watch(() => dialog.visible && auth.hasPermission('domestic_followup:read') ? dialog.id : null, async (id, _, onCleanup) => {
+  followupOwner.value = null
+  if (!id) return
+  const controller = new AbortController()
+  onCleanup(() => controller.abort())
+  try {
+    const row = await followupApi.customerSummary(id, { signal: controller.signal })
+    if (!controller.signal.aborted && row.responsibility_version) followupOwner.value = row
+  } catch {
+    // Customer management and follow-up visibility are granted separately.
+  }
+}, { flush: 'sync' })
+
 const hasCustomerFilters = computed(() => Boolean(
   listPageState.appliedSearchForm.value.keyword || (listPageState.appliedSearchForm.value.status !== '' && listPageState.appliedSearchForm.value.status != null) || listPageState.appliedSearchForm.value.province || listPageState.appliedSearchForm.value.city
   || listPageState.appliedSearchForm.value.customer_level || listPageState.appliedSearchForm.value.owner_user_id,
@@ -471,6 +490,7 @@ function sortTable({ prop, order }) { return listPageState.handleSortChange({ so
 .customers-page { position: relative; }
 .customers-aurora { inset: -24px -28px; }
 .customers-page .customers-panel { position: relative; z-index: 1; }
+.followup-owner-note { margin: 0 0 12px; }
 
 .membership-tip { margin-bottom: 12px; position: relative; z-index: 1; }
 

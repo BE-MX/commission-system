@@ -31,7 +31,13 @@ def _validate_edit(db, row, payload, items):
                if entry.id in previous and entry.category == previous[entry.id].category else entry
                for entry in payload.items],
     )
-    followup_service._validate(fields, dict_service.load_values(db), payload.followup_date)
+    values = dict_service.load_values(db)
+    followup_service._validate(fields, values, payload.followup_date)
+    updates = payload.model_dump(include=payload.model_fields_set)
+    followup_service.validate_outcome(
+        values, updates.get("result_code", row.result_code), updates.get("obstacles", row.obstacles or []),
+        updates.get("effective_progress", row.effective_progress), previous=row,
+    )
 
 
 def can_edit(user, row):
@@ -53,8 +59,41 @@ def _record(db, user, record_id, lock=False):
 
 
 def detail(db, user, record_id):
+    from app.domestic_followup import collaboration_access
+
     row = _record(db, user, record_id)
-    return {**followup_service.serialize(db, row), "can_edit": can_edit(user, row)}
+    customer = db.get(DomesticCustomer, row.customer_id)
+    managed = customer is not None and collaboration_access.customer_is_managed(db, customer)
+    return {**followup_service.serialize(db, row), "can_edit": bool(customer and customer.status == 1 and can_edit(user, row)),
+            "historical_edit": _historical_edit(db, user, row, customer, _tasks(db, row)),
+            "planning_editable": not managed}
+
+
+def _historical_edit(db, user, row, customer, tasks, *, lock=False):
+    from app.domestic_followup import collaboration_access
+
+    if customer is None or not collaboration_access.customer_is_managed(db, customer, lock=lock):
+        return False
+    return not visibility.can_write_customer(db, user, customer, lock=lock) or any(
+        task.task_type == "plan" and task.assignee_user_id != row.author_user_id
+        for task in tasks if task.source_followup_id == row.id
+    )
+
+
+def _historical_items(row, payload, items):
+    if "shared_summary" in payload.model_fields_set and payload.shared_summary != row.shared_summary:
+        raise PermissionError("共享摘要由当前负责人处理")
+    existing = {i.id: i for i in items if i.kind != "content" and i.status != "withdrawn"}
+    incoming = [i for i in payload.items if i.kind != "content"]
+    if len(incoming) != len(existing) or {i.id for i in incoming} != set(existing):
+        raise ValueError("历史记录更正须保留原有异常或意见，处理请使用异常意见入口")
+    for entry in incoming:
+        prior = existing[entry.id]
+        if ((entry.kind, entry.text.strip(), entry.category, entry.severity or "一般", entry.record_only)
+                != (prior.kind, prior.text, prior.category, prior.severity, edit_item_service.only_record(prior))
+                or entry.handler_user_id not in (None, prior.handler_user_id)):
+            raise ValueError("历史记录更正须保留原有异常或意见，处理请使用异常意见入口")
+    return [i for i in payload.items if i.kind == "content"], [i for i in items if i.kind == "content"]
 
 
 def _tasks(db, row, lock=False):
@@ -136,8 +175,13 @@ def _replay(db, user, record_id, payload, fingerprint):
 
 
 def update(db, user, record_id, payload):
+    from app.domestic_followup import collaboration_access
+
     fingerprint = hashlib.sha256(json.dumps(payload.model_dump(mode="json"), sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     try:
+        customer_id = db.query(Followup.customer_id).filter(Followup.id == record_id).scalar()
+        if customer_id is not None:
+            collaboration_access.lock_customer(db, customer_id)
         row = _record(db, user, record_id, lock=True)
         if not can_edit(user, row):
             raise PermissionError("只能修改本人录入的跟进记录，超级管理员可修改全部记录")
@@ -148,10 +192,19 @@ def update(db, user, record_id, payload):
         if not ((payload.raw_text or "").strip() or payload.items or payload.attachment_ids):
             raise ValueError("请保留跟进内容或截图")
         customer = db.get(DomesticCustomer, row.customer_id)
+        if customer is None or customer.status != 1:
+            raise PermissionError("客户已停用，历史记录仅供查看")
+        managed = collaboration_access.customer_is_managed(db, customer, lock=True)
+        if managed and not collaboration_access.has_live_write(db, user, lock=True):
+            raise PermissionError("当前账号没有跟进编辑权限")
+        if managed and any(getattr(payload, name) != getattr(row, name) for name in ("next_date", "next_plan", "next_method")):
+            raise ValueError("旧记录仅供更正沟通事实，请通过新跟进或待办更新当前安排")
         items = (db.query(Item).filter(Item.followup_id == row.id).order_by(Item.id)
                  .populate_existing().with_for_update().all())
         _validate_edit(db, row, payload, items)
         tasks = _tasks(db, row, lock=True)
+        historical = _historical_edit(db, user, row, customer, tasks, lock=True)
+        incoming, existing = _historical_items(row, payload, items) if historical else (payload.items, items)
         before = _snapshot(db, row)
         old_date = row.followup_date
         for name in EDIT_FIELDS:
@@ -159,15 +212,20 @@ def update(db, user, record_id, payload):
             if name == "raw_text":
                 value = (value or "").strip() or None
             setattr(row, name, value)
+        for name in followup_service.OUTCOME_FIELDS:
+            if name in payload.model_fields_set:
+                setattr(row, name, getattr(payload, name))
         pending = _attachments(db, row, payload.attachment_ids, visibility.uid(user))
-        edit_item_service.reconcile(db, row, customer, payload.items, items, tasks, visibility.uid(user), old_date)
-        edit_task_service.sync_plan(db, row, customer, before, tasks, visibility.uid(user))
+        edit_item_service.reconcile(db, row, customer, incoming, existing, tasks, visibility.uid(user), old_date)
+        if not managed:
+            edit_task_service.sync_plan(db, row, customer, before, tasks, visibility.uid(user))
         db.flush()
         after = _snapshot(db, row)
         # Ignore the ORM's automatic timestamp for no-op detection.
         if {k: v for k, v in before.items() if k != "updated_at"} == {k: v for k, v in after.items() if k != "updated_at"}:
             raise ValueError("未修改任何内容，无需保存")
-        _urgent(db, row, customer, db.query(Item).filter(Item.followup_id == row.id).all(), before)
+        if not historical:
+            _urgent(db, row, customer, db.query(Item).filter(Item.followup_id == row.id).all(), before)
         row.version += 1
         db.flush()
         after = _snapshot(db, row)

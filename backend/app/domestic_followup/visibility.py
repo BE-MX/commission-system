@@ -18,12 +18,22 @@ SEARCH_LIMIT = 20
 logger = logging.getLogger("commission")
 
 
+class ProspectDuplicateError(ValueError):
+    def __init__(self, matches: list[dict]):
+        super().__init__("联系方式与已有门店相同，请核对后确认是否为另一家门店")
+        self.matches = matches
+
+
 def uid(current_user: dict) -> int:
     return int(current_user["sub"])
 
 
+def is_super_admin(current_user: dict) -> bool:
+    return "super_admin" in (current_user.get("roles") or [])
+
+
 def can_read_all(current_user: dict) -> bool:
-    if "super_admin" in (current_user.get("roles") or []):
+    if is_super_admin(current_user):
         return True
     return "domestic_followup:read_all" in (current_user.get("permissions") or [])
 
@@ -64,6 +74,13 @@ def potential_customer_ids():
     return select(DomesticCustomer.id).where(DomesticCustomer.lifecycle_status == PROSPECT_LIFECYCLE)
 
 
+def history_customer_ids(current_user: dict):
+    from app.domestic_followup.collaboration_access import history_customer_ids as collaboration_ids
+
+    permissions = current_user.get("permissions") or []
+    return collaboration_ids(uid(current_user), coordinate="domestic_followup:coordinate" in permissions)
+
+
 def followup_filter(current_user: dict):
     """确认记录的可见条件；read_all 返回 None 表示不加过滤。"""
     if can_read_all(current_user):
@@ -79,6 +96,7 @@ def followup_filter(current_user: dict):
         and_(
             DomesticFollowup.status == "confirmed",
             or_(DomesticFollowup.customer_id.in_(scoped_customer_ids(user_id)),
+                DomesticFollowup.customer_id.in_(history_customer_ids(current_user)),
                 DomesticFollowup.id.in_(task_followups)),
         ),
     )
@@ -91,30 +109,42 @@ def task_filter(current_user: dict):
     return or_(
         DomesticFollowupTask.assignee_user_id == user_id,
         DomesticFollowupTask.customer_id.in_(scoped_customer_ids(user_id)),
+        and_(DomesticFollowupTask.task_type == "plan",
+             DomesticFollowupTask.customer_id.in_(history_customer_ids(current_user))),
     )
 
 
 def in_customer_scope(db: Session, current_user: dict, customer_id: int) -> bool:
     if can_read_all(current_user):
         return True
-    user_id = uid(current_user)
-    if db.query(DomesticCustomer.id).filter(
-        DomesticCustomer.id == customer_id, DomesticCustomer.owner_user_id == user_id
-    ).first():
-        return True
-    return db.query(DomesticCustomerCommission.id).filter(
-        DomesticCustomerCommission.customer_id == customer_id, DomesticCustomerCommission.user_id == user_id
+    return in_legacy_customer_scope(db, current_user, customer_id) or db.query(DomesticCustomer.id).filter(
+        DomesticCustomer.id == customer_id, DomesticCustomer.id.in_(history_customer_ids(current_user)),
     ).first() is not None
 
 
-def can_write_customer(db: Session, current_user: dict, customer: DomesticCustomer) -> bool:
-    if customer.owner_user_id is None or in_customer_scope(db, current_user, customer.id):
-        return True
-    return db.query(DomesticFollowupTask.id).filter(
-        DomesticFollowupTask.customer_id == customer.id,
-        DomesticFollowupTask.assignee_user_id == uid(current_user),
-        DomesticFollowupTask.status == "todo",
+def in_legacy_customer_scope(db: Session, current_user: dict, customer_id: int, *, lock: bool = False) -> bool:
+    if lock:
+        customer = db.get(DomesticCustomer, customer_id)
+        if customer and customer.owner_user_id == uid(current_user):
+            return True
+        return db.scalar(select(DomesticCustomerCommission.id).where(
+            DomesticCustomerCommission.customer_id == customer_id,
+            DomesticCustomerCommission.user_id == uid(current_user),
+        ).with_for_update(read=True).limit(1)) is not None
+    return db.query(DomesticCustomer.id).filter(
+        DomesticCustomer.id == customer_id, DomesticCustomer.id.in_(scoped_customer_ids(uid(current_user))),
     ).first() is not None
+
+
+def can_write_customer(db: Session, current_user: dict, customer: DomesticCustomer, *, lock: bool = False) -> bool:
+    from app.domestic_followup import collaboration_access
+
+    if customer.status != 1 or not collaboration_access.claims_allow(current_user, collaboration_access.WRITE):
+        return False
+    if collaboration_access.customer_is_managed(db, customer, lock=lock):
+        return collaboration_access.can_develop(db, current_user, customer, lock=lock)
+    return (is_super_admin(current_user) or customer.owner_user_id is None
+            or in_legacy_customer_scope(db, current_user, customer.id, lock=lock))
 
 
 def _owner_name(db: Session, owner_user_id: int | None) -> str:
@@ -124,13 +154,16 @@ def _owner_name(db: Session, owner_user_id: int | None) -> str:
     return row[0] if row else f"用户{owner_user_id}"
 
 
-def ensure_customer_writable(db: Session, current_user: dict, customer_id: int) -> DomesticCustomer:
+def ensure_customer_writable(db: Session, current_user: dict, customer_id: int, *, lock: bool = False) -> DomesticCustomer:
     customer = db.get(DomesticCustomer, customer_id)
     if customer is None:
         raise LookupError("客户不存在")
     if customer.status != 1:
         raise PermissionError("该客户已停用，不能记录跟进")
-    if not can_write_customer(db, current_user, customer):
+    if not can_write_customer(db, current_user, customer, lock=lock):
+        from app.domestic_followup import collaboration_access
+        if collaboration_access.customer_is_managed(db, customer, lock=lock):
+            raise PermissionError("当前跟进安排不允许直接联系，请从客户总览查看接手或协作选项")
         raise PermissionError(f"该客户归属 {_owner_name(db, customer.owner_user_id)}，不能记录跟进")
     return customer
 
@@ -156,6 +189,16 @@ def _like(keyword: str) -> str:
     return f"%{escaped}%"
 
 
+def customer_search_scope(current_user: dict):
+    from app.domestic_followup.collaboration_access import managed_customer_ids
+
+    return or_(
+        DomesticCustomer.id.in_(scoped_customer_ids(uid(current_user))),
+        DomesticCustomer.id.in_(history_customer_ids(current_user)),
+        and_(DomesticCustomer.owner_user_id.is_(None), DomesticCustomer.id.not_in(managed_customer_ids())),
+    )
+
+
 def search_customers(db: Session, current_user: dict, q: str) -> list[dict]:
     keyword = (q or "").strip()
     if not keyword:
@@ -163,10 +206,7 @@ def search_customers(db: Session, current_user: dict, q: str) -> list[dict]:
     like = _like(keyword)
     query = db.query(DomesticCustomer).filter(DomesticCustomer.status == 1)
     if not can_read_all(current_user):
-        query = query.filter(or_(
-            DomesticCustomer.id.in_(scoped_customer_ids(uid(current_user))),
-            DomesticCustomer.owner_user_id.is_(None),
-        ))
+        query = query.filter(customer_search_scope(current_user))
     direct = query.filter(or_(
         DomesticCustomer.shop_name.like(like, escape="\\"),
         DomesticCustomer.contact.like(like, escape="\\"),
@@ -207,10 +247,7 @@ def match_alias(db: Session, current_user: dict, chat_title: str | None) -> dict
         .filter(DomesticCustomerAlias.alias_norm == norm, DomesticCustomer.status == 1)
     )
     if not can_read_all(current_user):
-        query = query.filter(or_(
-            DomesticCustomer.owner_user_id.is_(None),
-            DomesticCustomer.id.in_(scoped_customer_ids(uid(current_user))),
-        ))
+        query = query.filter(customer_search_scope(current_user))
     row = query.order_by(DomesticCustomerAlias.hit_count.desc()).first()
     if row is None:
         return None
@@ -253,15 +290,25 @@ def learn_alias(db: Session, customer_id: int, chat_title: str | None, user_id: 
         _bump_alias(db, norm, customer_id)
 
 
-def create_prospect(db: Session, current_user: dict, shop_name: str) -> dict:
-    """在内贸客户主档建「潜在」档，只要店名（决策 2）。撞名给出归属提示。"""
+def create_prospect(db: Session, current_user: dict, payload) -> dict:
+    """主档、联系方式与跟进责任一起保存。"""
+    from app.core.time import beijing_now
     from app.domestic import customer_service
     from app.domestic.schemas import CustomerCreate
+    from app.domestic_followup.collaboration_access import create_initial_responsibility
+    from app.domestic_followup.collaboration_models import FollowupCustomerProfile
+    from app.domestic_followup.customer_overview_contacts import check_contact_duplicates, lock_contact_duplicate_check
+    from app.domestic_followup.schemas import ProspectIn
     from app.system.models import SysDict
 
-    name = (shop_name or "").strip()
+    if isinstance(payload, str):
+        payload = ProspectIn(shop_name=payload)
+    name = payload.shop_name.strip()
     if not name:
         raise ValueError("请填写客户店名")
+    extras = {key: (getattr(payload, key) or "").strip() or None for key in ("phone", "contact", "province", "city")}
+    wechat = (payload.wechat or "").strip() or None
+    lock_contact_duplicate_check(db, extras["phone"], wechat)
     lifecycle_ok = db.query(SysDict.id).filter(
         SysDict.type == "domestic_customer_lifecycle", SysDict.is_active.is_(True),
         or_(SysDict.code == PROSPECT_LIFECYCLE, SysDict.label == PROSPECT_LIFECYCLE),
@@ -270,10 +317,30 @@ def create_prospect(db: Session, current_user: dict, shop_name: str) -> dict:
         raise ValueError(f"客户状态字典里没有「{PROSPECT_LIFECYCLE}」，请先在字典管理恢复该项")
     existing = db.query(DomesticCustomer).filter(DomesticCustomer.shop_name == name).first()
     if existing:
+        if not in_customer_scope(db, current_user, existing.id):
+            raise ValueError("可能已有档案，请联系管理员核实")
         if existing.owner_user_id is None:
             raise ValueError("该客户已存在，目前在公海，请先在客户管理认领")
         raise ValueError(f"该客户已存在（归属：{_owner_name(db, existing.owner_user_id)}）")
-    customer = customer_service.create_customer(
-        db, CustomerCreate(shop_name=name, lifecycle_status=PROSPECT_LIFECYCLE), uid(current_user),
+    matches = check_contact_duplicates(
+        db, current_user, extras["phone"], wechat, duplicate_confirmed=payload.duplicate_confirmed,
     )
+    if matches["blocking"]:
+        if matches["matches"]:
+            raise ProspectDuplicateError(matches["matches"])
+        raise ValueError("可能已有档案，请联系管理员核实")
+    user_id = uid(current_user)
+    customer = customer_service.create_customer(
+        db, CustomerCreate(shop_name=name, lifecycle_status=PROSPECT_LIFECYCLE, **extras), user_id, commit=False,
+    )
+    create_initial_responsibility(db, customer.id, user_id)
+    if wechat or payload.unwon_confirmed:
+        db.add(FollowupCustomerProfile(
+            customer_id=customer.id, wechat=wechat,
+            deal_status="unwon" if payload.unwon_confirmed else None,
+            deal_evidence="新建档案时确认未成交" if payload.unwon_confirmed else None,
+            deal_verified_by_user_id=user_id if payload.unwon_confirmed else None,
+            deal_verified_at=beijing_now() if payload.unwon_confirmed else None,
+        ))
+    db.commit()
     return _customer_row(db, current_user, customer)

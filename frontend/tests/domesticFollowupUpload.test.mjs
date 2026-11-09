@@ -15,7 +15,7 @@ const pending = () => {
 function harness() {
   const calls = [], errors = [], revoked = []
   const dependencies = {
-    ref: vue.ref, reactive: vue.reactive, computed: vue.computed,
+    ref: vue.ref, reactive: vue.reactive, computed: vue.computed, watch: vue.watch,
     ...draft, onBeforeUnmount() {}, currentBeijingDate: () => '2026-11-02',
     followupApi: { dicts: async () => ({}), upload(file) { const request = pending(); calls.push({ file, ...request }); return request.promise } },
     apiError: (error, fallback) => error.response?.data?.detail || fallback,

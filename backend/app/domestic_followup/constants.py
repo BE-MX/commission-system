@@ -8,6 +8,8 @@
 DICT_STATE_CHANGE = "domestic_followup_state_change"
 DICT_CATEGORY = "domestic_followup_category"
 DICT_CHANNEL = "domestic_followup_channel"
+DICT_RESULT = "domestic_followup_result"
+DICT_OBSTACLE = "domestic_followup_obstacle"
 
 DICT_SEEDS = {
     DICT_STATE_CHANGE: [
@@ -17,6 +19,8 @@ DICT_SEEDS = {
     ],
     DICT_CATEGORY: ["质量", "发货物流", "色差", "尺寸", "价格", "售后退换", "服务", "产品需求", "其他"],
     DICT_CHANNEL: ["微信", "电话", "视频号", "到店", "展会", "其他"],
+    DICT_RESULT: ["未接通", "未回复", "有效沟通", "已报价", "已寄样", "客户拒绝", "其他"],
+    DICT_OBSTACLE: ["价格", "产品适配", "采购时机", "决策人", "已有供应商", "信任不足", "其他"],
 }
 
 SOURCES = ("web", "mobile", "mini", "wechat_agent", "import")

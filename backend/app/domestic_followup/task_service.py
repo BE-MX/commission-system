@@ -2,6 +2,7 @@
 import logging
 from datetime import date, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.orm import Session
 
@@ -23,11 +24,12 @@ WRITE_PERMISSION = "domestic_followup:write"
 
 def upsert_task(db: Session, *, source_key: str, task_type: str, customer_id: int, assignee_user_id: int,
                 title: str, due_date: date, payload: dict | None = None,
-                source_followup_id: int | None = None, source_item_id: int | None = None) -> tuple[Task, bool]:
+                source_followup_id: int | None = None, source_item_id: int | None = None,
+                purpose: str | None = None) -> tuple[Task, bool]:
     existing = db.query(Task).filter(Task.source_key == source_key).first()
     if existing:
         return existing, False
-    task = Task(task_type=task_type, customer_id=customer_id, assignee_user_id=assignee_user_id,
+    task = Task(task_type=task_type, purpose=purpose, customer_id=customer_id, assignee_user_id=assignee_user_id,
                 source_key=source_key, title=title[:200], due_date=due_date, payload=payload,
                 source_followup_id=source_followup_id, source_item_id=source_item_id)
     savepoint = db.begin_nested()
@@ -60,14 +62,15 @@ def close_task(task: Task, status: str, reason: str, *, followup_id: int | None 
     return True
 
 
-def create_plan_task(db: Session, followup, shop_name: str) -> Task | None:
+def create_plan_task(db: Session, followup, shop_name: str, *, assignee_id: int | None = None,
+                     purpose: str | None = None) -> Task | None:
     if not followup.next_date or followup.customer_id is None:
         return None
     task, _ = upsert_task(
         db, source_key=f"plan:{followup.id}", task_type="plan", customer_id=followup.customer_id,
-        assignee_user_id=followup.author_user_id, title=f"{shop_name}：{followup.next_plan or '约定跟进'}",
+        assignee_user_id=assignee_id or followup.author_user_id, title=f"{shop_name}：{followup.next_plan or '约定跟进'}",
         due_date=followup.next_date, payload={"plan": followup.next_plan, "method": followup.next_method},
-        source_followup_id=followup.id,
+        source_followup_id=followup.id, purpose=purpose,
     )
     return task
 
@@ -102,7 +105,7 @@ def close_tasks_for_followup(db: Session, current_user: dict, customer_id: int, 
     )
     closed = []
     for task in rows:
-        if not is_task_actor(db, current_user, task):
+        if not is_task_actor(db, current_user, task, lock=True):
             continue
         reason = CLOSE_RECEIPT_DONE if task.task_type == "receipt" else CLOSE_NEW_FOLLOWUP
         if close_task(task, "done", reason, followup_id=followup_id, user_id=visibility.uid(current_user)):
@@ -111,30 +114,47 @@ def close_tasks_for_followup(db: Session, current_user: dict, customer_id: int, 
     return closed
 
 
-def is_task_actor(db: Session, current_user: dict, task: Task) -> bool:
-    """负责人本人，或在客户范围内（含 read_all）。"""
-    if task.assignee_user_id == visibility.uid(current_user):
+def is_task_actor(db: Session, current_user: dict, task: Task, *, lock: bool = False) -> bool:
+    """已管理客户的待办由实际承办人处理，读范围不能推出写权限。"""
+    from app.domestic_followup import collaboration_access
+
+    if task.assignee_user_id == visibility.uid(current_user) or visibility.is_super_admin(current_user):
         return True
-    return visibility.in_customer_scope(db, current_user, task.customer_id)
+    customer = db.get(DomesticCustomer, task.customer_id)
+    if customer and collaboration_access.customer_is_managed(db, customer, lock=lock):
+        return False
+    return visibility.in_legacy_customer_scope(db, current_user, task.customer_id, lock=lock)
 
 
-def ensure_task_actor(db: Session, current_user: dict, task: Task) -> None:
-    if not is_task_actor(db, current_user, task):
+def ensure_task_actor(db: Session, current_user: dict, task: Task, *, lock: bool = False) -> None:
+    if not is_task_actor(db, current_user, task, lock=lock):
         raise PermissionError("这不是你的待办")
 
 
 def snooze(db: Session, current_user: dict, task_id: int, *, days: int = 1, today: date | None = None) -> Task:
     if not 1 <= days <= 7:
         raise ValueError("顺延天数需在 1~7 天")
-    task = db.query(Task).filter(Task.id == task_id).with_for_update().first()
+    from app.domestic_followup.collaboration_access import lock_customer
+
+    customer_id = db.scalar(select(Task.customer_id).where(Task.id == task_id))
+    if customer_id is not None:
+        lock_customer(db, customer_id)
+    task = db.query(Task).filter(Task.id == task_id).populate_existing().with_for_update().first()
     if task is None:
         raise LookupError("待办不存在")
-    ensure_task_actor(db, current_user, task)
+    ensure_task_actor(db, current_user, task, lock=True)
     if task.status != "todo":
         raise ValueError("该待办已结束")
     task.due_date = max(task.due_date, today or beijing_today()) + timedelta(days=days)
     task.snooze_count += 1
     db.flush()
+    if task.task_type == "plan" and task.purpose == "development":
+        from app.domestic_followup.collaboration_access import responsibility_for
+        from app.domestic_followup.record_access import sync_development_date
+
+        responsibility = responsibility_for(db, task.customer_id, lock=True)
+        if sync_development_date(db, responsibility):
+            responsibility.version += 1
     return task
 
 
@@ -148,7 +168,7 @@ def _locked_item(db: Session, item_id: int) -> DomesticFollowupItem:
 def _ensure_item_actor(db: Session, current_user: dict, item: DomesticFollowupItem) -> None:
     if item.handler_user_id == visibility.uid(current_user):
         return
-    if visibility.in_customer_scope(db, current_user, item.customer_id):
+    if visibility.is_super_admin(current_user) or visibility.in_legacy_customer_scope(db, current_user, item.customer_id):
         return
     raise PermissionError("无权处理该条目")
 
@@ -204,7 +224,7 @@ def serialize_tasks(db: Session, rows: list[Task], today: date) -> list[dict]:
     shops = _name_map(db, DomesticCustomer.id, DomesticCustomer.shop_name, [r.customer_id for r in rows])
     users = _name_map(db, ArkUser.id, ArkUser.real_name, [r.assignee_user_id for r in rows])
     return [{
-        "id": r.id, "task_type": r.task_type, "customer_id": r.customer_id,
+        "id": r.id, "task_type": r.task_type, "purpose": r.purpose, "customer_id": r.customer_id,
         "shop_name": shops.get(r.customer_id), "assignee_user_id": r.assignee_user_id,
         "assignee_name": users.get(r.assignee_user_id), "title": r.title,
         "due_date": r.due_date.isoformat(), "status": r.status, "snooze_count": r.snooze_count,

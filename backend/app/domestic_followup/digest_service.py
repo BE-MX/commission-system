@@ -22,11 +22,12 @@ from app.domestic_followup.models import DomesticFollowupDigest, DomesticFollowu
 logger = logging.getLogger("commission")
 Digest = DomesticFollowupDigest
 SECTION_NAMES = 5  # 每类最多列几个店名
+NO_DUE_TASKS = "待办转移或结束后无可推送事项"
 
 
 def workbench_url(customer_id: int | None = None) -> str:
     base = get_settings().DOMESTIC_REVIEW_NOTICE_BASE_URL.rstrip("/") + "/domestic/followups"
-    return f"{base}?customer={customer_id}" if customer_id else base
+    return f"{base}?customer={customer_id}" if customer_id else f"{base}?tab=tasks"
 
 
 def _insert(db: Session, digest: Digest) -> bool:
@@ -106,6 +107,14 @@ def build_daily(db: Session, today: date) -> int:
     created = 0
     for user_id, tasks in by_user.items():
         title, markdown = render_daily(tasks, today)
+        suppressed = db.query(Digest).filter(
+            Digest.user_id == user_id, Digest.digest_date == today, Digest.kind == "daily",
+            Digest.ref_key == "", Digest.pushed_at.is_(None), Digest.last_error == NO_DUE_TASKS,
+        ).populate_existing().with_for_update().first()
+        if suppressed:
+            suppressed.attempts, suppressed.last_error = 0, None
+            suppressed.title, suppressed.markdown = title[:100], markdown
+            continue
         created += _insert(db, Digest(user_id=user_id, digest_date=today, kind="daily", ref_key="",
                                       title=title[:100], markdown=markdown))
     return created
@@ -173,7 +182,19 @@ def claim(db: Session, digest_id: int) -> dict | None:
     if pair is None or not pair[1]:
         return None
     row, dingtalk_id = pair
-    if row.kind == "urgent":
+    if row.kind == "daily":
+        tasks = (db.query(DomesticFollowupTask)
+                 .filter(DomesticFollowupTask.assignee_user_id == row.user_id,
+                         DomesticFollowupTask.status == "todo", DomesticFollowupTask.due_date <= row.digest_date)
+                 .order_by(DomesticFollowupTask.due_date, DomesticFollowupTask.id)
+                 .populate_existing().with_for_update().all())
+        if not tasks:
+            row.attempts, row.last_error = URGENT_MAX_ATTEMPTS, NO_DUE_TASKS
+            db.flush()
+            return None
+        title, row.markdown = render_daily(tasks, row.digest_date)
+        row.title = title[:100]
+    elif row.kind == "urgent":
         # A previous in-flight attempt may have failed while an edit changed the item.
         item_id = int(row.ref_key.split(":", 1)[1]) if row.ref_key.startswith("item:") else None
         item = (db.query(DomesticFollowupItem).filter(DomesticFollowupItem.id == item_id)

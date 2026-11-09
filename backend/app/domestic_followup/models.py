@@ -5,7 +5,7 @@ FK 类型与目标列一致：ark_domestic_customers.id 是有符号 INT，ark_u
 是 unsigned INT，ark_domestic_shipments.id 是 BIGINT（红线 5）。
 """
 from sqlalchemy import (
-    BigInteger, Column, Date, DateTime, ForeignKey, Index, Integer, JSON, SmallInteger, String, Text,
+    BigInteger, Boolean, Column, Date, DateTime, ForeignKey, Index, Integer, JSON, SmallInteger, String, Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects import mysql
@@ -47,6 +47,12 @@ class DomesticFollowup(Base):
     request_id = Column(String(64), nullable=False, unique=True, comment="客户端幂等键")
     version = Column(Integer, nullable=False, default=1, comment="乐观锁：状态迁移与已提交修改时 +1")
     confirmed_at = Column(DateTime, nullable=True, comment="确认时间（北京时间）")
+    result_code = Column(String(32), nullable=True, comment="已确认沟通结果")
+    obstacles = Column(JSON, nullable=True, comment="推进障碍")
+    evidence_kind = Column(String(24), nullable=True, comment="客户陈述或个人判断")
+    shared_summary = Column(Text, nullable=True, comment="明确允许协作范围共享的摘要")
+    effective_progress = Column(Boolean, nullable=False, default=False, server_default="0", comment="已确认有效推进")
+    responsibility_version = Column(Integer, nullable=True, comment="记录提交所依据的跟进责任版本")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间（北京时间）")
 
@@ -149,6 +155,7 @@ class DomesticFollowupTask(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     task_type = Column(String(12), nullable=False, comment="plan/receipt/issue/suggestion")
+    purpose = Column(String(16), nullable=True, comment="计划用途：development/maintenance/other")
     customer_id = Column(Integer, ForeignKey("ark_domestic_customers.id"), nullable=False, comment="客户ID")
     assignee_user_id = Column(_UINT, ForeignKey("ark_users.id"), nullable=False, comment="负责人")
     source_key = Column(String(96), nullable=False, unique=True, comment="来源唯一键，一个来源只生一次任务")

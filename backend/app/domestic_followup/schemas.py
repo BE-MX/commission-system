@@ -27,7 +27,15 @@ class ResolveIn(BaseModel):
     resolution: str | None = Field(None, max_length=500)
 
 
-class FollowupFields(BaseModel):
+class FollowupOutcomeFields(BaseModel):
+    result_code: str | None = Field(None, max_length=32)
+    obstacles: list[typing.Annotated[str, Field(min_length=1, max_length=40)]] = Field(default_factory=list, max_length=10)
+    evidence_kind: Literal["customer", "assessment"] | None = None
+    shared_summary: str | None = Field(None, max_length=500)
+    effective_progress: bool = False
+
+
+class FollowupFields(FollowupOutcomeFields):
     customer_id: int | None = Field(None, gt=0)
     followup_date: dt.date | None = None
     channel: str | None = Field(None, max_length=16)
@@ -40,6 +48,11 @@ class FollowupFields(BaseModel):
     items: list[ItemIn] = Field(default_factory=list, max_length=30)
     resolved_items: list[ResolveIn] = Field(default_factory=list, max_length=20)
     close_task_ids: list[int] = Field(default_factory=list, max_length=50)
+    development_stage: Literal["new", "contacted", "quoted", "paused"] | None = None
+    responsibility_version: int | None = Field(None, ge=1)
+    plan_purpose: Literal["development", "maintenance", "other"] | None = None
+    plan_assignee_user_id: int | None = Field(None, ge=1)
+    historical_only: bool = False
 
 
 class DirectSaveIn(FollowupFields):
@@ -50,7 +63,7 @@ class DirectSaveIn(FollowupFields):
     source_task_id: int | None = Field(None, gt=0)
 
 
-class DraftCreateIn(BaseModel):
+class DraftCreateIn(FollowupOutcomeFields):
     request_id: str = Field(..., min_length=8, max_length=64)
     raw_text: str | None = Field(None, max_length=20000)
     attachment_ids: list[int] = Field(default_factory=list, max_length=9)
@@ -73,7 +86,7 @@ class EditItemIn(ItemIn):
     id: int | None = Field(None, gt=0)
 
 
-class EditFollowupIn(BaseModel):
+class EditFollowupIn(FollowupOutcomeFields):
     model_config = {"extra": "forbid"}
     version: int = Field(..., ge=1)
     request_id: str = Field(..., min_length=8, max_length=64)
@@ -113,6 +126,13 @@ class ItemResolveIn(BaseModel):
 
 class ProspectIn(BaseModel):
     shop_name: str = Field(..., min_length=1, max_length=120)
+    contact: str | None = Field(None, max_length=60)
+    phone: str | None = Field(None, max_length=40)
+    wechat: str | None = Field(None, max_length=80)
+    province: str | None = Field(None, max_length=64)
+    city: str | None = Field(None, max_length=64)
+    duplicate_confirmed: bool = False
+    unwon_confirmed: bool = False
 
 
 # ── AI 输出：宽进，字段缺省给默认值；值域在 ai_parse_service.normalize 里收口 ──

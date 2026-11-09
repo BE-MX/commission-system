@@ -318,7 +318,7 @@ def _validate_owner(db: Session, owner_user_id: int | None) -> None:
         raise ValueError("归属销售用户不存在")
 
 
-def create_customer(db: Session, payload: CustomerCreate, user_id: int) -> DomesticCustomer:
+def create_customer(db: Session, payload: CustomerCreate, user_id: int, *, commit: bool = True) -> DomesticCustomer:
     db.info["domestic_actor_id"] = user_id
     if db.query(DomesticCustomer).filter(DomesticCustomer.shop_name == payload.shop_name).first():
         raise ValueError(f"客户「{payload.shop_name}」已存在")
@@ -344,7 +344,8 @@ def create_customer(db: Session, payload: CustomerCreate, user_id: int) -> Domes
     try:
         db.flush()
         commission_service.initialize_default(db, customer)
-        db.commit()
+        if commit:
+            db.commit()
     except IntegrityError as exc:
         db.rollback()
         raise ValueError("客户店名或客户编码已存在") from exc

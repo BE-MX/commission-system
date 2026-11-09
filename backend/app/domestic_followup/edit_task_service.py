@@ -45,7 +45,8 @@ def sync_plan(db, followup, customer, previous, tasks, actor_id):
         db, source_key=f"plan:{followup.id}:edit:{followup.version + 1}", task_type="plan",
         customer_id=customer.id, assignee_user_id=target, source_followup_id=followup.id,
         title=f"{customer.shop_name}：{followup.next_plan or '约定跟进'}", due_date=followup.next_date,
-        payload={"plan": followup.next_plan, "method": followup.next_method})
+        payload={"plan": followup.next_plan, "method": followup.next_method},
+        purpose=last.purpose if last else None)
 
 
 def sync_item(db, item, followup, customer, tasks, actor_id, *, old_date, allow_create=False):

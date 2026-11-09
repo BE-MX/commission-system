@@ -183,21 +183,22 @@ def test_timeline_merges_followups_and_shipments(db):
     assert timeline["customer"]["frequency_days"] == 30  # B级 默认 30 天
 
 
-def test_source_task_of_another_owner_is_not_closed(db):
+def test_using_someone_elses_source_task_rejects_write(db):
     seed_dicts(db)
     owner = make_user(db, "fu_svc_m1")
     helper = make_user(db, "fu_svc_m2")
     customer = make_customer(db, owner, "服务店M")
-    # helper 只因手上有一张转交来的异常待办而能写这个客户
+    # 转交的异常只授权处理该异常，不能作为其他待办的写入凭据。
     db.add(DomesticFollowupTask(task_type="issue", customer_id=customer.id, assignee_user_id=helper.id,
                                 source_key="item:m", title="异常", due_date=TODAY))
     receipt = DomesticFollowupTask(task_type="receipt", customer_id=customer.id, assignee_user_id=owner.id,
                                    source_key="receipt:m", title="回访", due_date=TODAY)
     db.add(receipt)
     db.commit()
-    followup_service.direct_save(db, _ctx(helper), DirectSaveIn(
-        request_id="req-direct-m", customer_id=customer.id, raw_text="帮忙问了下",
-        source_task_id=receipt.id, close_task_ids=[receipt.id]))
+    with pytest.raises(PermissionError, match="不是你的待办"):
+        followup_service.direct_save(db, _ctx(helper), DirectSaveIn(
+            request_id="req-direct-m", customer_id=customer.id, raw_text="帮忙问了下",
+            source_task_id=receipt.id, close_task_ids=[receipt.id]))
     db.refresh(receipt)
     assert receipt.status == "todo"
 
