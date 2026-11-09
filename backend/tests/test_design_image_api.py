@@ -221,6 +221,7 @@ def test_job_serializer_exposes_only_public_catalog_model_ids(api):
     _client, _app, module, _service = api
 
     assert module._job(_row(model="gpt-image-2"))["model"] == "gpt-image-2"
+    assert module._job(_row(model="gpt-image-2.6-sunburst-c"))["model"] == "gpt-image-2.6-sunburst-c"
     assert module._job(_row(model="secret-model"))["model"] is None
 
 

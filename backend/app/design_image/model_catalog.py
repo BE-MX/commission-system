@@ -1,7 +1,8 @@
 """Server-owned image model choices for Design Image Studio.
 
-Each choice maps to an independent AI preset so provider credentials, request
-style, parameters, and pricing remain configuration-owned.  The browser only
+Each choice maps to a registered AI preset so provider credentials, request
+style, parameters, and pricing remain configuration-owned. Versions may share
+a preset slot; only its exact configured model is available. The browser only
 sends a catalog model ID; it can never choose an arbitrary preset or provider.
 """
 
@@ -19,6 +20,7 @@ from app.ai.models import AiPreset, AiProvider
 ImageModelId = Literal[
     "gpt-image-2",
     "gpt-image-2.5-sunburst",
+    "gpt-image-2.6-sunburst-c",
     "grok-imagine-image-2.0",
     "gemini-3-pro-image",
     "gemini-3.1-flash-image",
@@ -47,6 +49,14 @@ IMAGE_MODEL_OPTIONS: tuple[ImageModelOption, ...] = (
     ImageModelOption(
         id="gpt-image-2.5-sunburst",
         label="GPT Image 2.5",
+        preset_name="design_image_generation_GPT_image_25",
+        api_style="images",
+        provider_host="api.openlux.ai",
+    ),
+    ImageModelOption(
+        id="gpt-image-2.6-sunburst-c",
+        label="GPT Image 2.6 Sunburst C",
+        # Keep the existing configured slot; the exact model selects its version.
         preset_name="design_image_generation_GPT_image_25",
         api_style="images",
         provider_host="api.openlux.ai",
@@ -143,6 +153,7 @@ def configured_model_rows(
                 candidate
                 for candidate in IMAGE_MODEL_OPTIONS
                 if candidate.preset_name == preset.preset_name
+                and candidate.id == preset.model
             ),
             None,
         )

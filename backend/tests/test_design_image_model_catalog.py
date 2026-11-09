@@ -132,3 +132,55 @@ def test_gpt_image_25_rejects_teamrouter_provider(db):
     db.flush()
 
     assert model_catalog.configured_model_row(db, "gpt-image-2.5-sunburst") is None
+
+
+@pytest.mark.parametrize("api_base", ["https://api.openlux.ai", "https://api.openlux.ai/v1"])
+def test_gpt_image_26_uses_existing_openlux_preset_slot(db, api_base):
+    preset, _provider = _configured_model(db, api_base=api_base)
+    preset.preset_name = "design_image_generation_GPT_image_25"
+    preset.model = "gpt-image-2.6-sunburst-c"
+    preset.parameters = {"n": 1, "response_format": "b64_json"}
+    db.flush()
+
+    configured = model_catalog.configured_model_row(db, preset.model)
+    assert configured is not None
+    assert configured[1] is preset
+    options = {item["id"]: item for item in model_catalog.public_model_options(db)}
+    assert options[preset.model] == {
+        "id": preset.model, "label": "GPT Image 2.6 Sunburst C", "available": True,
+    }
+    assert options["gpt-image-2.5-sunburst"]["available"] is False
+
+    # A version switch must not enable the other ID or silently substitute models.
+    preset.model = "gpt-image-2.5-sunburst"
+    db.flush()
+    options = {item["id"]: item for item in model_catalog.public_model_options(db)}
+    assert options[preset.model]["available"] is True
+    assert options["gpt-image-2.6-sunburst-c"]["available"] is False
+
+
+@pytest.mark.parametrize("field,value", [
+    ("model", "gpt-image-2.6-sunburst"),
+    ("preset_name", "unregistered-image-preset"),
+    ("parameters", {"api_style": "chat"}),
+    ("is_enabled", False),
+])
+def test_gpt_image_26_rejects_mismatched_preset(db, field, value):
+    preset, _provider = _configured_model(db, api_base="https://api.openlux.ai/v1")
+    preset.preset_name = "design_image_generation_GPT_image_25"
+    preset.model = "gpt-image-2.6-sunburst-c"
+    setattr(preset, field, value)
+    db.flush()
+    assert model_catalog.configured_model_row(db, "gpt-image-2.6-sunburst-c") is None
+
+
+@pytest.mark.parametrize("api_base", [
+    "https://api.teamorouter.cn/v1", "https://api.openlux.ai.evil.test/v1",
+    "http://api.openlux.ai/v1", "https://api.openlux.ai:8443/v1",
+])
+def test_gpt_image_26_rejects_unverified_provider(db, api_base):
+    preset, _provider = _configured_model(db, api_base=api_base)
+    preset.preset_name = "design_image_generation_GPT_image_25"
+    preset.model = "gpt-image-2.6-sunburst-c"
+    db.flush()
+    assert model_catalog.configured_model_row(db, preset.model) is None

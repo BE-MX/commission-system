@@ -973,11 +973,13 @@ frontend/src/
 | 页面名称 | model | Preset | API style |
 |---|---|---|---|
 | GPT Image 2 | `gpt-image-2` | `design_image_generation` | `/v1/images/*` |
+| GPT Image 2.5 | `gpt-image-2.5-sunburst` | `design_image_generation_GPT_image_25` | `/v1/images/*` |
+| GPT Image 2.6 Sunburst C | `gpt-image-2.6-sunburst-c` | `design_image_generation_GPT_image_25` | `/v1/images/*` |
 | Grok Image 2 | `grok-imagine-image-2.0` | `design_image_generation_grok_image_2` | `/v1/images/*` |
 | Nano Banana Pro | `gemini-3-pro-image` | `design_image_generation_nano_banana_pro` | `chat` |
 | Nano Banana 2 | `gemini-3.1-flash-image` | `design_image_generation_nano_banana_2` | `chat` |
 
-每个 Preset 必须启用并绑定带 API Key 的 `direct + openai` Provider。GPT 与 Gemini 仅允许 `https://api.teamorouter.cn` 或其 `/v1` 形式；Grok Image 2 仅允许 `https://api.openlux.ai` 或其 `/v1` 形式。Gemini 两项必须配置 `parameters.api_style="chat"`。配置不完整的目录项仍显示“未配置”且不可选，后端同样返回 503。2026-08-26 openlux 目录与真实 generation、单参考图 edit、双参考图 edit 已验证 `grok-imagine-image-2.0`，替换原先未配置的 `grok-image-2` 占位 ID。Grok Preset 使用 `response_format=b64_json / output_format=jpeg / n=1`，请求 size 在 AI facade 转为 aspect_ratio，保留统一任务与重试路径；不承诺精确像素或质量档位效果。 Grok 最多 3 张输入图片（含基准图）；超过上限在入队前返回可操作的删图提示。真实 facade + runtime 解码已验证正方形生成 1024×1024 和三图编辑竖图 832×1248。公共图片传输层同时修复 gzip/deflate 响应被重复解压的问题。Nano Banana Pro 尚未配置，保持不可用。Gemini generation 走 chat-style，兼容 Markdown data URL 与 `message.images[]`；size/quality 转成提示词软约束。
+每个 Preset 必须启用并绑定带 API Key 的 `direct + openai` Provider。GPT Image 2 与 Gemini 仅允许 `https://api.teamorouter.cn` 或其 `/v1` 形式；GPT Image 2.5、GPT Image 2.6 Sunburst C 与 Grok Image 2 仅允许 `https://api.openlux.ai` 或其 `/v1` 形式。2.5 与 2.6 C 沿用同一配置槽，目录按 preset 名和实际 model 联合匹配，仅当前配置版本可用；保留旧模型 ID 以识别历史任务和确认消息，不对旧请求静默换模型。Gemini 两项必须配置 `parameters.api_style="chat"`。配置不完整的目录项仍显示“未配置”且不可选，后端同样返回 503。2026-08-26 openlux 目录与真实 generation、单参考图 edit、双参考图 edit 已验证 `grok-imagine-image-2.0`，替换原先未配置的 `grok-image-2` 占位 ID。Grok Preset 使用 `response_format=b64_json / output_format=jpeg / n=1`，请求 size 在 AI facade 转为 aspect_ratio，保留统一任务与重试路径；不承诺精确像素或质量档位效果。 Grok 最多 3 张输入图片（含基准图）；超过上限在入队前返回可操作的删图提示。真实 facade + runtime 解码已验证正方形生成 1024×1024 和三图编辑竖图 832×1248。公共图片传输层同时修复 gzip/deflate 响应被重复解压的问题。Nano Banana Pro 尚未配置，保持不可用。Gemini generation 走 chat-style，兼容 Markdown data URL 与 `message.images[]`；size/quality 转成提示词软约束。
 
 **上下文口径**：会话记录用于展示、恢复和追溯，不等于把完整历史重新喂给模型。每轮只发送显式 `base_asset_id`、最多 4 张本轮参考图和当前 prompt；生成结果用 `source_asset_id` 形成版本链。因此连续编辑的成本主要取决于本轮输入图片与输出质量，不会因聊天轮数自动线性累加全部历史图片。
 

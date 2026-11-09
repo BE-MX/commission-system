@@ -201,12 +201,16 @@ def test_turn_schema_allows_catalog_model_and_forbids_controlled_preset_provider
         _turn(base_asset_id=1, reference_asset_ids=[1])
 
 
-def test_turn_and_retry_snapshot_the_selected_openlux_model(configured, db):
+@pytest.mark.parametrize("preset_name,model", [
+    ("design_image_generation_grok_image_2", "grok-imagine-image-2.0"),
+    ("design_image_generation_GPT_image_25", "gpt-image-2.6-sunburst-c"),
+])
+def test_turn_and_retry_snapshot_the_selected_openlux_model(configured, db, preset_name, model):
     owner, _ = configured
     preset = _additional_model_preset(
         db,
-        preset_name="design_image_generation_grok_image_2",
-        model="grok-imagine-image-2.0",
+        preset_name=preset_name,
+        model=model,
         api_base="https://api.openlux.ai/v1",
     )
     db.commit()
@@ -214,10 +218,10 @@ def test_turn_and_retry_snapshot_the_selected_openlux_model(configured, db):
     result = service.create_turn(
         db,
         owner.id,
-        _turn(request_id="grok-turn", model="grok-imagine-image-2.0"),
+        _turn(request_id="openlux-turn", model=model),
     )
     job = result.jobs[0]
-    assert job.model == "grok-imagine-image-2.0"
+    assert job.model == model
     assert job.preset_name == preset.preset_name
 
     job.status = "failed"
@@ -226,9 +230,9 @@ def test_turn_and_retry_snapshot_the_selected_openlux_model(configured, db):
         db,
         owner.id,
         job.id,
-        RetryJobRequest(request_id="grok-retry"),
+        RetryJobRequest(request_id="openlux-retry"),
     )
-    assert retried.jobs[0].model == "grok-imagine-image-2.0"
+    assert retried.jobs[0].model == model
     assert retried.jobs[0].preset_name == preset.preset_name
 
 
@@ -1359,6 +1363,7 @@ def test_config_reports_verified_choices_limit_and_remaining(configured, db, mon
         "models": [
             {"id": "gpt-image-2", "label": "GPT Image 2", "available": True},
             {"id": "gpt-image-2.5-sunburst", "label": "GPT Image 2.5", "available": False},
+            {"id": "gpt-image-2.6-sunburst-c", "label": "GPT Image 2.6 Sunburst C", "available": False},
             {"id": "grok-imagine-image-2.0", "label": "Grok Image 2", "available": False},
             {"id": "gemini-3-pro-image", "label": "Nano Banana Pro", "available": False},
             {"id": "gemini-3.1-flash-image", "label": "Nano Banana 2", "available": False},

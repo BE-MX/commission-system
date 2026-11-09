@@ -117,7 +117,11 @@ def test_variant_clarification_persists_required_item_kind(configured_owner, db)
     assert result.clarification.interaction_json["item_kind"] == "variant"
 
 
-def test_clarification_resolution_preserves_selected_model(configured_owner, db):
+@pytest.mark.parametrize("preset_name,model", [
+    ("design_image_generation_grok_image_2", "grok-imagine-image-2.0"),
+    ("design_image_generation_GPT_image_25", "gpt-image-2.6-sunburst-c"),
+])
+def test_clarification_resolution_preserves_selected_model(configured_owner, db, preset_name, model):
     owner, session = configured_owner
     provider = AiProvider(
         name="Openlux image provider", provider_type="direct",
@@ -128,19 +132,19 @@ def test_clarification_resolution_preserves_selected_model(configured_owner, db)
     db.flush()
     db.add(
         AiPreset(
-            preset_name="design_image_generation_grok_image_2",
+            preset_name=preset_name,
             provider_id=provider.id,
-            model="grok-imagine-image-2.0",
+            model=model,
             parameters={"output_format": "png"},
             is_enabled=True,
         )
     )
     db.commit()
-    payload = _turn(session.id, "grok-clarify", "请生成三个角度的人像图")
-    payload = payload.model_copy(update={"model": "grok-imagine-image-2.0"})
+    payload = _turn(session.id, "openlux-clarify", "请生成三个角度的人像图")
+    payload = payload.model_copy(update={"model": model})
 
     pending = service.create_turn(db, owner.id, payload)
-    assert pending.clarification.interaction_json["request"]["model"] == "grok-imagine-image-2.0"
+    assert pending.clarification.interaction_json["request"]["model"] == model
 
     resolved = service.resolve_message_action(
         db,
@@ -148,15 +152,13 @@ def test_clarification_resolution_preserves_selected_model(configured_owner, db)
         session.id,
         pending.clarification.id,
         MessageActionRequest(
-            request_id="resolve-grok",
+            request_id="resolve-openlux",
             action="choose_output_mode",
             mode="composite",
         ),
     )
-    assert {job.model for job in resolved.jobs} == {"grok-imagine-image-2.0"}
-    assert {job.preset_name for job in resolved.jobs} == {
-        "design_image_generation_grok_image_2"
-    }
+    assert {job.model for job in resolved.jobs} == {model}
+    assert {job.preset_name for job in resolved.jobs} == {preset_name}
 
 
 def test_explicit_separate_turn_creates_three_fixed_width_jobs(configured_owner, db):
