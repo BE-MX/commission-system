@@ -7,6 +7,8 @@ budgets and audit metadata.  Business modules import this through
 
 from __future__ import annotations
 
+from app.ai.http_client import apply_token_parameter, transport_http_timeout
+
 from datetime import datetime, timedelta
 from app.core.time import beijing_now, utc_now_naive
 import hashlib
@@ -14,6 +16,8 @@ import json
 import logging
 import time
 from typing import Iterator
+
+from app.ai.provider_config import request_timeout, transport_options
 
 import httpx
 from sqlalchemy import func
@@ -25,6 +29,7 @@ from app.agent_runtime.models import AgentProfile, AgentRun
 from app.agent_runtime.models import AgentEvent
 from app.ai.http_client import build_chat_url, build_headers
 from app.ai.keyring import decrypt_key
+from app.ai.preset_config import text_request_parameters
 from app.ai.models import AiCallLog, AiPreset
 from app.ai.provider_service import get_provider
 from app.auth.models import ArkUser
@@ -294,7 +299,7 @@ def prepare_agent_chat(
     ]
 
     body = {"model": preset.model, "messages": governed_messages, "stream": True}
-    for key, value in (preset.parameters or {}).items():
+    for key, value in text_request_parameters(preset.parameters).items():
         if key in _SERVER_PARAMETER_KEYS:
             body[key] = value
     max_output = int((profile.limits_json or {}).get("max_output_tokens") or 0)
@@ -341,8 +346,9 @@ def prepare_agent_chat(
 
     api_key = decrypt_key(provider.api_key) if provider.api_key else None
     headers = build_headers(provider, api_key)
-    url = build_chat_url(provider.api_base, "openai")
-    provider_timeout = int(provider.timeout_sec or remaining_runtime)
+    apply_token_parameter(body, provider)
+    url = build_chat_url(provider.api_base, "openai", provider=provider)
+    provider_timeout = request_timeout(provider, "text", preset)
     timeout = max(1, min(provider_timeout, remaining_runtime))
 
     def generate() -> Iterator[bytes]:
@@ -370,7 +376,7 @@ def prepare_agent_chat(
                     "accounting_stage": "dispatched",
                 }
                 db.commit()
-            with httpx.Client(timeout=timeout, verify=True, follow_redirects=False) as client:
+            with httpx.Client(timeout=transport_http_timeout(timeout, transport_options(provider, preset)), verify=True, follow_redirects=False) as client:
                 with client.stream("POST", url, headers=headers, json=body) as response:
                     response.raise_for_status()
                     for line in response.iter_lines():

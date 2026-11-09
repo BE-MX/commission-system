@@ -10,6 +10,8 @@ from uuid import uuid4
 
 from app.ai.models import AiPreset, AiProvider
 from app.ai.service import chat
+from app.ai.text_snapshot import freeze_text_call_config
+from app.ai.provider_config import request_timeout
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.knowledge import ai_job_service, ai_prompt_service, service
@@ -28,10 +30,10 @@ class ClaimedKnowledgeJob:
     lease_token: str
 
 
-def lease_seconds_for_provider(provider: AiProvider) -> int:
+def lease_seconds_for_provider(provider: AiProvider, preset=None) -> int:
     return max(
         get_settings().KNOWLEDGE_AI_LEASE_SECONDS,
-        int(provider.timeout_sec or 60) + 60,
+        int(request_timeout(provider, "text", preset)) + 60,
     )
 
 
@@ -129,18 +131,20 @@ def execute_claimed_job(job_id: int, lease_token: str) -> None:
                 raise service.ConflictError(
                     "knowledge AI preset changed after the job was created; create a new job"
                 )
+            call_config = freeze_text_call_config(preset, provider)
             # The provider timeout is configurable and can exceed the default lease.
             # Extend this claim before the blocking network call so another scheduler
             # cannot requeue the same job and send a duplicate AI request.
             job.lease_expires_at = bj_now() + timedelta(
-                seconds=lease_seconds_for_provider(provider)
+                seconds=lease_seconds_for_provider(call_config.provider, call_config.preset)
             )
             db.commit()
             response = chat(
-                db, preset_name=preset.preset_name,
+                db, preset_name=call_config.preset.preset_name,
                 messages=ai_prompt_service.build_messages(job, base, source_rows),
                 caller_module="knowledge_ai_optimization",
                 caller_user_id=job.owner_user_id, snapshot_mode="metadata",
+                trusted_text_snapshot=call_config,
             )
             result = ai_prompt_service.parse_result(response["content"])
             job.ai_call_log_id = response["log_id"]
@@ -160,16 +164,17 @@ def execute_claimed_job(job_id: int, lease_token: str) -> None:
             verification_response = None
             if job.mode == "enhance":
                 job.lease_expires_at = bj_now() + timedelta(
-                    seconds=lease_seconds_for_provider(provider)
+                    seconds=lease_seconds_for_provider(call_config.provider, call_config.preset)
                 )
                 db.commit()
                 verification_response = chat(
-                    db, preset_name=preset.preset_name,
+                    db, preset_name=call_config.preset.preset_name,
                     messages=ai_prompt_service.build_verification_messages(
                         job, base, result["content_json"], result.get("citations", [])
                     ),
                     caller_module="knowledge_ai_semantic_verification",
                     caller_user_id=job.owner_user_id, snapshot_mode="metadata",
+                    trusted_text_snapshot=call_config,
                 )
                 job.verification_ai_call_log_id = verification_response["log_id"]
                 db.commit()

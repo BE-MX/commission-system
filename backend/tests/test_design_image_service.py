@@ -190,11 +190,11 @@ def test_turn_schema_allows_catalog_model_and_forbids_controlled_preset_provider
         with pytest.raises(PydanticValidationError):
             _turn(**{field: "client-controlled"})
     with pytest.raises(PydanticValidationError):
-        _turn(model="client-controlled")
+        _turn(model="")
     with pytest.raises(PydanticValidationError):
-        _turn(size="2048x2048")
+        _turn(size="")
     with pytest.raises(PydanticValidationError):
-        _turn(quality="ultra")
+        _turn(quality="")
     with pytest.raises(PydanticValidationError):
         _turn(reference_asset_ids=[1, 2, 3, 4, 5])
     with pytest.raises(PydanticValidationError):
@@ -262,29 +262,32 @@ def test_retry_legacy_null_model_falls_back_to_original_default(configured, db):
     assert retried.jobs[0].preset_name == "design_image_generation"
 
 
-def test_gemini_model_is_available_only_with_chat_style_teamrouter_preset(configured, db):
+def test_new_model_can_be_selected_and_changed_through_the_same_preset(configured, db):
     owner, _ = configured
     preset = _additional_model_preset(
-        db,
-        preset_name="design_image_generation_nano_banana_pro",
-        model="gemini-3-pro-image",
-        parameters={"api_style": "chat", "max_tokens": 4096},
+        db, preset_name="design_image_generation_custom", model="future-image-1",
+        parameters={"api_style": "chat"}, api_base="https://custom.example/v1",
     )
     db.commit()
-
     models = {item["id"]: item for item in service.get_config(db, owner.id)["models"]}
-    assert models["gemini-3-pro-image"]["available"] is True
-
-    preset.parameters = {"output_format": "png"}
+    assert models[preset.preset_name]["available"] is True
+    result = service.create_turn(db, owner.id, _turn(model=preset.preset_name))
+    job = result.jobs[0]
+    assert job.model == "future-image-1"
+    assert job.preset_name == preset.preset_name
+    job.status = "failed"
+    preset.model = "future-image-2"
     db.commit()
-    models = {item["id"]: item for item in service.get_config(db, owner.id)["models"]}
-    assert models["gemini-3-pro-image"]["available"] is False
+    retried = service.retry_job(db, owner.id, job.id, RetryJobRequest(request_id="new-model-retry"))
+    assert retried.jobs[0].model == "future-image-2"
+    assert retried.jobs[0].parameters["config_version"] != job.parameters["config_version"]
+
+
+def test_unknown_model_never_creates_a_job(configured, db):
+    owner, _ = configured
     with pytest.raises(service.DesignImageConfigurationError):
-        service.create_turn(
-            db,
-            owner.id,
-            _turn(request_id="bad-gemini-style", model="gemini-3-pro-image"),
-        )
+        service.create_turn(db, owner.id, _turn(model="unregistered"))
+    assert db.query(DesignImageJob).count() == 0
 
 
 def test_owner_scoped_resources_hide_absent_and_cross_owner_with_one_error(configured, db):
@@ -1360,15 +1363,10 @@ def test_config_reports_verified_choices_limit_and_remaining(configured, db, mon
     )
 
     assert config == {
-        "models": [
-            {"id": "gpt-image-2", "label": "GPT Image 2", "available": True},
-            {"id": "gpt-image-2.5-sunburst", "label": "GPT Image 2.5", "available": False},
-            {"id": "gpt-image-2.6-sunburst-c", "label": "GPT Image 2.6 Sunburst C", "available": False},
-            {"id": "grok-imagine-image-2.0", "label": "Grok Image 2", "available": False},
-            {"id": "gemini-3-pro-image", "label": "Nano Banana Pro", "available": False},
-            {"id": "gemini-3.1-flash-image", "label": "Nano Banana 2", "available": False},
-        ],
-        "default_model": "gpt-image-2",
+        "models": [{"id": "design_image_generation", "label": "gpt-image-2", "available": True,
+                    "sizes": ["1024x1024", "1024x1536", "1536x1024"], "qualities": ["low", "medium", "high"],
+                    "default_size": "1024x1024", "default_quality": "medium"}],
+        "default_model": "design_image_generation",
         "accepted_upload_mime_types": [
             "image/jpeg",
             "image/png",
@@ -1519,8 +1517,9 @@ def test_usage_end_to_end_duration_includes_completed_job_without_ai_log(configu
 @pytest.mark.parametrize("prompt", ["改成蓝色", "请生成三个角度的人像图"])
 def test_grok_rejects_more_than_three_inputs_before_queueing(configured, db, has_base, reference_count, prompt):
     owner, _ = configured
-    _additional_model_preset(db, preset_name="design_image_generation_grok_image_2",
+    preset = _additional_model_preset(db, preset_name="design_image_generation_grok_image_2",
                              model="grok-imagine-image-2.0", api_base="https://api.openlux.ai/v1")
+    preset.parameters = {**(preset.parameters or {}), "size_parameter": "aspect_ratio", "max_reference_images": 3}
     session = _session(db, owner.id)
     refs = [_asset(db, owner.id, session.id) for _ in range(reference_count)]
     base = _asset(db, owner.id, session.id) if has_base else None
@@ -1537,8 +1536,9 @@ def test_grok_rejects_more_than_three_inputs_before_queueing(configured, db, has
 
 def test_grok_accepts_base_plus_two_references(configured, db):
     owner, _ = configured
-    _additional_model_preset(db, preset_name="design_image_generation_grok_image_2",
+    preset = _additional_model_preset(db, preset_name="design_image_generation_grok_image_2",
                              model="grok-imagine-image-2.0", api_base="https://api.openlux.ai/v1")
+    preset.parameters = {**(preset.parameters or {}), "size_parameter": "aspect_ratio", "max_reference_images": 3}
     session = _session(db, owner.id)
     base = _asset(db, owner.id, session.id)
     refs = [_asset(db, owner.id, session.id) for _ in range(2)]
@@ -1549,3 +1549,43 @@ def test_grok_accepts_base_plus_two_references(configured, db):
     ))
     assert result.jobs[0].model == "grok-imagine-image-2.0"
     assert result.jobs[0].base_asset_id == base.id
+
+
+def test_retry_rechecks_current_reference_limit(configured, db):
+    owner, _ = configured
+    session = _session(db, owner.id)
+    reference = _asset(db, owner.id, session.id)
+    db.commit()
+    result = service.create_turn(db, owner.id, _turn(session_id=session.id, reference_asset_ids=[reference.id]))
+    job = result.jobs[0]
+    job.status = "failed"
+    preset = db.query(AiPreset).filter_by(preset_name="design_image_generation").one()
+    preset.parameters = {"max_reference_images": 0}
+    db.commit()
+    with pytest.raises(service.DesignImageValidationError) as caught:
+        service.retry_job(db, owner.id, job.id, RetryJobRequest(request_id="retry-limit"))
+    assert caught.value.code == "model_reference_limit"
+    assert db.query(DesignImageJob).count() == 1
+
+
+def test_studio_sizes_and_qualities_are_validated_from_preset(configured, db):
+    owner, _ = configured
+    preset = db.query(AiPreset).filter_by(preset_name="design_image_generation").one()
+    preset.parameters = {"studio": {"sizes": ["2048x2048"], "qualities": ["ultra"]}}
+    db.commit()
+    with pytest.raises(service.DesignImageValidationError) as caught:
+        service.create_turn(db, owner.id, _turn())
+    assert caught.value.code == "model_options_changed"
+    result = service.create_turn(db, owner.id, _turn(size="2048x2048", quality="ultra"))
+    assert result.jobs[0].parameters["size"] == "2048x2048"
+    assert result.jobs[0].parameters["quality"] == "ultra"
+
+
+def test_omitted_size_and_quality_follow_configured_defaults(configured, db):
+    owner, _ = configured
+    preset = db.query(AiPreset).filter_by(preset_name="design_image_generation").one()
+    preset.parameters = {"studio": {"sizes": ["2048x2048"], "qualities": ["ultra"]}}
+    db.commit()
+    result = service.create_turn(db, owner.id, TurnCreate(request_id="configured-defaults", prompt="draw"))
+    assert result.jobs[0].parameters["size"] == "2048x2048"
+    assert result.jobs[0].parameters["quality"] == "ultra"

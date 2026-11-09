@@ -391,3 +391,12 @@ def test_proxy_protocol_error_translated(monkeypatch):
     monkeypatch.setattr(image_service, "get_settings", lambda: _FakeSettings("socks5://127.0.0.1:1081"))
     with pytest.raises(RuntimeError, match="permitopen"):
         _call()
+
+
+def test_output_format_fallback_reports_the_effective_format(monkeypatch):
+    body = {"error": {"param": "output_format", "code": "unsupported"}}
+    _patch_recording_sequence(monkeypatch, [_FakeResp(400, body=body), _FakeResp(200, {"data": [{"b64_json": "png-data"}]})])
+    result = image_service._post_image_edits("https://provider.test/edits", {},
+        {"model": "m", "prompt": "draw", "output_format": "jpeg"}, [], 300, "test")
+    assert result.output_format == "png"
+    assert image_service._extract_image_content(result.json, result.output_format) == "data:image/png;base64,png-data"

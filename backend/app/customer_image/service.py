@@ -639,7 +639,7 @@ def _generation_preset_snapshot(db: Session) -> tuple[str, str, dict, dict | Non
             AiProvider.provider_type == "direct",
         )
     ).first()
-    if row is None or row[0].model != "gpt-image-2":
+    if row is None or not (row[0].model or "").strip() or row[1].api_type != "openai":
         raise CustomerImageConfigurationError("customer image preset is unavailable")
     preset, provider = row
     configured = preset.parameters or {}

@@ -1,9 +1,13 @@
 """Provider-neutral streaming chat for the shared AI facade."""
 
+from app.ai.http_client import apply_token_parameter, transport_http_timeout
+
 import json
 import logging
 import time
 from typing import Iterable, Iterator, Optional
+
+from app.ai.provider_config import request_timeout, transport_options
 
 import httpx
 from sqlalchemy.orm import Session
@@ -15,6 +19,7 @@ from app.ai.http_client import (
 )
 from app.ai.keyring import decrypt_key
 from app.ai.log_snapshot import serialize_response_snapshot
+from app.ai.preset_config import text_request_parameters
 from app.ai.models import AiCallLog, AiPreset
 from app.ai.provider_service import get_provider
 
@@ -39,10 +44,7 @@ def _has_image_message(messages: list) -> bool:
 
 
 def _effective_stream_timeout(provider, messages: list) -> int:
-    base = provider.timeout_sec or 0
-    if _has_image_message(messages):
-        return max(base, MIN_MULTIMODAL_STREAM_TIMEOUT_SEC)
-    return base
+    return request_timeout(provider, "multimodal" if _has_image_message(messages) else "text")
 
 
 def _normalized_usage(
@@ -354,16 +356,17 @@ def chat_stream(
         else:
             params = {"model": preset.model, "messages": full_messages}
             if preset.parameters:
-                params.update(preset.parameters)
+                params.update(text_request_parameters(preset.parameters))
             params.setdefault("stream_options", {"include_usage": True})
         params["stream"] = True
 
         api_key = decrypt_key(provider.api_key) if provider.api_key else None
         headers = build_headers(provider, api_key)
-        url = build_chat_url(provider.api_base, api_type)
-        timeout_sec = _effective_stream_timeout(provider, full_messages)
+        apply_token_parameter(params, provider)
+        url = build_chat_url(provider.api_base, api_type, provider=provider)
+        timeout_sec = request_timeout(provider, "multimodal" if _has_image_message(full_messages) else "text", preset)
 
-        with httpx.Client(timeout=timeout_sec) as client:
+        with httpx.Client(timeout=transport_http_timeout(timeout_sec, transport_options(provider, preset)), verify=True, follow_redirects=False) as client:
             with client.stream("POST", url, headers=headers, json=params) as response:
                 response.raise_for_status()
                 yield {"type": "meta", "log_id": log.id, "model": preset.model}

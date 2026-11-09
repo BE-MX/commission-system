@@ -55,3 +55,32 @@ test('AI log summary only commits with the current query, and paging preserves s
   release({ data: { items: [{ id: 1 }], total: 1, summary: { tokens_total: 1 } } }); await old
   assert.equal(state.logsData.value[0].id, 2); assert.equal(state.logSummaryData.value.tokens_total, 200)
 })
+
+
+for (const invalid of ['{broken', '[]', 'null', '"text"']) {
+  test(`AI invalid parameters ${invalid} never overwrite saved configuration`, async t => {
+    let writes = 0
+    const { vm, messages } = viewController(t, '../../src/views/system/composables/useAiManager.js', 'useAiManager', { '@/api/ai': {
+      updatePreset: async () => { writes++ },
+    } })
+    const state = vm.useAiManager()
+    state.openPresetDialog({ id: 7, preset_name: 'customer_ai_chat', parameters: { temperature: 0.5 } })
+    state.presetFormRef.value = { validate: async () => true }
+    state.presetForm.value.parameters = invalid
+    await state.submitPreset()
+    assert.equal(writes, 0)
+    assert.equal(state.presetDialogVisible.value, true)
+    assert.equal(state.presetSaving.value, false)
+    assert.ok(messages.some(text => typeof text === 'string' && text.includes('JSON')))
+  })
+}
+
+test('AI image fields preserve unrelated parameters and emit the saved JSON contract', t => {
+  const { vm, messages } = viewController(t, '../../src/views/system/components/AiPresetImageFields.vue', 'enabled, updateStudio, update', {
+    '@props': { modelValue: JSON.stringify({ temperature: 0.4, download_hosts: ['image.test'] }), presetName: 'custom_images' },
+  })
+  assert.equal(vm.enabled.value, false)
+  vm.updateStudio('enabled', true)
+  const parameters = JSON.parse(messages.at(-1).args[0])
+  assert.deepEqual(parameters, { temperature: 0.4, download_hosts: ['image.test'], studio: { enabled: true } })
+})

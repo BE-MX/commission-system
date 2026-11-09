@@ -61,6 +61,7 @@ def copilot_contract(db: Session) -> dict:
                 "api_base": provider.api_base,
                 "timeout_sec": provider.timeout_sec,
                 "extra_headers": provider.extra_headers or {},
+                **({"runtime_config": provider.runtime_config} if getattr(provider, "runtime_config", None) else {}),
             } if provider is not None else None,
         } if preset is not None else None),
     }

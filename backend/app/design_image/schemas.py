@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.design_image.model_catalog import DEFAULT_IMAGE_MODEL_ID, ImageModelId
+from app.design_image.model_catalog import DEFAULT_IMAGE_MODEL_ID
 
 
 VERIFIED_SIZES = ("1024x1024", "1024x1536", "1536x1024")
@@ -29,23 +29,9 @@ class TurnCreate(BaseModel):
     reference_asset_ids: list[int] = Field(
         default_factory=list, max_length=MAX_REFERENCE_ASSETS
     )
-    model: ImageModelId = DEFAULT_IMAGE_MODEL_ID
-    size: str = Field(default="1024x1024")
-    quality: str = Field(default="medium")
-
-    @field_validator("size")
-    @classmethod
-    def validate_size(cls, value: str) -> str:
-        if value not in VERIFIED_SIZES:
-            raise ValueError("不支持的图片尺寸")
-        return value
-
-    @field_validator("quality")
-    @classmethod
-    def validate_quality(cls, value: str) -> str:
-        if value not in VERIFIED_QUALITIES:
-            raise ValueError("不支持的质量档位")
-        return value
+    model: str = Field(default=DEFAULT_IMAGE_MODEL_ID, min_length=1, max_length=128)
+    size: str | None = Field(default=None, min_length=1, max_length=64)
+    quality: str | None = Field(default=None, min_length=1, max_length=64)
 
     @field_validator("reference_asset_ids")
     @classmethod
@@ -84,9 +70,10 @@ class InteractionRequestSnapshot(BaseModel):
 
     base_asset_id: int | None = Field(default=None, gt=0)
     reference_asset_ids: list[int] = Field(default_factory=list, max_length=MAX_REFERENCE_ASSETS)
-    model: ImageModelId = DEFAULT_IMAGE_MODEL_ID
-    size: Literal["1024x1024", "1024x1536", "1536x1024"]
-    quality: Literal["low", "medium", "high"]
+    model: str = Field(default=DEFAULT_IMAGE_MODEL_ID, min_length=1, max_length=128)
+    preset_name: str | None = Field(default=None, min_length=1, max_length=64, exclude=True)
+    size: str = Field(min_length=1, max_length=64)
+    quality: str = Field(min_length=1, max_length=64)
 
     @field_validator("reference_asset_ids")
     @classmethod

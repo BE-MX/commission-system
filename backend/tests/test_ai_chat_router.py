@@ -102,7 +102,7 @@ def test_config_requires_read_permission_and_uses_ok_envelope(engine, db):
 
 def test_config_shows_the_failed_rule_to_admins_only(engine, db):
     owner = _seed_user(db, "router-config-diagnostic")
-    _configured(db, model="claude-fable-5-1")
+    _configured(db, model="")
 
     business = TestClient(_app(engine, _claims(owner.id, "ai_chat:read")))
     payload = business.get("/api/ai-chat/config").json()["data"]
@@ -113,28 +113,27 @@ def test_config_shows_the_failed_rule_to_admins_only(engine, db):
 
     admin = TestClient(_app(engine, _claims(owner.id, "ai_chat:read", "ai_chat:admin")))
     diagnostic = admin.get("/api/ai-chat/config").json()["data"]["diagnostic"]
-    assert diagnostic["reason"] == "model_mismatch"
-    assert "claude-fable-5-1" in diagnostic["detail"]
-    assert "claude-fable-5" in diagnostic["detail"]
+    assert diagnostic["reason"] == "model_missing"
+    assert "未配置模型" in diagnostic["detail"]
 
     super_admin_claims = _claims(owner.id, "ai_chat:read")
     super_admin_claims["roles"] = ["super_admin"]
     super_admin = TestClient(_app(engine, super_admin_claims))
     assert (
         super_admin.get("/api/ai-chat/config").json()["data"]["diagnostic"]["reason"]
-        == "model_mismatch"
+        == "model_missing"
     )
 
 
 def test_config_diagnostic_disappears_once_the_preset_matches(engine, db):
     owner = _seed_user(db, "router-config-fixed")
-    _provider, preset = _configured(db, model="claude-fable-5-1")
+    _provider, preset = _configured(db, model="")
     claims = _claims(owner.id, "ai_chat:read")
     claims["roles"] = ["super_admin"]
     client = TestClient(_app(engine, claims))
     assert (
         client.get("/api/ai-chat/config").json()["data"]["diagnostic"]["reason"]
-        == "model_mismatch"
+        == "model_missing"
     )
 
     preset.model = "claude-fable-5"

@@ -15,6 +15,7 @@ import {
 } from '../state'
 import { useAssetObjectUrls } from './useAssetObjectUrls'
 import { useJobPolling } from './useJobPolling'
+import { useImageModelOptions } from './useImageModelOptions'
 const ACTIVE_STATUSES = new Set(['queued', 'running'])
 function requestId(prefix) {
   return `${prefix}-${newRequestKey()}`
@@ -71,7 +72,7 @@ export function useImageStudio() {
   const activeSessionIds = computed(() => [...activeJobs.values()]
     .filter(job => ACTIVE_STATUSES.has(job.status))
     .map(job => job.session_id))
-  const selectedModelAvailable = computed(() => config.value.models?.some(option => option.id === model.value && option.available))
+  const { selectedModelAvailable, modelSizes, modelQualities } = useImageModelOptions(config, model, size, quality)
   const canSend = computed(() => !newSessionInFlight.value && canStartSend({
     sendInFlight: sendInFlight.value,
     uploadInFlight: uploadInFlight.value > 0,
@@ -316,6 +317,8 @@ export function useImageStudio() {
     const sentUploadIds = sentAttachments.map(item => item.uploadId)
     const sentBaseId = baseAsset.value?.id ?? null
     const sentModel = model.value
+    const sentSize = size.value
+    const sentQuality = quality.value
     sendInFlight.value = true
     let responseGeneration = null
     let sessionIdSnapshot = null
@@ -330,8 +333,8 @@ export function useImageStudio() {
         base_asset_id: sentBaseId,
         reference_asset_ids: sentAttachments.map(item => item.asset.id),
         model: sentModel,
-        size: size.value,
-        quality: quality.value,
+        size: sentSize,
+        quality: sentQuality,
       }
       const response = await createTurn(session.id, body)
       const result = response?.data
@@ -483,7 +486,7 @@ export function useImageStudio() {
     clearBaseAsset, closeLightbox, config, currentSession, currentSessionId, downloadAsset, draftAttachments,
     drawerOpen, ensureSession, initializing, jobs, lightboxAsset, lightboxUrl, loadMoreSessions: () => loadSessions({ append: true }),
     sessionsResource, sessionsAppend, retrySessions, loadSessions,
-    isConfirmationSubmitting, messages, model, newSessionInFlight, newConversation, nextCursor, openLightbox, prompt, quality, removeAttachment,
+    isConfirmationSubmitting, messages, model, modelSizes, modelQualities, newSessionInFlight, newConversation, nextCursor, openLightbox, prompt, quality, removeAttachment,
     retry, selectLibraryBaseAsset, selectSession, sendInFlight, sessionActiveJob, sessions, sessionsLoading, size, submit, uploadInFlight, uploadReference,
   }
 }

@@ -76,7 +76,7 @@ export function useAiManager() {
   const providerFormRef = ref(null)
   const providerSaving = ref(false)
   const providerForm = ref({
-    name: '', provider_type: 'direct', api_base: '', api_key: '', api_type: 'openai', timeout_sec: 60, remark: '',
+    name: '', provider_type: 'direct', api_base: '', api_key: '', api_type: 'openai', timeout_sec: 60, runtime_config: '{}', extra_headers: '{}', remark: '',
   })
   const providerRules = {
     name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
@@ -129,6 +129,11 @@ export function useAiManager() {
   const testing = ref(false)
   const testResult = ref(null)
   const isCompositePreset = computed(() => testPresetName.value === 'expo_wig_composite')
+  const isImageTest = computed(() => {
+    const preset = presets.value.find(row => row.id === testPresetId.value)
+    const params = preset?.parameters || {}
+    return params.test_mode ? params.test_mode === 'image' : (params.studio?.enabled || params.api_style || isCompositePreset.value || testPresetName.value.startsWith('design_image_generation'))
+  })
 
   // ── Logs ──────────────────────────────────────────────
   const logSummaryData = ref({ tokens_total: 0, success_count: 0, error_count: 0, timeout_count: 0, avg_duration_ms: 0 })
@@ -198,16 +203,13 @@ export function useAiManager() {
   function openProviderDialog(row = null) {
     providerEditId.value = row?.id || null
     providerForm.value = row
-      ? { ...row, api_key: '' }
-      : { name: '', provider_type: 'direct', api_base: '', api_key: '', api_type: 'openai', timeout_sec: 60, remark: '' }
+      ? { ...row, api_key: '', runtime_config: JSON.stringify(row.runtime_config || {}, null, 2), extra_headers: JSON.stringify(row.extra_headers || {}, null, 2) }
+      : { name: '', provider_type: 'direct', api_base: '', api_key: '', api_type: 'openai', timeout_sec: 60, runtime_config: '{}', extra_headers: '{}', remark: '' }
     providerDialogVisible.value = true
   }
 
-  function onProviderTypeChange(type) {
-    if (type === 'accio_work') {
-      providerForm.value.api_base = 'http://119.28.107.92:3100'
-      providerForm.value.api_key = ''
-    }
+  function onProviderTypeChange() {
+    // Changing adapter type must not overwrite an administrator's endpoint or key.
   }
 
   async function submitProvider() {
@@ -216,6 +218,16 @@ export function useAiManager() {
     providerSaving.value = true
     try {
       const payload = { ...providerForm.value }
+      for (const key of ['runtime_config', 'extra_headers']) {
+        try {
+          const parsed = JSON.parse(payload[key] || '{}')
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('object required')
+          payload[key] = parsed
+        } catch {
+          msgError(`${key === 'runtime_config' ? '运行配置' : '附加请求头'}必须是有效的 JSON 对象；原配置尚未修改`)
+          return
+        }
+      }
       if (!payload.api_key) delete payload.api_key
       if (providerEditId.value) {
         await updateProvider(providerEditId.value, payload)
@@ -226,8 +238,8 @@ export function useAiManager() {
       }
       providerDialogVisible.value = false
       fetchProviders()
-    } catch (e) { /* ignore */ }
-    providerSaving.value = false
+    } catch (e) { /* API feedback is handled by the shared client. */ }
+    finally { providerSaving.value = false }
   }
 
   async function toggleProvider(row) {
@@ -296,8 +308,12 @@ export function useAiManager() {
       const payload = { ...presetForm.value }
       try {
         payload.parameters = JSON.parse(payload.parameters)
+        if (!payload.parameters || Array.isArray(payload.parameters) || typeof payload.parameters !== 'object') {
+          throw new Error('调用参数必须是 JSON 对象')
+        }
       } catch {
-        payload.parameters = {}
+        msgError('调用参数格式有误，请输入有效的 JSON 对象；原配置尚未修改')
+        return
       }
       if (presetEditId.value) {
         await updatePreset(presetEditId.value, payload)
@@ -308,8 +324,8 @@ export function useAiManager() {
       }
       presetDialogVisible.value = false
       fetchPresets()
-    } catch (e) { /* ignore */ }
-    presetSaving.value = false
+    } catch (e) { /* API feedback is handled by the shared client. */ }
+    finally { presetSaving.value = false }
   }
 
   async function handleDeletePreset(row) {
@@ -426,7 +442,7 @@ export function useAiManager() {
         testPresetId.value,
         testMessage.value,
         testImageFile.value,
-        isCompositePreset.value ? testReferenceImageFile.value : null,
+        isImageTest.value ? testReferenceImageFile.value : null,
       )
       testResult.value = res.data
     } catch (e) { /* ignore */ }
@@ -465,7 +481,7 @@ export function useAiManager() {
     presetDialogVisible, presetEditId, presetFormRef, presetSaving,
     presetForm, presetRules, isAccioProvider,
     testDialogVisible, testPresetName, testPresetId, testMessage,
-    testImageFileList, testReferenceImageFileList, testing, testResult, isCompositePreset,
+    testImageFileList, testReferenceImageFileList, testing, testResult, isCompositePreset, isImageTest,
     fetchPresets, openPresetDialog, onPresetProviderChange, submitPreset,
     handleDeletePreset, handleCopyPreset, openTestPreset,
     handleTestImageChange, handleTestImageExceed, clearTestImage,

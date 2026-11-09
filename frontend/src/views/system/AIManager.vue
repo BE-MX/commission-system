@@ -288,7 +288,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="API Base" prop="api_base">
-          <el-input v-model="providerForm.api_base" :placeholder="providerForm.provider_type === 'accio_work' ? 'http://119.28.107.92:3100' : 'https://api.openai.com/v1'" />
+          <el-input v-model="providerForm.api_base" :placeholder="providerForm.provider_type === 'accio_work' ? '填写 ACCIO 服务地址' : 'https://api.example.com/v1'" />
         </el-form-item>
         <el-form-item label="协议类型" v-if="providerForm.provider_type === 'direct'">
           <el-radio-group v-model="providerForm.api_type">
@@ -303,13 +303,23 @@
         <el-form-item label="超时（秒）">
           <el-input-number v-model="providerForm.timeout_sec" :min="1" :max="3600" style="width: 100%" />
         </el-form-item>
+        <el-collapse>
+          <el-collapse-item title="接口、认证、运行与测试配置" name="provider-runtime">
+            <AiConfigFields v-model="providerForm.runtime_config" :fields="providerFields" @validity="providerFieldsValid = $event" />
+            <el-form-item label="附加请求头（JSON）">
+              <el-input v-model="providerForm.extra_headers" type="textarea" :rows="3" placeholder='{"X-Project": "ark"}' />
+              <div class="form-hint">认证值使用 {api_key} 占位符，密钥填入上方 API Key。保存后用于后续新请求。</div>
+            </el-form-item>
+            <el-form-item label="运行配置（JSON）"><el-input v-model="providerForm.runtime_config" type="textarea" :rows="5" /></el-form-item>
+          </el-collapse-item>
+        </el-collapse>
         <el-form-item label="备注">
           <el-input v-model="providerForm.remark" type="textarea" :rows="2" placeholder="用途说明" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="providerDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="providerSaving" @click="submitProvider">保存</el-button>
+        <el-button type="primary" :loading="providerSaving" :disabled="!providerFieldsValid" @click="submitProvider">保存</el-button>
       </template>
     </el-dialog>
 
@@ -318,7 +328,7 @@
       <el-form label-position="top" ref="presetFormRef" :model="presetForm" :rules="presetRules">
         <el-form-item label="预设名称" prop="preset_name">
           <el-input v-model="presetForm.preset_name" placeholder="customer_analysis" />
-          <div class="form-hint">只允许字母、数字、下划线</div>
+          <div class="form-hint">业务功能按预设名称调用；换模型请修改下方型号，保留现有预设名称。</div>
         </el-form-item>
         <el-form-item label="绑定提供商" prop="provider_id">
           <el-select v-model="presetForm.provider_id" placeholder="选择提供商" style="width: 100%" @change="onPresetProviderChange">
@@ -328,11 +338,21 @@
         <el-form-item label="模型名称">
           <el-input v-model="presetForm.model" placeholder="gpt-4o" :disabled="isAccioProvider" />
         </el-form-item>
+        <AiPresetImageFields v-model="presetForm.parameters" :preset-name="presetForm.preset_name" />
+        <el-collapse>
+          <el-collapse-item title="文本、测试与运行参数" name="preset-runtime">
+            <AiConfigFields v-model="presetForm.parameters" :fields="presetFields" @validity="presetFieldsValid = $event" />
+          </el-collapse-item>
+          <el-collapse-item title="图片参数（含展会、客户生图等用途）" name="preset-image">
+            <AiConfigFields v-model="presetForm.parameters" :fields="imageFields" @validity="imageFieldsValid = $event" />
+          </el-collapse-item>
+        </el-collapse>
         <el-form-item label="System Prompt">
           <el-input v-model="presetForm.system_prompt" type="textarea" :rows="3" placeholder="输入系统提示词..." />
         </el-form-item>
         <el-form-item label="调用参数">
-          <el-input v-model="presetForm.parameters" type="textarea" :rows="2" placeholder='{"temperature": 0.3}' class="mono-input" />
+          <el-input v-model="presetForm.parameters" type="textarea" :rows="5" placeholder='{"temperature": 0.3}' class="mono-input" />
+          <div class="form-hint">保存后用于后续新请求，无需重启；需使用提供商支持的协议与参数。运行中任务继续校验原配置。</div>
         </el-form-item>
         <el-form-item label="用途说明">
           <el-input v-model="presetForm.description" placeholder="描述此预设的用途" />
@@ -340,7 +360,7 @@
       </el-form>
       <template #footer>
         <el-button @click="presetDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="presetSaving" @click="submitPreset">保存</el-button>
+        <el-button type="primary" :loading="presetSaving" :disabled="!presetFieldsValid || !imageFieldsValid" @click="submitPreset">保存</el-button>
       </template>
     </el-dialog>
 
@@ -371,7 +391,7 @@
             </template>
           </el-upload>
         </el-form-item>
-        <el-form-item v-if="isCompositePreset" label="假发参考图">
+        <el-form-item v-if="isImageTest" label="第二张参考图（可选）">
           <el-upload
             class="preset-image-upload"
             :auto-upload="false"
@@ -430,6 +450,10 @@
 </template>
 
 <script setup>
+import { ref, watch } from 'vue'
+import AiConfigFields from './components/AiConfigFields.vue'
+import { providerFields, presetFields, imageFields } from './aiConfigFields'
+import AiPresetImageFields from './components/AiPresetImageFields.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import ListPageStatus from '@/components/ListPageStatus.vue'
 
@@ -494,7 +518,7 @@ const {
   presetDialogVisible, presetEditId, presetFormRef, presetSaving,
   presetForm, presetRules, isAccioProvider,
   testDialogVisible, testPresetName, testMessage,
-  testImageFileList, testReferenceImageFileList, testing, testResult, isCompositePreset,
+  testImageFileList, testReferenceImageFileList, testing, testResult, isCompositePreset, isImageTest,
   fetchPresets, openPresetDialog, onPresetProviderChange, submitPreset,
   handleDeletePreset, handleCopyPreset, openTestPreset,
   handleTestImageChange, handleTestImageExceed, clearTestImage,
@@ -510,6 +534,9 @@ const {
   stats,
   moduleLabel, statusLabel, statusTagType, formatDuration,
 } = useAiManager()
+const providerFieldsValid = ref(true), presetFieldsValid = ref(true), imageFieldsValid = ref(true)
+watch(providerDialogVisible, () => { providerFieldsValid.value = true })
+watch(presetDialogVisible, () => { presetFieldsValid.value = true; imageFieldsValid.value = true })
 </script>
 
 <style scoped src="./ai-manager.css"></style>

@@ -1,5 +1,9 @@
 """AI 调用 — chat (同步) / delegate (异步占位) / get_task_result"""
 
+from app.ai.http_client import apply_token_parameter, transport_http_timeout
+
+from app.ai.provider_config import request_timeout, transport_options
+
 import json
 import hashlib
 import logging
@@ -12,6 +16,7 @@ logger = logging.getLogger("commission.ai")
 
 from sqlalchemy.orm import Session
 
+from app.ai.preset_config import text_request_parameters
 from app.ai.models import AiPreset, AiCallLog
 from app.ai.keyring import decrypt_key
 from app.ai.http_client import (
@@ -39,10 +44,7 @@ def _has_image_message(messages: list) -> bool:
 
 
 def _effective_chat_timeout(provider, has_image: bool) -> int:
-    base = provider.timeout_sec or 0
-    if has_image:
-        return max(base, MIN_MULTIMODAL_CHAT_TIMEOUT_SEC)
-    return base
+    return request_timeout(provider, "multimodal" if has_image else "text")
 
 
 def _snapshot_messages(messages: list, snapshot_mode: str) -> str:
@@ -140,18 +142,16 @@ def chat(
         else:
             params = {"model": preset.model, "messages": full_messages, "stream": False}
             if preset.parameters:
-                params.update(preset.parameters)
+                params.update(text_request_parameters(preset.parameters))
 
-        url = build_chat_url(provider.api_base, api_type)
+        apply_token_parameter(params, provider)
+        url = build_chat_url(provider.api_base, api_type, provider=provider)
         has_image = _has_image_message(full_messages)
-        if has_image:
-            request_timeout_sec = _effective_chat_timeout(provider, has_image)
-        elif timeout_sec is not None:
-            if timeout_sec <= 0:
-                raise ValueError("timeout_sec must be positive")
-            request_timeout_sec = timeout_sec
-        else:
-            request_timeout_sec = _effective_chat_timeout(provider, has_image)
+        if caller_module == "expo":
+            timeout_sec = min(timeout_sec or 120, 120)
+        request_timeout_sec = request_timeout(
+            provider, "multimodal" if has_image else "text", preset, deadline=timeout_sec,
+        )
         logger.info(
             "AI request: provider=%s model=%s api_type=%s url=%s msg_count=%d has_image=%s",
             provider.name, preset.model, api_type, url, len(full_messages), has_image,
@@ -165,6 +165,7 @@ def chat(
             headers=headers,
             body=params,
             timeout_sec=request_timeout_sec,
+            **({"transport": transport_options(provider, preset)} if transport_options(provider, preset) else {}),
             **({"enforce_total_timeout": True} if enforce_total_timeout else {}),
         )
 

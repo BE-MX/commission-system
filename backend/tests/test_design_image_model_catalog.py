@@ -31,156 +31,96 @@ def _configured_model(db, *, api_base: str, api_style: str | None = None):
     return preset, provider
 
 
-def test_model_catalog_accepts_only_exact_https_teamrouter_host(db):
-    _configured_model(db, api_base="https://api.teamorouter.cn")
-    assert model_catalog.configured_model_row(db, "gpt-image-2") is not None
 
-
-def test_model_catalog_rejects_teamrouter_lookalike_host(db):
-    _configured_model(db, api_base="https://api.teamorouter.cn.evil.test")
-    assert model_catalog.configured_model_row(db, "gpt-image-2") is None
-
-
-def test_model_catalog_rejects_wrong_api_style(db):
-    _configured_model(db, api_base="https://api.teamorouter.cn", api_style="chat")
-    assert model_catalog.configured_model_row(db, "gpt-image-2") is None
-
-
-def test_model_catalog_rejects_missing_teamrouter_api_key(db):
-    _preset, provider = _configured_model(
-        db, api_base="https://api.teamorouter.cn/v1"
-    )
-    provider.api_key = None
+@pytest.mark.parametrize("api_base", ["https://api.teamorouter.cn", "https://custom-provider.test/v2", "https://image.test:8443/v1"])
+@pytest.mark.parametrize("style", ["images", "chat"])
+def test_new_model_and_provider_are_read_from_configuration(db, api_base, style):
+    preset, provider = _configured_model(db, api_base=api_base, api_style=style)
+    preset.model = "brand-new-image-model"
+    preset.parameters = {"api_style": style, "studio": {"label": "Custom Image"}}
     db.flush()
-
-    assert model_catalog.configured_model_row(db, "gpt-image-2") is None
-
-
-def test_model_catalog_rejects_non_api_base_path(db):
-    _configured_model(
-        db, api_base="https://api.teamorouter.cn/v1/chat/completions"
-    )
-
-    assert model_catalog.configured_model_row(db, "gpt-image-2") is None
-
-
-def test_gemini_model_requires_its_exact_preset_and_chat_style(db):
-    preset, _provider = _configured_model(
-        db, api_base="https://api.teamorouter.cn", api_style="chat"
-    )
-    preset.preset_name = "design_image_generation_nano_banana_pro"
-    preset.model = "gemini-3-pro-image"
+    assert model_catalog.configured_model_row(db, preset.preset_name)[1] is preset
+    assert model_catalog.public_model_options(db) == [
+        {"id": preset.preset_name, "label": "Custom Image", "available": True,
+         "sizes": ["1024x1024", "1024x1536", "1536x1024"], "qualities": ["low", "medium", "high"],
+         "default_size": "1024x1024", "default_quality": "medium"},
+    ]
+    preset.model = "next-model"
+    provider.api_base = "https://another-provider.test/v1"
     db.flush()
-
-    configured = model_catalog.configured_model_row(db, "gemini-3-pro-image")
-
-    assert configured is not None
-    assert configured[1] is preset
+    assert model_catalog.configured_model_row(db, preset.preset_name)[1].model == "next-model"
+    assert model_catalog.configured_model_row(db, "brand-new-image-model") is None
 
 
-@pytest.mark.parametrize("api_base", ["https://api.openlux.ai", "https://api.openlux.ai/v1"])
-def test_grok_image_2_uses_verified_openlux_model(db, api_base):
-    preset, _ = _configured_model(db, api_base=api_base)
-    preset.preset_name = "design_image_generation_grok_image_2"
-    preset.model = "grok-imagine-image-2.0"
+def test_arbitrary_preset_requires_explicit_studio_enrollment(db):
+    preset, _ = _configured_model(db, api_base="https://provider.test")
+    preset.preset_name = "private_ocr"
     db.flush()
-    configured = model_catalog.configured_model_row(db, "grok-imagine-image-2.0")
-    assert configured is not None
-    assert configured[1] is preset
-    assert model_catalog.get_model_option("grok-image-2") is None
-    assert {item["id"]: item["available"] for item in model_catalog.public_model_options(db)}[preset.model]
+    assert model_catalog.configured_model_row(db, preset.preset_name) is None
+    preset.parameters = {"studio": {"enabled": True}}
+    db.flush()
+    assert model_catalog.configured_model_row(db, preset.preset_name)[1] is preset
+    preset.parameters = {"studio": {"enabled": False}}
+    db.flush()
+    assert model_catalog.public_model_options(db) == []
 
 
-@pytest.mark.parametrize("api_base", [
-    "https://api.teamorouter.cn/v1", "https://api.openlux.ai.evil.test/v1",
-    "http://api.openlux.ai/v1", "https://api.openlux.ai:8443/v1",
-    "https://user@api.openlux.ai/v1", "https://api.openlux.ai/v1?proxy=true",
-    "https://api.openlux.ai/v1#fragment", "https://api.openlux.ai/v1/images/generations",
+def test_same_model_on_two_presets_never_selects_an_arbitrary_provider(db):
+    first, provider = _configured_model(db, api_base="https://one.test")
+    second = AiPreset(preset_name="design_image_generation_second", provider_id=provider.id,
+                      model=first.model, parameters={}, is_enabled=True)
+    db.add(second)
+    db.flush()
+    assert model_catalog.configured_model_row(db, first.model) is None
+    assert model_catalog.configured_model_row(db, first.preset_name)[1] is first
+    assert model_catalog.configured_model_row(db, second.preset_name)[1] is second
+    assert len(model_catalog.public_model_options(db)) == 2
+
+
+@pytest.mark.parametrize("target,field,value", [
+    ("preset", "is_enabled", False), ("provider", "is_enabled", False),
+    ("preset", "model", ""), ("provider", "provider_type", "accio_work"),
+    ("provider", "api_type", "anthropic"), ("provider", "api_key", None),
+    ("preset", "parameters", {"api_style": "unsupported"}),
+    ("preset", "parameters", {"max_reference_images": "5"}),
+    ("preset", "parameters", {"request_parameters": {"model": "override"}}),
 ])
-def test_grok_image_2_rejects_unverified_provider(db, api_base):
-    preset, _ = _configured_model(db, api_base=api_base)
-    preset.preset_name = "design_image_generation_grok_image_2"
-    preset.model = "grok-imagine-image-2.0"
+def test_unusable_or_unsafe_configuration_is_not_callable(db, target, field, value):
+    preset, provider = _configured_model(db, api_base="https://provider.test")
+    setattr(preset if target == "preset" else provider, field, value)
     db.flush()
-    assert model_catalog.configured_model_row(db, "grok-imagine-image-2.0") is None
+    assert model_catalog.configured_model_row(db, preset.preset_name) is None
+    assert model_catalog.public_model_options(db)[0]["available"] is False
 
 
-def test_openlux_does_not_enable_other_catalog_models(db):
-    _configured_model(db, api_base="https://api.openlux.ai/v1")
-    assert model_catalog.configured_model_row(db, "gpt-image-2") is None
+@pytest.mark.parametrize("base", ["http://provider.test", "https://user@provider.test", "https://provider.test?key=x", "https://provider.test#x", "https://provider.test:bad"])
+def test_malformed_or_insecure_provider_url_is_not_callable(db, base):
+    preset, _ = _configured_model(db, api_base=base)
+    assert model_catalog.configured_model_row(db, preset.preset_name) is None
 
 
-@pytest.mark.parametrize("api_base", ["https://api.openlux.ai", "https://api.openlux.ai/v1"])
-def test_gpt_image_25_uses_verified_openlux_model(db, api_base):
-    preset, _provider = _configured_model(db, api_base=api_base)
-    preset.preset_name = "design_image_generation_GPT_image_25"
-    preset.model = "gpt-image-2.5-sunburst"
+def test_deleted_preset_and_provider_are_not_callable(db):
+    from app.core.time import beijing_now
+    preset, provider = _configured_model(db, api_base="https://provider.test")
+    provider.deleted_at = beijing_now()
     db.flush()
-
-    configured = model_catalog.configured_model_row(db, "gpt-image-2.5-sunburst")
-
-    assert configured is not None
-    assert configured[1] is preset
-
-
-def test_gpt_image_25_rejects_teamrouter_provider(db):
-    preset, _provider = _configured_model(
-        db, api_base="https://api.teamorouter.cn/v1"
-    )
-    preset.preset_name = "design_image_generation_GPT_image_25"
-    preset.model = "gpt-image-2.5-sunburst"
+    assert model_catalog.configured_model_row(db, preset.preset_name) is None
+    preset.deleted_at = beijing_now()
     db.flush()
+    assert model_catalog.public_model_options(db) == []
 
-    assert model_catalog.configured_model_row(db, "gpt-image-2.5-sunburst") is None
 
-
-@pytest.mark.parametrize("api_base", ["https://api.openlux.ai", "https://api.openlux.ai/v1"])
-def test_gpt_image_26_uses_existing_openlux_preset_slot(db, api_base):
-    preset, _provider = _configured_model(db, api_base=api_base)
-    preset.preset_name = "design_image_generation_GPT_image_25"
-    preset.model = "gpt-image-2.6-sunburst-c"
-    preset.parameters = {"n": 1, "response_format": "b64_json"}
+@pytest.mark.parametrize("deleted", [False, True])
+def test_unavailable_exact_preset_never_falls_back_to_a_model_alias(db, deleted):
+    from app.core.time import beijing_now
+    first, provider = _configured_model(db, api_base="https://one.test")
+    first.is_enabled = False
+    if deleted:
+        first.deleted_at = beijing_now()
+    second = AiPreset(preset_name="design_image_generation_second", provider_id=provider.id,
+                      model=first.preset_name, parameters={}, is_enabled=True)
+    db.add(second)
     db.flush()
-
-    configured = model_catalog.configured_model_row(db, preset.model)
-    assert configured is not None
-    assert configured[1] is preset
-    options = {item["id"]: item for item in model_catalog.public_model_options(db)}
-    assert options[preset.model] == {
-        "id": preset.model, "label": "GPT Image 2.6 Sunburst C", "available": True,
-    }
-    assert options["gpt-image-2.5-sunburst"]["available"] is False
-
-    # A version switch must not enable the other ID or silently substitute models.
-    preset.model = "gpt-image-2.5-sunburst"
-    db.flush()
-    options = {item["id"]: item for item in model_catalog.public_model_options(db)}
-    assert options[preset.model]["available"] is True
-    assert options["gpt-image-2.6-sunburst-c"]["available"] is False
-
-
-@pytest.mark.parametrize("field,value", [
-    ("model", "gpt-image-2.6-sunburst"),
-    ("preset_name", "unregistered-image-preset"),
-    ("parameters", {"api_style": "chat"}),
-    ("is_enabled", False),
-])
-def test_gpt_image_26_rejects_mismatched_preset(db, field, value):
-    preset, _provider = _configured_model(db, api_base="https://api.openlux.ai/v1")
-    preset.preset_name = "design_image_generation_GPT_image_25"
-    preset.model = "gpt-image-2.6-sunburst-c"
-    setattr(preset, field, value)
-    db.flush()
-    assert model_catalog.configured_model_row(db, "gpt-image-2.6-sunburst-c") is None
-
-
-@pytest.mark.parametrize("api_base", [
-    "https://api.teamorouter.cn/v1", "https://api.openlux.ai.evil.test/v1",
-    "http://api.openlux.ai/v1", "https://api.openlux.ai:8443/v1",
-])
-def test_gpt_image_26_rejects_unverified_provider(db, api_base):
-    preset, _provider = _configured_model(db, api_base=api_base)
-    preset.preset_name = "design_image_generation_GPT_image_25"
-    preset.model = "gpt-image-2.6-sunburst-c"
-    db.flush()
-    assert model_catalog.configured_model_row(db, preset.model) is None
+    assert model_catalog.configured_model_row(db, first.preset_name) is None
+    assert model_catalog.configured_model_row(db, second.preset_name)[1] is second
+    assert model_catalog.configured_model_row(db, "missing", allow_legacy_model=False) is None

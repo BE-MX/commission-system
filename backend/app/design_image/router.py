@@ -68,6 +68,7 @@ def _call(function: Callable[..., T], *args, **kwargs) -> T:
             "multi_output_limit",
             "attachment_unavailable",
             "model_reference_limit",
+            "model_options_changed",
         }:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
@@ -164,7 +165,7 @@ def _job(row) -> dict:
         "base_asset_id": row.base_asset_id,
         "mode": row.mode,
         "status": row.status,
-        "model": row.model if model_catalog.get_model_option(row.model or "") else None,
+        "model": row.model,
         "size": parameters.get("size"),
         "quality": parameters.get("quality"),
         "output_asset_id": row.output_asset_id,

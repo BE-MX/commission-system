@@ -18,11 +18,6 @@ NOT_CONFIGURED_MESSAGE = "方案对话服务尚未配置，请联系管理员"
 TRUNCATION_MARKER = "[附件正文已按本次请求总上限截断]"
 
 
-def required_model() -> str:
-    """Pinned model lives in settings so a model rename never needs a code deploy."""
-    return get_settings().AI_CHAT_MODEL
-
-
 def _require_session(
     db: Session, session_id: int, owner_user_id: int
 ) -> AiChatSession:
@@ -170,7 +165,6 @@ def inspect_config(db: Session) -> dict | None:
     The detail names the Preset/Provider/model state, so only administrators may
     see it; regular users always receive the generic message.
     """
-    expected = required_model()
     preset = (
         db.query(AiPreset)
         .filter(AiPreset.preset_name == PRESET_NAME)
@@ -183,14 +177,8 @@ def inspect_config(db: Session) -> dict | None:
         return {"reason": "preset_deleted", "detail": f"Preset {PRESET_NAME} 已被删除"}
     if not preset.is_enabled:
         return {"reason": "preset_disabled", "detail": f"Preset {PRESET_NAME} 已禁用"}
-    if preset.model != expected:
-        return {
-            "reason": "model_mismatch",
-            "detail": (
-                f"Preset {PRESET_NAME} 的模型是 {preset.model or '（空）'}，"
-                f"服务固定要求 {expected}"
-            ),
-        }
+    if not (preset.model or "").strip():
+        return {"reason": "model_missing", "detail": f"Preset {PRESET_NAME} 未配置模型"}
     provider = (
         db.query(AiProvider)
         .filter(AiProvider.id == preset.provider_id)
@@ -208,10 +196,10 @@ def inspect_config(db: Session) -> dict | None:
             "reason": "provider_type_mismatch",
             "detail": f"Provider {provider.name} 是 {provider.provider_type} 接入，方案对话只接受 direct 直连",
         }
-    if provider.api_type != "anthropic":
+    if provider.api_type not in {"anthropic", "openai"}:
         return {
             "reason": "api_type_mismatch",
-            "detail": f"Provider {provider.name} 使用 {provider.api_type} 协议，方案对话只接受 anthropic 协议",
+            "detail": f"Provider {provider.name} 使用 {provider.api_type} 协议，方案对话支持 OpenAI 或 Anthropic 协议",
         }
     return None
 
@@ -219,7 +207,8 @@ def inspect_config(db: Session) -> dict | None:
 def get_config(db: Session, *, include_diagnostic: bool = False) -> dict:
     issue = inspect_config(db)
     if issue is None:
-        return {"configured": True, "model": required_model(), "message": None}
+        preset = db.query(AiPreset).filter(AiPreset.preset_name == PRESET_NAME).first()
+        return {"configured": True, "model": preset.model, "message": None}
     logger.warning(
         "AI chat not configured: %s (%s)", issue["reason"], issue["detail"]
     )

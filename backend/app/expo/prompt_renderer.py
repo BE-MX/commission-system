@@ -50,7 +50,7 @@ def render_prompt(session, row, wig, config: dict, resolve_path) -> tuple[str, l
             + wardrobe_clause(config, uniform=bool(scene.get("uniform")))
             + render_part(config, "scene_tail")
         )
-        size = None
+        size = config.get("image_sizes", {}).get("expo_scene_size")
     else:
         if wig is None:
             raise ValueError("所选发型已不存在，请重新选择")
@@ -82,7 +82,7 @@ def render_prompt(session, row, wig, config: dict, resolve_path) -> tuple[str, l
             + color_text + scene_text
             + render_part(config, "tryon_tail") + render_part(config, "portrait_spec")
         )
-        size = "1024x1536"
+        size = config.get("image_sizes", {}).get("expo_tryon_size", "1024x1536")
     if not prompt.strip() or len(prompt) > 64000:
         raise ValueError("展开后的提示词为空或超过 64000 字，请调整版本配置")
     return prompt, images, size

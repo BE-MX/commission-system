@@ -156,6 +156,24 @@ def test_worker_sends_saved_prompt_even_after_version_changes(db, monkeypatch, t
     assert rows[0].status == 'done'
 
 
+def test_preset_size_is_captured_and_later_edits_do_not_change_old_tasks(db):
+    from app.ai.models import AiProvider, AiPreset
+    seed_versions(db)
+    provider = AiProvider(name='expo-config-test', provider_type='direct', api_type='openai', api_base='https://provider.test')
+    db.add(provider); db.flush()
+    preset = AiPreset(preset_name=ai_pipeline.COMPOSITE_PRESET, provider_id=provider.id, model='image',
+                      parameters={'workflow': {'expo_tryon_size': '2048x3072'}})
+    db.add(preset); db.commit()
+    session = _make_session(db); wig = _make_wig(db)
+    rows = ai_pipeline.build_composite_rows(session.id, [wig.id])
+    prompt_service.capture_batch(db, session, rows, 1)
+    db.add_all(rows); db.commit()
+    assert rows[0].prompt_snapshot['size'] == '2048x3072'
+    preset.parameters = {'workflow': {'expo_tryon_size': '1024x1024'}}
+    db.commit()
+    assert prompt_service.read_snapshot(rows[0])[2] == '2048x3072'
+
+
 def test_migration_seeds_complete_configs_and_preserves_history():
     import importlib.util
     import sqlalchemy as sa

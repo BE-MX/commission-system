@@ -280,3 +280,14 @@ def test_beijing_day_changes_independent_of_server_timezone(db, site, upstream, 
     invoke(db, site)
     assert len(upstream) == 2
     assert service.day_window(midnight)[0] == midnight
+
+
+def test_gateway_normalizes_management_metadata_and_nested_text_parameters(db, site, upstream):
+    preset = db.get(AiPreset, site[2])
+    preset.parameters = {"studio": {"enabled": False}, "request_parameters": {"max_tokens": 128, "temperature": 0.3}}
+    db.commit()
+    invoke(db, site)
+    assert upstream[0]["body"]["max_tokens"] == 128
+    assert upstream[0]["body"]["temperature"] == 0.3
+    assert "studio" not in upstream[0]["body"]
+    assert "request_parameters" not in upstream[0]["body"]

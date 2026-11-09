@@ -2,12 +2,14 @@
 
 import base64
 import time
+from types import SimpleNamespace
 from datetime import datetime
 from app.core.time import beijing_now
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.ai.preset_config import is_image_preset, is_studio_preset, validate_parameters, validate_image_parameters
 from app.ai.models import AiPreset, AiProvider
 from app.ai.call_service import chat
 from app.ai.image_service import edit_image, generate_image
@@ -92,6 +94,7 @@ def get_preset(db: Session, preset_id: int) -> AiPreset:
 
 
 def create_preset(db: Session, data: dict) -> AiPreset:
+    validate_parameters(data.get("parameters"))
     exists = (
         db.query(AiPreset)
         .filter(
@@ -102,6 +105,10 @@ def create_preset(db: Session, data: dict) -> AiPreset:
     )
     if exists:
         raise ValueError(f"Preset 名称 '{data['preset_name']}' 已存在")
+
+    candidate = SimpleNamespace(preset_name=data["preset_name"], model=data.get("model") or "", parameters=data.get("parameters"))
+    if is_studio_preset(candidate):
+        validate_image_parameters(candidate.parameters, candidate.model)
 
     # 校验 provider 存在
     provider = get_provider(db, data["provider_id"])
@@ -123,7 +130,11 @@ def create_preset(db: Session, data: dict) -> AiPreset:
 
 
 def update_preset(db: Session, preset_id: int, data: dict) -> AiPreset:
+    validate_parameters(data.get("parameters"))
     p = get_preset(db, preset_id)
+    candidate = SimpleNamespace(preset_name=data.get("preset_name", p.preset_name), model=data.get("model", p.model), parameters=data.get("parameters", p.parameters))
+    if is_studio_preset(candidate):
+        validate_image_parameters(candidate.parameters, candidate.model)
     if "preset_name" in data and data["preset_name"] != p.preset_name:
         exists = (
             db.query(AiPreset)
@@ -166,7 +177,7 @@ def test_preset(db: Session, preset_id: int, test_message: str) -> dict:
     p = get_preset(db, preset_id)
     start = time.time()
     try:
-        if p.preset_name.startswith("design_image_generation"):
+        if is_image_preset(p):
             result = generate_image(
                 db=db,
                 preset_name=p.preset_name,
@@ -206,6 +217,30 @@ def test_preset_with_image(
         return invalid
 
     p = get_preset(db, preset_id)
+    if is_image_preset(p) and p.preset_name not in COMPOSITE_PRESET_NAMES:
+        start = time.time()
+        try:
+            images = [{"filename": _image_filename("reference", content_type),
+                       "content": image_bytes, "content_type": content_type}]
+            if reference_image_bytes:
+                reference_type = reference_content_type or "application/octet-stream"
+                invalid = _validate_test_image(reference_image_bytes, reference_type)
+                if invalid:
+                    return invalid
+                images.append({"filename": _image_filename("reference2", reference_type),
+                               "content": reference_image_bytes, "content_type": reference_type})
+            if len(images) > (p.parameters or {}).get("max_reference_images", 5):
+                raise ValueError("测试参考图数量超过预设上限")
+            result = edit_image(
+                db=db, preset_name=p.preset_name, prompt=test_message,
+                images=images,
+                caller_module="ai_preset_test",
+            )
+        except Exception as exc:
+            return _test_error_result(exc, start)
+        return {"status": "ok", "response": result.get("content", ""),
+                "tokens_used": result.get("tokens_used"), "duration_ms": result.get("duration_ms")}
+
     if p.preset_name in COMPOSITE_PRESET_NAMES:
         if not reference_image_bytes:
             return {

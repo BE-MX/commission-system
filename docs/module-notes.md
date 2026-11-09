@@ -968,18 +968,7 @@ frontend/src/
 
 ## 设计部 AI 生图工作台（design_image，2026-08-05）
 
-**多模型选择（2026-08-17）**：输入框工具栏新增服务端模型目录，默认仍为 `gpt-image-2`。浏览器只提交模型 ID；后端固定映射到独立 Preset，任务落库时同时快照 `preset_name/model/provider_id/config_version/rate_card`，多输出确认和失败重试均沿用原模型，不能由客户端直接指定 Preset 或 Provider。目录如下：
-
-| 页面名称 | model | Preset | API style |
-|---|---|---|---|
-| GPT Image 2 | `gpt-image-2` | `design_image_generation` | `/v1/images/*` |
-| GPT Image 2.5 | `gpt-image-2.5-sunburst` | `design_image_generation_GPT_image_25` | `/v1/images/*` |
-| GPT Image 2.6 Sunburst C | `gpt-image-2.6-sunburst-c` | `design_image_generation_GPT_image_25` | `/v1/images/*` |
-| Grok Image 2 | `grok-imagine-image-2.0` | `design_image_generation_grok_image_2` | `/v1/images/*` |
-| Nano Banana Pro | `gemini-3-pro-image` | `design_image_generation_nano_banana_pro` | `chat` |
-| Nano Banana 2 | `gemini-3.1-flash-image` | `design_image_generation_nano_banana_2` | `chat` |
-
-每个 Preset 必须启用并绑定带 API Key 的 `direct + openai` Provider。GPT Image 2 与 Gemini 仅允许 `https://api.teamorouter.cn` 或其 `/v1` 形式；GPT Image 2.5、GPT Image 2.6 Sunburst C 与 Grok Image 2 仅允许 `https://api.openlux.ai` 或其 `/v1` 形式。2.5 与 2.6 C 沿用同一配置槽，目录按 preset 名和实际 model 联合匹配，仅当前配置版本可用；保留旧模型 ID 以识别历史任务和确认消息，不对旧请求静默换模型。Gemini 两项必须配置 `parameters.api_style="chat"`。配置不完整的目录项仍显示“未配置”且不可选，后端同样返回 503。2026-08-26 openlux 目录与真实 generation、单参考图 edit、双参考图 edit 已验证 `grok-imagine-image-2.0`，替换原先未配置的 `grok-image-2` 占位 ID。Grok Preset 使用 `response_format=b64_json / output_format=jpeg / n=1`，请求 size 在 AI facade 转为 aspect_ratio，保留统一任务与重试路径；不承诺精确像素或质量档位效果。 Grok 最多 3 张输入图片（含基准图）；超过上限在入队前返回可操作的删图提示。真实 facade + runtime 解码已验证正方形生成 1024×1024 和三图编辑竖图 832×1248。公共图片传输层同时修复 gzip/deflate 响应被重复解压的问题。Nano Banana Pro 尚未配置，保持不可用。Gemini generation 走 chat-style，兼容 Markdown data URL 与 `message.images[]`；size/quality 转成提示词软约束。
+**多模型选择（2026-11-09 更新）**：工具栏目录按 AI 接入管理的已登记生图预设动态生成，不再固定型号或供应商域名。浏览器提交 `/config.models[].id`（预设名）；实际型号、Provider、参数和价格由后台读取并快照。预设控制显示名称、API 风格、尺寸/质量选项及参考图上限。新确认消息绑定原预设，重试使用该预设当前配置；配置指纹防止执行中无声切换。既有 Grok 的三图上限与宽高比映射作为旧配置缺省值保留，可在后台覆盖；chat-style 图片模型把尺寸/质量写入提示词软约束。配置项与新型号接入方式见本文末「AI 接入管理动态配置」。
 
 **上下文口径**：会话记录用于展示、恢复和追溯，不等于把完整历史重新喂给模型。每轮只发送显式 `base_asset_id`、最多 4 张本轮参考图和当前 prompt；生成结果用 `source_asset_id` 形成版本链。因此连续编辑的成本主要取决于本轮输入图片与输出质量，不会因聊天轮数自动线性累加全部历史图片。
 
@@ -1102,9 +1091,9 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 **私有存储**：`AI_CHAT_STORAGE_ROOT` 默认 `D:\WORKSOURCE\ai-chat`，不挂载到 `/uploads`。文件以 UUID 名写入 `images/` 或 `documents/`，数据库只存相对路径；读取仍须 `ai_chat:read` + owner 校验。部署时该目录及父目录只允许后端服务账号写入，并保留代码侧的绝对路径、父级穿越、symlink/junction/reparse point 拒绝。
 
-**TeamRouter 配置红线**：方案对话必须新建或复用一个独立的 `provider_type=direct`、`api_type=anthropic` TeamRouter Provider。**绝不能把现有生图使用的 TeamRouter OpenAI Provider 改成 Anthropic**，否则 `/v1/images/*` 生图协议会被切成 `/v1/messages`，直接破坏生图链路。创建并启用 Preset `customer_ai_chat`，model 固定 `claude-fable-5`，绑定上述 Anthropic Provider，并写入前述附件安全 system prompt。Preset/Provider 缺失、禁用、协议/模型不匹配时返回“方案对话服务尚未配置，请联系管理员”，不回退其他 Provider 或模型。
+**模型配置（2026-11-09）**：方案对话通过 `customer_ai_chat` 预设读取实际型号，支持 direct/OpenAI 与 direct/Anthropic；不再与 `AI_CHAT_MODEL` 环境变量比对。API 地址、Key、型号和参数在 AI 接入管理配置，对后续新调用生效。图文功能需管理员选用支持图片输入的模型；不要为改一个业务而更换其他生图预设共用 Provider 的协议，应另建 Provider。预设/供应商缺失或停用时仍明确不可用，不回退其他配置。
 
-**部署顺序**：① 在目标环境为 `AI_CHAT_STORAGE_ROOT` 建私有目录并授予后端服务账号读写权限；② `cd backend && alembic upgrade head` 应用迁移 100；③ 重启后端完成 `ai_chat:read/write/admin` 权限 seed，并在角色管理中分配 read/write；④ 在“系统管理 → AI 接入管理”配置独立 TeamRouter Anthropic Provider 与 `customer_ai_chat` Preset（API Key 只存后台配置，不进 git）；⑤ 用 `GET /api/ai-chat/config` 确认 `configured=true` 后再开放入口。用户点击停止只会关闭本次流、保存部分内容并标记 `stopped`；供应商可能已接收请求，界面和运维说明都不得承诺取消计费。
+**部署顺序**：① 在目标环境为 `AI_CHAT_STORAGE_ROOT` 建私有目录并授予后端服务账号读写权限；② `cd backend && alembic upgrade head` 应用迁移 100；③ 重启后端完成 `ai_chat:read/write/admin` 权限 seed，并在角色管理中分配 read/write；④ 在“系统管理 → AI 接入管理”配置适用协议的 Provider 与 `customer_ai_chat` Preset（API Key 只存后台配置，不进 git）；⑤ 用 `GET /api/ai-chat/config` 确认 `configured=true` 后再开放入口。用户点击停止只会关闭本次流、保存部分内容并标记 `stopped`；供应商可能已接收请求，界面和运维说明都不得承诺取消计费。
 
 ## WhatsApp 实时翻译（whatsapp_translation，2026-09-03）
 
@@ -1360,3 +1349,19 @@ Agent 委派只允许现有 customer_order_copilot 的只读准备型工具。re
 - 时间线只给「截图 N」按钮看原图，不展开 OCR 文本（OCR 文本只在核对步 AI 失败时供抄写）。
 - 待办页仍只按类型计数卡筛选；跟进总览已支持录入人、日期和客户/内容查询。
 - 决策台画像接入、小程序/微信 Agent 录入、历史 Excel 导入三项留到二期（规格第七节）。
+
+
+## AI 接入管理动态配置（2026-11-09）
+
+- AI 生图目录从 Preset 实时读取，取消型号枚举及 TeamRouter/Openlux 域名绑定。已有 `design_image_generation` / `design_image_generation_*` 自动归入目录；其他预设勾选「在 AI 生图中使用」写入 `parameters.studio.enabled=true`，设 false 从目录移除。只允许启用、未删除的 direct/OpenAI、HTTPS 和有效认证配置。凭据及安全下载校验仍留在服务端。
+- `studio.label` 控制名称；`studio.sizes/qualities` 控制选项，根层 `size/quality` 控制默认值（必须在列表中，否则取首项）。客户端本轮选择覆盖默认。`api_style=images/chat` 决定调用协议；`size_parameter=aspect_ratio` 将尺寸或比例转成 `W:H`，配置阶段校验格式。`max_reference_images` 为 0～5，可限制纯文生成或参考图数量。
+- `request_parameters` 放供应商扩展参数，Images 编辑的对象/数组按 JSON 字符串写入 multipart；不能覆盖模型、消息、提示词、图像输入、工具、stream 或 n。管理元数据不发给模型；文本流和非流共用参数提取。Anthropic max_tokens 和响应图片格式使用合并后的有效值，编辑摘参重试使用最终请求格式。Studio 单任务只接受单张非流式结果。
+- 方案对话和客户生图不再检查固定型号。OCR、知识 AI、展会、翻译等原有业务仍按自己的预设名调用统一 facade；保留业务输出结构、Agent 工具/预算、对外 Gateway 文本参数白名单，不把换型号等同于供应商自动支持新协议。Agent 允许的参数仍服从 Profile 上限；Gateway 可识别管理元数据和嵌套的受允许文本参数。
+- 不再于启动时自动改写已存在的 TeamRouter 地址或发票截图预设模型；种子缺失初始化继续工作。历史提示词升级的原有签名保护保持不变。换型号保留业务预设名；新建任意名称并不会自动重绑已有业务。
+- 新请求用当前配置；排队图片任务继续校验配置指纹，漂移明确失败而非无声换模型。重试是新请求，使用同一预设的当前配置。预设参数 JSON 非法时禁止保存，不再清空原参数。
+- 完整配置示例、覆盖范围与验证记录见 [交付记录](reports/2026-11-09-ai-runtime-configuration.md)。
+
+
+### AI 运行配置维护（2026-11-09）
+
+提供商运行参数已迁入 `runtime_config`，预设可用 `transport` 覆盖；图片/知识库的指纹与冻结配置必须包含新增的实际调用字段。图片摘参重试与网络重试共用尝试次数预算，异常计数累计此前已发请求。知识库校验指纹后冻结同一份配置供正文及语义核验使用，租约按该快照的有效超时延长。生图系统提示词现会参与生成/编辑请求并纳入指纹。启动种子只创建缺失配置，不再覆写已有提示词。运维迁移约束与前台字段见 [参数维护交付报告](reports/2026-11-09-ai-admin-settings.md)。

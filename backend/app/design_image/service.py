@@ -24,6 +24,7 @@ from app.core.time import beijing_now, beijing_now_aware, to_beijing_naive, utc_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, noload
 
+from app.ai.preset_config import studio_generation_options
 from app.ai.models import AiCallLog
 from app.ai.service import build_image_config_version
 from app.auth.models import ArkUser
@@ -57,9 +58,8 @@ from app.design_image.schemas import (
 logger = logging.getLogger("commission")
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 UTC = timezone.utc
-# Compatibility aliases retained for callers/tests that import the original default.
-PRESET_NAME = model_catalog.IMAGE_MODEL_OPTIONS[0].preset_name
-EXPECTED_MODEL = model_catalog.DEFAULT_IMAGE_MODEL_ID
+# Stable default business preset.
+PRESET_NAME = model_catalog.DEFAULT_IMAGE_MODEL_ID
 ACTIVE_STATUSES = ("queued", "running")
 JOB_STATUSES = ("queued", "running", "succeeded", "failed")
 NOT_FOUND_MESSAGE = "资源不存在"
@@ -710,11 +710,24 @@ def _enforce_clarification_guard(
 def _preset_snapshot(
     db: Session,
     model_id: str = model_catalog.DEFAULT_IMAGE_MODEL_ID,
+    *, input_count: int | None = None, allow_legacy_model: bool = True,
+    size: str | None = None, quality: str | None = None,
 ) -> tuple[str, str, int, dict | None, dict]:
-    configured = model_catalog.configured_model_row(db, model_id)
+    configured = model_catalog.configured_model_row(db, model_id, allow_legacy_model=allow_legacy_model)
     if configured is None:
         raise DesignImageConfigurationError("生图服务配置不可用，请联系管理员")
     _option, preset, provider = configured
+    options = studio_generation_options(preset.parameters)
+    if (size is not None and size not in options["sizes"]) or (quality is not None and quality not in options["qualities"]):
+        raise DesignImageValidationError("所选模型的尺寸或质量配置已变更，请刷新页面后重新选择。", code="model_options_changed")
+    reference_limit = (preset.parameters or {}).get(
+        "max_reference_images", 5
+    )
+    if input_count is not None and input_count > reference_limit:
+        raise DesignImageValidationError(
+            f"所选模型最多支持 {reference_limit} 张输入图片（含基准图），请移除多余参考图后重试。",
+            code="model_reference_limit", public_meta={"max_input_images": reference_limit},
+        )
     rate_card = (preset.parameters or {}).get("rate_card")
     if rate_card is not None and not isinstance(rate_card, dict):
         raise DesignImageConfigurationError("生图价格配置不可用，请联系管理员")
@@ -845,6 +858,19 @@ def _attach_assets_to_message(
                 asset.expires_at = None
 
 
+def _resolve_turn_defaults(db: Session, payload: TurnCreate, *, allow_legacy_model: bool = True) -> TurnCreate:
+    if payload.size is not None and payload.quality is not None:
+        return payload
+    configured = model_catalog.configured_model_row(db, payload.model, allow_legacy_model=allow_legacy_model)
+    if configured is None:
+        raise DesignImageConfigurationError("生图服务配置不可用，请联系管理员")
+    options = studio_generation_options(configured[1].parameters)
+    return payload.model_copy(update={
+        "size": payload.size if payload.size is not None else options["default_size"],
+        "quality": payload.quality if payload.quality is not None else options["default_quality"],
+    })
+
+
 def _create_jobs_for_intent(
     db: Session,
     owner_user_id: int,
@@ -856,9 +882,12 @@ def _create_jobs_for_intent(
     references: list[DesignImageAsset],
     *,
     operation_time: datetime,
+    allow_legacy_model: bool = True,
 ) -> tuple[DesignImageJob, ...]:
+    payload = _resolve_turn_defaults(db, payload, allow_legacy_model=allow_legacy_model)
     preset_name, model, provider_id, pricing_snapshot, config_version = _preset_snapshot(
-        db, payload.model
+        db, payload.model, input_count=len(references) + (base is not None), size=payload.size, quality=payload.quality,
+        allow_legacy_model=allow_legacy_model,
     )
     labels: tuple[str | None, ...] = intent.labels if intent.mode == "separate" else (None,)
     rows: list[DesignImageJob] = []
@@ -1010,12 +1039,12 @@ def create_turn(
             )
             for asset_id in payload.reference_asset_ids
         ]
-        if payload.model == "grok-imagine-image-2.0" and len(references) + (base is not None) > 3:
-            raise DesignImageValidationError(
-                "Grok Image 2 最多支持 3 张输入图片（含基准图），请移除多余参考图后重试。",
-                code="model_reference_limit",
-                public_meta={"max_input_images": 3},
-            )
+        if intent.mode == "clarify":
+            payload = _resolve_turn_defaults(db, payload)
+            selection_id = _preset_snapshot(
+                db, payload.model, input_count=len(references) + (base is not None),
+                size=payload.size, quality=payload.quality,
+            )[0]
         message = DesignImageMessage(
             session_id=session.id,
             role="user",
@@ -1043,7 +1072,8 @@ def create_turn(
                     "request": {
                         "base_asset_id": payload.base_asset_id,
                         "reference_asset_ids": list(payload.reference_asset_ids),
-                        "model": payload.model,
+                        "model": selection_id,
+                        "preset_name": selection_id,
                         "size": payload.size,
                         "quality": payload.quality,
                     },
@@ -1148,7 +1178,7 @@ def resolve_message_action(
             session_id=session.id,
             base_asset_id=request.base_asset_id,
             reference_asset_ids=list(request.reference_asset_ids),
-            model=request.model,
+            model=request.preset_name or request.model,
             size=request.size,
             quality=request.quality,
         )
@@ -1206,6 +1236,7 @@ def resolve_message_action(
             base,
             references,
             operation_time=_beijing_naive(now),
+            allow_legacy_model=request.preset_name is None,
         )
         stored.update(
             {
@@ -1272,9 +1303,6 @@ def retry_job(
                 db, owner_user_id, winner.id, context="retry"
             )
         _enforce_capacity(db, owner_user_id, now, session_id=old.session_id)
-        preset_name, model, provider_id, pricing_snapshot, config_version = _preset_snapshot(
-            db, old.model or model_catalog.DEFAULT_IMAGE_MODEL_ID
-        )
         links = db.execute(
             select(DesignImageJobAsset)
             .where(DesignImageJobAsset.job_id == old.id)
@@ -1286,6 +1314,11 @@ def retry_job(
         )
         operation_time = _beijing_naive(now)
         session.updated_at = operation_time
+        preset_name, model, provider_id, pricing_snapshot, config_version = _preset_snapshot(
+            db, old.preset_name, input_count=len(links) + (old.base_asset_id is not None),
+            allow_legacy_model=False,
+            size=(old.parameters or {}).get("size"), quality=(old.parameters or {}).get("quality"),
+        )
         job = DesignImageJob(
             owner_user_id=owner_user_id,
             session_id=old.session_id,

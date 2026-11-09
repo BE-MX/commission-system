@@ -1,3 +1,11 @@
+## 2026-11-09 AI 动态模型与提供商/预设参数维护（Codex，Git 交付，未部署）
+
+- 本批同时交付动态生图目录和运行参数维护：普通/流式/Agent/图片调用读取管理端配置；型号、供应商、提示词、端点、认证、超时、重试、图片选项与受控工作流参数可维护。去掉 ACCIO 固定 IP、型号门槛和启动时覆写管理员提示词。
+- 新请求使用当前配置；图片任务保持原预设身份与配置指纹校验，知识库同一任务使用冻结配置。新增迁移 `254_ai_provider_runtime`，只完成隔离 SQLite / MySQL 离线 SQL 验证，未执行生产迁移。
+- 最终扩展后端回归 745 项通过，2 项 main 既有基线失败；前端回归、构建、独立审查与实际页面模拟 API 的保存/重开及窄屏验收通过。完整证据与此前基线问题见交付报告。
+- 2026-11-09 亮哥授权提交、合并并推送，Git 交付结果以仓库记录为准；本轮不部署、不改生产配置、不调用外部付费模型。部署前必须排空 Studio、客户图片、展会试戴与美颜的待执行/运行中任务，避免迁移影响旧任务指纹。
+- 交付报告：[参数维护](reports/2026-11-09-ai-admin-settings.md)、[动态目录与统一配置](reports/2026-11-09-ai-runtime-configuration.md)。
+
 ## 2026-11-09 GPT Image 2.6 Sunburst C 生图目录支持（Codex，Git 交付，未部署）
 
 - 工作区 `D:/MyProgram/commission-system-codex-gpt-image-26`，分支 `codex/gpt-image-26-catalog`。修复已将 `design_image_generation_GPT_image_25` 配为 `gpt-image-2.6-sunburst-c`、但工作台目录和请求 schema 不接受新 ID 的问题。新增「GPT Image 2.6 Sunburst C」，按 preset 名与精确 model 联合匹配；2.5/2.6 共用原配置槽，仅当前版本可用，旧任务和确认消息仍可识别，不静默换型号。

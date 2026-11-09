@@ -33,6 +33,7 @@ class AiProvider(Base):
         comment="API 协议类型: openai=Chat Completions, anthropic=Messages",
     )
     extra_headers = Column(JSON, nullable=True, comment="附加请求头")
+    runtime_config = Column(JSON, nullable=True, comment="AI transport and protocol options")
     is_enabled = Column(Boolean, nullable=False, default=True, comment="0=禁用 1=启用")
     timeout_sec = Column(
         SmallInteger, nullable=False, default=60, comment="请求超时秒数"

@@ -490,7 +490,7 @@ def test_two_workers_concurrently_fill_exact_cap_then_serve_other_owner(
             AiPreset(
                 preset_name=service.PRESET_NAME,
                 provider_id=provider.id,
-                model=service.EXPECTED_MODEL,
+                model="gpt-image-2",
                 parameters={"output_format": "png"},
                 is_enabled=True,
             )
@@ -518,7 +518,7 @@ def test_two_workers_concurrently_fill_exact_cap_then_serve_other_owner(
                     prompt_snapshot="batch",
                     parameters={"size": "1024x1024", "quality": "medium"},
                     preset_name=service.PRESET_NAME,
-                    model=service.EXPECTED_MODEL,
+                    model="gpt-image-2",
                     idempotency_key=f"cap-{owner_index}-{job_index}",
                     created_at=_utcnow() + timedelta(seconds=owner_index),
                 )
@@ -632,7 +632,7 @@ def test_worker_and_http_concurrent_paths_finish_without_deadlock_or_excess(
             AiPreset(
                 preset_name=service.PRESET_NAME,
                 provider_id=provider.id,
-                model=service.EXPECTED_MODEL,
+                model="gpt-image-2",
                 parameters={"output_format": "png"},
                 is_enabled=True,
             )
@@ -657,7 +657,7 @@ def test_worker_and_http_concurrent_paths_finish_without_deadlock_or_excess(
                 prompt_snapshot="queued",
                 parameters={"size": "1024x1024", "quality": "medium"},
                 preset_name=service.PRESET_NAME,
-                model=service.EXPECTED_MODEL,
+                model="gpt-image-2",
                 idempotency_key="worker-http-existing",
                 created_at=_utcnow(),
             )

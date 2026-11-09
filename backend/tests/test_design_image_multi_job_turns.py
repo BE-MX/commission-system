@@ -44,7 +44,7 @@ def configured_owner(db):
         AiPreset(
             preset_name=service.PRESET_NAME,
             provider_id=provider.id,
-            model=service.EXPECTED_MODEL,
+            model="gpt-image-2",
             parameters={"output_format": "png"},
             is_enabled=True,
         )
@@ -144,7 +144,7 @@ def test_clarification_resolution_preserves_selected_model(configured_owner, db,
     payload = payload.model_copy(update={"model": model})
 
     pending = service.create_turn(db, owner.id, payload)
-    assert pending.clarification.interaction_json["request"]["model"] == model
+    assert pending.clarification.interaction_json["request"]["model"] == preset_name
 
     resolved = service.resolve_message_action(
         db,
@@ -536,7 +536,7 @@ def test_active_retry_of_single_root_does_not_look_like_batch(configured_owner, 
         prompt_snapshot="single",
         parameters={"size": "1024x1024", "quality": "medium"},
         preset_name=service.PRESET_NAME,
-        model=service.EXPECTED_MODEL,
+        model="gpt-image-2",
         idempotency_key="single-root",
     )
     db.add(root)
@@ -550,7 +550,7 @@ def test_active_retry_of_single_root_does_not_look_like_batch(configured_owner, 
         prompt_snapshot="single",
         parameters={"size": "1024x1024", "quality": "medium"},
         preset_name=service.PRESET_NAME,
-        model=service.EXPECTED_MODEL,
+        model="gpt-image-2",
         idempotency_key="single-retry",
         retry_of_job_id=root.id,
     )
@@ -652,3 +652,34 @@ def test_turn_replay_rejects_malformed_confirmation_instead_of_returning_it(
         )
 
     assert str(exc.value) == "确认状态异常，请刷新页面后重新发送请求。"
+
+
+def test_pending_confirmation_rechecks_current_reference_limit(configured_owner, db):
+    owner, session = configured_owner
+    reference = _draft(db, owner.id, session.id, suffix="limit-change")
+    db.commit()
+    payload = _turn(session.id, "limit-change", "请生成2个角度的人像图").model_copy(update={"reference_asset_ids": [reference.id]})
+    pending = service.create_turn(db, owner.id, payload)
+    preset = db.query(AiPreset).filter_by(preset_name=service.PRESET_NAME).one()
+    preset.parameters = {"max_reference_images": 0}
+    db.commit()
+    with pytest.raises(service.DesignImageValidationError) as caught:
+        service.resolve_message_action(db, owner.id, session.id, pending.clarification.id,
+            MessageActionRequest(request_id="resolve-limit", action="choose_output_mode", mode="composite"))
+    assert caught.value.code == "model_reference_limit"
+    assert caught.value.public_meta == {"max_input_images": 0}
+    assert db.query(DesignImageJob).count() == 0
+
+
+def test_new_confirmation_never_falls_back_after_preset_rename(configured_owner, db):
+    owner, session = configured_owner
+    pending = service.create_turn(db, owner.id, _turn(session.id, "rename-pending", "请生成2个角度的人像图"))
+    preset = db.query(AiPreset).filter_by(preset_name=service.PRESET_NAME).one()
+    preset.preset_name = "design_image_generation_renamed"
+    db.add(AiPreset(preset_name="design_image_generation_other", provider_id=preset.provider_id,
+                   model=service.PRESET_NAME, parameters={}, is_enabled=True))
+    db.commit()
+    with pytest.raises(service.DesignImageConfigurationError):
+        service.resolve_message_action(db, owner.id, session.id, pending.clarification.id,
+            MessageActionRequest(request_id="rename-confirm", action="choose_output_mode", mode="composite"))
+    assert db.query(DesignImageJob).count() == 0

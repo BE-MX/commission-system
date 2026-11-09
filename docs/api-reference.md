@@ -1296,7 +1296,7 @@ apply 在一个事务内为启用但缺少映射的工艺补建映射，再更�
 | GET | `/assets/{asset_id}/content` | read | `download=false`、`thumbnail=false`；鉴权预览/缩略图/下载 |
 | GET | `/usage` | admin | 可按 `owner_user_id`、`start_at`、`end_at`、`status` 过滤 |
 
-`turns` 请求：`prompt` 1～4000 字；`request_id` 1～64，仅字母、数字、下划线、连字符；`model` 仅允许服务端目录中的 `gpt-image-2 / gpt-image-2.5-sunburst / gpt-image-2.6-sunburst-c / grok-imagine-image-2.0 / gemini-3-pro-image / gemini-3.1-flash-image`，默认 `gpt-image-2`，且所选项必须在 `/config.models` 中 `available=true`；`size` 仅 `1024x1024 / 1024x1536 / 1536x1024`；`quality` 仅 `low / medium / high`；`reference_asset_ids` 最多 4 个、正整数且不重复；Grok 的输入图总数（含 `base_asset_id`）最多 3 张，超限返回 400 + `model_reference_limit`，不创建消息或任务；`base_asset_id` 不得同时出现在参考图列表。无 `base_asset_id` 是 generation，有则是 edit；连续对话不会回传全部历史图，只发送显式基准图、本轮参考图和本轮要求。模型 ID 只映射服务端固定 Preset，客户端不能指定任意 Preset、Provider 或 API 地址。
+`turns` 请求：`prompt` 1～4000 字；`request_id` 1～64，仅字母、数字、下划线、连字符。`model` 传 `/config.models[].id`（管理员登记的生图预设名，默认 `design_image_generation`），必须 `available=true`；服务器读取预设实际型号与 Provider，客户端不能指定 API 地址/凭据。升级前的型号字符串仅在无同名预设且唯一匹配可用生图预设时解析。每项返回 `sizes / qualities / default_size / default_quality`，由预设参数配置；请求省略 `size / quality` 时取当前预设默认，显式值必须在该项选项内。`reference_asset_ids` 最多 4 个、正整数且不重复；总输入数含基准图，另受预设 `max_reference_images` 限制（0～5；既有 Grok 默认为 3，其余默认 5）；超限返回 400 + `model_reference_limit`。尺寸/质量配置变更导致旧选择失效返回 `model_options_changed`。创建、确认、重试都重新校验；新确认快照和重试严格按原预设解析，预设重命名后不改投其他供应商。`base_asset_id` 不得同时出现在参考图列表。无基准图为 generation，有则 edit；只发送本轮明确的图片与要求。任务响应 `model` 为实际调用型号快照，配置项 `id` 为稳定业务预设标识。
 
 创建、确认和重试三类 mutation 统一返回 `data.mode / data.jobs[] / data.clarification`，不再返回单数 `job` 字段。`mode=clarification` 时不创建 job、不扣生成额度；确认 `composite` 后创建 1 个同画布 job，只占 1 次生成额度并按 1 个 job 计费；确认 `separate` 后按标准角度或版本创建 2～4 个独立 job，N 张图占 N 次生成额度并分别计费。判定是确定性的：明确写出“同一张图/同一张画布/拼图/三视图/四视图/排版展示”时直接走 `composite`；明确写出“分别生成/每个角度一张/独立图片/单独出图”时直接走 `separate`；只出现 2～4 张、角度或版本数量而未说明输出方式时返回 clarification。一次最多 4 张；超过上限返回 `multi_output_limit`，文案固定为“一次最多生成 4 张，请拆成多轮请求。”且 `meta.max_outputs=4`。
 同一批独立图片共享原始 user message，但每个 job 有独立状态、响应消息、输出资产和重试链。任一批量 root job 仍为 queued/running 时，该用户的所有新 turn（包括其他会话的普通单图请求）和所有确认 action 均被阻止；全部终态后恢复。`DESIGN_IMAGE_MAX_ACTIVE_PER_USER` 是 worker 的每用户 running 上限，不代表 `/jobs/active` 只返回一个任务。
@@ -3077,3 +3077,10 @@ stock条目含external_id、mode、warehouse_id、local_sku_id、quality、整�
 | POST `/api/commerce-shadow/runs/{id}/receipts` | shadow:admin+完整闭包；候选ExecutionReport，服务端重新生成源bundle并核对固定水位，禁止上传targetURL/seed/正式预期结果 |
 
 新增权限为commerce_transition:read/write/admin、commerce_shadow:read/write/admin。菜单/按钮能力不代替提交时后端授权。独立进程及旧路线原始映射契约见[说明](../backend/app/commerce_shadow/README.md)；完整交接/settlement接口见前文“完整订单承接与放行”。
+
+
+### AI 提供商运行参数（2026-11-09）
+
+`POST /api/ai/providers`、`PUT /api/ai/providers/{id}` 接收 `runtime_config` JSON，列表返回该字段；需 `ai:admin`。字段定义以 `app/ai/provider_config.py` 为准：分操作相对路径、认证头/前缀、Anthropic 版本、Token 字段映射、请求超时、图片重试/代理及连通性探测选项。未知字段或非法类型拒绝保存。`extra_headers` 可维护普通头和 `{api_key}` 占位符；已存认证值返回 `__KEEP_EXISTING_SECRET__`，更新时代表保留，不得新建此标记。管理员配置的自定义认证头同样受保护。
+
+预设 `parameters.transport` 覆盖当前提供商的传输默认，`parameters.workflow` 调整展会/培训已有重试及展会尺寸。`test_mode=text|image` 与 Studio 上架开关分离。内部配置不透传上游；普通请求不能覆盖模型、消息、工具等调用身份。字段、优先级、业务上限及迁移条件见 [交付报告](reports/2026-11-09-ai-admin-settings.md)。

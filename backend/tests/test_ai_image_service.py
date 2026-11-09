@@ -498,7 +498,7 @@ def test_image_call_uses_validated_snapshot_after_pending_log_commit(
         captured["decrypted"] = api_key
         return {}
 
-    def fake_send(build_request, timeout_sec, *args):
+    def fake_send(build_request, timeout_sec, *args, **kwargs):
         class Client:
             def build_request(self, method, url, **kwargs):
                 captured.update(method=method, url=url, request_kwargs=kwargs)
@@ -871,6 +871,7 @@ def test_edit_image_omits_large_base64_from_response_snapshot(db, monkeypatch):
 def test_grok_image_requests_translate_size_to_aspect_ratio(builder, size, ratio):
     from types import SimpleNamespace
     preset = SimpleNamespace(model="grok-imagine-image-2.0", parameters={
+        "size_parameter": "aspect_ratio",
         "response_format": "b64_json", "output_format": "jpeg", "size": "1024x1024",
     })
     payload = builder(preset, "draw a mug", size=size, quality="medium")

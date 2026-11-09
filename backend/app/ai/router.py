@@ -9,6 +9,7 @@ from app.api.deps import get_db
 from app.auth.dependencies import require_permission
 from app.core.response import ok as _ok
 from app.ai import service
+from app.ai.provider_config import public_extra_headers
 from app.ai.schemas import (
     ProviderCreate, ProviderUpdate, PresetCreate, PresetUpdate,
     PresetTestRequest, ChatRequest, DelegateRequest,
@@ -48,7 +49,8 @@ def list_providers(
             "api_base": p.api_base,
             "api_key": _mask_api_key(p.api_key),
             "api_type": getattr(p, "api_type", "openai") or "openai",
-            "extra_headers": p.extra_headers,
+            "extra_headers": public_extra_headers(p.extra_headers, (p.runtime_config or {}).get("auth_header")),
+            "runtime_config": p.runtime_config,
             "is_enabled": p.is_enabled,
             "timeout_sec": p.timeout_sec,
             "remark": p.remark,

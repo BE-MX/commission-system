@@ -7,6 +7,7 @@
 - AI 返回 JSON 需清洗 markdown 围栏；字段值不可直接信任
 """
 
+from app.ai.workflow_config import workflow_options
 import base64
 import json
 import logging
@@ -219,9 +220,12 @@ def _call_with_ai_retry(
     *,
     stage: str,
     result_id: int | None = None,
+    preset_name: str | None = None,
 ):
-    """Run one provider operation with exactly three retry opportunities."""
-    for attempt in range(AI_MAX_RETRIES + 1):
+    """Use configured retries without exceeding the business retry budget."""
+    options = workflow_options(db, preset_name) if preset_name else {}
+    max_retries = min(AI_MAX_RETRIES, options.get("max_attempts", AI_MAX_RETRIES + 1) - 1)
+    for attempt in range(max_retries + 1):
         try:
             result = call()
             _clear_own_ai_issue(
@@ -229,7 +233,7 @@ def _call_with_ai_retry(
             )
             return result
         except Exception as exc:
-            if not _is_retryable_ai_error(exc) or attempt >= AI_MAX_RETRIES:
+            if not _is_retryable_ai_error(exc) or attempt >= max_retries:
                 raise
             retry_count = attempt + 1
             _set_ai_issue(
@@ -243,12 +247,12 @@ def _call_with_ai_retry(
                 result_id=result_id,
             )
             msg = (
-                f"[expo] {stage} transient error, retry {retry_count}/{AI_MAX_RETRIES} "
+                f"[expo] {stage} transient error, retry {retry_count}/{max_retries} "
                 f"session={session_id} result={result_id}: {type(exc).__name__}: {exc}"
             )
             logger.warning(msg)
             print(msg, flush=True)
-            time.sleep(_AI_RETRY_BACKOFF_SEC * retry_count)
+            time.sleep(options.get("retry_backoff_sec", _AI_RETRY_BACKOFF_SEC) * retry_count)
 
 
 def _image_message(text: str, image_paths: list[Path]) -> list[dict]:
@@ -651,21 +655,23 @@ def _chat_with_transient_retry(
     )
     if session_id is not None:
         return _call_with_ai_retry(
-            call, db, session_id, stage="analysis",
+            call, db, session_id, stage="analysis", preset_name=preset_name,
         )
 
     # Sales strategy is not shown on the kiosk.  Preserve its existing policy:
     # retry 502/503 twice, and leave timeout/direct errors to the caller.
     last_exc: Exception | None = None
-    for attempt in range(3):
+    options = workflow_options(db, preset_name)
+    attempts = min(3, options.get("max_attempts", 3))
+    for attempt in range(attempts):
         try:
             return call()
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code not in {502, 503}:
                 raise
             last_exc = exc
-        if attempt < 2:
-            time.sleep(_AI_RETRY_BACKOFF_SEC * (attempt + 1))
+        if attempt < attempts - 1:
+            time.sleep(options.get("retry_backoff_sec", _AI_RETRY_BACKOFF_SEC) * (attempt + 1))
     raise last_exc
 
 
@@ -679,6 +685,7 @@ def _chat_json(
 ) -> dict:
     """chat + JSON 解析；解析失败带纠错反馈重试（模型偶发输出非法 JSON，
     如字符串值内未转义双引号——线上 session=9/10 实case）。"""
+    retries = min(retries, workflow_options(db, preset_name).get("json_repair_attempts", retries))
     last_exc: Exception | None = None
     for attempt in range(retries + 1):
         result = _chat_with_transient_retry(
@@ -1042,6 +1049,7 @@ def _run_composite(session_id: int, result_id: int) -> None:
             session_id,
             stage="composite",
             result_id=result_id,
+            preset_name=COMPOSITE_PRESET,
         )
         stamp_logo(image_path)          # 品牌水印，必须早于展示版派生
         make_display_image(image_path)  # kiosk 展示版，失败不阻断（回退原图）

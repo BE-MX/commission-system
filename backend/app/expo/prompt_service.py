@@ -13,6 +13,7 @@ from app.expo.prompt_catalog import SCENES
 from app.expo.prompt_renderer import render_prompt
 from app.expo.prompt_schemas import PromptConfig
 from app.core.list_sort import apply_list_sort
+from app.ai.workflow_config import workflow_options
 
 
 class PromptError(ValueError):
@@ -136,6 +137,7 @@ def capture_batch(db: Session, session, rows: list[ExpoResult], version_id: int 
         config = PromptConfig.model_validate(version.config_json).model_dump()
     except ValueError as exc:
         raise PromptError("所选提示词版本配置不完整，请联系管理员修正", 409) from exc
+    config["image_sizes"] = workflow_options(db, ai_pipeline.COMPOSITE_PRESET)
     wig_ids = {row.wig_id for row in rows if row.wig_id is not None}
     wigs = {wig.id: wig for wig in db.query(ExpoWig).filter(ExpoWig.id.in_(wig_ids)).all()} if wig_ids else {}
     snapshots = []
@@ -215,5 +217,7 @@ def preview(db: Session, body) -> dict:
             scene={"key": scene_key, "label": scene_key} if scene_key else None, db=db)[0]
     # Preview has no customer identity or image upload and never calls an AI provider.
     session = SimpleNamespace(photo_path="uploads/expo/photos/preview.jpg")
-    text, images, size = render_prompt(session, row, wig, body.config.model_dump(), ai_pipeline.to_abs)
+    config = body.config.model_dump()
+    config["image_sizes"] = workflow_options(db, ai_pipeline.COMPOSITE_PRESET)
+    text, images, size = render_prompt(session, row, wig, config, ai_pipeline.to_abs)
     return {"prompt": text, "image_count": len(images), "size": size}

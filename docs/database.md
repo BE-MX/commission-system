@@ -321,7 +321,7 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 - `design_schedule_task` — 设计排期任务；`shoot_type VARCHAR(255)` 逗号分隔多选值
 - `design_request_attachment` — 预约附件（file_name, file_path, file_size）；物理文件存 `backend/uploads/design/`
 - `design_unavailable_date` — 设计不可预约日(date, period am/pm/NULL=全天, reason);`(date, period)` 唯一约束,reason 用于甘特图 hover 展示
-- `ark_ai_providers` — AI 服务提供商配置（name, provider_type, api_base, api_key 加密存储, api_type: openai/anthropic, extra_headers JSON, timeout_sec）
+- `ark_ai_providers` — AI 服务提供商配置（name, provider_type, api_base, api_key 加密存储, api_type: openai/anthropic, extra_headers JSON, timeout_sec, runtime_config JSON）。迁移 `254_ai_provider_runtime` 增加 runtime_config 存储可维护的协议路径、认证映射、独立超时、重试及探测参数；不存 API Key，凭据继续使用加密列。另仅对 Grok 预设缺失的尺寸映射/参考数作一次性回填，保留用户已有值。
 - `ark_ai_presets` — AI 预设（preset_name, provider_id, model, system_prompt, parameters）
 - `ark_ai_call_logs` — AI 调用日志（caller_module, preset_name, tokens, duration_ms, status）
 - `ark_shipping_daily_reports` — 物流日报（user_id, report_date, html_content, short_url, is_pushed）；`(user_id, report_date)` 唯一约束，每日 08:30 自动生成

@@ -1,188 +1,116 @@
-"""Server-owned image model choices for Design Image Studio.
-
-Each choice maps to a registered AI preset so provider credentials, request
-style, parameters, and pricing remain configuration-owned. Versions may share
-a preset slot; only its exact configured model is available. The browser only
-sends a catalog model ID; it can never choose an arbitrary preset or provider.
-"""
+"""Database-owned Studio choices; clients select an approved preset, not a provider."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
 from app.ai.models import AiPreset, AiProvider
+from app.ai.preset_config import is_studio_preset, validate_image_parameters, image_api_style, studio_generation_options
 
-
-ImageModelId = Literal[
-    "gpt-image-2",
-    "gpt-image-2.5-sunburst",
-    "gpt-image-2.6-sunburst-c",
-    "grok-imagine-image-2.0",
-    "gemini-3-pro-image",
-    "gemini-3.1-flash-image",
-]
-
-DEFAULT_IMAGE_MODEL_ID: ImageModelId = "gpt-image-2"
-TEAMROUTER_HOST = "api.teamorouter.cn"
+DEFAULT_IMAGE_MODEL_ID = "design_image_generation"
 
 
 @dataclass(frozen=True, slots=True)
 class ImageModelOption:
-    id: ImageModelId
+    id: str
     label: str
     preset_name: str
-    api_style: Literal["images", "chat"]
-    provider_host: str = TEAMROUTER_HOST
+    api_style: str
 
 
-IMAGE_MODEL_OPTIONS: tuple[ImageModelOption, ...] = (
-    ImageModelOption(
-        id="gpt-image-2",
-        label="GPT Image 2",
-        preset_name="design_image_generation",
-        api_style="images",
-    ),
-    ImageModelOption(
-        id="gpt-image-2.5-sunburst",
-        label="GPT Image 2.5",
-        preset_name="design_image_generation_GPT_image_25",
-        api_style="images",
-        provider_host="api.openlux.ai",
-    ),
-    ImageModelOption(
-        id="gpt-image-2.6-sunburst-c",
-        label="GPT Image 2.6 Sunburst C",
-        # Keep the existing configured slot; the exact model selects its version.
-        preset_name="design_image_generation_GPT_image_25",
-        api_style="images",
-        provider_host="api.openlux.ai",
-    ),
-    ImageModelOption(
-        id="grok-imagine-image-2.0",
-        label="Grok Image 2",
-        preset_name="design_image_generation_grok_image_2",
-        api_style="images",
-        provider_host="api.openlux.ai",
-    ),
-    ImageModelOption(
-        id="gemini-3-pro-image",
-        label="Nano Banana Pro",
-        preset_name="design_image_generation_nano_banana_pro",
-        api_style="chat",
-    ),
-    ImageModelOption(
-        id="gemini-3.1-flash-image",
-        label="Nano Banana 2",
-        preset_name="design_image_generation_nano_banana_2",
-        api_style="chat",
-    ),
-)
-_OPTION_BY_ID = {option.id: option for option in IMAGE_MODEL_OPTIONS}
-
-
-def get_model_option(model_id: str) -> ImageModelOption | None:
-    return _OPTION_BY_ID.get(model_id)
-
-
-def _is_allowed_provider(provider: AiProvider, host_name: str) -> bool:
+def _is_allowed_provider(provider: AiProvider) -> bool:
     try:
-        parsed = urlsplit(provider.api_base)
-        host = (parsed.hostname or "").rstrip(".").lower()
-        port = parsed.port if parsed.port is not None else 443
+        parsed = urlsplit(provider.api_base or "")
+        port = parsed.port
     except ValueError:
         return False
     return (
         parsed.scheme.lower() == "https"
-        and host == host_name
-        and port == 443
+        and bool(parsed.hostname)
+        and (port is None or 1 <= port <= 65535)
         and parsed.username is None
         and parsed.password is None
-        and parsed.path.rstrip("/") in {"", "/v1"}
         and not parsed.query
         and not parsed.fragment
         and provider.provider_type == "direct"
         and (provider.api_type or "openai") == "openai"
-        and bool(provider.api_key)
+        and bool(provider.api_key or any(
+            key.lower() in {"authorization", "api-key", "x-api-key"} and value
+            for key, value in (provider.extra_headers or {}).items()
+        ))
         and bool(provider.is_enabled)
         and provider.deleted_at is None
     )
 
 
-def _matches_option(
-    option: ImageModelOption,
-    preset: AiPreset,
-    provider: AiProvider,
-) -> bool:
-    if preset.parameters is not None and not isinstance(preset.parameters, dict):
-        return False
-    parameters = preset.parameters if isinstance(preset.parameters, dict) else {}
-    configured_style = str(parameters.get("api_style", "")).strip().lower()
-    style_matches = (
-        configured_style == "chat"
-        if option.api_style == "chat"
-        else configured_style in {"", "images"}
-    )
+def _rows(db: Session):
     return (
-        preset.preset_name == option.preset_name
-        and preset.model == option.id
-        and bool(preset.is_enabled)
-        and preset.deleted_at is None
-        and style_matches
-        and _is_allowed_provider(provider, option.provider_host)
-    )
-
-
-def configured_model_rows(
-    db: Session,
-) -> dict[ImageModelId, tuple[AiPreset, AiProvider]]:
-    preset_names = [option.preset_name for option in IMAGE_MODEL_OPTIONS]
-    rows = (
         db.query(AiPreset, AiProvider)
         .join(AiProvider, AiProvider.id == AiPreset.provider_id)
-        .filter(AiPreset.preset_name.in_(preset_names))
+        .filter(AiPreset.deleted_at.is_(None))
+        .order_by(AiPreset.id)
         .all()
     )
-    configured: dict[ImageModelId, tuple[AiPreset, AiProvider]] = {}
-    for preset, provider in rows:
-        option = next(
-            (
-                candidate
-                for candidate in IMAGE_MODEL_OPTIONS
-                if candidate.preset_name == preset.preset_name
-                and candidate.id == preset.model
-            ),
-            None,
-        )
-        if option is not None and _matches_option(option, preset, provider):
-            configured[option.id] = (preset, provider)
-    return configured
+
+
+def _available(preset, provider) -> bool:
+    parameters = preset.parameters or {}
+    try:
+        validate_image_parameters(parameters, preset.model)
+    except ValueError:
+        return False
+    return (
+        is_studio_preset(preset)
+        and bool(preset.is_enabled)
+        and bool((preset.model or "").strip())
+        and isinstance(parameters, dict)
+        and image_api_style(parameters) in {"images", "chat"}
+        and parameters.get("n", 1) == 1
+        and not parameters.get("stream", False)
+        and _is_allowed_provider(provider)
+    )
+
+
+def _option(preset) -> ImageModelOption:
+    parameters = preset.parameters or {}
+    studio = parameters.get("studio") or {}
+    label = studio.get("label")
+    if not isinstance(label, str) or not label.strip():
+        label = preset.model or preset.preset_name
+    return ImageModelOption(preset.preset_name, label, preset.preset_name,
+                            image_api_style(parameters))
+
+
+def configured_model_rows(db: Session) -> dict[str, tuple[AiPreset, AiProvider]]:
+    return {preset.preset_name: (preset, provider) for preset, provider in _rows(db)
+            if _available(preset, provider)}
 
 
 def public_model_options(db: Session) -> list[dict]:
-    configured = configured_model_rows(db)
     return [
-        {
-            "id": option.id,
-            "label": option.label,
-            "available": option.id in configured,
-        }
-        for option in IMAGE_MODEL_OPTIONS
+        {"id": preset.preset_name, "label": _option(preset).label,
+         "available": _available(preset, provider),
+         **(studio_generation_options(preset.parameters) if _available(preset, provider) else {})}
+        for preset, provider in _rows(db) if is_studio_preset(preset)
     ]
 
 
-def configured_model_row(
-    db: Session,
-    model_id: str,
-) -> tuple[ImageModelOption, AiPreset, AiProvider] | None:
-    option = get_model_option(model_id)
-    if option is None:
+def configured_model_row(db: Session, model_id: str, *, allow_legacy_model: bool = True):
+    configured = configured_model_rows(db)
+    row = configured.get(model_id)
+    if row is None and (not allow_legacy_model or db.query(AiPreset).filter(
+        AiPreset.preset_name == model_id
+    ).first() is not None):
         return None
-    row = configured_model_rows(db).get(option.id)
+    if row is None:
+        # Persisted old confirmations contain model names. Never choose arbitrarily
+        # when multiple approved presets now use the same model.
+        matches = [item for item in configured.values() if item[0].model == model_id]
+        row = matches[0] if len(matches) == 1 else None
     if row is None:
         return None
     preset, provider = row
-    return option, preset, provider
+    return _option(preset), preset, provider

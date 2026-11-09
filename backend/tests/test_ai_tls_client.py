@@ -193,7 +193,7 @@ def test_provider_connection_test_handles_string_error_payload(db, monkeypatch):
         (draft_service, "training"),
     ],
 )
-def test_httpx_503_keeps_business_retry(module, caller_module, monkeypatch):
+def test_httpx_503_keeps_business_retry(module, caller_module, monkeypatch, db):
     attempts = []
     request = httpx.Request("POST", "https://api.example.com/v1/chat/completions")
     response = httpx.Response(503, request=request, text="temporarily unavailable")
@@ -211,7 +211,7 @@ def test_httpx_503_keeps_business_retry(module, caller_module, monkeypatch):
     monkeypatch.setattr(ai_service, "chat", fake_chat)
     monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
 
-    result = module._chat_with_transient_retry(None, "general-model", [])
+    result = module._chat_with_transient_retry(db, "general-model", [])
 
     assert result == {"content": "ok"}
     assert attempts == [caller_module, caller_module, caller_module]

@@ -209,7 +209,6 @@ def test_every_json_endpoint_returns_ok_envelope_without_sensitive_fields(
         "storage_path",
         "prompt_snapshot",
         "provider_id",
-        "secret-model",
         "secret-preset",
         "pricing_snapshot",
         "internal anchor",
@@ -217,12 +216,12 @@ def test_every_json_endpoint_returns_ok_envelope_without_sensitive_fields(
         assert secret not in rendered
 
 
-def test_job_serializer_exposes_only_public_catalog_model_ids(api):
+def test_job_serializer_exposes_actual_model_snapshot_for_dynamic_models(api):
     _client, _app, module, _service = api
 
     assert module._job(_row(model="gpt-image-2"))["model"] == "gpt-image-2"
     assert module._job(_row(model="gpt-image-2.6-sunburst-c"))["model"] == "gpt-image-2.6-sunburst-c"
-    assert module._job(_row(model="secret-model"))["model"] is None
+    assert module._job(_row(model="future-image-model"))["model"] == "future-image-model"
 
 
 def test_turn_and_retry_use_unified_jobs_array_without_single_job_field(api):

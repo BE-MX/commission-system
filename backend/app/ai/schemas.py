@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional, Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from app.ai.provider_config import validate_provider_options, validate_extra_headers
 
 
 # ── Provider ──────────────────────────────────────────
@@ -14,10 +15,22 @@ class ProviderCreate(BaseModel):
     api_base: str = Field(..., min_length=1, max_length=512)
     api_key: Optional[str] = Field(None, max_length=2048)
     api_type: str = Field("openai", pattern="^(openai|anthropic)$")
+    runtime_config: Optional[dict] = None
     extra_headers: Optional[dict] = None
     is_enabled: bool = True
     timeout_sec: int = Field(60, ge=1, le=3600)
     remark: Optional[str] = Field(None, max_length=256)
+
+    @field_validator("runtime_config")
+    @classmethod
+    def _runtime(cls, value):
+        return validate_provider_options(value)
+
+    @field_validator("extra_headers")
+    @classmethod
+    def _headers(cls, value):
+        validate_extra_headers(value)
+        return value
 
     @field_validator("api_base")
     @classmethod
@@ -34,10 +47,22 @@ class ProviderUpdate(BaseModel):
     api_base: Optional[str] = Field(None, min_length=1, max_length=512)
     api_key: Optional[str] = Field(None, max_length=2048)
     api_type: Optional[str] = Field(None, pattern="^(openai|anthropic)$")
+    runtime_config: Optional[dict] = None
     extra_headers: Optional[dict] = None
     is_enabled: Optional[bool] = None
     timeout_sec: Optional[int] = Field(None, ge=1, le=3600)
     remark: Optional[str] = Field(None, max_length=256)
+
+    @field_validator("runtime_config")
+    @classmethod
+    def _runtime(cls, value):
+        return validate_provider_options(value)
+
+    @field_validator("extra_headers")
+    @classmethod
+    def _headers(cls, value):
+        validate_extra_headers(value)
+        return value
 
     @field_validator("api_base")
     @classmethod
@@ -58,6 +83,7 @@ class Provider(BaseModel):
     api_base: str
     api_key: str  # 前端返回 ****
     api_type: str = "openai"
+    runtime_config: Optional[dict] = None
     extra_headers: Optional[dict] = None
     is_enabled: bool
     timeout_sec: int

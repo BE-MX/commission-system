@@ -184,6 +184,7 @@ def ai_runtime_fingerprints(preset, provider) -> tuple[str, str]:
         "id": provider.id, "type": provider.provider_type, "api_type": provider.api_type,
         "api_base": provider.api_base, "api_key": provider.api_key,
         "headers": provider.extra_headers, "timeout": provider.timeout_sec,
+        **({"runtime_config": provider.runtime_config} if getattr(provider, "runtime_config", None) else {}),
         "enabled": provider.is_enabled,
     })
 

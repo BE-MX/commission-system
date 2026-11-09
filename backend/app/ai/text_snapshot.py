@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 
 from sqlalchemy import select
+from app.ai.preset_config import validate_parameters
 from app.ai.models import AiPreset, AiProvider
 
 TEXT_PARAMETERS = {"max_tokens", "temperature", "top_p", "stop", "frequency_penalty", "presence_penalty"}
@@ -14,6 +15,18 @@ TEXT_PARAMETERS = {"max_tokens", "temperature", "top_p", "stop", "frequency_pena
 class TextChatSnapshot:
     preset: SimpleNamespace = field(repr=False)
     provider: SimpleNamespace = field(repr=False)
+
+
+def freeze_text_call_config(preset, provider) -> TextChatSnapshot:
+    """Freeze trusted internal configuration after the caller validates its fingerprint."""
+    return TextChatSnapshot(
+        preset=SimpleNamespace(**{key: deepcopy(getattr(preset, key)) for key in (
+            "id", "preset_name", "model", "system_prompt", "parameters",
+        )}),
+        provider=SimpleNamespace(**{key: deepcopy(getattr(provider, key, None)) for key in (
+            "id", "name", "provider_type", "api_type", "api_base", "api_key", "extra_headers", "timeout_sec", "runtime_config",
+        )}),
+    )
 
 
 def prepare_text_chat(db, preset_name: str, max_output_tokens: int) -> TextChatSnapshot:
@@ -35,16 +48,24 @@ def prepare_text_chat(db, preset_name: str, max_output_tokens: int) -> TextChatS
     if provider is None or provider.api_type not in {"openai", "anthropic"}:
         raise ValueError("text provider unavailable")
     parameters = deepcopy(preset.parameters or {})
-    if not isinstance(parameters, dict) or set(parameters) - TEXT_PARAMETERS:
+    validate_parameters(parameters)
+    transport = parameters.pop("transport", None)
+    parameters.pop("test_mode", None)
+    parameters.pop("workflow", None)
+    parameters.pop("studio", None)
+    parameters.update(parameters.pop("request_parameters", {}))
+    if set(parameters) - TEXT_PARAMETERS:
         raise ValueError("preset has unsupported text parameters")
     configured = parameters.get("max_tokens", max_output_tokens)
     if type(configured) is not int or configured <= 0 or max_output_tokens <= 0:
         raise ValueError("invalid output limit")
     parameters["max_tokens"] = min(configured, max_output_tokens)
+    if transport is not None:
+        parameters["transport"] = transport
     return TextChatSnapshot(
         preset=SimpleNamespace(id=preset.id, preset_name=preset.preset_name, model=preset.model,
                                system_prompt=preset.system_prompt, parameters=parameters),
         provider=SimpleNamespace(**{key: deepcopy(getattr(provider, key)) for key in (
-            "id", "name", "provider_type", "api_type", "api_base", "api_key", "extra_headers", "timeout_sec",
+            "id", "name", "provider_type", "api_type", "api_base", "api_key", "extra_headers", "timeout_sec", "runtime_config",
         )}),
     )

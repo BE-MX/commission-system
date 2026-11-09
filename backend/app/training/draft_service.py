@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.training import file_service
 from app.training.models import TrainingDigest, TrainingDigestFile
 from app.training.service import MAX_HIGHLIGHTS, MAX_SUMMARY_CHARS
+from app.ai.workflow_config import workflow_options
 
 logger = logging.getLogger("commission")
 
@@ -56,8 +57,10 @@ def _parse_json(content: str) -> dict:
 def _chat_with_transient_retry(db: Session, preset_name: str, messages: list) -> dict:
     from app.ai.service import chat
 
+    options = workflow_options(db, preset_name)
+    attempts = min(_CHAT_MAX_ATTEMPTS, options.get("max_attempts", _CHAT_MAX_ATTEMPTS))
     last_exc: Exception | None = None
-    for attempt in range(1, _CHAT_MAX_ATTEMPTS + 1):
+    for attempt in range(1, attempts + 1):
         try:
             return chat(db=db, preset_name=preset_name, messages=messages, caller_module="training")
         except httpx.HTTPStatusError as exc:
@@ -65,15 +68,16 @@ def _chat_with_transient_retry(db: Session, preset_name: str, messages: list) ->
             if status_code not in _CHAT_RETRY_STATUS:
                 raise
             last_exc = exc
-        if attempt < _CHAT_MAX_ATTEMPTS:
+        if attempt < attempts:
             msg = f"[training] {preset_name} transient {status_code}, retry {attempt}"
             logger.warning(msg)
             print(msg, flush=True)
-            time.sleep(1.5 * attempt)
+            time.sleep(options.get("retry_backoff_sec", 1.5) * attempt)
     raise last_exc
 
 
 def _chat_json(db: Session, preset_name: str, messages: list, retries: int = 1) -> dict:
+    retries = min(retries, workflow_options(db, preset_name).get("json_repair_attempts", retries))
     last_exc: Exception | None = None
     for attempt in range(retries + 1):
         result = _chat_with_transient_retry(db, preset_name, messages)

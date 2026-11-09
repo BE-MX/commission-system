@@ -443,21 +443,21 @@ def test_retry_is_append_only_and_idempotent(db):
     ("options", "expected"),
     [
         ({}, True),
-        ({"model": "other-model"}, False),
-        ({"api_type": "openai"}, False),
+        ({"model": "other-model"}, True),
+        ({"api_type": "openai"}, True),
         ({"preset_enabled": False}, False),
         ({"preset_deleted": True}, False),
         ({"provider_enabled": False}, False),
         ({"provider_type": "accio_work"}, False),
     ],
 )
-def test_config_requires_exact_enabled_anthropic_direct_preset(db, options, expected):
+def test_config_requires_enabled_supported_direct_preset(db, options, expected):
     _configured(db, **options)
     assert service.get_config(db)["configured"] is expected
 
 
 def test_config_does_not_fallback_to_another_valid_preset(db):
-    _configured(db, model="wrong-model")
+    _configured(db, model="")
     _configured(db, preset_name="another_valid_preset")
     assert service.get_config(db) == {
         "configured": False,
@@ -470,8 +470,8 @@ def test_config_does_not_fallback_to_another_valid_preset(db):
     ("options", "reason"),
     [
         ({}, None),
-        ({"model": "other-model"}, "model_mismatch"),
-        ({"api_type": "openai"}, "api_type_mismatch"),
+        ({"model": ""}, "model_missing"),
+        ({"api_type": "openai"}, None),
         ({"preset_enabled": False}, "preset_disabled"),
         ({"preset_deleted": True}, "preset_deleted"),
         ({"provider_enabled": False}, "provider_disabled"),
@@ -497,35 +497,19 @@ def test_inspect_config_reports_missing_preset_and_missing_provider(db):
     assert context_service.inspect_config(db)["reason"] == "provider_missing"
 
 
-def test_config_model_follows_the_setting_without_code_change(db, monkeypatch):
-    _configured(db, model="claude-fable-5-9")
-    monkeypatch.setattr(get_settings(), "AI_CHAT_MODEL", "claude-fable-5-9")
-    assert service.get_config(db)["configured"] is True
-
-    monkeypatch.setattr(get_settings(), "AI_CHAT_MODEL", "claude-fable-5")
-    payload = service.get_config(db)
-    assert payload["configured"] is False
-    assert payload["message"] == service.NOT_CONFIGURED_MESSAGE
-    assert "diagnostic" not in payload
-    assert context_service.inspect_config(db)["reason"] == "model_mismatch"
+def test_config_model_follows_database_updates_without_restart(db):
+    _, preset = _configured(db, model="custom-model")
+    assert service.get_config(db)["model"] == "custom-model"
+    preset.model = "another-custom-model"
+    db.commit()
+    assert service.get_config(db)["model"] == "another-custom-model"
 
 
 def test_config_diagnostic_is_opt_in_for_administrators(db):
-    _configured(db, model="other-model")
+    _configured(db, model="")
     assert "diagnostic" not in service.get_config(db)
     payload = service.get_config(db, include_diagnostic=True)
-    assert payload["diagnostic"]["reason"] == "model_mismatch"
-    assert "other-model" in payload["diagnostic"]["detail"]
-
-
-def test_ai_chat_model_setting_rejects_unusable_names():
-    assert (
-        Settings(_env_file=None, AI_CHAT_MODEL="  claude-fable-5  ").AI_CHAT_MODEL
-        == "claude-fable-5"
-    )
-    for invalid in ("", "   ", "bad model", "-leading-dash", "x" * 129):
-        with pytest.raises(ValidationError):
-            Settings(_env_file=None, AI_CHAT_MODEL=invalid)
+    assert payload["diagnostic"]["reason"] == "model_missing"
 
 
 def test_finish_fail_and_stop_preserve_partial_and_title_first_real_turn(db):

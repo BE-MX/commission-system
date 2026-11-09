@@ -5,6 +5,7 @@ import * as Vue from 'vue'
 import {useAsyncResource} from '../src/composables/useAsyncResource.js'
 import {useListPage} from '../src/composables/useListPage.js'
 import {clearListResource} from '../src/composables/useListResourceScope.js'
+import {useImageModelOptions} from '../src/views/design/image-studio/composables/useImageModelOptions.js'
 import {useImageSessionList} from '../src/views/design/image-studio/composables/useImageSessionList.js'
 import * as imageState from '../src/views/design/image-studio/state.js'
 import * as chatState from '../src/views/design/ai-chat/state.js'
@@ -20,7 +21,7 @@ function execute(t,path,result,modules={},props={}) {
  source=source.replace(/^import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"];?/gm,(_,binding,key)=>{const b=binding.trim();return b.startsWith('* as ')?`const ${b.slice(5)} = modules[${JSON.stringify(key)}] || {};`:`const ${b.startsWith('{')?b.replace(/\bas\b/g,':'):`{default:${b}}`} = modules[${JSON.stringify(key)}] || {};`}).replace(/export /g,'')
  const auth=Vue.reactive({user:{id:7},roles:[],permissions:[],hasPermission:()=>true})
  const modes={selected:Vue.ref(null),loading:Vue.ref(false),error:Vue.ref(null),locked:Vue.ref(false),restore(){}}
- const defaults={vue:{...Vue,onMounted(){},onBeforeUnmount(){}},'@/stores/auth':{useAuthStore:()=>auth},'@/utils/feedback':feedback,'@/composables/useAsyncResource':{useAsyncResource},'@/composables/useListPage':{useListPage},'@/composables/useListResourceScope':{clearListResource},'@/composables/useTableView':{useTableView:()=>({})},'@/utils/datetime':{formatBeijingDateTime:value=>String(value||'')},'../state':imageState,'./useImageSessionList':{useImageSessionList},'./useAssetObjectUrls':{useAssetObjectUrls:()=>({get(){},cleanup(){},beginBatch(){return 0},load:async()=>{}})},'./useJobPolling':{useJobPolling:()=>({startPolling(){},stopPolling(){}})},'./useChatDrafts':{useChatDrafts},'./useChatModes':{useChatModes:()=>modes},'./composables/useCustomerImageAdmin':admin}
+ const defaults={vue:{...Vue,onMounted(){},onBeforeUnmount(){}},'@/stores/auth':{useAuthStore:()=>auth},'@/utils/feedback':feedback,'@/composables/useAsyncResource':{useAsyncResource},'@/composables/useListPage':{useListPage},'@/composables/useListResourceScope':{clearListResource},'@/composables/useTableView':{useTableView:()=>({})},'@/utils/datetime':{formatBeijingDateTime:value=>String(value||'')},'../state':imageState,'./useImageModelOptions':{useImageModelOptions},'./useImageSessionList':{useImageSessionList},'./useAssetObjectUrls':{useAssetObjectUrls:()=>({get(){},cleanup(){},beginBatch(){return 0},load:async()=>{}})},'./useJobPolling':{useJobPolling:()=>({startPolling(){},stopPolling(){}})},'./useChatDrafts':{useChatDrafts},'./useChatModes':{useChatModes:()=>modes},'./composables/useCustomerImageAdmin':admin}
  const scope=Vue.effectScope();t.after(()=>scope.stop());const state=scope.run(()=>new Function('modules','defineProps','defineEmits','sessionStorage',`${source}\nreturn ${result}`)({...defaults,...modules},()=>props,()=>()=>{},{setItem(){},getItem(){},removeItem(){}}))
  return{state,auth}
 }

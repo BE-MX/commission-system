@@ -9,7 +9,9 @@ import re
 
 import httpx
 
+from app.ai.preset_config import text_request_parameters
 from app.ai.models import AiProvider
+from app.ai.provider_config import provider_options
 
 # data URL: data:<media_type>;base64,<data>
 _DATA_URL_RE = re.compile(r"^data:(?P<media>[^;,]+)(?P<b64>;base64)?,(?P<data>.*)$", re.DOTALL)
@@ -52,12 +54,14 @@ def _to_anthropic_content(content):
     return [_openai_block_to_anthropic(b) for b in content]
 
 
-def build_chat_url(api_base: str, api_type: str = "openai") -> str:
+def build_chat_url(api_base: str, api_type: str = "openai", *, provider=None) -> str:
     """根据 api_base 和 api_type 构造完整的 API URL。
 
     api_type="anthropic" 时拼 /messages; api_type="openai" 时拼 /chat/completions。
     如果 api_base 已包含完整端点路径,直接使用。
     """
+    if provider is not None and provider_options(provider).get("chat_path"):
+        return api_base.rstrip("/") + "/" + provider_options(provider)["chat_path"]
     base = api_base.rstrip("/")
     # 已包含完整端点路径,直接使用
     endpoint_suffixes = ("/messages", "/chat/completions", "/completions")
@@ -72,12 +76,15 @@ def build_chat_url(api_base: str, api_type: str = "openai") -> str:
     return f"{base}{suffix}"
 
 
-def build_image_url(api_base: str, endpoint: str = "edits") -> str:
+def build_image_url(api_base: str, endpoint: str = "edits", *, provider=None) -> str:
     """Build an OpenAI-compatible image endpoint URL."""
+    key = "image_edit_path" if endpoint == "edits" else "image_generation_path"
+    if provider is not None and provider_options(provider).get(key):
+        return api_base.rstrip("/") + "/" + provider_options(provider)[key]
     base = api_base.rstrip("/")
     image_suffixes = ("/images/generations", "/images/edits", "/images/variations")
     if any(base.endswith(s) for s in image_suffixes):
-        return base
+        return base.rsplit("/", 1)[0] + "/" + endpoint.strip("/")
     clean_endpoint = endpoint.strip("/")
     if any(base.endswith(v) for v in ("/v1", "/v2", "/v3", "/v4", "/api")):
         return f"{base}/images/{clean_endpoint}"
@@ -90,25 +97,44 @@ def build_headers(provider: AiProvider, api_key: str | None) -> dict:
     Anthropic 协议使用 x-api-key 头; OpenAI 使用 Bearer Authorization。
     extra_headers 中填 {"api-key": ""} 表示使用 api_key 字段的值作为 api-key。
     """
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "LeShine-Ark-AI/1.0",
-    }
-    extra = provider.extra_headers or {}
-    for k, v in extra.items():
-        if v == "" and k.lower() == "api-key" and api_key:
-            headers[k] = api_key
-        else:
-            headers[k] = v
-
-    has_auth = any(k.lower() in ("authorization", "api-key", "x-api-key") for k in headers)
-    if api_key and not has_auth:
+    options = provider_options(provider)
+    headers = httpx.Headers({"Content-Type": "application/json", "User-Agent": "LeShine-Ark-AI/1.0"})
+    if provider.api_type == "anthropic":
+        headers["anthropic-version"] = options.get("anthropic_version", "2023-06-01")
+    for key, value in (provider.extra_headers or {}).items():
+        if value == "{api_key}" or (value == "" and key.lower() in {"api-key", "x-api-key"}):
+            value = api_key or ""
+        headers[key] = value
+    auth_header = options.get("auth_header")
+    if api_key and auth_header:
+        scheme = options.get("auth_scheme", "")
+        headers[auth_header] = f"{scheme} {api_key}".strip()
+    elif api_key and not any(key in headers for key in ("authorization", "api-key", "x-api-key")):
         if provider.api_type == "anthropic":
             headers["x-api-key"] = api_key
-            headers["anthropic-version"] = "2023-06-01"
         else:
             headers["Authorization"] = f"Bearer {api_key}"
     return headers
+
+
+def apply_token_parameter(body, provider):
+    if provider.api_type == "anthropic":
+        return body
+    key = provider_options(provider).get("token_parameter")
+    if key:
+        other = "max_completion_tokens" if key == "max_tokens" else "max_tokens"
+        if other in body:
+            value = body.pop(other)
+            body.setdefault(key, value)
+    return body
+
+
+def transport_http_timeout(read_timeout, options=None):
+    options = options or {}
+    if not {"connect_timeout_sec", "write_timeout_sec"}.intersection(options):
+        return read_timeout
+    return httpx.Timeout(read_timeout, connect=min(read_timeout, options.get("connect_timeout_sec", read_timeout)),
+                         write=min(read_timeout, options.get("write_timeout_sec", read_timeout)))
 
 
 def post_json(
@@ -118,15 +144,16 @@ def post_json(
     body: dict,
     timeout_sec: int | float,
     enforce_total_timeout: bool = False,
+    transport: dict | None = None,
 ) -> dict:
     """通过 httpx 的受信任 CA 链发送通用 AI JSON 请求。"""
     if enforce_total_timeout:
         # The reply route is synchronous (FastAPI worker thread). Cancellation
         # propagates into the async socket operation and closes the client, unlike
         # timing out a Future while its paid HTTP request keeps running unchecked.
-        return asyncio.run(_post_json_with_deadline(url, headers, body, timeout_sec))
+        return asyncio.run(_post_json_with_deadline(url, headers, body, timeout_sec, transport))
     with httpx.Client(
-        timeout=timeout_sec,
+        timeout=transport_http_timeout(timeout_sec, transport),
         verify=True,
         follow_redirects=False,
     ) as client:
@@ -135,9 +162,9 @@ def post_json(
         return response.json()
 
 
-async def _post_json_with_deadline(url, headers, body, timeout_sec):
+async def _post_json_with_deadline(url, headers, body, timeout_sec, transport=None):
     async with asyncio.timeout(timeout_sec):
-        async with httpx.AsyncClient(timeout=timeout_sec, verify=True, follow_redirects=False) as client:
+        async with httpx.AsyncClient(timeout=transport_http_timeout(timeout_sec, transport), verify=True, follow_redirects=False) as client:
             response = await client.post(url, headers=headers, json=body)
             response.raise_for_status()
             return response.json()
@@ -163,13 +190,19 @@ def build_anthropic_body(
         if m.get("role") != "system"
     ]
 
+    parameters = text_request_parameters(parameters)
     body = {
         "model": model,
         "messages": user_messages,
         "max_tokens": (parameters or {}).get("max_tokens", 4096),
     }
-    if system_prompt:
-        body["system"] = system_prompt
+    systems = [system_prompt] if system_prompt else []
+    for message in messages:
+        content = message.get("content")
+        if message.get("role") == "system" and content and content not in systems:
+            systems.append(content)
+    if systems:
+        body["system"] = "\n\n".join(systems)
 
     # 传递其他参数 (temperature 等),但排除 OpenAI 特有的
     skip_keys = {"max_tokens", "max_completion_tokens", "stream"}

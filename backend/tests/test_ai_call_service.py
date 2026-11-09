@@ -50,7 +50,7 @@ def test_timeout_unchanged_for_text_only():
 def test_timeout_handles_none_provider_timeout():
     prov = SimpleNamespace(timeout_sec=None)
     assert _effective_chat_timeout(prov, has_image=True) == MIN_MULTIMODAL_CHAT_TIMEOUT_SEC
-    assert _effective_chat_timeout(prov, has_image=False) == 0
+    assert _effective_chat_timeout(prov, has_image=False) == 60
 
 
 def test_metadata_snapshot_never_persists_knowledge_plaintext():
