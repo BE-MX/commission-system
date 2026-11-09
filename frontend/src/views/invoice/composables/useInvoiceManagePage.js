@@ -321,7 +321,9 @@ export function useInvoiceManagePage() {
     sync_failed: { label: '失败', tone: 'danger' },
     sync_uncertain: { label: '待核对', tone: 'warning' },
   }
-  const statusOptions = Object.entries(STATUS_DICT).map(([value, meta]) => ({ value, label: meta.label }))
+  const statusOptions = Object.entries(STATUS_DICT)
+    .filter(([value]) => value !== 'cancelled')
+    .map(([value, meta]) => ({ value, label: meta.label }))
   const statusText = status => STATUS_DICT[status]?.label || status
   const statusType = status => STATUS_DICT[status]?.tone || 'info'
   const syncText = status => SYNC_DICT[status]?.label || status
