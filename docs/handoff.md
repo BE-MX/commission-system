@@ -1,3 +1,10 @@
+## 2026-11-09 北京库存色块图 Wrangler 内存泄漏修复（已专项发布）
+
+- 北京 `ark-colorwork` 于 16:08:40 从 `538369e0` 升级到 `9abd8c2d953b785991fc9f9316d2c640c4993e81`，Wrangler 4.92.0 → 4.100.0。专项使用 Git bundle，只切换工作台 unit。主后端仍为 `538369e0`、PID 3423433。D1/R2 已停机备份，迁移摘要一致，未执行生产迁移。
+- 补丁关闭新版 Miniflare 本地 R2 直读入口，真实 Worker 回归覆盖直读和两种路径绕过。隔离持久存储验证新旧运行时均能读取同一份 D1/R2，升级前分片能在新版完成。21 项发布回归、13 项工作台回归、构建及约定检查通过。
+- 在 `.cloud` 已登录页面实际下载并打开 `Tape Hair-Super Double Drawn.jpg`，645,729 字节，1000 × 1027。16:10:31–16:12:31 连续采样，期间刷新图库 6 次，服务日志确认 JPG 138 次返回 200，其他 JPG 状态、OOM 和 `Network.dataReceived` 调试事件均为 0。入口进程 RSS 从约 66 MiB 升至约 75 MiB，最后约半分钟稳定。采样记录在本任务工作区 `.deploy_state/colorwork-production-memory-20261109.log`。
+- 本轮将修复纳入主线，供下次全量发布使用。北京工作台继续运行上述专项发布版本。
+
 ## 2026-11-09 客户跟进总览与接力协作（Codex，Git 交付，待部署）
 
 - 亮哥确认全部 10 项口径，已写入[定稿与 28 项验收场景](requirements/2026-11-09-domestic-followup-collaboration.md)。P1/P2 实现在 `D:/MyProgram/commission-system-codex-followup-collaboration` 的 `codex/domestic-followup-collaboration`。

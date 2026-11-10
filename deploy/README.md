@@ -323,6 +323,13 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 隔离 D1 验证、正式 D1/R2 整体备份与迁移、回环运行服务 `ark-colorwork` 及 readiness 检查。
 `--prepare-only` 不启动服务、不改正式 D1/R2。同候选复用校验后的制品，同成功候选重跑不重启模块。
 
+仅更新 Wrangler 时，从当前北京工作台成功版本切出候选并提交依赖锁文件。用候选工作区的
+`deploy\deploy.bat --colorwork-runtime-only <线上工作台SHA> --revision <候选SHA> --prepare-only` 预检，
+移除 `--prepare-only` 激活。候选通过经校验的 Git bundle 传输，隔离构建与验证迁移。激活要求 D1 迁移文件完全一致，
+只停止并备份 `ark-colorwork` 的 D1/R2，切换工作台 unit 后等待健康；失败则恢复旧 unit，并保留备份和回执。
+主站后端、MySQL、Nginx 和其他站点不进入该流程。后续完整发布的候选也需包含 Wrangler 升级。
+Wrangler 4.100.0 启用了本地 R2 对象直读路由。工作台通过锁定的 Miniflare 补丁关闭该路由，文件读取仍由工作台鉴权。
+
 数据位于北京 `.deploy_state/colorwork/data`，**此子目录是业务持久存储，不可清理**。
 失败时 `current.json` 和本轮 `backups/<revision>-<attempt>` 必须保留；普通重试会阻断，先按
 `colorwork-workbench/README.md` 核验失败现场、备份及 schema。北京原先没有 Node 时由准备阶段下载官方固定版本并校验摘要，

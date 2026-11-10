@@ -411,6 +411,7 @@ if __name__ == "__main__":
     parser.add_argument('--static-retention-only', action='store_true', help='Prune expired main-frontend assets and backups without restarting applications')
     parser.add_argument('--candidate-retention-only', action='store_true', help='Inspect or retire owned office source/static candidates without replaying deployment')
     parser.add_argument('--colorwork-backup-policy', action='store_true', help='Install hourly retention of two recent Colorwork recovery backups')
+    parser.add_argument('--colorwork-runtime-only', metavar='BASELINE_SHA', help='Publish only a pinned Beijing Colorwork runtime dependency update')
     parser.add_argument('--agent-cloud-migration', choices=['prepare', 'validate-staged', 'freeze-source', 'copy-frozen-state', 'configure-target', 'activate-target', 'verify-target', 'retire-source', 'nginx-prepare', 'nginx-activate', 'nginx-verify', 'source-routes-prepare', 'source-routes-activate', 'source-routes-verify'], help='Execute one journalled phase of the inspected Agent migration')
     parser.add_argument('--storage-maintenance', metavar='PLAN_JSON', help='Freeze/restore API ingress and direct office LAN access')
     parser.add_argument('--recover-colorwork-start-order', metavar='PLAN_JSON', help='Recover the inspected schema-160 dependency-order interruption')
@@ -450,6 +451,14 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
+        if args.colorwork_runtime_only:
+            if not args.revision or any(value for key, value in vars(args).items()
+                                        if key not in {'colorwork_runtime_only', 'revision', 'prepare_only'}):
+                raise RuntimeError('Colorwork runtime release requires only the baseline, --revision and optional --prepare-only')
+            from colorwork_runtime import execute_local
+            with deployment_lock():
+                execute_local(ROOT, args.colorwork_runtime_only, args.revision, args.prepare_only)
+            sys.exit(0)
         for option, module in [('color_guide_site', 'color_guide_site'), ('color_guide_navigation', 'color_guide_navigation')]:
             if getattr(args, option):
                 if any(value for key, value in vars(args).items() if key not in {option, 'prepare_only'}):
