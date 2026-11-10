@@ -55,7 +55,9 @@ def list_invoices(
     sort_order: str = "",
     user=None,
 ) -> tuple[list[dict], int]:
-    query = _visible_invoice_query(db, created_by=created_by, viewer_user_id=viewer_user_id, user=user)
+    query = _visible_invoice_query(db, created_by=created_by, viewer_user_id=viewer_user_id, user=user).filter(
+        Invoice.status != "cancelled",
+    )
     if keyword:
         like = f"%{keyword}%"
         query = query.filter(

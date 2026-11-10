@@ -29,6 +29,14 @@ test('initial list and summary use the same complete Beijing calendar month', as
   assert.deepEqual(calls.summary[0], { date_from: '2026-11-01', date_to: '2026-11-30' })
 })
 
+test('invoice status filter offers cancellation in progress and omits archived states', t => {
+  const { page } = harness(t)
+  const statuses = page.statusOptions.map(({ value }) => value)
+  assert.ok(statuses.includes('cancel_pending'))
+  assert.ok(!statuses.includes('cancelled'))
+  assert.ok(!statuses.includes('deleted'))
+})
+
 test('order amount appears before payable, survives saved preferences and sorts on the server', async t => {
   const { page, calls } = harness(t)
   const keys = page.columnDefs.map(column => column.key)

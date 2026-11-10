@@ -113,7 +113,7 @@ def test_summary_and_list_exclude_fees_but_preserve_payable_and_sort_before_pagi
         assert summary["non_usd_count"] == 1
         params = {"sort_field": "order_amount", "sort_order": "asc", "page_size": 1}
         first = client.get("/api/invoice/invoices", params=params).json()["data"]
-        assert first["total"] == 5
+        assert first["total"] == 4
         row = first["items"][0]
         assert row["invoice_no"] == "FEE"
         assert row["order_amount"] == 110.10
@@ -125,6 +125,7 @@ def test_summary_and_list_exclude_fees_but_preserve_payable_and_sort_before_pagi
         assert eur["order_amount"] == 450
         assert eur["currency"] == "EUR"
         descending = client.get("/api/invoice/invoices", params={**params, "sort_order": "desc"}).json()["data"]
+        assert descending["items"][0]["invoice_no"] == "UNSYNCED-FEE"
         assert descending["items"][0]["order_amount"] == 990
 
 
