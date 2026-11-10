@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>项目雷达 · 原型</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<!-- 原型视图切换（不属于产品界面） -->
+<div class="proto-bar" role="tablist" aria-label="原型视图">
+  <span class="proto-bar__label">原型</span>
+  <button role="tab" data-view="web" aria-selected="true">方舟页面</button>
+  <button role="tab" data-view="bot" aria-selected="false">钉钉收录</button>
+  <button role="tab" data-view="digest" aria-selected="false">钉钉早报</button>
+</div>
+
+<!-- ═══ 视图 1：方舟页面 ═══ -->
+<div class="app" data-pane="web">
+  <aside class="aside" aria-label="主导航">
+    <div class="logo-area">
+      <div class="logo-mark">L</div>
+      <div class="logo-text-group"><span class="logo-text">LeShine Ark</span><span class="logo-sub">莱莎方舟平台</span></div>
+    </div>
+    <nav class="nav">
+      <div class="nav-item"><span class="ni">⌂</span>工作台</div>
+      <div class="nav-group-title"><span class="gi">▤</span>订单管理</div>
+      <div class="nav-group-title"><span class="gi">◎</span>客户运营</div>
+      <div class="nav-group-title is-open"><span class="gi">✦</span>方舟洞见</div>
+      <div class="nav-item sub">培训速递</div>
+      <div class="nav-item sub">行业情报速览</div>
+      <div class="nav-item sub">情报采集库</div>
+      <div class="nav-item sub">AI 工具速递</div>
+      <div class="nav-item sub is-active" aria-current="page">项目雷达<span class="nav-dot" aria-label="有 3 项新更新">3</span></div>
+      <div class="nav-group-title"><span class="gi">⚙</span>系统管理</div>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <header class="chrome">
+      <div class="chrome__top">
+        <button class="icon-btn menu-btn" aria-label="打开导航">☰</button>
+        <div class="crumb">方舟洞见 <span>/</span> <b>项目雷达</b></div>
+        <div class="chrome__right"><span class="avatar" aria-hidden="true">亮</span><span class="user">亮哥</span></div>
+      </div>
+      <div class="chrome__tabs"><span class="tab">工作台</span><span class="tab is-active">项目雷达</span></div>
+    </header>
+
+    <main class="content">
+      <div class="aurora" aria-hidden="true"><i class="b1"></i><i class="b2"></i><i class="b3"></i></div>
+
+      <section class="page-head">
+        <div>
+          <h1>项目雷达</h1>
+          <p>收藏值得关注的项目，自动追踪关键更新。每天 06:30 扫描，08:00 钉钉早报。</p>
+        </div>
+        <div class="page-head__actions">
+          <span class="bot-hint"><span class="bot-hint__dot"></span>钉钉里发给「方舟雷达」也能收录</span>
+          <button class="btn btn-quiet" id="openSettings">扫描与推送设置</button>
+        </div>
+      </section>
+
+      <section class="capture card">
+        <form class="capture__form" id="captureForm" autocomplete="off">
+          <span class="capture__icon" aria-hidden="true">＋</span>
+          <input id="captureInput" type="text" aria-label="粘贴链接收录"
+                 placeholder="粘贴 GitHub、官网、X 帖子或公众号文章链接，回车收录；可一次粘贴多条">
+          <button class="btn btn-primary" type="submit">收录</button>
+        </form>
+        <div class="capture__tips">
+          试试：
+          <button type="button" class="chip-link" data-demo="https://github.com/openai/openai-agents-python">GitHub 仓库</button>
+          <button type="button" class="chip-link" data-demo="https://mp.weixin.qq.com/s/AbCdEf 这几个可以对比一下 #知识库">公众号文章（多个项目）</button>
+          <button type="button" class="chip-link" data-demo="https://github.com/microsoft/markitdown.git?utm_source=x">重复链接</button>
+        </div>
+      </section>
+
+      <section class="digest-strip" id="digestStrip">
+        <span class="health-dot" aria-hidden="true"></span>
+        <span>今天 06:31 扫描 <b>11/12</b> 完成 · 1 项读取受限</span>
+        <span class="digest-strip__sep"></span>
+        <span class="digest-strip__time">08:00</span>
+        <span>早报已推送：<b>3 项更新</b>，其中 1 项需要关注</span>
+        <button class="link" data-goto="digest">查看早报样式</button>
+      </section>
+
+      <section class="card list-card">
+        <div class="views" role="tablist" aria-label="按状态查看" id="views"></div>
+        <div class="filters">
+          <label class="search"><span aria-hidden="true">⌕</span><input id="kw" type="search" placeholder="搜索标题、说明、笔记、标签"></label>
+          <select id="fType" aria-label="类型"><option value="">全部类型</option></select>
+          <select id="fModule" aria-label="可用于方舟"><option value="">全部方舟模块</option></select>
+          <select id="fRead" aria-label="读取状态"><option value="">全部读取状态</option><option value="ok">读取正常</option><option value="limited">读取受限</option></select>
+        </div>
+        <div class="table" role="table" aria-label="雷达项目">
+          <div class="tr th" role="row">
+            <span role="columnheader">项目</span><span role="columnheader">可用于方舟</span>
+            <span role="columnheader">版本</span><span role="columnheader">最近更新</span><span role="columnheader">状态</span>
+          </div>
+          <div id="rows"></div>
+        </div>
+        <div class="empty" id="empty" hidden>这个视图下没有项目</div>
+      </section>
+      <p class="proto-note">原型说明：数据为样例，版本号与日期不代表真实项目现状；所有操作仅在本页演示，不调用业务接口。</p>
+    </main>
+  </div>
+
+  <!-- 详情抽屉 -->
+  <div class="overlay" id="overlay" hidden></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dTitle" hidden></aside>
+
+  <!-- 候选选择 -->
+  <div class="modal-wrap" id="pickWrap" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pickTitle">
+      <header><h2 id="pickTitle">这篇文章提到了 3 个项目</h2><button class="icon-btn" data-close aria-label="关闭">✕</button></header>
+      <div class="modal__body">
+        <p class="muted small">文章本身不会追踪更新，选中的项目会单独收录，文章记为它们的来源。只写了名字、没给链接的项目，会先搜索并核对官网，核对不上的标「未确认」，不会直接收录。</p>
+        <div id="pickList" class="pick-list"></div>
+      </div>
+      <footer><button class="btn btn-quiet" id="pickArticle">只存文章</button><button class="btn btn-primary" id="pickOk">收录选中的 2 项</button></footer>
+    </div>
+  </div>
+
+  <!-- 设置 -->
+  <div class="modal-wrap" id="setWrap" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+      <header><h2 id="setTitle">扫描与推送设置</h2><button class="icon-btn" data-close aria-label="关闭">✕</button></header>
+      <div class="modal__body settings">
+        <div class="set-row"><div><b>每日扫描</b><p>全局任务，仅管理员可改。只有新版本、changelog 或追踪页变化才调用 AI</p></div><select aria-label="扫描时间" disabled><option>06:30</option></select></div>
+        <div class="set-row"><div><b>我的钉钉早报</b><p>所有更新合成一条消息，每天最多一条</p></div><select aria-label="推送时间"><option>08:00</option><option>09:00</option></select></div>
+        <div class="set-row"><div><b>没有更新的日子</b><p>默认不打扰</p></div>
+          <div class="seg" role="radiogroup" aria-label="无更新时"><button role="radio" aria-checked="true">不发送</button><button role="radio" aria-checked="false">发「今日无更新」</button></div></div>
+        <div class="set-row"><div><b>沉睡提醒</b><p>每周一早报附收录超过 14 天仍待看的项目</p></div><label class="switch"><input type="checkbox" checked><span></span></label></div>
+        <div class="set-row"><div><b>GitHub Star 同步</b> <span class="tag tag-neutral">二期</span><p>在 GitHub 点 Star 即自动收录</p></div><label class="switch"><input type="checkbox" disabled><span></span></label></div>
+        <div class="set-row conn"><div><b>钉钉机器人</b><p>方舟雷达 · 已连接 · 已按钉钉 ID 匹配到你的账号</p></div><span class="tag tag-success">正常</span></div>
+        <div class="set-row conn"><div><b>GitHub 读取</b><p>今日已用 312 / 5000 次配额</p></div><span class="tag tag-success">正常</span></div>
+      </div>
+      <footer><button class="btn btn-quiet" data-close>取消</button><button class="btn btn-primary" data-close data-toast="设置已保存">保存</button></footer>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 视图 2/3：钉钉 ═══ -->
+<div class="ding-stage" data-pane="bot" hidden>
+  <div class="phone" aria-label="钉钉单聊：方舟雷达">
+    <div class="phone__status"><span>9:41</span><span>●●● ▮</span></div>
+    <div class="ding-head"><span class="back" aria-hidden="true">‹</span><span class="bot-ava" aria-hidden="true">雷</span><div><b>方舟雷达</b><small>机器人 · 莱莎发制品</small></div></div>
+    <div class="chat" id="chatBot"></div>
+    <form class="ding-input" id="botForm" autocomplete="off">
+      <input id="botInput" type="text" aria-label="发送消息" placeholder="粘贴链接，回车发送">
+      <button class="send" type="submit">发送</button>
+    </form>
+  </div>
+  <div class="notes">
+    <h2>钉钉收录怎么用</h2>
+    <ol>
+      <li><b>发链接就是收藏</b>。一次可以发多条；链接后面写的话变成笔记，<code>#展会</code> 变成标签。</li>
+      <li><b>卡片只有跳转按钮</b>（钉钉模板限制）。「打开详情」是 24 小时有效的签名链接，免登录查看；要改设置就回复指令，如 <code>静默 1</code>、<code>放弃 1</code>。</li>
+      <li><b>两段回复</b>：3 秒内回执「正在读取」，分析完成后发结果卡片，失败也会说原因。</li>
+      <li><b>帖子和文章会被拆开</b>：只提到一个项目时直接收录项目；提到多个时回复数字选择。</li>
+      <li><b>重复发不会重复存</b>：只追加一条来源，并告诉你之前的状态。</li>
+      <li><b>读不到会直说</b>：30 分钟内回复一句话说明就能补全；其他时候不带链接的文字只当指令（<code>最近</code>、<code>搜 关键词</code>、<code>帮助</code>）。</li>
+    </ol>
+    <div class="notes__try">
+      <span>在左侧输入框试试：</span>
+      <button class="chip-link" data-bot="https://github.com/openai/openai-agents-python">仓库链接</button>
+      <button class="chip-link" data-bot="https://x.com/someone/status/1855 #Agent 这个派单流程能参考">X 帖子 + 笔记</button>
+      <button class="chip-link" data-bot="https://github.com/browser-use/browser-use">已收录过的</button>
+      <button class="chip-link" data-bot="深度看 1">深度看 1（二期）</button>
+    </div>
+  </div>
+</div>
+
+<div class="ding-stage" data-pane="digest" hidden>
+  <div class="phone" aria-label="钉钉单聊：方舟雷达早报">
+    <div class="phone__status"><span>8:00</span><span>●●● ▮</span></div>
+    <div class="ding-head"><span class="back" aria-hidden="true">‹</span><span class="bot-ava" aria-hidden="true">雷</span><div><b>方舟雷达</b><small>机器人 · 莱莎发制品</small></div></div>
+    <div class="chat" id="chatDigest"></div>
+    <div class="ding-input is-static"><input disabled placeholder="粘贴链接，回车发送"><button class="send" disabled>发送</button></div>
+  </div>
+  <div class="notes">
+    <h2>早报规则</h2>
+    <ol>
+      <li><b>一天一条</b>：06:30 扫描，08:00 把所有更新合成一条，和收录对话在同一个聊天窗口。</li>
+      <li><b>只推值得看的</b>：规则先分级（主版本、breaking、安全为关键），AI 再复核；提交和 star 变化不算更新。同一项目 7 天最多推一次普通更新。</li>
+      <li><b>每条都回答「和方舟有什么关系」</b>，没关系就不写。</li>
+      <li><b>没有更新不打扰，但不会悄悄挂掉</b>：底部附扫描完成数；连续 7 天无推送会发一行「运行正常」；扫描失败会告警。</li>
+      <li><b>程序读不了的网站交给 agent</b>（二期）：每周一 06:00 浏览检查，结果核对出处后并入当天早报。</li>
+      <li><b>每项带编号</b>，回复 <code>静默 2</code> 即可调整，不用打开方舟。每周一另附沉睡提醒。</li>
+    </ol>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
