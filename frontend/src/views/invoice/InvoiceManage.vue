@@ -74,7 +74,19 @@
       </div>
 
       <ListPageStatus v-if="hasData && listErrorMessage" :error="listErrorMessage" :has-data="hasData" :data-page="dataPage" @retry="loadInvoices" />
-      <el-table v-loading="loading" :data="invoices" @sort-change="handleTableSort" border class="list-table invoice-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
+      <el-table
+        ref="invoiceTable"
+        v-loading="loading"
+        v-sticky-scrollbar
+        :data="invoices"
+        border
+        class="list-table invoice-table"
+        :class="[densityClass, { 'invoice-table--compact': invoices.length }]"
+        :style="{ '--invoice-table-width': `${tableWidth}px` }"
+        :fit="false"
+        :max-height="isFullscreen ? undefined : 640"
+        @sort-change="handleTableSort"
+      >
         <template #empty>
           <ListPageStatus :error="listErrorMessage" :loading="loading || (!hasLoaded && !listErrorMessage)" @retry="loadInvoices">
             <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的发票' : '暂无发票，新建一张发票后会显示在这里'">
@@ -87,11 +99,12 @@
           :key="column.key"
           :prop="column.prop || (column.key === 'created_by' ? 'created_by_name' : column.key)" :sortable="column.sortable === false ? false : 'custom'"
           :label="column.label"
+          :width="column.fitContent ? columnWidths[column.key] ?? column.minWidth : undefined"
           :min-width="column.minWidth"
           :max-width="column.maxWidth"
           :fixed="column.fixed"
           :align="column.align"
-          :class-name="column.className"
+          :class-name="[column.className, column.fitContent && `invoice-col-${column.key}`].filter(Boolean).join(' ')"
           :show-overflow-tooltip="Boolean(column.tooltip)"
         >
           <template #header>
@@ -106,12 +119,13 @@
               <div class="invoice-meta-line"><StatusBadge size="small" :type="orderTypeTone(row.order_type)" effect="plain">{{ orderTypeLabel(row.order_type) }}</StatusBadge><span class="invoice-secondary">（{{ row.invoice_date }}）</span></div>
               <InvoiceAnomalyBadge :anomalies="row.anomalies || []" />
             </div>
+            <span v-else-if="column.key === 'customer_name'" class="invoice-customer-name">{{ row.customer_name }}</span>
             <span v-else-if="column.key === 'item_count'" class="invoice-model-quantity" :title="`型号：${row.item_count ?? '—'} 行（含配件）；数量：${row.total_quantity ?? '—'}`">{{ row.item_count ?? '—' }} / {{ row.total_quantity ?? '—' }}</span>
             <template v-else-if="column.key === 'order_amount' || column.key === 'total_amount'">
               <span class="invoice-money"><span v-if="row.currency && row.currency.toUpperCase() !== 'USD'">{{ row.currency }} </span>{{ money(row[column.key]) }}</span>
             </template>
             <template v-else-if="column.key === 'received_amount'">
-              <span class="invoice-money invoice-received" :class="`invoice-received--${receivedAmountTone(row.received_amount, row.total_amount)}`"><span v-if="receivedAmountTone(row.received_amount, row.total_amount) !== 'unknown' && row.currency && row.currency.toUpperCase() !== 'USD'">{{ row.currency }} </span>{{ receivedAmountTone(row.received_amount, row.total_amount) === 'unknown' ? '待核验' : money(row.received_amount) }}</span>
+              <span class="invoice-money invoice-received" :title="row.received_amount == null ? '暂无可显示的已确认回款金额' : undefined" :class="`invoice-received--${receivedAmountTone(row.received_amount, row.receipt_payable_amount ?? row.total_amount)}`"><span v-if="row.received_amount != null && row.currency && row.currency.toUpperCase() !== 'USD'">{{ row.currency }} </span>{{ row.received_amount == null ? '—' : money(row.received_amount) }}</span>
             </template>
             <div v-else-if="column.key === 'status'" class="invoice-pair invoice-statuses">
               <div class="invoice-status-main">
@@ -119,14 +133,12 @@
               </div>
               <span class="invoice-secondary invoice-sync-text" :class="`invoice-sync-text--${syncType(row.sync_status)}`">小满：{{ invoiceIsLocal(row) ? '无需小满同步' : syncText(row.sync_status) }}</span>
             </div>
-            <StatusBadge v-else-if="column.key === 'transaction_route'" size="small" type="info">{{ routeLabel(row.transaction_route || row.transaction_mode) }}</StatusBadge>
-            <StatusBadge v-else-if="column.key === 'shadow_status'" size="small" type="info">{{ shadowLabel(row.shadow_status) }}</StatusBadge>
             <template v-else-if="column.key === 'created_by'">{{ row.created_by_name || '-' }}</template>
             <template v-else-if="column.key === 'created_at'">{{ formatDateTime(row.created_at) }}</template>
             <template v-else>{{ row[column.prop] }}</template>
           </template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="220" max-width="260" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" :min-width="actionColumnWidth" max-width="260" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
               <el-button v-permission="'invoice:write'" link type="primary" :disabled="isInvoiceDeleting(row.id) || ['cancel_pending','cancelled'].includes(row.status) || (invoiceIsLocal(row) && row.commerce_status !== 'draft')" @click="openEdit(row.id)">
@@ -464,6 +476,7 @@ import { computed, nextTick, onDeactivated, ref, watch } from 'vue'
 import { ArrowDown, Box, Calendar, CopyDocument, DArrowLeft, DArrowRight, Delete, Document, Download, Edit, Refresh, RefreshLeft, Search, Tools } from '@element-plus/icons-vue'
 import { copyText } from '@/utils/clipboard'
 import { notifyFeedback } from '@/utils/feedback'
+import { useInvoiceColumnWidths } from './composables/useInvoiceColumnWidths'
 import { receivedAmountTone } from './invoiceListPresentation'
 import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
 import { useRouter, useRoute } from 'vue-router'
@@ -483,7 +496,7 @@ import InvoiceTotalsFooter from './components/InvoiceTotalsFooter.vue'
 import InvoiceOverview from './components/InvoiceOverview.vue'
 import LocalInvoiceLines from '@/views/commerce-transition/LocalInvoiceLines.vue'
 import InvoiceRouteField from '@/views/commerce-transition/InvoiceRouteField.vue'
-import { invoiceIsLocal, businessLabel, routeLabel, shadowLabel } from '@/views/commerce-transition/routeState'
+import { invoiceIsLocal, businessLabel } from '@/views/commerce-transition/routeState'
 import LinkedSyncResult from './components/LinkedSyncResult.vue'
 import InvoiceHairTable from './components/InvoiceHairTable.vue'
 import TableTools from '@/components/TableTools.vue'
@@ -511,6 +524,11 @@ const {
   hasActiveFilters, handleSizeChange, orderTypeTone, resetFilters, statusOptions,
   columnDefs, density, densityClass, isFullscreen, panelRef, toggleFullscreen, visibleColumns, visibleKeys,
 } = listPage
+const invoiceTable = ref(null)
+const columnWidths = useInvoiceColumnWidths(invoiceTable, invoices, visibleColumns)
+const actionColumnWidth = 220
+const tableWidth = computed(() => visibleColumns.value.reduce((sum, column) =>
+  sum + (columnWidths.value[column.key] ?? column.minWidth), actionColumnWidth))
 const router = useRouter(), route = useRoute()
 async function copyInvoiceNo(invoiceNo) {
   const copied = await copyText(invoiceNo)

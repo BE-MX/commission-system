@@ -46,7 +46,7 @@ for (const row of dynamic) {
   }
   const source = fs.readFileSync(path.join(root, 'views/invoice/composables/useInvoiceManagePage.js'), 'utf8')
   const widths = new Map([...source.matchAll(/key: '([^']+)'[^}]*minWidth: (\d+)/g)].map(match => [match[1], Number(match[2])]))
-  for (const key of ['order_type', 'status', 'sync_status']) {
+  for (const key of ['invoice_no', 'status']) {
     if ((widths.get(key) ?? 0) < 100) issues.push(`${row.file} dynamic ${key} column is too narrow`)
   }
 }

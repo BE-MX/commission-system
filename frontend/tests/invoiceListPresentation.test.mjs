@@ -33,7 +33,7 @@ assert.ok(cell)
 const { code } = compile(cell.replace('v-else-if=', 'v-if='), { mode: 'function', prefixIdentifiers: true })
 const render = new Function('Vue', code)(Vue)
 
-for (const [amount, tone, text] of [[100, 'equal', '100.00'], [101, 'overpaid', '101.00'], [100.005, 'overpaid', '100.01'], [0, 'underpaid', '0.00'], [null, 'unknown', '待核验']]) {
+for (const [amount, tone, text] of [[100, 'equal', '100.00'], [101, 'overpaid', '101.00'], [100.005, 'overpaid', '100.01'], [0, 'underpaid', '0.00'], [null, 'unknown', '—']]) {
   test(`received amount renders ${tone} without inventing missing financial data`, async () => {
     const html = await renderToString(Vue.createSSRApp({
       render,

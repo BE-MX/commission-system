@@ -39,8 +39,7 @@ const entries = [
   ['TEST-1105', 'Sample Four', 'stock', 'sync_failed', 'sync_failed'],
   ['TEST-1106', 'Sample Five', 'production', 'synced', 'synced'],
 ]
-// Preview-only mock contract: one model per item row (including accessories),
-// total_quantity sums quantities; received_amount is fabricated, not a live projection.
+// Synthetic data: one model per current item row, including accessories.
 const rows = entries.map(([invoice_no, customer_name, order_type, status, sync_status, currency = 'USD', transaction_route, anomaly], index) => {
   const items = [{ kind:'hair', quantity:2 }, { kind:'hair', quantity:3 }, { kind:'accessory', quantity:4 }]
   const total_amount = index === 4 ? 0.3 : currency === 'EUR' ? 99999999.99 : 1296.29
@@ -50,7 +49,7 @@ const rows = entries.map(([invoice_no, customer_name, order_type, status, sync_s
     commerce_status: 'draft', invoice_date: '2026-11-04', items,
     item_count: items.length, total_quantity: items.reduce((sum, item) => sum + item.quantity, 0),
     order_amount: index === 4 ? 0.3 : currency === 'EUR' ? 99999999.99 : 1234.56,
-    total_amount, received_amount, created_by_name: '测试人员', created_at: '2026-11-04T15:46:00',
+    total_amount, received_amount, receipt_payable_amount: index === 6 ? 700 : total_amount, created_by_name: '测试人员', created_at: '2026-11-04T15:46:00',
     anomalies: anomaly ? ['order', 'outbound', 'receipt'] : [],
   }
 })
@@ -64,7 +63,11 @@ for (const client of Object.values(clients)) {
       throw new Error(`Fixture rejects writes: ${request.method} ${request.url}`)
     }
     let data = { items: [], total: 0, has_more: false }
-    if (request.url === '/invoices') data = { items: rows, total: rows.length }
+    if (request.url === '/invoices') {
+      const keyword = request.params?.keyword
+      const items = keyword ? rows.filter(row => row.invoice_no.includes(keyword) || row.customer_name.includes(keyword)) : rows
+      data = { items, total: items.length }
+    }
     else if (request.url === '/invoices/summary') data = { gmv: 12345.67, new_sign_count: 2, order_count: rows.length, average_order_amount: 1234.56 }
     else if (request.url === '/shipments/capabilities') data = { enabled: true }
     else if (request.url === '/navigation-config/effective') data = { nodes: [] }

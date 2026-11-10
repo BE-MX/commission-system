@@ -52,15 +52,13 @@ export function useInvoiceManagePage() {
 
   // 列配置数组：TableTools 列显隐的数据源 + 表格渲染驱动（Action Bar Spec / List Page Spec 第 9 节）
   const columnDefs = [
-    { key: 'invoice_no', label: '发票号', prop: 'invoice_no', minWidth: 230, maxWidth: 340, className: 'invoice-number-column', fixed: 'left' },
-    { key: 'customer_name', label: '客户', prop: 'customer_name', minWidth: 160, maxWidth: 240, tooltip: true },
-    { key: 'item_count', label: '型号/数量', sortLabel: '型号行数', prop: 'item_count', minWidth: 112, maxWidth: 150, align: 'right' },
-    { key: 'order_amount', label: '订单金额（GMV）', minWidth: 168, maxWidth: 220, align: 'right', tooltip: true },
-    { key: 'total_amount', label: '应付合计', minWidth: 136, maxWidth: 190, align: 'right', tooltip: true },
-    { key: 'received_amount', label: '已回款', minWidth: 128, maxWidth: 190, align: 'right', tooltip: true, sortable: false },
-    { key: 'status', label: '订单/小满状态', minWidth: 184, maxWidth: 240, tooltip: true },
-    { key: 'transaction_route', label: '正式来源', minWidth: 120, defaultVisible: false },
-    { key: 'shadow_status', label: '对比状态', minWidth: 125, defaultVisible: false },
+    { key: 'invoice_no', label: '发票号', prop: 'invoice_no', minWidth: 152, maxWidth: 215, fitContent: true, className: 'invoice-number-column', fixed: 'left' },
+    { key: 'customer_name', label: '客户', prop: 'customer_name', minWidth: 84, maxWidth: 200, fitContent: true, tooltip: true },
+    { key: 'item_count', label: '型号/数量', sortLabel: '型号行数', prop: 'item_count', minWidth: 100, maxWidth: 165, fitContent: true, align: 'right', tooltip: true },
+    { key: 'order_amount', label: '订单金额（GMV）', minWidth: 140, maxWidth: 220, fitContent: true, align: 'right', tooltip: true },
+    { key: 'total_amount', label: '应付合计', minWidth: 96, maxWidth: 190, fitContent: true, align: 'right', tooltip: true },
+    { key: 'received_amount', label: '已回款', minWidth: 84, maxWidth: 190, fitContent: true, align: 'right', tooltip: true, sortable: false },
+    { key: 'status', label: '订单/小满状态', minWidth: 132, maxWidth: 200, fitContent: true, tooltip: true },
     { key: 'created_by', label: '创建人', minWidth: 90, maxWidth: 120, tooltip: true, defaultVisible: false },
     { key: 'created_at', label: '创建时间', minWidth: 130, maxWidth: 160, tooltip: true, defaultVisible: false },
   ]

@@ -76,23 +76,27 @@ def list_invoices(
     if date_to:
         query = query.filter(Invoice.invoice_date <= date_to)
     total = query.count()
-    sort_columns = {**{name: getattr(Invoice, name) for name in ("invoice_no", "customer_name", "order_type", "invoice_date", "total_amount", "status", "sync_status", "created_at")}, "item_count": func.count(InvoiceItem.id), "created_by_name": db.query(ArkUser.real_name).filter(ArkUser.id == Invoice.created_by).correlate(Invoice).scalar_subquery()}
+    item_count = func.count(InvoiceItem.id)
+    total_quantity = func.coalesce(func.sum(InvoiceItem.quantity), 0)
+    sort_columns = {**{name: getattr(Invoice, name) for name in ("invoice_no", "customer_name", "order_type", "invoice_date", "total_amount", "status", "sync_status", "created_at")}, "item_count": item_count, "created_by_name": db.query(ArkUser.real_name).filter(ArkUser.id == Invoice.created_by).correlate(Invoice).scalar_subquery()}
     sort_columns["order_amount"] = Invoice.total_amount - Invoice.surcharge_amount
     rows = (
-        apply_list_sort(query.outerjoin(InvoiceItem).group_by(Invoice.id).with_entities(Invoice, func.count(InvoiceItem.id).label("item_count")), sort_field, sort_order, sort_columns, default=(Invoice.created_at.desc(),), tie_breakers=(Invoice.id.asc(),))
+        apply_list_sort(query.outerjoin(InvoiceItem, and_(InvoiceItem.invoice_id == Invoice.id, InvoiceItem.presale_archived == 0))
+                        .group_by(Invoice.id).with_entities(Invoice, item_count, total_quantity), sort_field, sort_order, sort_columns, default=(Invoice.created_at.desc(),), tie_breakers=(Invoice.id.asc(),))
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
     )
-    creator_names = _resolve_user_names(db, {inv.created_by for inv, _ in rows if inv.created_by})
-    return [
-        _invoice_list_row(invoice, item_count, creator_names.get(invoice.created_by))
-        for invoice, item_count in rows
-    ], total
+    creator_names = _resolve_user_names(db, {inv.created_by for inv, _, _ in rows if inv.created_by})
+    from app.invoice import list_receipts
 
-
-
-
+    paid = list_receipts.amounts(db, [invoice for invoice, _, _ in rows], user)
+    items = []
+    for invoice, count, quantity in rows:
+        received, payable = paid.get(invoice.id, (None, None))
+        items.append(dict(_invoice_list_row(invoice, count, creator_names.get(invoice.created_by)),
+                          total_quantity=int(quantity), received_amount=received, receipt_payable_amount=payable))
+    return items, total
 
 
 def _visible_invoice_query(

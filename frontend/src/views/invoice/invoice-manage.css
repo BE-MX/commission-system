@@ -120,9 +120,18 @@
   background-color: rgba(245, 236, 220, 0.98);
 }
 
-.invoice-table {
-  width: 100%;
+.invoice-table--compact {
+  /* Include the outer border on both sides of the grid. */
+  width: min(100%, calc(var(--invoice-table-width) + 2px));
 }
+
+/* Include the full sortable header and measure invoices before wrapping. */
+.invoice-table--measuring :deep(th > .cell),
+.invoice-table--measuring :deep(.invoice-number-column .invoice-pair) {
+  width: max-content;
+}
+
+.invoice-customer-name { white-space: nowrap; }
 
 .invoice-pair {
   display: flex;
@@ -187,7 +196,8 @@
   margin-right: 4px;
 }
 
-.invoice-model-quantity { font-variant-numeric: tabular-nums; }
+.invoice-model-quantity { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.invoice-statuses { display: inline-flex; width: max-content; white-space: nowrap; }
 .invoice-received--equal { color: var(--text-primary); font-weight: 400; }
 .invoice-received--overpaid { color: var(--color-warning-text); font-weight: 700; }
 .invoice-received--underpaid { color: var(--tag-danger-text); font-weight: 700; }
