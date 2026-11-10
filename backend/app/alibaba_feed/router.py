@@ -15,14 +15,9 @@ from .http import FeedRoute
 from .transport import read_json_body
 
 
-def require_enabled():
-    if not get_settings().ALIBABA_FEED_ENABLED:
-        raise FeedError(503, "FEED_DISABLED")
-
-
 # M2M exception to JWT RBAC: revocable, source-bound Integration App credentials
 # recheck the owner's live permissions; invoice credentials cannot enter this API.
-router = APIRouter(route_class=FeedRoute, dependencies=[Depends(require_enabled)])
+router = APIRouter(route_class=FeedRoute)
 _write = require_feed_scope("alibaba_feed:write")
 _read = require_feed_scope("alibaba_feed:read")
 RunId = Annotated[str, Path(pattern=r"^[A-Za-z0-9_-]{1,96}$")]

@@ -48,7 +48,7 @@ export const MENU_GROUPS = {
     title: '客户经营',
     icon: Aim,
     anyPermission: [
-      'customer:read', 'client_desk:read',
+      'customer:read', 'client_desk:read', 'alibaba_feed:admin',
       'sales_automation:read',
       'customer_opportunity:read', 'customer_radar:read',
       'mail_outreach:read', 'mail_outreach:write', 'mail_outreach:admin',
@@ -369,8 +369,8 @@ export const NAV_ENTRIES = [
   {
     path: '/alibaba-feed', name: 'AlibabaFeed', title: 'TM 资料',
     component: () => import('@/views/alibaba_feed/AlibabaFeed.vue'),
-    permission: 'client_desk:read',
-    menu: { group: 'customerOperations', title: 'TM 资料', icon: ChatDotRound, order: -5, permission: 'client_desk:read' },
+    anyPermission: ['client_desk:read', 'alibaba_feed:admin'],
+    menu: { group: 'customerOperations', title: 'TM 资料', icon: ChatDotRound, order: -5, anyPermission: ['client_desk:read', 'alibaba_feed:admin'] },
   },
   {
     path: '/customer-hub/customers',

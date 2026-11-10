@@ -92,9 +92,10 @@ def rule_eligibility(db, item, source=None, *, user_id=None, now=None):
                           ("LATEST_COVERAGE_REQUIRED", latest), ("ROLE_SEMANTICS_UNVERIFIED", roles_verifiable)):
         if not passed:
             reasons.append(label)
-    enabled = bool(settings.ALIBABA_FEED_AUTOMATION_ENABLED and settings.CLIENT_DESK_ENABLED
-                   and settings.ALIBABA_FEED_BUSINESS_ENABLED
-                   and user_id is not None and user_id in settings.CLIENT_DESK_PILOT_USER_IDS)
+    from .pilot_service import active_pilot
+    pilot = active_pilot(db) if settings.ALIBABA_FEED_AUTOMATION_ENABLED and settings.CLIENT_DESK_ENABLED else None
+    enabled = bool(pilot and source and pilot.source_id == source.id and pilot.user_id == user_id
+                   and user_id in settings.CLIENT_DESK_PILOT_USER_IDS)
     if not enabled:
         reasons.append("AUTOMATION_DISABLED")
     missing_capabilities = [name for name in ("stable_message_ids", "reliable_order", "latest_coverage", "human_identity", "activity_scan", "deletions")

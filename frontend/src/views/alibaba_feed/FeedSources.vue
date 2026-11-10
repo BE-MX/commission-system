@@ -1,110 +1,273 @@
 <template>
-  <section class="source-settings" v-permission="'alibaba_feed:admin'">
-    <p class="muted">精确匹配平台负责人显示名。配置来源不读取聊天正文；采集 token 不能用于此页面登录。开关仅在保存时变更。</p>
-    <div class="action-bar"><GlassButton :loading="loading" left-icon="Refresh" @click="load">刷新配置</GlassButton></div>
+  <section class="source-settings" v-permission="'alibaba_feed:admin'" v-loading="loading">
+    <header class="pilot-header">
+      <div>
+        <h2>店铺试点</h2>
+        <p>登记一个店铺和一位业务员。保存配置后，可单独启用试点。</p>
+      </div>
+      <GlassButton :disabled="loading || !!busy" left-icon="Refresh" @click="load()">刷新配置</GlassButton>
+    </header>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
-    <el-table :data="sources" v-loading="loading" border class="list-table" v-sticky-scrollbar>
-      <el-table-column prop="name" label="来源" min-width="150" show-overflow-tooltip />
-      <el-table-column prop="source_account_uid" label="来源账号" min-width="190" show-overflow-tooltip />
-      <el-table-column prop="consent_state" label="授权状态" min-width="120" show-overflow-tooltip />
-      <el-table-column label="资料共享 / AI 出站 / 私海资料" min-width="240"><template #default="{ row }">{{ row.crm_shared ? '开' : '关' }} / {{ row.ai_egress_allowed ? '开' : '关' }} / {{ row.private_feed_enabled ? '开' : '关' }}</template></el-table-column>
-      <el-table-column prop="version" label="版本" min-width="80" />
-      <el-table-column label="身份闸门" min-width="150"><template #default="{ row }"><StatusBadge size="small" effect="plain" :type="row.legacy_identity_blocked ? 'warning' : 'info'">{{ row.legacy_identity_blocked ? '旧身份已阻断' : '按规则核验' }}</StatusBadge></template></el-table-column>
-      <el-table-column label="操作" class-name="table-action-column" min-width="100" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="Setting" @click="edit(row)" :disabled="saving || uncertain">配置</GlassButton></template></el-table-column>
-    </el-table>
-    <el-dialog :model-value="!!editing" @update:model-value="v => { if (!v && !saving) editing = null }" title="来源配置" width="640px" :close-on-click-modal="!saving" :close-on-press-escape="!saving" destroy-on-close>
-      <template v-if="editing">
-        <p>{{ editing.name }} · 版本 {{ editing.version }}</p>
-        <el-alert title="自动规则保持关闭；采集能力的核验结果仅供查看，不在此开启自动经营。" type="info" :closable="false" />
-        <p class="muted">采集能力版本 {{ editing.capability_version ?? '—' }} · {{ editing.legacy_identity_blocked ? '旧身份已阻断' : '旧身份未阻断' }}</p>
-        <p class="muted">已核验：{{ capabilities(editing) }}</p>
-        <p v-if="editing.verified_capabilities?.evidence_note" class="evidence-note">核验依据：{{ editing.verified_capabilities.evidence_note }}</p>
-        <el-form label-position="top">
-          <el-form-item label="精确显示名 → 方舟业务员">
-            <div class="aliases">
-              <div v-for="(alias, index) in aliases" :key="index" class="alias-row">
-                <el-input v-model="alias.name" placeholder="平台完整显示名（精确匹配）" aria-label="平台完整显示名" />
-                <el-select v-model="alias.userId" filterable placeholder="选择业务员" aria-label="映射方舟业务员"><el-option v-for="owner in owners" :key="owner.id" :label="owner.real_name || owner.username" :value="owner.id" /></el-select>
-                <GlassButton variant="link" link-tone="danger" @click="aliases.splice(index, 1)" :disabled="saving">移除</GlassButton>
-              </div>
-              <GlassButton @click="aliases.push({ name: '', userId: null })" :disabled="saving">添加精确映射</GlassButton>
+    <template v-if="pilot">
+      <div class="pilot-status">
+        <StatusBadge :type="pilot.enabled ? 'success' : 'info'" effect="plain">{{ statusLabel }}</StatusBadge>
+        <span v-if="pilot.source">采集代次 {{ pilot.source.collection_generation }}</span>
+      </div>
+      <el-form label-position="top" :disabled="locked || pilot.enabled" @submit.prevent="save">
+        <div class="pilot-fields">
+          <el-form-item label="店铺名称" required>
+            <el-input v-model.trim="form.name" maxlength="100" placeholder="输入阿里国际站店铺名称" />
+          </el-form-item>
+          <el-form-item label="店铺来源标识" required>
+            <el-input v-model.trim="form.source_account_uid" maxlength="64" placeholder="与 AW 配置中的来源标识一致" />
+          </el-form-item>
+          <el-form-item label="AW 采集账号" required>
+            <el-select v-model="form.integration_app_id" filterable placeholder="选择 AW 专用接入应用">
+              <el-option v-if="missingCollector" disabled :value="form.integration_app_id" label="已绑定的采集账号不可用" />
+              <el-option v-for="app in pilot.collectors" :key="app.id" :value="app.id" :label="app.name + ' · ' + app.public_id" />
+            </el-select>
+            <div class="collector-help">
+              <span v-if="!pilot.collectors.length">暂无有效的 AW 专用接入应用。</span>
+              <GlassButton v-permission="'integration:admin'" variant="link" :disabled="!canIssue" @click="issueCollector">创建 AW 专用凭据</GlassButton>
             </div>
           </el-form-item>
-          <el-form-item label="业务资料共享"><el-switch v-model="editing.crm_shared" :disabled="saving" /></el-form-item>
-          <el-form-item label="允许 AI 出站"><el-switch v-model="editing.ai_egress_allowed" :disabled="saving" /></el-form-item>
-          <el-form-item label="开放本人私海 TM 资料"><el-switch v-model="editing.private_feed_enabled" :disabled="saving" /></el-form-item>
-        </el-form>
-        <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" />
+          <el-form-item label="试点业务员" required>
+            <el-select v-model="form.user_id" filterable placeholder="选择有 TM 资料读取权限的业务员">
+              <el-option v-if="missingUser" disabled :value="form.user_id" label="已选业务员已停用或缺少权限" />
+              <el-option v-for="user in pilot.users" :key="user.id" :value="user.id" :label="userLabel(user)" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="AW 导出的负责人显示名" required>
+            <el-input v-model="form.owner_alias" maxlength="200" placeholder="输入完整显示名，按原文精确匹配" />
+          </el-form-item>
+        </div>
+        <p v-if="pilot.enabled" class="pilot-hint">停用试点后可修改店铺配置。已接收的批次会保留。</p>
+        <p v-else-if="dirty && pilot.source" class="pilot-hint">请先保存更改，再启用试点。</p>
+        <div class="pilot-actions">
+          <GlassButton v-if="!pilot.enabled" native-type="submit" variant="primary" :disabled="!dirty || !valid || locked" :loading="busy === 'save'">保存配置</GlassButton>
+          <GlassButton v-if="!pilot.enabled" :disabled="!canActivate" :loading="busy === 'activation'" @click="setEnabled(true)">启用试点</GlassButton>
+          <GlassButton v-else :disabled="locked" :loading="busy === 'activation'" @click="setEnabled(false)">停用试点</GlassButton>
+        </div>
+      </el-form>
+    </template>
+    <el-dialog :model-value="!!issuedToken" title="AW 专用凭据" width="480px" @update:model-value="visible => { if (!visible) issuedToken = '' }" destroy-on-close>
+      <p>Token 仅显示一次。请将它保存到 AW 的凭据环境变量。</p>
+      <el-input :model-value="issuedToken" readonly type="password" show-password aria-label="AW Token" />
+      <el-alert v-if="copyError" :title="copyError" type="warning" :closable="false" />
+      <template #footer>
+        <GlassButton @click="issuedToken = ''">关闭</GlassButton>
+        <GlassButton variant="primary" @click="copyToken">复制 Token</GlassButton>
       </template>
-      <template #footer><GlassButton :disabled="saving" @click="editing = null">取消</GlassButton><GlassButton variant="primary" :loading="saving" :disabled="uncertain" @click="save">保存配置</GlassButton></template>
     </el-dialog>
   </section>
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { alibabaFeedApi as api } from '@/api/alibabaFeed'
+import { createIntegrationApp } from '@/api/integrationApps'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/errors'
-import { msgSuccessText } from '@/utils/feedback'
+import { confirmAction, isFeedbackCancelled, msgSuccessText } from '@/utils/feedback'
 import { createReadScope } from './feedState'
+
+const errors = {
+  PILOT_CONFIGURATION_UNAVAILABLE: '试点配置尚未初始化，请联系系统管理员。',
+  PILOT_VERSION_CONFLICT: '其他管理员已更新配置。请刷新后核对。',
+  PILOT_PAUSE_REQUIRED: '试点正在启用，请刷新并停用后再修改。',
+  PILOT_SOURCE_ALREADY_BOUND: '该来源标识已绑定其他采集账号。请选择原账号，或使用新的来源标识。',
+  PILOT_COLLECTOR_ALREADY_BOUND: '该采集账号已绑定其他店铺来源。请选择另一 AW 专用账号。',
+  PILOT_COLLECTOR_INVALID: '采集账号不可用。请选择有接收和回执权限的 AW 专用应用。',
+  PILOT_USER_INVALID: '试点业务员须为有效账号，且拥有 TM 资料读取权限。',
+  PILOT_CONSENT_REQUIRED: '请先保存配置并确认店铺已授权采集和资料共享。',
+  PILOT_MAPPING_REQUIRED: '请先保存 AW 负责人与试点业务员的精确映射。',
+}
+
 const auth = useAuthStore()
-const sources = ref([]), owners = ref([]), loading = ref(false), error = ref('')
-const editing = ref(null), aliases = ref([]), saving = ref(false), saveError = ref(''), uncertain = ref(false)
+const pilot = ref(null)
+const form = ref(formFor(null))
+const loading = ref(false)
+const error = ref('')
+const busy = ref('')
+const needsRefresh = ref(false)
+const issuedToken = ref('')
+const copyError = ref('')
 const scope = createReadScope()
 let authority = 0
-function capabilities(row) {
-  const labels = { stable_message_ids: '稳定消息标识', reliable_order: '可靠顺序', latest_coverage: '最新消息覆盖', human_identity: '人工身份', activity_scan: '活跃扫描', deletions: '删除覆盖' }
-  return Object.entries(labels).filter(([key]) => row.verified_capabilities?.[key] === true).map(([, label]) => label).join('、') || '尚无已核验能力'
-}
-async function load() {
-  if (!auth.hasPermission('alibaba_feed:admin')) return
-  const read = scope.begin(); loading.value = true; error.value = ''; sources.value = []; owners.value = []
-  try {
-    const [sourceData, ownerData] = await Promise.all([api.sources(read.signal), api.owners(read.signal)])
-    if (read.isCurrent()) { sources.value = sourceData.items; owners.value = ownerData.items }
-  } catch (failure) { if (read.isCurrent()) error.value = errorMessage(failure) }
-  finally { if (read.isCurrent()) loading.value = false }
-}
-function edit(row) {
-  editing.value = { ...row }; saveError.value = ''
-  aliases.value = Object.entries(row.owner_aliases || {}).map(([name, userId]) => ({ name, userId }))
-}
-async function save() {
-  if (!editing.value || saving.value || uncertain.value || !auth.hasPermission('alibaba_feed:admin')) return
-  const names = aliases.value.map(item => item.name)
-  if (aliases.value.some(item => !item.name.trim() || !owners.value.some(owner => owner.id === item.userId)) || new Set(names).size !== names.length) {
-    saveError.value = '请为每个完整显示名选择有效业务员，显示名不可重复。'; return
+
+function formFor(value) {
+  return {
+    name: value?.source?.name ?? '',
+    source_account_uid: value?.source?.source_account_uid ?? '',
+    integration_app_id: value?.source?.integration_app_id ?? null,
+    user_id: value?.user_id ?? null,
+    owner_alias: value?.owner_alias ?? '',
   }
-  const current = authority, row = editing.value
-  saving.value = true; saveError.value = ''
+}
+
+const dirty = computed(() => JSON.stringify(form.value) !== JSON.stringify(formFor(pilot.value)))
+const locked = computed(() => loading.value || !!busy.value || needsRefresh.value)
+const missingCollector = computed(() => !!form.value.integration_app_id && !pilot.value?.collectors.some(app => app.id === form.value.integration_app_id))
+const missingUser = computed(() => !!form.value.user_id && !pilot.value?.users.some(user => user.id === form.value.user_id))
+const valid = computed(() => !!(form.value.name && /^[A-Za-z0-9._:-]{1,64}$/.test(form.value.source_account_uid)
+  && form.value.integration_app_id && !missingCollector.value && form.value.user_id && !missingUser.value && form.value.owner_alias.trim()))
+const statusLabel = computed(() => pilot.value?.enabled ? '试点已启用' : pilot.value?.source ? '已配置 · 未启用' : '未配置')
+const canActivate = computed(() => !!pilot.value?.source && !dirty.value && valid.value && !locked.value)
+const canIssue = computed(() => !locked.value && !pilot.value?.enabled && !!auth.user?.id && form.value.name.length >= 2
+  && ['integration:admin', 'alibaba_feed:read', 'alibaba_feed:write'].every(permission => auth.hasPermission(permission)))
+
+function userLabel(user) {
+  return user.real_name ? user.real_name + ' · ' + user.username : user.username
+}
+
+async function load({ keepDraft = false } = {}) {
+  if (!auth.hasPermission('alibaba_feed:admin')) return
+  const read = scope.begin()
+  loading.value = true
+  error.value = ''
   try {
-    await api.saveSource(row.source_account_uid, {
-      expected_version: row.version, owner_aliases: Object.fromEntries(aliases.value.map(item => [item.name, item.userId])),
-      crm_shared: row.crm_shared, ai_egress_allowed: row.ai_egress_allowed, private_feed_enabled: row.private_feed_enabled,
+    const data = await api.pilot(read.signal)
+    if (!read.isCurrent()) return
+    pilot.value = data
+    if (!keepDraft || data.enabled) form.value = formFor(data)
+    needsRefresh.value = false
+  } catch (failure) {
+    if (read.isCurrent()) reportFailure(failure, false)
+  } finally {
+    if (read.isCurrent()) loading.value = false
+  }
+}
+
+function reportFailure(failure, write = true) {
+  const status = failure.response?.status
+  const code = failure.response?.data?.data?.error_code
+  if ([401, 403].includes(status)) {
+    pilot.value = null
+    form.value = formFor(null)
+    issuedToken.value = ''
+  }
+  const uncertain = write && (!status || status >= 500)
+  needsRefresh.value = uncertain || !write || ['PILOT_VERSION_CONFLICT', 'PILOT_PAUSE_REQUIRED'].includes(code)
+  error.value = uncertain ? '提交结果待核对，请先刷新配置。' : errors[code] || errorMessage(failure, '操作失败，请重试')
+}
+
+function applyState(data) {
+  pilot.value = { ...pilot.value, ...data }
+  form.value = formFor(pilot.value)
+}
+
+async function save() {
+  if (locked.value || !dirty.value || !valid.value || pilot.value?.enabled || !auth.hasPermission('alibaba_feed:admin')) return
+  const current = authority
+  busy.value = 'save'
+  error.value = ''
+  try {
+    const data = await api.savePilot({ ...form.value, expected_version: pilot.value.version })
+    if (current !== authority) return
+    applyState(data)
+    msgSuccessText('已保存配置，试点仍未启用')
+  } catch (failure) {
+    if (current === authority) reportFailure(failure)
+  } finally {
+    if (current === authority) busy.value = ''
+  }
+}
+
+async function setEnabled(enabled) {
+  if (locked.value || !pilot.value || !auth.hasPermission('alibaba_feed:admin')
+    || (enabled ? !canActivate.value : !pilot.value.enabled)) return
+  const current = authority
+  const version = pilot.value.version
+  busy.value = 'activation'
+  error.value = ''
+  try {
+    if (enabled) {
+      const user = pilot.value.users.find(row => row.id === pilot.value.user_id)
+      await confirmAction('确认“' + pilot.value.source.name + '”已授权采集和资料共享。启用后接收该店铺的 AW 批次，资料只开放给 ' + userLabel(user) + '。',
+        '确认启用试点', { confirmButtonText: '确认授权并启用', cancelButtonText: '取消', type: 'warning' })
+    }
+    if (current !== authority) return
+    const data = await api.activatePilot({ enabled, expected_version: version, consent_confirmed: enabled })
+    if (current !== authority) return
+    applyState(data)
+    msgSuccessText(enabled ? '试点已启用' : '试点已停用')
+  } catch (failure) {
+    if (current === authority && !isFeedbackCancelled(failure)) reportFailure(failure)
+  } finally {
+    if (current === authority) busy.value = ''
+  }
+}
+
+async function issueCollector() {
+  if (!canIssue.value || !auth.hasPermission('alibaba_feed:admin')) return
+  const current = authority
+  busy.value = 'issue'
+  error.value = ''
+  try {
+    await confirmAction('为当前登录账号生成专用 AW Token。请准备好 AW 的凭据环境变量，Token 仅显示一次。',
+      '创建 AW 专用凭据', { confirmButtonText: '生成 Token', cancelButtonText: '取消' })
+    if (current !== authority) return
+    const { data } = await createIntegrationApp({
+      name: (form.value.name + ' · AW').slice(0, 100),
+      owner_user_id: auth.user.id,
+      scopes: ['alibaba_feed:read', 'alibaba_feed:write'],
     })
     if (current !== authority) return
-    editing.value = null; msgSuccessText('来源配置已保存'); await load()
+    issuedToken.value = data.token
+    copyError.value = ''
+    form.value.integration_app_id = data.id
+    await load({ keepDraft: true })
   } catch (failure) {
-    if (current !== authority) return
-    uncertain.value = !failure.response || failure.response.status >= 500
-    saveError.value = uncertain.value ? '保存结果待核对，未自动重试。请关闭窗口并刷新配置核对；重新进入页面后再编辑。' : errorMessage(failure)
-    if ([401, 403].includes(failure.response?.status)) { editing.value = null; sources.value = []; owners.value = [] }
-  } finally { if (current === authority) saving.value = false }
+    if (current === authority && !isFeedbackCancelled(failure)) reportFailure(failure)
+  } finally {
+    if (current === authority) busy.value = ''
+  }
 }
+
+async function copyToken() {
+  try {
+    await navigator.clipboard.writeText(issuedToken.value)
+    copyError.value = ''
+    msgSuccessText('已复制 Token')
+  } catch {
+    copyError.value = '无法访问剪贴板，请显示 Token 后选中复制。'
+  }
+}
+
+function resetAuthority() {
+  authority += 1
+  scope.clear()
+  pilot.value = null
+  form.value = formFor(null)
+  loading.value = false
+  busy.value = ''
+  error.value = ''
+  needsRefresh.value = false
+  issuedToken.value = ''
+}
+
 watch(() => JSON.stringify([auth.user?.id, auth.permissions, auth.roles]), () => {
-  authority += 1; scope.clear(); sources.value = []; owners.value = []; editing.value = null; aliases.value = []; saving.value = false
+  resetAuthority()
+  load()
 }, { flush: 'sync' })
-onMounted(load)
-onUnmounted(() => { authority += 1; scope.clear(); sources.value = []; owners.value = [] })
+onMounted(() => load())
+onUnmounted(resetAuthority)
 </script>
 
 <style scoped>
-.muted { color: var(--text-secondary); }
-.evidence-note { white-space: pre-wrap; overflow-wrap: anywhere; }
-.source-settings { padding: 18px; }
-.aliases { display: grid; gap: 12px; width: 100%; }
-.alias-row { display: flex; gap: 8px; align-items: center; }
-.alias-row > .el-input, .alias-row > .el-select { min-width: 0; flex: 1; }
-@media (max-width: 600px) { .alias-row { flex-wrap: wrap; } }
+.source-settings { padding: 20px; }
+.pilot-header, .pilot-status, .pilot-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.pilot-header { justify-content: space-between; margin-bottom: 16px; }
+.pilot-header h2 { font-size: 16px; margin: 0 0 4px; }
+.pilot-header p, .pilot-hint, .pilot-status > span, .collector-help { color: var(--text-secondary); font-size: 13px; margin: 0; }
+.pilot-status { margin-bottom: 18px; }
+.pilot-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; max-width: 920px; }
+.pilot-fields .el-select { width: 100%; }
+.collector-help { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pilot-actions { margin-top: 12px; }
+.source-settings .el-alert { margin-bottom: 12px; }
+@media (max-width: 640px) {
+  .source-settings { padding: 12px; }
+  .pilot-fields { grid-template-columns: minmax(0, 1fr); }
+}
 </style>

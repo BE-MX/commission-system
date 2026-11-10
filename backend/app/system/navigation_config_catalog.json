@@ -1,5 +1,5 @@
 {
-  "source_sha256": "179f9c9d8e0b44beb83df1d3870a94bfe82f0dd17147ce70287abf8c2d07b5a8",
+  "source_sha256": "61382a02ac7e46c2323642eebf9de6827a3cc2f55630da005970d95bf39e8310",
   "nodes": [
     {
       "id": "customerPortal",
@@ -862,7 +862,7 @@
       "titleSync": false,
       "path": "/client-desk",
       "external": false,
-      "rule": "client_desk:read / client_desk:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "client_desk:read / client_desk:read / customer:read / client_desk:read / alibaba_feed:admin / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },
@@ -882,7 +882,7 @@
       "titleSync": false,
       "path": "/alibaba-feed",
       "external": false,
-      "rule": "client_desk:read / client_desk:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "client_desk:read / alibaba_feed:admin / client_desk:read / alibaba_feed:admin / customer:read / client_desk:read / alibaba_feed:admin / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },
@@ -902,7 +902,7 @@
       "titleSync": false,
       "path": "/customer-hub/customers",
       "external": false,
-      "rule": "customer:read / customer_radar:read / customer_pcw:read / customer:read / customer_radar:read / customer_pcw:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "customer:read / customer_radar:read / customer_pcw:read / customer:read / customer_radar:read / customer_pcw:read / customer:read / client_desk:read / alibaba_feed:admin / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },
@@ -922,7 +922,7 @@
       "titleSync": false,
       "path": "/customer-hub/acquisition",
       "external": false,
-      "rule": "sales_automation:read / sales_automation:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "sales_automation:read / sales_automation:read / customer:read / client_desk:read / alibaba_feed:admin / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },
@@ -942,7 +942,7 @@
       "titleSync": false,
       "path": "/customer-hub/research",
       "external": false,
-      "rule": "sales_automation:read / sales_automation:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "sales_automation:read / sales_automation:read / customer:read / client_desk:read / alibaba_feed:admin / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },
@@ -962,7 +962,7 @@
       "titleSync": false,
       "path": "/customer-hub/opportunities",
       "external": false,
-      "rule": "customer_opportunity:read / customer_opportunity:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "customer_opportunity:read / customer_opportunity:read / customer:read / client_desk:read / alibaba_feed:admin / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },
@@ -982,7 +982,7 @@
       "titleSync": false,
       "path": "/customer-hub/calendar",
       "external": false,
-      "rule": "customer_pcw:read / customer_radar:read / customer_pcw:read / customer_radar:read / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "customer_pcw:read / customer_radar:read / customer_pcw:read / customer_radar:read / customer:read / client_desk:read / alibaba_feed:admin / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },
@@ -1002,7 +1002,7 @@
       "titleSync": false,
       "path": "/mail-outreach",
       "external": false,
-      "rule": "mail_outreach:read / mail_outreach:write / mail_outreach:admin / mail_outreach:read / mail_outreach:write / mail_outreach:admin / customer:read / client_desk:read / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "rule": "mail_outreach:read / mail_outreach:write / mail_outreach:admin / mail_outreach:read / mail_outreach:write / mail_outreach:admin / customer:read / client_desk:read / alibaba_feed:admin / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },

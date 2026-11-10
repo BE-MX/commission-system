@@ -1,5 +1,5 @@
 {
-  "source_sha256": "179f9c9d8e0b44beb83df1d3870a94bfe82f0dd17147ce70287abf8c2d07b5a8",
+  "source_sha256": "61382a02ac7e46c2323642eebf9de6827a3cc2f55630da005970d95bf39e8310",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -562,6 +562,7 @@
         "anyPermission": [
           "customer:read",
           "client_desk:read",
+          "alibaba_feed:admin",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",
@@ -573,15 +574,22 @@
     ],
     "AlibabaFeed": [
       {
-        "permission": "client_desk:read"
+        "anyPermission": [
+          "client_desk:read",
+          "alibaba_feed:admin"
+        ]
       },
       {
-        "permission": "client_desk:read"
+        "anyPermission": [
+          "client_desk:read",
+          "alibaba_feed:admin"
+        ]
       },
       {
         "anyPermission": [
           "customer:read",
           "client_desk:read",
+          "alibaba_feed:admin",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",
@@ -610,6 +618,7 @@
         "anyPermission": [
           "customer:read",
           "client_desk:read",
+          "alibaba_feed:admin",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",
@@ -634,6 +643,7 @@
         "anyPermission": [
           "customer:read",
           "client_desk:read",
+          "alibaba_feed:admin",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",
@@ -658,6 +668,7 @@
         "anyPermission": [
           "customer:read",
           "client_desk:read",
+          "alibaba_feed:admin",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",
@@ -682,6 +693,7 @@
         "anyPermission": [
           "customer:read",
           "client_desk:read",
+          "alibaba_feed:admin",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",
@@ -708,6 +720,7 @@
         "anyPermission": [
           "customer:read",
           "client_desk:read",
+          "alibaba_feed:admin",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",
@@ -736,6 +749,7 @@
         "anyPermission": [
           "customer:read",
           "client_desk:read",
+          "alibaba_feed:admin",
           "sales_automation:read",
           "customer_opportunity:read",
           "customer_radar:read",

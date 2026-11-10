@@ -38,14 +38,18 @@ def accept_batch(db, source, raw_body, idempotency_key, *, now=None, limits=None
     source_uid = source.source_account_uid
     db.rollback()
     try:
-        # Lock order matches credential/admin operations: app -> source -> new batch.
+        # Lock order matches pilot/admin operations: pilot -> app -> source -> batch.
         from .auth import recheck_feed_principal
+        from .pilot_service import require_receiver
+        pilot = require_receiver(db)
         recheck_feed_principal(db, source, required_scope="alibaba_feed:write")
         row = db.query(AlibabaFeedSource).filter_by(source_account_uid=source_uid).populate_existing().with_for_update().first()
         if (row is None or not row.ingest_enabled or row.consent_state != "authorized"
                 or getattr(source, "generation", row.collection_generation) != row.collection_generation
                 or getattr(source, "integration_app_id", row.integration_app_id) != row.integration_app_id):
             raise FeedError(403, "SOURCE_DISABLED")
+        if pilot.source_id != row.id:
+            raise FeedError(403, "SOURCE_SCOPE_DENIED")
         existing = db.query(AlibabaFeedBatch).filter_by(source_account_uid=row.source_account_uid, run_id=idempotency_key).first()
         if existing:
             if existing.body_hash != body_hash:

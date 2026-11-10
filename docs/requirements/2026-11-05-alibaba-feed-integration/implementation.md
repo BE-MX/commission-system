@@ -24,13 +24,15 @@
 | `POST /api/alibaba-feed/sources` | 用户 JWT，实时 `alibaba_feed:admin` 或 super_admin，新建来源绑定 |
 | `PATCH /api/alibaba-feed/sources/{source_uid}` | 同上，必需 `expected_version`，版本冲突 409 |
 
-GET 支持 `issue_offset>=0`、`issue_limit=1..100`，响应字段为 `issues_offset/issues_limit/issues_total`。机器凭据不能管理来源，发票凭据不能上传或查回执。跨来源查询与不存在对象同样返回 404，不泄漏其他来源的存在性。
+GET 支持 `issue_offset>=0`、`issue_limit=1..100`，响应字段为 `issues_offset/issues_limit/issues_total`。机器凭据不能管理来源，发票凭据不能上传或查回执。非试点来源返回 403，试点来源下不存在的回执返回 404。
 
 来源创建字段：`source_account_uid`、`integration_app_id`、`name`，可选 `ingest_enabled=false`、`consent_state=pending`。PATCH 仅接受 `expected_version`、`name`、`ingest_enabled`、`consent_state`，不能换绑 App 或改来源 ID。撤销或待授权自动关闭接收；授权状态变更递增 `consent_version`，任意成功修改递增 `version`。启用时复核 App 与拥有者当前权限。
 
 错误只含静态代码、字段路径和请求 ID，不回显未知字段名、字段值、消息正文或 SQL 参数。来源管理也使用安全错误信封。
 
-`ALIBABA_FEED_ENABLED=false`、`ALIBABA_FEED_WORKER_ENABLED=false` 默认关闭，与 `CLIENT_DESK_ENABLED=false` 独立。两个 feed 开关都打开且既有单活 scheduler 启用时，才每 15 秒执行一次 `alibaba_feed_worker`，每轮最多处理 10 批。只开接收不开 worker 时保留 queued，排队满后返回 429。
+迁移 256 起，管理员通过「客户经营 → TM 资料 → 来源配置」登记店铺名称与来源标识、选择 AW 专用接入应用和一名业务员，保存后试点仍关闭。来源标识须与 AW 的 `source_account_uid` 一致，AW 采集范围设为授权店铺与负责人。具有接入凭据管理权限且自身具备 Feed 读写权限的管理员可从该页签发专用 Token，仅展示一次。启用须再次确认采集和资料共享授权。接收、队列处理、业务查阅均读取共享库中的试点开关，与 `CLIENT_DESK_ENABLED` 独立。需要停止时在来源配置停用。
+
+单活 Scheduler 每 15 秒检查一次，启用时只领取试点来源的批次，每轮最多 10 批。停用保留已接收批次，领取中的批次在处理边界暂停，重新启用同一来源可接续处理。排队满后返回 429。
 
 | 配置 | 默认 |
 | --- | --- |

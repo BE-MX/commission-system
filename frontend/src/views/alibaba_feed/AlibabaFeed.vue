@@ -4,10 +4,10 @@
     <div class="feed-aurora lg-aurora" aria-hidden="true"><div class="lg-aurora__blob lg-aurora__blob--gold" /></div>
     <div ref="panelRef" class="table-card feed-panel">
       <div class="feed-tabs" role="tablist" aria-label="TM资料视图">
-        <GlassButton role="tab" :aria-selected="tab === 'records'" :variant="tab === 'records' ? 'primary' : 'secondary'" @click="tab = 'records'">我的资料</GlassButton>
+        <GlassButton v-permission="'client_desk:read'" role="tab" :aria-selected="tab === 'records'" :variant="tab === 'records' ? 'primary' : 'secondary'" @click="tab = 'records'">我的资料</GlassButton>
         <GlassButton v-permission="'alibaba_feed:admin'" role="tab" :aria-selected="tab === 'sources'" :variant="tab === 'sources' ? 'primary' : 'secondary'" @click="tab = 'sources'">来源配置</GlassButton>
       </div>
-      <template v-if="tab === 'records'">
+      <template v-if="showRecords">
         <FilterBar :loading="loading" :pending="hasPendingSearch" @search="handleSearch" @reset="handleReset">
           <el-select v-model="searchForm.linked" class="filter-w-sm" aria-label="资料关联状态"><el-option label="我的未关联" value="unlinked" /><el-option label="我的已关联" value="linked" /><el-option label="我的全部" value="all" /></el-select>
           <el-input v-model="searchForm.keyword" clearable class="filter-w-lg" placeholder="搜索买家 / 国家 / 负责人" aria-label="搜索TM资料" prefix-icon="Search" />
@@ -33,7 +33,7 @@
         </el-table>
         <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" class="pager" @current-change="handlePageChange" @size-change="handleSizeChange" />
       </template>
-      <FeedSources v-else-if="tab === 'sources'" />
+      <FeedSources v-else-if="tab === 'sources' && canManage" />
     </div>
 
     <DetailDrawer v-model="detailVisible" title="TM 历史资料" :width="760" :loading="detailLoading" @closed="clearDetail">
@@ -63,7 +63,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useTableView } from '@/composables/useTableView'
@@ -72,7 +72,10 @@ import FeedSources from './FeedSources.vue'
 import FeedRecordActions from './FeedRecordActions.vue'
 import { useAlibabaFeed } from './useAlibabaFeed'
 import { minuteTime, directionText, visibilityLabel } from './feedState'
-const router = useRouter(), auth = useAuthStore(), tab = ref('records')
+const router = useRouter(), auth = useAuthStore()
+const canManage = computed(() => auth.hasPermission('alibaba_feed:admin'))
+const tab = ref(canManage.value ? 'sources' : 'records')
+const showRecords = computed(() => tab.value === 'records' && auth.hasPermission('client_desk:read'))
 const narrowMedia = typeof window !== 'undefined' ? window.matchMedia('(max-width: 768px)') : null
 const narrow = ref(narrowMedia?.matches ?? false)
 function updateNarrow(event) { narrow.value = event.matches }
@@ -80,12 +83,14 @@ onMounted(() => narrowMedia?.addEventListener('change', updateNarrow))
 onUnmounted(() => narrowMedia?.removeEventListener('change', updateNarrow))
 const columns = [{ key: 'buyer', label: '买家' }, { key: 'country', label: '国家' }, { key: 'type', label: '资料类型' }, { key: 'owner', label: '平台负责人' }, { key: 'reply', label: '平台回复' }, { key: 'observed', label: '观察快照' }, { key: 'quality', label: '资料质量' }]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('alibaba-feed', columns)
-const { listPage, listError, detail, detailVisible, detailLoading, detailError, clearDetail, openDetail, selected, selection, saving, actionError, uncertain, linkVisible, linkRow, companyId, customerKeyword, customers, customerTotal, customerPage, customerPageSize, customerLoading, customerError, searchCustomers, openLink, linkCustomer, unlink, reanalyze } = useAlibabaFeed()
+const { listPage, listError, detail, detailVisible, detailLoading, detailError, clearDetail, openDetail, selected, selection, saving, actionError, uncertain, linkVisible, linkRow, companyId, customerKeyword, customers, customerTotal, customerPage, customerPageSize, customerLoading, customerError, searchCustomers, openLink, linkCustomer, unlink, reanalyze } = useAlibabaFeed(showRecords)
 const { loading, list, total, page, pageSize, searchForm, hasPendingSearch, fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange } = listPage
 function issueText(issue) { return typeof issue === 'string' ? issue : issue.message || issue.code || '资料质量待核对' }
 function quality(row) { return visibilityLabel(row) || (row.issues?.length ? row.issues.map(issueText).join('；') : row.window_result || '未提供覆盖结论') }
 function openCustomer(row) { router.push({ path: '/client-desk', query: { company_id: String(row.link.company_id) } }) }
-watch(() => auth.hasPermission('alibaba_feed:admin'), allowed => { if (!allowed) tab.value = 'records' })
+watch(() => [auth.user?.id, canManage.value, auth.hasPermission('client_desk:read')], () => {
+  tab.value = canManage.value ? 'sources' : 'records'
+})
 watch(tab, () => { clearDetail(); selected.value = [] })
 </script>
 

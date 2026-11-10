@@ -76,7 +76,7 @@ POST `/api/client-desk/customers/{company_id}/reanalyze` 新增 `feed_item_ids`�
 
 会话覆盖先从所有质量合格快照选择最高 revision，再检查该版本完整性；已知更高的不完整覆盖不能回落旧完整版本。未知 actor 不能获得回复规则资格。能力声明必须另有服务器端核验记录，30小时默认观察新鲜度可配置，不能弥补覆盖缺口。
 
-默认 `ALIBABA_FEED_BUSINESS_ENABLED=false`、`ALIBABA_FEED_AUTOMATION_ENABLED=false`、`CLIENT_DESK_ENABLED=false`，P1 接收 / worker 默认开关也保持 false。没有新增自动 TM 消费任务，没有让 P2 自动触发模型或早报。资格计算完成不等于自动执行已上线。
+迁移 256 起，「TM 资料 → 来源配置」中的单一试点控制 P1 接收、处理和 P2 人工查阅，初始关闭。保存不启用试点，启用后仍需实时校验当前业务员权限和来源负责人证据。自动化与私海助理仍由独立配置控制，试点启用不授予模型外发或私海接入。详见 [P1 实现说明](implementation.md)。
 
 ## 数据库与验证
 

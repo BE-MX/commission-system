@@ -5,7 +5,5 @@ from app.core.database import SessionLocal
 
 def worker_job():
     settings = get_settings()
-    if not (settings.ALIBABA_FEED_ENABLED and settings.ALIBABA_FEED_WORKER_ENABLED):
-        return
     from app.alibaba_feed.worker import drain_queue
     drain_queue(SessionLocal, limit=10, lease_seconds=settings.ALIBABA_FEED_LEASE_SECONDS)

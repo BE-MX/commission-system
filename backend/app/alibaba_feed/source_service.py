@@ -17,11 +17,14 @@ from app.integration.service import _active_owner
 logger = logging.getLogger(__name__)
 
 
-class SourceCreate(BaseModel):
+class SourceIdentity(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     source_account_uid: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$")
     integration_app_id: int = Field(gt=0)
     name: str = Field(min_length=1, max_length=100)
+
+
+class SourceCreate(SourceIdentity):
     ingest_enabled: bool = False
     consent_state: Literal["pending", "authorized", "revoked"] = "pending"
 

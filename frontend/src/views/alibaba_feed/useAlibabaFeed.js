@@ -7,7 +7,7 @@ import { errorMessage } from '@/utils/errors'
 import { confirmAction, isFeedbackCancelled, msgSuccessText } from '@/utils/feedback'
 import { analysisSelection, createReadScope, createRequestTask, canReadRecord, visibilityLabel } from './feedState'
 
-export function useAlibabaFeed() {
+export function useAlibabaFeed(showRecords) {
   const auth = useAuthStore()
   const detail = ref(null), detailVisible = ref(false), detailLoading = ref(false), detailError = ref('')
   const selected = ref([]), saving = ref(false), actionError = ref(''), uncertain = ref(false)
@@ -34,15 +34,20 @@ export function useAlibabaFeed() {
       throw error
     }
   }, { immediate: false, searchForm: { linked: 'unlinked', keyword: '' } })
-  const listError = computed(() => listPage.error.value?.response?.status === 503 ? 'TM资料尚未开放' : listPage.errorMessage.value)
+  const listError = computed(() => {
+    const status = listPage.error.value?.response?.status
+    if (status === 503) return 'TM 资料试点尚未启用'
+    if (status === 403) return '当前账号没有 TM 资料试点的访问权限'
+    return listPage.errorMessage.value
+  })
   const selection = computed(() => analysisSelection(selected.value))
 
-  watch(() => JSON.stringify([auth.user?.id, auth.permissions, auth.roles]), () => {
+  watch(() => JSON.stringify([auth.user?.id, auth.permissions, auth.roles, showRecords.value]), () => {
     authority += 1
     clearDetail(); clearCustomers(); selected.value = []; linkVisible.value = false
     listPage.cancel(); listPage.list.value = []; listPage.total.value = 0
     actionError.value = ''; uncertain.value = false; saving.value = false; task.complete()
-    if (auth.hasPermission('client_desk:read')) listPage.fetchList()
+    if (showRecords.value) listPage.fetchList()
   }, { immediate: true, flush: 'sync' })
 
   async function openDetail(row) {

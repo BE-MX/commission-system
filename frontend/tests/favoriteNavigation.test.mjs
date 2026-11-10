@@ -17,6 +17,9 @@ test('real navigation only permits entries satisfying route, menu and group perm
   assert.equal(canConfigureNavigation(entry('InvoiceManage'), MENU_GROUPS, authWith(['invoice:read'])), true)
   assert.equal(canConfigureNavigation(entry('WaybillUpload'), MENU_GROUPS, authWith(['tracking:read'])), false)
   assert.equal(canConfigureNavigation(entry('WaybillUpload'), MENU_GROUPS, authWith(['tracking:write'])), true)
+  assert.equal(canConfigureNavigation(entry('AlibabaFeed'), MENU_GROUPS, authWith(['alibaba_feed:admin'])), true)
+  assert.equal(canConfigureNavigation(entry('AlibabaFeed'), MENU_GROUPS, authWith(['client_desk:read'])), true)
+  assert.equal(canConfigureNavigation(entry('AlibabaFeed'), MENU_GROUPS, authWith(['customer:read'])), false)
   assert.equal(canConfigureNavigation(entry('Announcements'), MENU_GROUPS, { ...authWith([], ['super_admin']), user: null }), false)
 })
 test('backend build policy contains the same complete constraints including external menus', () => {

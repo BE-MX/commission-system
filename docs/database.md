@@ -1,5 +1,9 @@
 # 莱莎方舟 数据库表参考
 
+## TM 资料试点（256_alibaba_feed_pilot）
+
+接 `255_followup_collaboration`。单例表 `ark_alibaba_feed_pilot` 固定 `id=1`，保留来源 `source_id`、试点业务员 `user_id`、`enabled` 和并发 `version`。迁移初始化关闭且未配置，保留已有来源、批次和资料。保存、启用及停用与来源权限同事务更新。两地后端和单活 Scheduler 从共享库读取同一状态。
+
 ## 单产品库存同步审计（253_inventory_sync_audit，本地实现，待发布）
 
 接 `252_alibaba_feed_business`，新增方舟库 `ark_inventory_sync_logs`：`id`、`product_id`、`created_by`、`observed_at`、`before_data`、`after_data`、`created_at`，按产品与创建时间索引。前后库存快照为 JSON；时间为北京时间，`observed_at` 是小满拉取开始时间，防止把拉取期间新发生的占库误判为已反映。

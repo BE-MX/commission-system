@@ -5,12 +5,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from app.alibaba_feed.business_router import router
 from app.alibaba_feed import business_service as service
-from app.alibaba_feed.models import AlibabaFeedSource, AlibabaFeedBatch, AlibabaFeedItem, AlibabaFeedLink, AlibabaFeedMessage
+from app.alibaba_feed.models import AlibabaFeedSource, AlibabaFeedBatch, AlibabaFeedItem, AlibabaFeedLink, AlibabaFeedMessage, AlibabaFeedPilot
 from app.alibaba_feed.source_service import SourcePatch, update_source
 from app.alibaba_feed.source_router import router as admin_router
 from app.auth.models import ArkPermission, ArkRolePermission, ArkUser, ArkUserExternalBinding
 from app.auth.utils import create_access_token
-from app.core.config import get_settings
 from app.core.database import get_db
 from tests.test_alibaba_feed_auth import feed
 from tests.test_alibaba_feed_core import payload, NOW
@@ -27,6 +26,8 @@ def business(feed, monkeypatch):
         role.permissions.append(ArkPermission(code=f"client_desk:{action}", module="client_desk", action=action, label=action))
     db.commit()
     row = db.query(AlibabaFeedSource).one()
+    pilot = db.get(AlibabaFeedPilot, 1)
+    pilot.source_id, pilot.user_id, pilot.enabled = row.id, 1, True
     row.consent_state = "authorized"
     row.crm_shared = row.ai_egress_allowed = row.private_feed_enabled = True
     row.owner_aliases = {"Seller A": 1}
@@ -41,7 +42,6 @@ def business(feed, monkeypatch):
         record_type="inquiry", inquiry_id="item-a", observed_at=NOW, snapshot_hash="c"*64, snapshot=record,
         outcome="current_updated", is_current=True, window_result="uncertain", issues=["WINDOW_PRECISION_INSUFFICIENT"]))
     db.commit()
-    monkeypatch.setattr(get_settings(), "ALIBABA_FEED_BUSINESS_ENABLED", True)
     scope = {1: {101, 102}, 2: {202}}
     def check(db, user, company_id, **kwargs):
         if int(company_id) not in scope.get(int(user["sub"]), set()):
@@ -84,8 +84,8 @@ def test_visible_unlinked_then_link_and_explicit_evidence(business):
 def test_machine_and_admin_cannot_read_other_owner_body(business):
     client, db, headers, _, issued = business
     assert client.get("/business/records/1", headers={"Authorization":"Bearer "+issued["token"]}).status_code == 401
-    assert client.get("/business/records/1", headers=headers(2)).status_code == 404
-    assert client.get("/business/records", headers=headers(2)).json()["data"]["total"] == 0
+    assert client.get("/business/records/1", headers=headers(2)).status_code == 403
+    assert client.get("/business/records", headers=headers(2)).status_code == 403
     assert client.get("/admin/sources", headers=headers(2)).status_code == 200
     assert "Synthetic secret" not in client.get("/admin/sources", headers=headers(2)).text
     assert link(client, headers, company_id=202).status_code == 404
@@ -161,13 +161,14 @@ def test_source_admin_exact_mapping_and_consent_version(business):
     assert valid.json()["data"]["capability_version"] == 2
 
 
-def test_feature_disabled_and_cross_source_mapping(business, monkeypatch):
+def test_feature_disabled_and_cross_source_mapping(business):
     client, db, headers, _, _ = business
     row = db.query(AlibabaFeedSource).one()
     row.owner_aliases={"seller a":1}
     db.commit()
     assert client.get("/business/records/1", headers=headers()).status_code == 404
-    monkeypatch.setattr(get_settings(),"ALIBABA_FEED_BUSINESS_ENABLED",False)
+    db.get(AlibabaFeedPilot, 1).enabled = False
+    db.commit()
     assert client.get("/business/records", headers=headers()).status_code == 503
 
 def test_link_mapping_race_requires_new_confirmation(business):
@@ -197,7 +198,7 @@ def test_same_record_identity_cannot_cross_source(business):
     db.commit()
     assert client.get("/business/records/2",headers=headers()).status_code==404
     assert client.get("/business/records",headers=headers()).json()["data"]["total"]==1
-    assert client.get("/business/records/1",headers=headers(2)).status_code==404
+    assert client.get("/business/records/1",headers=headers(2)).status_code==403
     assert link(client,headers,item_id=2).status_code==404
 
 
@@ -221,7 +222,7 @@ def test_stable_owner_binding_overrides_display_name_and_has_no_fallback(busines
     db.add(ArkUserExternalBinding(id=1,ark_user_id=2,provider="alibaba_icbu",external_account_id="Employee-A",binding_status="active"))
     db.commit()
     assert client.get("/business/records/1",headers=headers()).status_code==404
-    assert client.get("/business/records/1",headers=headers(2)).status_code==200
+    assert client.get("/business/records/1",headers=headers(2)).status_code==403
     binding=db.get(ArkUserExternalBinding,1)
     binding.ark_user_id=1
     db.commit()
@@ -275,6 +276,9 @@ def _paired_analysis_items(business, *, second_source="shop-a", second_message="
     db.commit()
     assert link(client,headers).status_code==200
     linked=link(client,headers,item_id=2,client_request_id="req-2")
+    if second_source != "shop-a":
+        assert linked.status_code == 404
+        return None
     assert linked.status_code==200,linked.text
     return linked.json()["data"]
 
@@ -291,14 +295,21 @@ def test_v11_shared_inquiry_tm_message_selected_once_but_both_dependencies_retai
     assert not service.dependencies_valid(db,{"sub":"1"},101,result["dependencies"])
 
 
-@pytest.mark.parametrize("second_source,second_message",[("shop-b","stable-message"),("shop-a","different-message")])
-def test_v11_different_source_or_message_identity_never_merged(business,second_source,second_message):
+def test_v11_different_message_identity_never_merged(business):
     _,db,_,_,_=business
-    _paired_analysis_items(business,second_source=second_source,second_message=second_message)
+    _paired_analysis_items(business,second_message="different-message")
     result=service.select_for_analysis(db,{"sub":"1"},101,[1,2])
     assert [m["key"] for m in result["messages"]]==["AF-1-1","AF-2-1"]
     assert len(result["refs"])==2
     assert len(result["dependencies"]["items"])==2
+
+
+def test_manual_analysis_cannot_cross_pilot_source(business):
+    _, db, _, _, _ = business
+    _paired_analysis_items(business, second_source="shop-b")
+    with pytest.raises(HTTPException) as denied:
+        service.select_for_analysis(db, {"sub": "1"}, 101, [1, 2])
+    assert denied.value.status_code == 404
 
 
 def test_v1_identical_text_and_refs_across_records_remain_distinct(business):

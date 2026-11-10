@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from tests.test_integration_admin import _setup
 from app.alibaba_feed.auth import resolve_feed_principal
-from app.alibaba_feed.models import AlibabaFeedSource
+from app.alibaba_feed.models import AlibabaFeedPilot, AlibabaFeedSource
 from app.alibaba_feed.source_service import SourceCreate, SourcePatch, create_source, update_source
 from app.auth.models import ArkPermission, ArkUser, ArkRolePermission
 from app.core.time import beijing_now
@@ -21,6 +21,8 @@ from app.integration.service import create_app, rotate_app_token
 def feed():
     client, api, db, engine, role, _ = _setup()
     AlibabaFeedSource.__table__.create(engine)
+    AlibabaFeedPilot.__table__.create(engine)
+    db.add(AlibabaFeedPilot(id=1))
     for action in ("read", "write"):
         role.permissions.append(ArkPermission(code=f"alibaba_feed:{action}", module="alibaba_feed", action=action, label=action))
     db.commit()

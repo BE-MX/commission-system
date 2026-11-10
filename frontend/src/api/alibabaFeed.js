@@ -9,7 +9,7 @@ export const alibabaFeedApi = {
   customerRecords: (id, signal) => unwrap(alibabaFeedClient.get(`/business/customers/${path(id)}/records`, { ...options, signal })),
   link: data => unwrap(alibabaFeedClient.post('/business/links', data, options)),
   unlink: (id, expectedVersion) => unwrap(alibabaFeedClient.delete(`/business/links/${path(id)}`, { ...options, params: { expected_version: expectedVersion } })),
-  sources: signal => unwrap(alibabaFeedClient.get('/sources', { ...options, signal })),
-  owners: signal => unwrap(alibabaFeedClient.get('/owners', { ...options, signal })),
-  saveSource: (id, data) => unwrap(alibabaFeedClient.patch(`/sources/${path(id)}`, data, options)),
+  pilot: signal => unwrap(alibabaFeedClient.get('/pilot', { ...options, signal })),
+  savePilot: data => unwrap(alibabaFeedClient.put('/pilot', data, options)),
+  activatePilot: data => unwrap(alibabaFeedClient.post('/pilot/activation', data, options)),
 }

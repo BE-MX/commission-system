@@ -55,12 +55,17 @@ def require_feed_scope(scope: str):
 
     def dependency(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
                    db: Session = Depends(get_db)) -> FeedPrincipal:
+        from .pilot_service import require_receiver
+        pilot = require_receiver(db)
         if credentials is None or credentials.scheme.lower() != "bearer":
             raise HTTPException(status_code=401, detail="缺少来源 Bearer token")
         try:
-            return resolve_feed_principal(db, credentials.credentials, required_scope=scope)
+            principal = resolve_feed_principal(db, credentials.credentials, required_scope=scope)
         except IntegrationAuthError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        if principal.source_id != pilot.source_id:
+            raise FeedError(403, "SOURCE_SCOPE_DENIED")
+        return principal
     return dependency
 
 

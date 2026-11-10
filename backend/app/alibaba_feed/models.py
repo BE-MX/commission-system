@@ -1,5 +1,5 @@
 """Private receipt and immutable snapshot storage; no customer projections."""
-from sqlalchemy import BigInteger, Boolean, Column, Computed, DateTime, ForeignKey, Index, Integer, JSON, LargeBinary, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Computed, DateTime, ForeignKey, Index, Integer, JSON, LargeBinary, String, UniqueConstraint
 from sqlalchemy.dialects.mysql import DATETIME, MEDIUMBLOB, VARCHAR, INTEGER
 
 from app.core.database import Base
@@ -37,6 +37,18 @@ class AlibabaFeedSource(Base):
     version = Column(Integer, nullable=False, default=1, server_default="1", comment='管理并发版本')
     created_at = Column(TIMESTAMP, nullable=False, default=beijing_now, comment='创建时间（北京时间）')
     updated_at = Column(TIMESTAMP, nullable=False, default=beijing_now, onupdate=beijing_now, comment='更新时间（北京时间）')
+
+
+class AlibabaFeedPilot(Base):
+    __tablename__ = "ark_alibaba_feed_pilot"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_alibaba_feed_pilot_singleton"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=False, comment="试点单例主键")
+    source_id = Column(ID, ForeignKey("ark_alibaba_feed_sources.id"), nullable=True, comment="试点店铺来源")
+    user_id = Column(Integer().with_variant(INTEGER(unsigned=True), "mysql"),
+                     ForeignKey("ark_users.id", ondelete="SET NULL"), nullable=True, comment="试点方舟业务员")
+    enabled = Column(Boolean, nullable=False, default=False, server_default="0", comment="管理员手动启用状态")
+    version = Column(Integer, nullable=False, default=1, server_default="1", comment="试点配置并发版本")
 
 
 class AlibabaFeedBatch(Base):

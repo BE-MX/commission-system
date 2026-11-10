@@ -88,7 +88,7 @@ async function harness(overrides = {}) {
   })
   await module.evaluate()
   const scope = vue.effectScope()
-  const state = scope.run(() => module.namespace.useAlibabaFeed())
+  const state = scope.run(() => module.namespace.useAlibabaFeed(vue.computed(() => auth.hasPermission('client_desk:read'))))
   await settle()
   return { state, auth, calls, feedback, stop: () => scope.stop() }
 }
@@ -109,7 +109,7 @@ test('permission loss clears list, body and customer candidates and rejects late
 })
 test('503 remains a disabled error and cannot be presented as a successful empty result', async () => {
   const h = await harness({ records: async () => { throw { response: { status: 503 }, message: 'disabled' } } })
-  assert.equal(h.state.listError.value, 'TM资料尚未开放')
+  assert.equal(h.state.listError.value, 'TM 资料试点尚未启用')
   assert.equal(h.state.listPage.isEmpty.value, false)
   h.stop()
 })

@@ -1,5 +1,11 @@
 # 莱莎方舟 API 参考
 
+## TM 资料一店一人试点
+
+`GET /api/alibaba-feed/pilot` 返回单一试点、可绑定的专用采集应用和有资料读取权限的业务员。`PUT /api/alibaba-feed/pilot` 接受 `expected_version`、`source_account_uid`、`name`、`integration_app_id`、`user_id` 和精确 `owner_alias`，只保存关闭态配置。`POST /api/alibaba-feed/pilot/activation` 接受 `expected_version` 与 `enabled`，启用另需 `consent_confirmed=true`。三个接口都要求用户 JWT 和实时 `alibaba_feed:admin`。状态冲突返回 409，采集 Token 和聊天内容不进入管理响应。
+
+仅试点店铺的专用 Token 可上传和查回执。仅选中的有效方舟业务员可凭当前权限和负责人证据查看该来源。关闭时机器接口返回 `503 FEED_DISABLED`，业务读取返回 503。原来源接口仍可核验采集能力，试点的授权、负责人、共享和启用在试点接口管理。
+
 ## 阿里 Feed P2（2026-11-05，本地实现，默认关闭）
 
 原批次接收入口新增登记 `ark_alibaba_feed_v1.1`，规范消息按来源/代次/会话/消息 ID 去重，独立处理商机、会话和消息版本、覆盖及撤回。JWT 业务入口 `/api/alibaba-feed/business` 提供 GET `/records`、`/records/{item_id}`、`/customers`、`/customers/{company_id}/records` 与 POST `/links`、DELETE `/links/{link_id}?expected_version=...`；实时要求 `client_desk:read/write` 和本人当前资料范围。

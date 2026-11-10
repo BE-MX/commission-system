@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.alibaba_feed.canonical import parse_json
 from app.alibaba_feed.errors import FeedError
-from app.alibaba_feed.models import AlibabaFeedBatch, AlibabaFeedItem, AlibabaFeedSource
+from app.alibaba_feed.models import AlibabaFeedBatch, AlibabaFeedItem, AlibabaFeedPilot, AlibabaFeedSource
 from app.alibaba_feed.service import accept_batch, get_receipt
 from app.alibaba_feed.validation import parse_envelope, record_quality
 from app.alibaba_feed.worker import claim_batch, process_item, process_next_batch
@@ -41,11 +41,13 @@ def raw(data):
 def store(monkeypatch):
     monkeypatch.setattr("app.alibaba_feed.auth.recheck_feed_principal", lambda *args, **kwargs: None)
     engine = create_engine("sqlite://")
-    for model in (AlibabaFeedSource, AlibabaFeedBatch, AlibabaFeedItem):
+    for model in (AlibabaFeedSource, AlibabaFeedPilot, AlibabaFeedBatch, AlibabaFeedItem):
         model.__table__.create(engine)
     with Session(engine, autoflush=False) as db:
         source = AlibabaFeedSource(source_account_uid="test-shop", integration_app_id=1, name="Synthetic", ingest_enabled=True, consent_state="authorized")
         db.add(source)
+        db.flush()
+        db.add(AlibabaFeedPilot(id=1, source_id=source.id, user_id=1, enabled=True))
         db.commit()
         yield db, source
     engine.dispose()

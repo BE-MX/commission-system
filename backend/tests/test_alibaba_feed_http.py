@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from app.alibaba_feed.errors import FeedError
-from app.alibaba_feed.models import AlibabaFeedBatch, AlibabaFeedItem
+from app.alibaba_feed.models import AlibabaFeedBatch, AlibabaFeedItem, AlibabaFeedPilot, AlibabaFeedSource
 from app.alibaba_feed.router import router
 from app.alibaba_feed.transport import read_json_body
 from app.alibaba_feed.worker import process_next_batch
@@ -23,13 +23,16 @@ from tests.test_alibaba_feed_core import payload, raw
 
 
 @pytest.fixture
-def api(feed, monkeypatch):
+def api(feed):
     db, issued, source, role = feed
     for model in (AlibabaFeedBatch, AlibabaFeedItem):
         model.__table__.create(db.get_bind())
     enable(db, source)
-    settings = get_settings()
-    monkeypatch.setattr(settings, "ALIBABA_FEED_ENABLED", True)
+    pilot = db.get(AlibabaFeedPilot, 1)
+    pilot.enabled = True
+    pilot.source_id = db.query(AlibabaFeedSource.id).filter_by(source_account_uid="shop-a").scalar()
+    pilot.user_id = 1
+    db.commit()
     app = FastAPI()
     app.include_router(router, prefix="/api/alibaba-feed/v1")
     app.dependency_overrides[get_db] = lambda: db
@@ -71,7 +74,7 @@ def test_http_scope_and_source_isolation(api):
     other = {"Authorization": "Bearer " + second["token"]}
     for path in (first["status_url"], "/api/alibaba-feed/v1/runs/run-a"):
         response = client.get(path, headers=other)
-        assert response.status_code == 404 and first["batch_id"] not in response.text
+        assert response.status_code == 403 and first["batch_id"] not in response.text
     invoice = create_app(db, IntegrationAppCreate(name="Invoice", owner_user_id=1), created_by=99)
     response = client.post("/api/alibaba-feed/v1/batches", content=raw(payload()),
                            headers={**headers, "Authorization": "Bearer " + invoice["token"]})
@@ -88,7 +91,8 @@ def test_feature_gate_and_backpressure_replay(api, monkeypatch):
     assert again.status_code == 200 and again.json()["data"]["replayed"]
     blocked = client.post("/api/alibaba-feed/v1/batches", content=raw(payload("run-b")), headers={**headers, "Idempotency-Key": "run-b"})
     assert blocked.status_code == 429 and blocked.headers["retry-after"] == "60"
-    monkeypatch.setattr(settings, "ALIBABA_FEED_ENABLED", False)
+    db.get(AlibabaFeedPilot, 1).enabled = False
+    db.commit()
     disabled = client.get("/api/alibaba-feed/v1/runs/run-a", headers=headers)
     assert disabled.status_code == 503 and disabled.json()["data"]["error_code"] == "FEED_DISABLED"
     assert settings.CLIENT_DESK_ENABLED is False
@@ -148,13 +152,57 @@ async def test_streamed_valid_gzip_and_identity():
     assert await stream_body(b'{"ok":1}', encoding="identity") == b'{"ok":1}'
 
 
-def test_scheduler_gate_does_not_touch_database(monkeypatch):
-    from app.schedulers import alibaba_feed
-    settings = get_settings()
-    monkeypatch.setattr(settings, "ALIBABA_FEED_ENABLED", False)
-    monkeypatch.setattr(settings, "ALIBABA_FEED_WORKER_ENABLED", True)
-    monkeypatch.setattr(alibaba_feed, "SessionLocal", lambda: pytest.fail("disabled worker opened a session"))
-    assert alibaba_feed.worker_job() is None
+def test_scheduler_does_not_claim_while_pilot_disabled(api):
+    client, db, headers, _ = api
+    assert client.post("/api/alibaba-feed/v1/batches", content=raw(payload()), headers=headers).status_code == 202
+    db.get(AlibabaFeedPilot, 1).enabled = False
+    db.commit()
+    assert not process_next_batch(db, pilot_only=True)
+    assert db.query(AlibabaFeedBatch).one().status == "queued"
+
+
+def test_pause_after_claim_requeues_without_quarantining(api, monkeypatch):
+    from app.alibaba_feed import worker
+
+    client, db, headers, _ = api
+    assert client.post("/api/alibaba-feed/v1/batches", content=raw(payload()), headers=headers).status_code == 202
+    real_claim = worker.claim_batch
+
+    def claim_then_pause(session, **kwargs):
+        claim = real_claim(session, **kwargs)
+        db.get(AlibabaFeedPilot, 1).enabled = False
+        db.commit()
+        return claim
+
+    with monkeypatch.context() as patch:
+        patch.setattr(worker, "claim_batch", claim_then_pause)
+        assert not worker.process_next_batch(db, pilot_only=True)
+    batch = db.query(AlibabaFeedBatch).one()
+    assert batch.status == "queued" and batch.attempts == 0 and batch.lease_token is None
+    assert db.query(AlibabaFeedItem).count() == 0
+    db.get(AlibabaFeedPilot, 1).enabled = True
+    db.commit()
+    assert worker.process_next_batch(db, pilot_only=True)
+    assert db.query(AlibabaFeedItem).one().is_current
+
+
+def test_pause_during_failed_attempt_does_not_write_a_terminal_receipt(api, monkeypatch):
+    from app.alibaba_feed import worker
+
+    client, db, headers, _ = api
+    assert client.post("/api/alibaba-feed/v1/batches", content=raw(payload()), headers=headers).status_code == 202
+    db.query(AlibabaFeedBatch).one().attempts = 2
+    db.commit()
+
+    def fail_after_pause(session, *args, **kwargs):
+        db.get(AlibabaFeedPilot, 1).enabled = False
+        db.commit()
+        raise ValueError("Synthetic normalization failure")
+
+    monkeypatch.setattr(worker, "process_item", fail_after_pause)
+    assert not worker.process_next_batch(db, pilot_only=True)
+    batch = db.query(AlibabaFeedBatch).one()
+    assert batch.status == "queued" and batch.attempts == 2 and batch.finished_at is None
 
 
 def test_production_router_prefixes_and_scheduler_independence(monkeypatch):
@@ -169,8 +217,6 @@ def test_production_router_prefixes_and_scheduler_independence(monkeypatch):
     assert ("/api/alibaba-feed/sources", "POST") in paths
     assert ("/api/alibaba-feed/sources/{source_uid}", "PATCH") in paths
     settings = get_settings()
-    monkeypatch.setattr(settings, "ALIBABA_FEED_ENABLED", True)
-    monkeypatch.setattr(settings, "ALIBABA_FEED_WORKER_ENABLED", True)
     monkeypatch.setattr(settings, "CLIENT_DESK_ENABLED", False)
     class Collector:
         def __init__(self):
@@ -181,7 +227,3 @@ def test_production_router_prefixes_and_scheduler_independence(monkeypatch):
     _register_jobs(scheduler, outbound_mode="legacy")
     assert "alibaba_feed_worker" in scheduler.ids
     assert not any(job.startswith("client_desk_") for job in scheduler.ids)
-    monkeypatch.setattr(settings, "ALIBABA_FEED_WORKER_ENABLED", False)
-    scheduler = Collector()
-    _register_jobs(scheduler, outbound_mode="legacy")
-    assert "alibaba_feed_worker" not in scheduler.ids

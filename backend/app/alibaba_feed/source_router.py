@@ -2,34 +2,54 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.alibaba_feed.http import FeedRoute
-from app.alibaba_feed.auth import require_current_feed_admin
-from app.alibaba_feed import source_service
+from app.alibaba_feed.auth import require_current_feed_admin as _require_feed_admin
+from app.alibaba_feed import pilot_service, source_service
+from app.alibaba_feed.pilot_service import PilotActivation, PilotConfiguration
 from app.alibaba_feed.source_service import SourceCreate, SourcePatch
 from app.core.database import get_db
 from app.core.response import ok
 
 router = APIRouter(route_class=FeedRoute)
-# require_current_feed_admin rechecks current JWT subject, active status and
+# _require_feed_admin rechecks current JWT subject, active status and
 # alibaba_feed:admin in the database; collector credentials are never accepted.
 
 
 @router.post("/sources")
 def create_source(request: SourceCreate, db: Session = Depends(get_db),
-                  current_user: dict = Depends(require_current_feed_admin)):
+                  current_user: dict = Depends(_require_feed_admin)):
+    pilot_service.read_pilot(db, write=True)
     return ok(source_service.create_source(db, request))
 
 
 @router.patch("/sources/{source_uid}")
 def update_source(source_uid: str, request: SourcePatch, db: Session = Depends(get_db),
-                  current_user: dict = Depends(require_current_feed_admin)):
+                  current_user: dict = Depends(_require_feed_admin)):
+    pilot_service.guard_managed_source(db, source_uid, request.model_fields_set)
     return ok(source_service.update_source(db, source_uid, request, actor_id=int(current_user["sub"])))
 
 
 @router.get("/sources")
-def list_sources(db: Session = Depends(get_db), current_user: dict = Depends(require_current_feed_admin)):
+def list_sources(db: Session = Depends(get_db), current_user: dict = Depends(_require_feed_admin)):
     return ok(source_service.list_sources(db))
 
 
 @router.get("/owners")
-def list_owners(db: Session = Depends(get_db), current_user: dict = Depends(require_current_feed_admin)):
+def list_owners(db: Session = Depends(get_db), current_user: dict = Depends(_require_feed_admin)):
     return ok(source_service.list_owners(db))
+
+
+@router.get("/pilot")
+def get_pilot(db: Session = Depends(get_db), current_user: dict = Depends(_require_feed_admin)):
+    return ok(pilot_service.get_configuration(db))
+
+
+@router.put("/pilot")
+def save_pilot(request: PilotConfiguration, db: Session = Depends(get_db),
+               current_user: dict = Depends(_require_feed_admin)):
+    return ok(pilot_service.save_configuration(db, request, actor_id=int(current_user["sub"])))
+
+
+@router.post("/pilot/activation")
+def set_pilot_activation(request: PilotActivation, db: Session = Depends(get_db),
+                         current_user: dict = Depends(_require_feed_admin)):
+    return ok(pilot_service.set_activation(db, request))

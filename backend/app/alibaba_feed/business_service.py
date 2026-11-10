@@ -4,25 +4,28 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from app.auth.models import ArkUser, ArkRole, ArkUserRole, ArkPermission, ArkRolePermission, ArkUserExternalBinding
 from app.client_desk import private_scope
-from app.core.config import get_settings
 from app.core.time import beijing_now
 from .canonical import digest
 from .errors import FeedError
 from .models import AlibabaFeedSource, AlibabaFeedItem, AlibabaFeedLink
+from .pilot_service import active_pilot
 
 logger = logging.getLogger(__name__)
 
 
 def require_actor(db, user, action="read"):
-    if not get_settings().ALIBABA_FEED_BUSINESS_ENABLED:
+    pilot = active_pilot(db)
+    if pilot is None:
         raise HTTPException(503, "阿里业务资料尚未启用")
     uid = private_scope.user_id(user)
+    if uid != pilot.user_id:
+        raise HTTPException(403, "当前账号未加入 TM 资料试点")
     active = db.query(ArkUser.id).filter(ArkUser.id == uid, ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None)).with_for_update().first()
     roles = {r[0] for r in db.query(ArkRole.name).join(ArkUserRole, ArkUserRole.role_id == ArkRole.id).filter(ArkUserRole.user_id == uid).with_for_update().all()}
     permissions = {r[0] for r in db.query(ArkPermission.code).join(ArkRolePermission, ArkRolePermission.permission_id == ArkPermission.id).join(ArkUserRole, ArkUserRole.role_id == ArkRolePermission.role_id).filter(ArkUserRole.user_id == uid).with_for_update().all()}
     if active is None or ("super_admin" not in roles and f"client_desk:{action}" not in permissions):
         raise HTTPException(403, "当前账号无资料权限")
-    return uid
+    return uid, pilot.source_id
 
 
 def _missing():
@@ -47,15 +50,17 @@ def _owner_evidence(db, source, item, uid):
     return {"kind": "source_alias", "mapping_version": source.mapping_version}
 
 
-def _source_item(db, uid, item_id):
+def _source_item(db, uid, source_id, item_id):
     # Lock order follows worker source -> item. Current reads avoid ORM and MySQL
     # repeatable-read snapshots after a previous authorization lookup.
     identity = db.query(AlibabaFeedItem.source_account_uid).filter_by(id=item_id).first()
     if identity is None:
         _missing()
-    source = db.query(AlibabaFeedSource).filter_by(source_account_uid=identity[0]).populate_existing().with_for_update().first()
+    source = db.query(AlibabaFeedSource).filter_by(id=source_id, source_account_uid=identity[0]).populate_existing().with_for_update().first()
+    if source is None:
+        _missing()
     item = db.query(AlibabaFeedItem).filter_by(id=item_id).populate_existing().with_for_update().first()
-    if (source is None or item is None or source.consent_state != "authorized" or not source.crm_shared
+    if (item is None or source.consent_state != "authorized" or not source.crm_shared
             or item.collection_generation != source.collection_generation or not item.is_current):
         _missing()
     _owner_evidence(db, source, item, uid)
@@ -71,8 +76,8 @@ def _link(db, uid, item):
         inquiry_id=item.inquiry_id, deleted_at=None).populate_existing().with_for_update().first()
 
 
-def _access(db, user, uid, item_id, *, company_id=None, ai=False, allow_redacted=False):
-    source, item = _source_item(db, uid, item_id)
+def _access(db, user, uid, source_id, item_id, *, company_id=None, ai=False, allow_redacted=False):
+    source, item = _source_item(db, uid, source_id, item_id)
     link = _link(db, uid, item)
     visibility = "visible"
     if link:
@@ -141,14 +146,17 @@ def _record(db, source, item, link, visibility="visible", *, detail=False):
 
 
 def list_records(db, user, *, page=1, page_size=20, linked="all", keyword="", company_id=None):
-    uid = require_actor(db, user)
+    uid, source_id = require_actor(db, user)
     if company_id is not None:
         private_scope.assert_company_access(db, user, company_id)
-    candidates = db.query(AlibabaFeedItem.id).filter_by(is_current=True).order_by(AlibabaFeedItem.observed_at.desc(), AlibabaFeedItem.id.desc()).all()
+    source_uid = db.query(AlibabaFeedSource.source_account_uid).filter_by(id=source_id).scalar_subquery()
+    candidates = (db.query(AlibabaFeedItem.id).filter_by(is_current=True)
+                  .filter(AlibabaFeedItem.source_account_uid == source_uid)
+                  .order_by(AlibabaFeedItem.observed_at.desc(), AlibabaFeedItem.id.desc()).all())
     rows = []
     for (item_id,) in candidates:
         try:
-            source, item, link, visibility = _access(db, user, uid, item_id, company_id=company_id, allow_redacted=True)
+            source, item, link, visibility = _access(db, user, uid, source_id, item_id, company_id=company_id, allow_redacted=True)
         except (HTTPException, FeedError) as exc:
             if exc.status_code == 404:
                 continue
@@ -163,8 +171,8 @@ def list_records(db, user, *, page=1, page_size=20, linked="all", keyword="", co
 
 
 def get_record(db, user, item_id):
-    uid = require_actor(db, user)
-    return _record(db, *_access(db, user, uid, item_id), detail=True)
+    uid, source_id = require_actor(db, user)
+    return _record(db, *_access(db, user, uid, source_id, item_id), detail=True)
 
 
 def list_customers(db, user, keyword="", page=1, page_size=20):
@@ -185,8 +193,8 @@ def _commit(db):
 
 
 def create_link(db, user, request):
-    uid = require_actor(db, user, "write")
-    source, item = _source_item(db, uid, request.item_id)
+    uid, source_id = require_actor(db, user, "write")
+    source, item = _source_item(db, uid, source_id, request.item_id)
     private_scope.assert_company_access(db, user, request.company_id)
     if source.mapping_version != request.expected_mapping_version:
         raise HTTPException(409, "负责人映射已变化，请刷新后重试")
@@ -220,12 +228,13 @@ def create_link(db, user, request):
 
 
 def delete_link(db, user, link_id, expected_version):
-    uid = require_actor(db, user, "write")
+    uid, source_id = require_actor(db, user, "write")
     identity = db.query(AlibabaFeedLink.source_account_uid).filter_by(id=link_id, user_id=uid).first()
     if identity is None:
         _missing()
     # Same source-before-link lock order as creation.
-    db.query(AlibabaFeedSource).filter_by(source_account_uid=identity[0]).with_for_update().first()
+    if db.query(AlibabaFeedSource.id).filter_by(id=source_id, source_account_uid=identity[0]).with_for_update().first() is None:
+        _missing()
     link = db.query(AlibabaFeedLink).filter_by(id=link_id, user_id=uid).populate_existing().with_for_update().first()
     private_scope.assert_company_access(db, user, link.company_id)
     if link.version != expected_version:
@@ -239,7 +248,7 @@ def delete_link(db, user, link_id, expected_version):
 
 
 def select_for_analysis(db, user, company_id, item_ids):
-    uid = require_actor(db, user)
+    uid, source_id = require_actor(db, user)
     if not item_ids or len(item_ids) > 50 or len(set(item_ids)) != len(item_ids):
         raise HTTPException(422, "请选择不重复的阿里资料")
     private_scope.assert_company_access(db, user, company_id)
@@ -247,7 +256,7 @@ def select_for_analysis(db, user, company_id, item_ids):
     seen_message_identities = set()
     gaps = {"本次仅供显式人工分析，自动经营保持关闭"}
     for item_id in sorted(item_ids):
-        source, item, link, _ = _access(db, user, uid, item_id, company_id=company_id, ai=True)
+        source, item, link, _ = _access(db, user, uid, source_id, item_id, company_id=company_id, ai=True)
         if item.schema_version != "ark_alibaba_feed_v1.1" or not item.conversation_id:
             gaps.add("v1历史快照：没有稳定消息身份，不保证跨记录去重或同分钟顺序")
         if (item.coverage or {}).get("selection", "created_window") == "created_window":
