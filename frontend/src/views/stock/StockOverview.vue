@@ -9,7 +9,7 @@
 
     <!-- 统计卡 -->
     <div class="stats-row">
-      <div class="stat-card lg-card shortage" @click="applyStatusFilter('shortage')">
+      <button type="button" class="stat-card lg-card shortage" :class="{ 'is-active': filters.status.includes('shortage') }" :aria-pressed="filters.status.includes('shortage')" @click="applyStatusFilter('shortage')">
         <div class="stat-icon-bg">
           <el-icon :size="28" color="#e74c3c"><WarningFilled /></el-icon>
         </div>
@@ -19,8 +19,9 @@
           <div class="stat-sub">低于安全库存</div>
         </div>
         <StatusBadge size="small" type="danger" effect="dark">需立即补货</StatusBadge>
-      </div>
-      <div class="stat-card lg-card warning" @click="applyStatusFilter('warning')">
+        <el-icon v-if="filters.status.includes('shortage')" class="stat-active-mark" aria-hidden="true"><CircleCheckFilled /></el-icon>
+      </button>
+      <button type="button" class="stat-card lg-card warning" :class="{ 'is-active': filters.status.includes('warning') }" :aria-pressed="filters.status.includes('warning')" @click="applyStatusFilter('warning')">
         <div class="stat-icon-bg">
           <el-icon :size="28" color="#f39c12"><Timer /></el-icon>
         </div>
@@ -30,8 +31,9 @@
           <div class="stat-sub">低于安全库存 × 1.5</div>
         </div>
         <StatusBadge size="small" type="warning" effect="dark">建议备货</StatusBadge>
-      </div>
-      <div class="stat-card lg-card sufficient" @click="applyStatusFilter('sufficient')">
+        <el-icon v-if="filters.status.includes('warning')" class="stat-active-mark" aria-hidden="true"><CircleCheckFilled /></el-icon>
+      </button>
+      <button type="button" class="stat-card lg-card sufficient" :class="{ 'is-active': filters.status.includes('sufficient') }" :aria-pressed="filters.status.includes('sufficient')" @click="applyStatusFilter('sufficient')">
         <div class="stat-icon-bg">
           <el-icon :size="28" color="#27ae60"><CircleCheckFilled /></el-icon>
         </div>
@@ -41,7 +43,8 @@
           <div class="stat-sub">库存安全</div>
         </div>
         <StatusBadge size="small" type="success" effect="dark">库存健康</StatusBadge>
-      </div>
+        <el-icon v-if="filters.status.includes('sufficient')" class="stat-active-mark" aria-hidden="true"><CircleCheckFilled /></el-icon>
+      </button>
     </div>
 
     <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec / Action Bar Spec） -->
@@ -97,7 +100,7 @@
         <el-table-column v-if="visibleKeys.includes('weight')" label="克重" min-width="90" show-overflow-tooltip prop="weight" sortable="custom">
           <template #default="{ row }">{{ parseProductName(row.product_name).weight }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('sales-30d')" label="30天销量" prop="sales_30d" min-width="100" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('sales-30d')" label="30天销量" prop="sales_30d" min-width="112" sortable="custom">
           <template #default="{ row }"><span class="value-gold">{{ row.sales_30d }}</span></template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('sales-90d')" label="90天销量" prop="sales_90d" min-width="100" sortable="custom">
@@ -108,9 +111,9 @@
             <span class="avg-badge">{{ row.avg_daily_sales_30d?.toFixed(1) }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('enable-count')" label="可用库存(小满)" prop="enable_count" min-width="120" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('effective-enable-count')" label="可用库存" prop="effective_enable_count" min-width="112" sortable="custom">
           <template #default="{ row }">
-            <span>{{ Math.round(row.enable_count || 0) }}</span>
+            <span :class="getStockClass(row)">{{ Math.round(row.effective_enable_count ?? row.enable_count) }}</span>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('free-stock')" label="自由库存" prop="free_stock" min-width="100">
@@ -126,34 +129,21 @@
             </el-tooltip>
           </template>
         </el-table-column>
+        <el-table-column v-if="visibleKeys.includes('enable-count')" label="可用库存(小满)" prop="enable_count" min-width="120" sortable="custom">
+          <template #default="{ row }">
+            <span>{{ Math.round(row.enable_count || 0) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column v-if="visibleKeys.includes('real-count')" label="实时库存(小满)" prop="real_count" min-width="120" sortable="custom">
           <template #default="{ row }">
             <span>{{ Math.round(row.real_count || 0) }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('effective-enable-count')" label="可用库存" prop="effective_enable_count" min-width="100" sortable="custom">
-          <template #default="{ row }">
-            <span :class="getStockClass(row)">{{ Math.round(row.effective_enable_count ?? row.enable_count) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('production-in-transit')" label="生产在途" prop="production_in_transit" min-width="90" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('production-in-transit')" label="生产在途" prop="production_in_transit" min-width="108" sortable="custom">
           <template #default="{ row }">
             <span :class="['in-transit-value', row.production_in_transit > 0 ? 'in-transit-active' : '']">
               {{ row.production_in_transit || 0 }}
             </span>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('stock-status')" label="备货状态" min-width="90" prop="stock_status" sortable="custom">
-          <template #default="{ row }">
-            <span
-              v-if="row.stock_status"
-              :class="['stock-status-label', row.stock_status === '加急中' ? 'stock-status-urgent' : 'stock-status-normal']"
-              @click="openStockStatusDialog(row)"
-              style="cursor:pointer"
-            >
-              {{ row.stock_status }}
-            </span>
-            <span v-else class="text-muted">—</span>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('safety-stock')" label="安全库存" prop="safety_stock" min-width="110" sortable="custom">
@@ -162,9 +152,22 @@
             <StatusBadge v-else size="small" type="info">未设置</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('suggested-qty')" label="建议备货量" min-width="100" prop="suggested_qty" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('suggested-qty')" label="建议备货量" min-width="120" prop="suggested_qty" sortable="custom">
           <template #default="{ row }">
             <span :class="row.suggested_qty > 0 ? 'value-danger' : 'text-muted'">{{ row.suggested_qty > 0 ? row.suggested_qty : '—' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="visibleKeys.includes('stock-status')" label="备货状态" min-width="110" prop="stock_status" sortable="custom">
+          <template #default="{ row }">
+            <button
+              v-if="row.stock_status"
+              type="button"
+              :class="['stock-status-label', row.stock_status === '加急中' ? 'stock-status-urgent' : 'stock-status-normal']"
+              @click="openStockStatusDialog(row)"
+            >
+              {{ row.stock_status }}
+            </button>
+            <span v-else class="text-muted">—</span>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="130" fixed="right" prop="status" sortable="custom">
@@ -207,23 +210,23 @@
           </StatusBadge>
         </div>
         <el-table v-if="(currentStockStatusRow.stock_items || []).length > 0" :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" border class="list-table" v-sticky-scrollbar>
-          <el-table-column class-name="table-action-column" label="操作" min-width="70">
+          <el-table-column class-name="table-action-column" label="操作" min-width="80">
             <template #default="{ row }">
               <el-button link type="primary" @click="openProgressDialog(row)"><el-icon><TrendCharts /></el-icon>进度</el-button>
             </template>
           </el-table-column>
           <el-table-column label="生产单号" prop="order_no" min-width="120" />
-          <el-table-column label="批次号" prop="batch_no" min-width="100" />
+          <el-table-column label="批次号" prop="batch_no" min-width="90" />
           <el-table-column label="下单量" min-width="80" prop="order_qty" />
           <el-table-column label="已入库" min-width="80" prop="received_qty" />
           <el-table-column label="在途" min-width="70" prop="in_transit_qty" />
-          <el-table-column prop="is_urgent" label="加急" min-width="100">
+          <el-table-column prop="is_urgent" label="加急" min-width="70">
             <template #default="{ row }">
               <StatusBadge v-if="row.is_urgent" type="danger" size="small">加急</StatusBadge>
               <span v-else class="text-muted">—</span>
             </template>
           </el-table-column>
-          <el-table-column prop="expected_delivery_date" label="预计交期" min-width="110">
+          <el-table-column prop="expected_delivery_date" label="预计交期" min-width="120">
             <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
           </el-table-column>
         </el-table>
@@ -234,11 +237,14 @@
     <!-- 工序进度弹窗 -->
     <el-dialog v-model="progressDialogVisible" title="工序进度" width="640px">
       <ListPageStatus :error="progressResource.errorMessage.value" :loading="progressLoading" :has-data="!!progressData" @retry="progressResource.load()" />
+      <p v-if="progressDialogRow" class="progress-context">
+        <strong>{{ currentStockStatusRow?.product_name || '当前产品' }}</strong>
+        <span>生产单 {{ progressDialogRow.order_no || '—' }} · 批次 {{ progressDialogRow.batch_no || '—' }}</span>
+      </p>
       <div v-if="progressLoading" style="text-align:center; padding: 20px;">
         <el-icon class="is-loading" :size="20" style="animation: rotate 1s linear infinite;">⟳</el-icon> 加载中...
       </div>
       <template v-else-if="progressDialogRow && progressData">
-        <div style="margin-bottom: 12px; font-weight: 600; color: #1e1e2d;">{{ progressData.order_product_id ? `${progressDialogRow.product_name || progressDialogRow.order_no}` : '' }}</div>
         <div class="progress-bar-wrap">
           <el-progress :percentage="progressData.completion_rate || 0" :stroke-width="16" :text-inside="true" style="margin-bottom: 12px;" />
           <span style="font-size: 13px; color: #606266;">

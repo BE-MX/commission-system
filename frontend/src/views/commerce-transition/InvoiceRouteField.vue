@@ -25,13 +25,16 @@ import { useNativeCommand } from '@/views/finance/native/useNativeCommand'
 import { routeEditable } from './routeState'
 import InvoiceRouteStatus from './InvoiceRouteStatus.vue'
 const props = defineProps({ form: Object, dirty: Boolean })
-const emit = defineEmits(['changed'])
+const emit = defineEmits(['changed', 'default-applied'])
 const resource = useAsyncResource(async (_, { signal }) => (await getTransitionStatus({ signal, suppressToast: true })).data)
 const changeOpen = ref(false), nextRoute = ref('legacy'), evidence = ref(''), command = useNativeCommand()
 async function load() {
  const loaded = await resource.load()
  const recommended = resource.data.value?.capabilities?.default_route
- if (loaded && !props.form.id && ['legacy','local'].includes(recommended)) props.form.transaction_route = recommended
+ if (loaded && !props.form.id && !props.dirty && ['legacy','local'].includes(recommended) && props.form.transaction_route !== recommended) {
+  props.form.transaction_route = recommended
+  emit('default-applied')
+ }
  return loaded
 }
 function openChange() { nextRoute.value = props.form.transaction_route; evidence.value = ''; command.reset(); changeOpen.value = true }

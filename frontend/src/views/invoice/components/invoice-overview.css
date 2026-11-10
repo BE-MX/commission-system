@@ -123,3 +123,14 @@
 .summary-section--compact .summary-card__watermark { width:80px; height:80px; font-size:80px; }
 .summary-section--compact .summary-card strong { font-size:22px; }
 @media(max-width:600px) { .summary-controls { width:100%; } .summary-controls :deep(.el-date-editor) { width:100%; } .summary-view-options button { min-height:38px; } .summary-section--compact .summary-card { padding:12px; } .summary-section--compact .summary-card__icon { position:relative; left:auto; top:auto; } }
+
+
+@media (min-width: 901px) and (max-height: 800px) {
+  .summary-section { margin-bottom: 10px; }
+  .summary-toolbar { margin-bottom: 8px; }
+  .summary-grid { gap: 10px; }
+  .summary-section--compact .summary-card { min-height: 64px; padding: 10px 14px 10px 50px; gap: 4px; }
+  .summary-section--compact .summary-card__icon { left: 12px; top: 12px; width: 28px; height: 28px; }
+  .summary-section--compact .summary-card strong { font-size: 20px; }
+  .summary-note { margin-top: 6px; }
+}

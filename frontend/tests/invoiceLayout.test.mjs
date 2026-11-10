@@ -70,17 +70,17 @@ test('order entry uses card sections with a three-column top-label grid', () => 
   assert.match(invoiceView, /label-position="top"/)
   assert.match(invoiceView, /<InvoiceOrderCustomerFields/)
   assert.match(orderFields, /<span class="step">1<\/span>订单与客户/)
-  assert.match(settlementFields, /label="运费"/)
+  assert.match(settlementFields, /readonly-label">运费<\/span>/)
 })
 
 test('redesigned drawer keeps the agreed entry rules', () => {
   // 客户等级必填
-  assert.match(orderFields, /<el-form-item label="客户等级" required>/)
+  assert.match(orderFields, /<el-form-item label="客户等级" required\s/)
   // 联系人/电话/邮箱/收货地址必填
-  assert.match(orderFields, /<el-form-item label="联系人" required>/)
-  assert.match(orderFields, /<el-form-item label="电话" required>/)
-  assert.match(orderFields, /<el-form-item label="邮箱" required>/)
-  assert.match(orderFields, /<el-form-item label="收货地址" required/)
+  assert.match(orderFields, /<el-form-item label="联系人" required\s/)
+  assert.match(orderFields, /<el-form-item label="电话" required\s/)
+  assert.match(orderFields, /<el-form-item label="邮箱" required\s/)
+  assert.match(orderFields, /<el-form-item label="收货地址" required\s/)
   // 发票号 → 订单号/发票号；日期 → 下单日期
   assert.match(orderFields, /label="订单号\/发票号"/)
   assert.match(orderFields, /label="下单日期" required/)
@@ -127,4 +127,24 @@ test('side pane collapses on demand and remembers the choice', () => {
   // 窄屏单栏：结算卡在明细下方，收起无意义
   assert.match(invoiceStyles, /@media \(max-width: 1200px\)[\s\S]*\.side-toggle\s*{[^}]*display:\s*none/s)
   assert.match(invoiceStyles, /@media \(max-width: 1200px\)[\s\S]*\.drawer-panes\.is-side-collapsed\s+\.pane-side\s*{[^}]*display:\s*flex/s)
+})
+
+
+test('required errors render beside fields in both modern and legacy editors', () => {
+  for (const field of ['customer_id', 'customer_grade', 'contact_name', 'contact_phone', 'contact_email', 'delivery_address']) {
+    assert.match(orderFields, new RegExp(`data-invoice-field="${field}"\\s+:error="validationErrors\\.${field}"`))
+    assert.match(legacyDrawer, new RegExp(`data-invoice-field="${field}"\\s+:error="validationErrors\\.${field}"`))
+  }
+  assert.match(invoiceView, /data-invoice-field="express_channel"\s+:error="editor\.validationErrors\.express_channel"/)
+  const legacySettlement = readFileSync(new URL('../src/views/invoice/components/legacy/InvoiceLegacySettlementFields.vue', import.meta.url), 'utf8')
+  assert.match(legacySettlement, /data-invoice-field="express_channel"\s+:error="validationErrors\.express_channel"/)
+})
+
+
+test('short desktop viewports reduce compact overview whitespace without hiding metrics', () => {
+  const short = overviewStyles.match(/@media\s*\(min-width:\s*901px\)\s*and\s*\(max-height:\s*800px\)\s*\{([\s\S]*)\}\s*$/)?.[1] || ''
+  assert.match(short, /\.summary-section--compact\s+\.summary-card\s*\{[^}]*min-height:\s*64px/s)
+  assert.match(short, /\.summary-toolbar\s*\{[^}]*margin-bottom:\s*8px/s)
+  assert.match(short, /\.summary-section--compact\s+\.summary-card\s+strong\s*\{[^}]*font-size:\s*20px/s)
+  assert.doesNotMatch(short, /display:\s*none/)
 })

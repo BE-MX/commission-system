@@ -24,6 +24,7 @@ async function harness(request = async () => defaults('上单备注'), createReq
     'suggestInvoiceNo', 'updateInvoice', 'updateInvoiceItemGroups'].map(name => [name, async () => ({})]))
   Object.assign(api, {
     getCustomerContactDefaults: request, getCustomerRule: async () => null,
+    suggestInvoiceNo: async () => options.suggestRequest ? options.suggestRequest() : {},
     getInvoice: async id => options.getInvoice ? options.getInvoice(id) : ({ ...state.emptyInvoiceForm(), ...defaults('本单已保存备注'), id, customer_id: 'C1', ...invoiceData }),
     createInvoice: async payload => { saved.push(payload); return createRequest ? createRequest(payload) : { ...payload, id: 10 } },
     updateInvoice: async (id, payload) => options.updateRequest
@@ -585,13 +586,15 @@ for (const action of ['cancel', 'close', 'confirm']) {
   })
 }
 
-test('new legacy order and receipt-only edits are protected; browser handler is cleaned up', async () => {
+test('untouched new legacy order stays clean; real input and receipt edits are protected', async () => {
   const listeners = new Map()
   const window = { addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: name => listeners.delete(name) }
   const h = await harness(undefined, undefined, {}, undefined, { window })
   try {
     assert.equal(listeners.size, 0)
     await h.editor.openLegacyCreate()
+    assert.equal(listeners.size, 0)
+    h.editor.form.remark = 'real input'
     assert.ok(listeners.has('beforeunload'))
     let prevented = false
     const event = { preventDefault: () => { prevented = true } }
@@ -948,3 +951,87 @@ test('local group-only save sends the loaded authority epoch without a legacy sy
   assert.equal(patches[0].expected_authority_epoch, 6)
   assert.deepEqual(h.synced, [])
 })
+
+
+test('untouched new order closes without a false unsaved warning; real input stays protected', async () => {
+  const h = await harness(undefined, undefined, {}, async () => { throw 'cancel' })
+  try {
+    await h.editor.openCreate()
+    assert.equal(h.editor.hasUnsavedChanges.value, false)
+    await h.editor.closeEditor()
+    assert.equal(h.confirmations.length, 0)
+    assert.equal(h.editor.drawerVisible.value, false)
+    await h.editor.openCreate()
+    h.editor.form.remark = 'real business input'
+    assert.equal(h.editor.hasUnsavedChanges.value, true)
+    await h.editor.closeEditor()
+    assert.deepEqual(h.confirmations, ['订单 （未编号） 有尚未保存的内容，关闭后将丢失。确定关闭？'])
+    assert.equal(h.editor.drawerVisible.value, true)
+  } finally { h.stop() }
+})
+
+
+test('invalid new order aggregates required fields before any zero-receipt confirmation', async () => {
+  const h = await harness()
+  try {
+    await h.editor.openCreate()
+    await h.editor.saveAndSync()
+    assert.equal(h.confirmations.length, 0)
+    assert.equal(h.saved.length, 0)
+    assert.equal(h.synced.length, 0)
+    assert.match(h.warnings.at(-1), /客户.*客户等级.*联系人.*电话.*邮箱.*收货地址.*快递渠道/)
+    assert.equal(h.editor.validationErrors.customer_id, '请先选择客户，再选择客户等级')
+    assert.equal(h.editor.validationErrors.contact_name, '请填写联系人')
+    assert.equal(h.editor.validationErrors.express_channel, '请选择快递渠道')
+    h.editor.form.customer_id = 'C1'
+    await h.editor.saveDraft()
+    assert.equal(h.editor.validationErrors.customer_grade, '请选择客户等级')
+    assert.equal(h.saved.length, 0)
+  } finally { h.stop() }
+})
+
+
+test('required field errors clear as the user resolves them without any write', async () => {
+  const h = await harness()
+  try {
+    await h.editor.openCreate()
+    await h.editor.saveDraft()
+    assert.ok(Object.keys(h.editor.validationErrors).length >= 6)
+    Object.assign(h.editor.form, {
+      customer_id: 'C1', customer_grade: 'A', contact_name: 'Alice', contact_phone: '123',
+      contact_email: 'a@example.test', delivery_address: 'Address', express_channel: 'FEDEX',
+    })
+    assert.deepEqual(Object.keys(h.editor.validationErrors), [])
+    assert.equal(h.saved.length, 0)
+  } finally { h.stop() }
+})
+
+
+test('accepted automatic route default rebases only a new order and preserves later edits', async () => {
+  const h = await harness()
+  try {
+    await h.editor.openCreate()
+    h.editor.form.transaction_route = 'local'
+    h.editor.acceptAutomaticDefault()
+    assert.equal(h.editor.hasUnsavedChanges.value, false)
+    h.editor.form.contact_name = 'real input after route default'
+    assert.equal(h.editor.hasUnsavedChanges.value, true)
+  } finally { h.stop() }
+})
+
+for (const edited of [false, true]) {
+  test(`late suggested invoice number keeps new-order dirty state=${edited}`, async () => {
+    const suggestion = deferred()
+    const h = await harness(undefined, undefined, {}, undefined, { suggestRequest: () => suggestion.promise })
+    try {
+      await h.editor.openCreate()
+      if (edited) h.editor.form.remark = 'entered before suggestion'
+      suggestion.resolve({ invoice_no: 'AUTO-LATE' })
+      await vue.nextTick()
+      await Promise.resolve()
+      await vue.nextTick()
+      assert.equal(h.editor.form.invoice_no, 'AUTO-LATE')
+      assert.equal(h.editor.hasUnsavedChanges.value, edited)
+    } finally { h.stop() }
+  })
+}

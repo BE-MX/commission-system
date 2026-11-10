@@ -7,6 +7,22 @@ export function inspectionRequirement(form) {
   return form.inspection_requirement ?? (form.okki_new_deal === 1 ? 'detail' : 'single')
 }
 
+export function invoiceRequiredIssues(form) {
+  const issues = []
+  const add = (field, label, message = `请填写${label}`) => issues.push({ field, label, message })
+  const local = (form.transaction_route || form.transaction_mode) === 'local'
+  const hasCustomer = Boolean(local ? form.local_customer_id : form.customer_id)
+  if (!form.customer_grade) {
+    add(hasCustomer ? 'customer_grade' : 'customer_id', hasCustomer ? '客户等级' : '客户与客户等级',
+      hasCustomer ? '请选择客户等级' : '请先选择客户，再选择客户等级')
+  }
+  for (const [field, label] of [['contact_name', '联系人'], ['contact_phone', '电话'], ['contact_email', '邮箱'], ['delivery_address', '收货地址']]) {
+    if (!String(form[field] || '').trim()) add(field, label)
+  }
+  if (!form.express_channel) add('express_channel', '快递渠道', '请选择快递渠道')
+  return issues
+}
+
 export function screenshotOrderName(preview = {}) {
   const extracted = String(preview?.extraction?.order_name || '').trim()
   const patched = String(preview?.invoice_patch?.source_order_name || '').trim()

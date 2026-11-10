@@ -214,7 +214,7 @@
           <div :class="['drawer-panes', sideCollapsed ? 'is-side-collapsed' : '']">
             <!-- 左窗格：录入主流（客户/订单 → 产品明细 → 配件明细），独立滚动 -->
             <main class="pane pane-main">
-              <InvoiceRouteField :form="form" :dirty="editor.hasUnsavedChanges.value" @changed="openEdit(form.id)" />
+              <InvoiceRouteField :form="form" :dirty="editor.hasUnsavedChanges.value" @changed="openEdit(form.id)" @default-applied="editor.acceptAutomaticDefault" />
               <LinkedSyncResult v-if="!invoiceIsLocal(form)"
                 :operation="linkedOperation"
                 :busy="linkedBusy"
@@ -231,7 +231,8 @@
                 :contact-details-complete="editor.contactDetailsComplete.value"
                 v-model:selected-customer="selectedCustomer" :active="drawerVisible"
                 v-model:private-only-company="privateOnlyCompany"
-                :form="form" :sales-user-options="salesUserOptions" :customer-options="customerOptions"
+                :form="form" :validation-errors="editor.validationErrors"
+                :sales-user-options="salesUserOptions" :customer-options="customerOptions"
                 :customer-loading="customerLoading"
                 :customer-has-more="customerHasMore" :okki-bound="okkiBound"
                 :can-toggle-private="canTogglePrivate" :customer-rule="customerRule"
@@ -295,7 +296,7 @@
               <!-- 卡片 4：物流与备注（快递渠道 → 运费/包装 → 指定跟单员 → 备注） -->
               <section class="form-card">
                 <div class="card-title"><span class="step">4</span>物流与备注</div>
-                <el-form-item label="快递渠道" required>
+                <el-form-item label="快递渠道" required data-invoice-field="express_channel" :error="editor.validationErrors.express_channel">
                   <el-radio-group v-model="form.express_channel" class="express-radio-row">
                     <el-radio v-for="option in EXPRESS_CHANNEL_OPTIONS" :key="option" :value="option">{{ option }}</el-radio>
                   </el-radio-group>

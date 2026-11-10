@@ -38,7 +38,7 @@
       <el-form-item label="包装费用" class="span-1">
         <el-input-number v-model="form.internal_accessory" :min="0" :precision="2" controls-position="right" />
       </el-form-item>
-      <el-form-item label="快递渠道" class="span-2">
+      <el-form-item label="快递渠道" class="span-2" data-invoice-field="express_channel" :error="validationErrors.express_channel">
         <el-select v-model="form.express_channel" clearable placeholder="请选择">
           <el-option v-for="option in expressChannels" :key="option" :label="option" :value="option" />
         </el-select>
@@ -69,6 +69,7 @@ import { computeHandlingFee, handlingFeeRate } from '../../composables/invoiceSe
 // 旧版下单抽屉的结算区（HEAD 版原样保留，过渡期使用）
 const props = defineProps({
   form: { type: Object, required: true },
+  validationErrors: { type: Object, default: () => ({}) },
   total: { type: Number, required: true },
   settlementError: { type: String, default: '' },
   hairAmount: { type: Number, required: true },

@@ -15,12 +15,18 @@
 /* 统计卡 */
 .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
 /* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），这里只留布局 */
-.stat-card { padding: 24px; display: flex; align-items: center; gap: 16px; position: relative; overflow: hidden; cursor: pointer; transition: transform .15s; }
+.stat-card { padding: 24px; display: flex; align-items: center; gap: 16px; position: relative; overflow: hidden; cursor: pointer; transition: transform .15s; width: 100%; min-width: 0; font: inherit; text-align: left; color: inherit; }
 .stat-card:hover { transform: translateY(-2px); }
 .stat-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+.stat-card.shortage { --stat-accent: #c0392b; }
+.stat-card.warning { --stat-accent: #e67e22; }
+.stat-card.sufficient { --stat-accent: #219a52; }
 .stat-card.shortage::before { background: linear-gradient(180deg, #e74c3c, #c0392b); }
 .stat-card.warning::before { background: linear-gradient(180deg, #f39c12, #e67e22); }
 .stat-card.sufficient::before { background: linear-gradient(180deg, #27ae60, #219a52); }
+.stat-card.is-active { border-color: var(--stat-accent); outline: 1px solid var(--stat-accent); outline-offset: -2px; }
+.stat-card:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+.stat-active-mark { position: absolute; top: 8px; right: 8px; color: var(--stat-accent); }
 .stat-icon-bg { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .stat-card.shortage .stat-icon-bg { background: linear-gradient(135deg, #fdecea, #fadbd8); }
 .stat-card.warning .stat-icon-bg { background: linear-gradient(135deg, #fef5e7, #fdebd0); }
@@ -76,10 +82,22 @@
 .in-transit-value { font-weight: 500; font-size: 14px; color: #888; }
 .in-transit-active { color: #27ae60; font-weight: 600; }
 
-.stock-status-label { font-size: 13px; }
+.stock-status-label { border: 0; background: transparent; padding: 0; font: inherit; font-size: 13px; cursor: pointer; }
+.stock-status-label:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 .stock-status-normal { color: #27ae60; }
 .stock-status-urgent { color: #e74c3c; font-weight: 700; }
 
 .stock-status-dialog { padding: 10px 0; }
 .stock-status-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #eee; }
 .stock-status-product { font-weight: 600; font-size: 15px; color: #1e1e2d; }
+
+@media (max-width: 640px) {
+  .stats-row { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .stat-card { padding: 16px; gap: 12px; }
+  .stat-info { min-width: 0; }
+  .stat-card .status-badge { flex-shrink: 0; }
+}
+
+
+.progress-context { display: flex; flex-direction: column; gap: 4px; margin: 0 0 16px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.progress-context strong { color: var(--text-primary); font-weight: 600; }

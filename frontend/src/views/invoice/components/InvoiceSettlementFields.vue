@@ -15,15 +15,19 @@
         <el-input :model-value="form.internal_balance == null ? '' : money(form.internal_balance)" readonly class="balance-field" />
         <div class="field-hint">根据订单总额与预付款自动计算</div>
       </el-form-item>
-      <el-form-item label="包装数量">
-        <el-input :model-value="form.packaging_quantity || 0" readonly class="balance-field" />
-      </el-form-item>
-      <el-form-item label="包装费用">
-        <el-input :model-value="money(form.internal_accessory || 0)" readonly class="balance-field" />
-      </el-form-item>
-      <el-form-item label="运费">
-        <el-input :model-value="money(form.shipping_fee || 0)" readonly class="balance-field" />
-      </el-form-item>
+      <div class="readonly-field">
+        <span class="readonly-label">包装数量</span>
+        <strong class="readonly-value">{{ form.packaging_quantity || 0 }}</strong>
+      </div>
+      <div class="readonly-field">
+        <span class="readonly-label">包装费用</span>
+        <strong class="readonly-value">{{ money(form.internal_accessory || 0) }}</strong>
+      </div>
+      <div class="readonly-field">
+        <span class="readonly-label">运费</span>
+        <strong class="readonly-value">{{ money(form.shipping_fee || 0) }}</strong>
+      </div>
+      <p class="readonly-note c2">包装与运费请在物流与备注区修改</p>
       <el-form-item label="手续费" class="c2">
         <el-input-number
           v-model="form.surcharge_amount"
@@ -96,6 +100,10 @@ const handlingHint = computed(() => {
 .sgrid :deep(.el-input-number) { width: 100%; }
 .balance-field :deep(.el-input__wrapper) { background: var(--table-header-bg); }
 .balance-field :deep(.el-input__inner) { font-variant-numeric: tabular-nums; }
+.readonly-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding-bottom: 12px; }
+.readonly-label { color: var(--text-secondary); font-size: 13px; }
+.readonly-value { display: flex; align-items: center; min-height: 36px; color: var(--text-primary); font-weight: 500; font-variant-numeric: tabular-nums; }
+.readonly-note { margin: 0 0 12px; color: var(--text-muted); font-size: 11px; line-height: 1.4; }
 .field-hint { margin-top: 2px; color: var(--text-muted); font-size: 11px; line-height: 1.3; }
 .handling-hint { margin-top: 2px; color: var(--text-muted); font-size: 11px; line-height: 1.3; }
 @media (max-width: 560px) { .sgrid { grid-template-columns: 1fr; } }

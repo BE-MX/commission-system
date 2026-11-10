@@ -59,7 +59,7 @@ test('freight is entered below the express channel and the settlement pane only 
   const logistics = invoiceView.slice(invoiceView.indexOf('物流与备注（'), invoiceView.indexOf('<aside class="pane pane-side">'))
   assert.match(logistics, /label="快递渠道"[\s\S]*label="运费"[\s\S]*v-model="form.shipping_fee"[\s\S]*label="指定跟单员"/)
   assert.match(logistics, /v-model="form.shipping_fee"\s+:disabled="form.order_type === 'presale'"[\s\S]*:min="0" :precision="2"/)
-  assert.match(settlementFields, /label="运费">\s*<el-input :model-value="money\(form.shipping_fee \|\| 0\)" readonly/)
+  assert.match(settlementFields, /readonly-label">运费<\/span>\s*<strong class="readonly-value">\{\{ money\(form.shipping_fee \|\| 0\) \}\}<\/strong>/)
   assert.doesNotMatch(settlementFields, /v-model="form.shipping_fee"/)
 })
 
@@ -201,7 +201,7 @@ test('settlement inputs live in the side pane; derived amounts moved to the summ
   assert.match(settlementFields, /label="预付款"/)
   assert.match(settlementFields, /label="尾款"/)
   assert.match(settlementFields, /根据订单总额与预付款自动计算/)
-  assert.match(settlementFields, /label="包装费用"/)
+  assert.match(settlementFields, /readonly-label">包装费用<\/span>/)
   assert.match(settlementFields, /label="手续费"/)
   // 快递渠道移到底部「物流与备注」卡：必填横向单选，不再出现在结算卡
   assert.doesNotMatch(settlementFields, /express_channel/)
@@ -266,8 +266,8 @@ test('product discount precedes TotalPrice and packaging quantity precedes its f
   const totalPriceIndex = hairTable.indexOf('<el-table-column label="小计"')
   assert.ok(discountIndex >= 0 && discountIndex < totalPriceIndex)
   assert.match(hairTable, /v-model="row\.discount_amount"/)
-  const packagingQuantityIndex = settlementFields.indexOf('label="包装数量"')
-  const packagingFeeIndex = settlementFields.indexOf('label="包装费用"')
+  const packagingQuantityIndex = settlementFields.indexOf('readonly-label">包装数量</span>')
+  const packagingFeeIndex = settlementFields.indexOf('readonly-label">包装费用</span>')
   assert.ok(packagingQuantityIndex >= 0 && packagingQuantityIndex < packagingFeeIndex)
 
   for (const label of ['头发金额', '头发折扣', '配件金额', '配件折扣', '包装费用', '运费', '手续费']) {
@@ -284,4 +284,14 @@ test('new invoices take the salesperson snapshot from the selected assignee', ()
   assert.match(invoiceEditor, /form\.sales_user_name = selected\.username \|\| ''/)
   assert.match(invoiceEditor, /form\.sales_user_id = me\?\.id \|\| salesUserOptions\.value\[0\]\?\.id/)
   assert.doesNotMatch(invoiceEditor, /form\.sales_user_name = me\.real_name/)
+})
+
+
+test('read-only logistics fees use plain values instead of imitating editable inputs', () => {
+  const readout = settlementFields.match(/<div class="readonly-field">[\s\S]*?包装与运费请在物流与备注区修改/)?.[0] || ''
+  assert.equal((readout.match(/class="readonly-field"/g) || []).length, 3)
+  assert.ok(readout.includes('form.packaging_quantity'))
+  assert.ok(readout.includes('money(form.internal_accessory || 0)'))
+  assert.ok(readout.includes('money(form.shipping_fee || 0)'))
+  assert.doesNotMatch(readout, /<el-input/)
 })

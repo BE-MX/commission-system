@@ -30,7 +30,7 @@
                 />
               </el-select>
             </el-form-item>
-            <el-form-item label="客户" required class="span-3">
+            <el-form-item label="客户" required class="span-3" data-invoice-field="customer_id" :error="validationErrors.customer_id">
               <div class="customer-filter-row">
                 <InvoiceCustomerPicker
                   v-model="selectedCustomer" :options="customerOptions" :loading="customerLoading"
@@ -48,21 +48,21 @@
               <InvoiceCustomerSyncEntry :on-select="selectSyncedCustomer" />
               <div v-if="customerRule" class="rule-badge">该客户价格规则：{{ describeCustomerRule(customerRule) }}</div>
             </el-form-item>
-            <el-form-item label="客户等级" required>
+            <el-form-item label="客户等级" required data-invoice-field="customer_grade" :error="validationErrors.customer_grade">
               <el-select v-model="form.customer_grade" @change="markCustomerGradeTouched" placeholder="请选择等级" :disabled="!form.customer_id">
                 <el-option v-for="grade in ['S', 'A', 'B', 'C', 'D', 'E']" :key="grade" :label="grade" :value="grade" />
               </el-select>
             </el-form-item>
-            <el-form-item label="联系人" required class="span-2">
+            <el-form-item label="联系人" required class="span-2" data-invoice-field="contact_name" :error="validationErrors.contact_name">
               <el-input v-model="form.contact_name" maxlength="100" placeholder="To" />
             </el-form-item>
-            <el-form-item label="电话" required class="span-2">
+            <el-form-item label="电话" required class="span-2" data-invoice-field="contact_phone" :error="validationErrors.contact_phone">
               <el-input v-model="form.contact_phone" maxlength="50" placeholder="TEL/Fax" />
             </el-form-item>
-            <el-form-item label="邮箱" required class="span-2">
+            <el-form-item label="邮箱" required class="span-2" data-invoice-field="contact_email" :error="validationErrors.contact_email">
               <el-input v-model="form.contact_email" maxlength="100" placeholder="E-mail" />
             </el-form-item>
-            <el-form-item label="收货地址" required class="span-6">
+            <el-form-item label="收货地址" required class="span-6" data-invoice-field="delivery_address" :error="validationErrors.delivery_address">
               <el-input v-model="form.delivery_address" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" maxlength="500" placeholder="Delivery address" />
             </el-form-item>
           </div>
@@ -140,6 +140,7 @@
 
         <InvoiceLegacySettlementFields
           :form="form"
+          :validation-errors="validationErrors"
           :total="formTotal"
           :settlement-error="settlementError"
           :hair-amount="formHairPrice"
@@ -253,7 +254,7 @@ const pasteImportDisabledReason = computed(() => {
 })
 
 const {
-  legacyVisible, form, selectedCustomer, customerOptions, customerLoading, salesUserOptions,
+  legacyVisible, form, validationErrors, selectedCustomer, customerOptions, customerLoading, salesUserOptions,
   customerRule, customerHasMore, loadMoreCustomers, privateOnlyCompany, canTogglePrivate,
   okkiBound, invoiceNoTaken, entryOptions, hairItems, accessoryItems, accessoryOptions, accessoryLoading,
   formHairPrice, formLineDiscountTotal, formAccessoryAmount, formAccessoryDiscount, formBaseAmount, formTotal,

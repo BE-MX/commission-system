@@ -43,6 +43,7 @@ import {
   buildInvoicePayload,
   emptyInvoiceForm,
   invoiceQuantityIssue,
+  invoiceRequiredIssues,
   isInvoicePlaceholder,
   INVOICE_NO_MAX_LENGTH,
   normalizeHairRow,
@@ -77,6 +78,28 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const previousInvoiceNo = ref('')
 
   const form = reactive(emptyInvoiceForm())
+  const validationErrors = reactive({})
+  watch(() => [form.local_customer_id, form.customer_id, form.customer_grade,
+    form.contact_name, form.contact_phone, form.contact_email, form.delivery_address, form.express_channel], () => {
+    const remaining = new Set(invoiceRequiredIssues(form).map(issue => issue.field))
+    for (const field of Object.keys(validationErrors)) if (!remaining.has(field)) delete validationErrors[field]
+  }, { flush: 'sync' })
+  function validateRequiredFields() {
+    const issues = invoiceRequiredIssues(form)
+    for (const field of Object.keys(validationErrors)) delete validationErrors[field]
+    for (const issue of issues) validationErrors[issue.field] = issue.message
+    if (!issues.length) return true
+    msgWarning(`请完善 ${issues.length} 项必填内容：${issues.map(issue => issue.label).join('、')}`)
+    nextTick(() => {
+      if (typeof document === 'undefined') return
+      const field = issues[0].field
+      const target = [...document.querySelectorAll('[data-invoice-field]')]
+        .find(element => element.dataset.invoiceField === field && element.getClientRects().length)
+      target?.scrollIntoView({ block: 'center', behavior: 'auto' })
+      target?.querySelector('input, textarea')?.focus({ preventScroll: true })
+    })
+    return false
+  }
   const savedSignature = ref('')
   const savedBusinessSignature = ref('')
   const loadedGroupVersion = ref(null)
@@ -104,7 +127,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     form.id && savedSignature.value !== currentSignature()
     && savedBusinessSignature.value === currentBusinessSignature(),
   )
-  const hasUnsavedChanges = computed(() => !form.id || savedSignature.value !== currentSignature()
+  const hasUnsavedChanges = computed(() => savedSignature.value !== currentSignature()
     || form.receipt_proof_dirty || form.receipt_remark_editing || form.receipt_action_open)
   let closeConfirmation = null
   async function confirmEditorClose() {
@@ -319,6 +342,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   function resetForm(data = emptyInvoiceForm()) {
     quantityErrorRow.value = null
+    for (const field of Object.keys(validationErrors)) delete validationErrors[field]
     loadedUpdatedAt.value = data.edit_version || null
     loadedGroupVersion.value = data.item_groups_version || null
     contactFillSeq++
@@ -579,6 +603,13 @@ export function useInvoiceEditor({ onSaved } = {}) {
     if (seq === lastOrderSeq) lastOrderDate.value = date
   }
 
+  function acceptAutomaticDefault() {
+    if (form.id) return
+    savedSignature.value = currentSignature()
+    savedBusinessSignature.value = currentBusinessSignature()
+    loadedOrderSignature.value = invoiceOrderSignature(currentPayload())
+  }
+
   async function prepareCreate(orderType = 'stock') {
     resetForm()
     form.order_type = orderType
@@ -587,6 +618,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     form.sales_user_id = me?.id || salesUserOptions.value[0]?.id || null
     applySalesUserSnapshot()
     addBlankLine()
+    savedSignature.value = currentSignature()
     linked.load(null)
     searchCustomers('')
     fetchSuggestedInvoiceNo()
@@ -732,7 +764,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
       const res = await suggestInvoiceNo({ order_type: form.order_type })
       // 期间用户手输过 / 切换了单据则丢弃建议号
       if (seq === invoiceNoSeq && !invoiceNoEdited && !form.id) {
+        const wasPristine = savedSignature.value === currentSignature()
         form.invoice_no = res.invoice_no || ''
+        if (wasPristine) savedSignature.value = currentSignature()
       }
     } catch {
       // 拦截器已统一提示；建议号取不到时留空，保存由后端按规则生成兜底
@@ -796,6 +830,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     }
 
     if (form.presale_edit_blocked_reason) { msgWarning(form.presale_edit_blocked_reason); return null }
+    if (!validateRequiredFields()) return null
     if (form.items.some(line => Number(line.total_price || 0) < 0)) {
       msgWarning('产品行折扣不能超过该行金额')
       return null
@@ -814,22 +849,6 @@ export function useInvoiceEditor({ onSaved } = {}) {
       msgWarning(`本次回款金额 ${formatMoney(receipt.amount)} 不能超过订单总额 ${formatMoney(formTotal.value)} ${form.currency}，请核对后保存`)
       return null
     }
-    // 客户等级必填（2026-09 下单页改版）：等级决定价格规则，缺等级不允许保存
-    if (!form.customer_grade) {
-      msgWarning('请选择客户等级')
-      return null
-    }
-    // 联系信息与快递渠道必填（2026-09-23 下单页改版）
-    const missingRequired = []
-    if (!String(form.contact_name || '').trim()) missingRequired.push('联系人')
-    if (!String(form.contact_phone || '').trim()) missingRequired.push('电话')
-    if (!String(form.contact_email || '').trim()) missingRequired.push('邮箱')
-    if (!String(form.delivery_address || '').trim()) missingRequired.push('收货地址')
-    if (!form.express_channel) missingRequired.push('快递渠道')
-    if (missingRequired.length) {
-      msgWarning(`请完善必填项：${missingRequired.join('、')}`)
-      return null
-    }
     const channelError = paymentChannelError(form.internal_payment_method, form.express_channel)
     if (channelError) {
       msgWarning(channelError)
@@ -842,6 +861,16 @@ export function useInvoiceEditor({ onSaved } = {}) {
       quantityErrorRow.value = quantityIssue.row
       msgWarning(quantityIssue.message)
       return null
+    }
+    if (options.confirmZeroReceipt && ['stock', 'presale'].includes(form.order_type) && Number(form.receipt_draft?.amount || 0) === 0) {
+      try {
+        await confirmAction('当前回款金额为0，是否确认提交？', '提交确认', {
+          type: 'warning', confirmButtonText: '确认提交', cancelButtonText: '取消',
+        })
+      } catch (error) {
+        if (isFeedbackCancelled(error)) return null
+        throw error
+      }
     }
     const submittedSignature = currentSignature()
     const submittedReceiptStatus = form.receipt_draft?.status
@@ -914,20 +943,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
     saveAndSyncSubmitting.value = true
     try {
-      await customerDefaultsPromise
       const groupOnly = hasOnlyGroupChanges()
-      if (!groupOnly && ['stock', 'presale'].includes(form.order_type) && Number(form.receipt_draft?.amount || 0) === 0) {
-        try {
-          await confirmAction('当前回款金额为0，是否确认提交？', '提交确认', {
-            type: 'warning', confirmButtonText: '确认提交', cancelButtonText: '取消',
-          })
-        } catch (error) {
-          if (isFeedbackCancelled(error)) return
-          throw error
-        }
-      }
       const useLinked = !groupOnly && Boolean(form.id && form.xiaoman_order_id)
-      const saved = await saveDraft({ linked: useLinked })
+      const saved = await saveDraft({ linked: useLinked, confirmZeroReceipt: !groupOnly })
       if (!saved) return
       if (lastSaveType.value === 'groups') {
         msgSuccessText('订单业务数据未变化，无需同步')
@@ -1000,6 +1018,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     closeLinked: linked.close, resolveLinked: linked.resolve,
     entryOptions,
     form,
+    validationErrors,
     contactDetailsExpanded,
     contactDetailsComplete,
     hairItems: accessories.hairItems,
@@ -1029,7 +1048,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     onCurrencyChange,
     onInvoiceNoInput,
     onInvoiceNoBlur,
-    cancelEntry, openCreate,
+    cancelEntry, acceptAutomaticDefault, openCreate,
     openLegacyCreate,
     openEdit,
     applyScreenshotPreview,
