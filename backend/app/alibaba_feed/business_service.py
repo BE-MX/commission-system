@@ -14,9 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 def require_actor(db, user, action="read"):
-    if not get_settings().ALIBABA_FEED_BUSINESS_ENABLED:
+    settings = get_settings()
+    if not settings.ALIBABA_FEED_BUSINESS_ENABLED:
         raise HTTPException(503, "阿里业务资料尚未启用")
     uid = private_scope.user_id(user)
+    if uid not in settings.ALIBABA_FEED_BUSINESS_PILOT_USER_IDS:
+        raise HTTPException(403, "当前账号未加入阿里业务资料试点")
     active = db.query(ArkUser.id).filter(ArkUser.id == uid, ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None)).with_for_update().first()
     roles = {r[0] for r in db.query(ArkRole.name).join(ArkUserRole, ArkUserRole.role_id == ArkRole.id).filter(ArkUserRole.user_id == uid).with_for_update().all()}
     permissions = {r[0] for r in db.query(ArkPermission.code).join(ArkRolePermission, ArkRolePermission.permission_id == ArkPermission.id).join(ArkUserRole, ArkUserRole.role_id == ArkRolePermission.role_id).filter(ArkUserRole.user_id == uid).with_for_update().all()}

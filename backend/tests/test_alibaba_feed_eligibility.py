@@ -72,7 +72,10 @@ def test_automatic_execution_also_requires_current_pilot_enrollment(v11_store, m
     settings = get_settings()
     for name in ("ALIBABA_FEED_AUTOMATION_ENABLED", "CLIENT_DESK_ENABLED", "ALIBABA_FEED_BUSINESS_ENABLED"):
         monkeypatch.setattr(settings, name, True)
+    monkeypatch.setattr(settings, "ALIBABA_FEED_BUSINESS_PILOT_USER_IDS", [1])
     monkeypatch.setattr(settings, "CLIENT_DESK_PILOT_USER_IDS", [])
     assert not rule_eligibility(v11_store[0], item, source, user_id=1, now=NOW)["allowed"]["reply_rules"]
     monkeypatch.setattr(settings, "CLIENT_DESK_PILOT_USER_IDS", [1])
     assert rule_eligibility(v11_store[0], item, source, user_id=1, now=NOW)["allowed"]["reply_rules"]
+    monkeypatch.setattr(settings, "ALIBABA_FEED_BUSINESS_PILOT_USER_IDS", [])
+    assert not rule_eligibility(v11_store[0], item, source, user_id=1, now=NOW)["allowed"]["reply_rules"]

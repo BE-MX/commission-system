@@ -94,7 +94,8 @@ def rule_eligibility(db, item, source=None, *, user_id=None, now=None):
             reasons.append(label)
     enabled = bool(settings.ALIBABA_FEED_AUTOMATION_ENABLED and settings.CLIENT_DESK_ENABLED
                    and settings.ALIBABA_FEED_BUSINESS_ENABLED
-                   and user_id is not None and user_id in settings.CLIENT_DESK_PILOT_USER_IDS)
+                   and user_id in settings.ALIBABA_FEED_BUSINESS_PILOT_USER_IDS
+                   and user_id in settings.CLIENT_DESK_PILOT_USER_IDS)
     if not enabled:
         reasons.append("AUTOMATION_DISABLED")
     missing_capabilities = [name for name in ("stable_message_ids", "reliable_order", "latest_coverage", "human_identity", "activity_scan", "deletions")

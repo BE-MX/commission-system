@@ -20,7 +20,7 @@
 
 ## 权限和版本
 
-- 业务 JWT 端点要求 `client_desk:read/write`，并重新检查当前用户、权限、来源授权、精确负责人以及关联目标当前私海。来源管理要求实时 `alibaba_feed:admin`；管理权不授予消息正文范围。
+- 业务 JWT 端点要求 `client_desk:read/write`，用户还须列入 `ALIBABA_FEED_BUSINESS_PILOT_USER_IDS`（独立于私海试点，默认空，即使超级管理员也必须列入才可访问业务资料），并重新检查当前用户、权限、来源授权、精确负责人以及关联目标当前私海。来源管理要求实时 `alibaba_feed:admin`；管理权不授予消息正文范围。
 - v1 仅使用来源内人工确认的显示名别名，不做模糊匹配。v1.1 提供员工稳定 ID 时，必须使用既有 `alibaba_icbu` 有效唯一外部绑定，缺失或冲突时不得回退到姓名别名。
 - 修改负责人表递增 `mapping_version`；CRM / AI / 私海许可和授权变更更新授权版本。采集能力由管理员以严格布尔值和核验依据登记，变化递增 `capability_version`，上传包不能写这些许可。
 - 请求、来源、记录与关联采用同一方向的当前读与行锁。保存后不确定结果不自动重发，关联可用原请求键查询式重传；撤销使用 `expected_version`，来源修改使用 `expected_version`。

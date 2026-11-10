@@ -42,6 +42,7 @@ def business(feed, monkeypatch):
         outcome="current_updated", is_current=True, window_result="uncertain", issues=["WINDOW_PRECISION_INSUFFICIENT"]))
     db.commit()
     monkeypatch.setattr(get_settings(), "ALIBABA_FEED_BUSINESS_ENABLED", True)
+    monkeypatch.setattr(get_settings(), "ALIBABA_FEED_BUSINESS_PILOT_USER_IDS", [1, 2])
     scope = {1: {101, 102}, 2: {202}}
     def check(db, user, company_id, **kwargs):
         if int(company_id) not in scope.get(int(user["sub"]), set()):
@@ -89,6 +90,27 @@ def test_machine_and_admin_cannot_read_other_owner_body(business):
     assert client.get("/admin/sources", headers=headers(2)).status_code == 200
     assert "Synthetic secret" not in client.get("/admin/sources", headers=headers(2)).text
     assert link(client, headers, company_id=202).status_code == 404
+
+
+def test_business_access_requires_explicit_feed_pilot_enrollment(business, monkeypatch):
+    client, db, headers, _, _ = business
+    settings = get_settings()
+    monkeypatch.setattr(settings, "ALIBABA_FEED_BUSINESS_PILOT_USER_IDS", [1])
+    source = db.query(AlibabaFeedSource).one()
+    # Make the other account the current exact owner. Ownership and its
+    # administrator role must not grant access outside the pilot.
+    source.owner_aliases = {"Seller A": 2}
+    db.commit()
+
+    assert client.get("/business/records/1", headers=headers(2)).status_code == 403
+    assert client.get("/business/customers", headers=headers(2)).status_code == 403
+    assert client.get("/admin/sources", headers=headers(2)).status_code == 200
+
+    monkeypatch.setattr(settings, "ALIBABA_FEED_BUSINESS_PILOT_USER_IDS", [2])
+    assert client.get("/business/records/1", headers=headers(2)).status_code == 200
+    monkeypatch.setattr(settings, "ALIBABA_FEED_BUSINESS_PILOT_USER_IDS", [])
+    assert client.get("/business/records/1", headers=headers(2)).status_code == 403
+
 
 
 def test_link_idempotency_and_versions(business):
