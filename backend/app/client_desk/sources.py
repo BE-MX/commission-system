@@ -432,7 +432,7 @@ def build_customer_sources(
         "company_id": str(company_id),
         "card": card,
         "contacts": contacts,
-        "grade": get_customer_grade(db, company_id),
+        "grade": grade,
         "created_at": card["created_at"],
         "grade_options": context["grade_options"] if context else grade_options(db),
         "own_last_outbound_at": max(

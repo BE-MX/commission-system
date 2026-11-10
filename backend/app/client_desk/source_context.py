@@ -10,8 +10,55 @@ from app.invoice.product_service import _schema
 from app.order_intelligence.service import VALID_ORDER_SQL
 
 
+def _linked_whatsapp(db, actor, ids):
+    from app.client_desk.sources import visible_wa
+
+    links = {
+        (r.account_uid, r.conversation_uid): r
+        for r in db.query(ClientDeskWaLink).filter(
+            ClientDeskWaLink.company_id.in_(ids),
+            ClientDeskWaLink.deleted_at.is_(None),
+            ClientDeskWaLink.link_type.in_(["linked", "imported"]),
+        )
+    }
+    by_company = defaultdict(list)
+    if links:
+        for conv, account, messages in visible_wa(db, actor, company_ids=ids):
+            link = links.get((account.account_uid, conv.conversation_uid))
+            if link:
+                by_company[str(link.company_id)].append((conv, account, messages))
+    return links, by_company
+
+
+def _manual_followups(db, actor, ids):
+    return db.query(ClientDeskFollowup).filter(
+        ClientDeskFollowup.user_id == user_id(actor),
+        ClientDeskFollowup.company_id.in_(ids),
+        ClientDeskFollowup.deleted_at.is_(None),
+    )
+
+
+def list_last_touches(db, actor, ids):
+    """Read recent-contact fields for a page without assembling customer dossiers."""
+    _, whatsapp = _linked_whatsapp(db, actor, ids)
+    touches = defaultdict(list)
+    for cid, conversations in whatsapp.items():
+        for _, _, messages in conversations:
+            last = messages[-1]
+            touches[cid].append((last.sent_at or last.received_at, "whatsapp"))
+    for cid, at, channel in _manual_followups(db, actor, ids).with_entities(
+        ClientDeskFollowup.company_id,
+        ClientDeskFollowup.happened_at,
+        ClientDeskFollowup.channel,
+    ):
+        touches[str(cid)].append((at, channel))
+    return {
+        cid: max(values, key=lambda touch: touch[0]) for cid, values in touches.items()
+    }
+
+
 def prepare(db, user, cards):
-    from app.client_desk.sources import visible_wa, grade_options
+    from app.client_desk.sources import grade_options
 
     actor = require_enabled(db, user)
     ids = [c["company_id"] for c in cards]
@@ -53,24 +100,8 @@ def prepare(db, user, cards):
         f'SELECT o.*,CASE WHEN {VALID_ORDER_SQL.format(a="o")} THEN 1 ELSE 0 END valid_business FROM `{schema}`.okki_orders o WHERE o.company_id IN :ids ORDER BY o.account_date,o.order_id'
     ):
         context["orders"][str(row["company_id"])].append(dict(row))
-    links = {
-        (r.account_uid, r.conversation_uid): r
-        for r in db.query(ClientDeskWaLink).filter(
-            ClientDeskWaLink.company_id.in_([int(i) for i in ids]),
-            ClientDeskWaLink.deleted_at.is_(None),
-            ClientDeskWaLink.link_type.in_(["linked", "imported"]),
-        )
-    }
-    context["links"] = links
-    for conv, account, messages in visible_wa(db, actor, company_ids=ids):
-        link = links.get((account.account_uid, conv.conversation_uid))
-        if link:
-            context["wa"][str(link.company_id)].append((conv, account, messages))
-    for row in db.query(ClientDeskFollowup).filter(
-        ClientDeskFollowup.user_id == user_id(actor),
-        ClientDeskFollowup.company_id.in_(ids),
-        ClientDeskFollowup.deleted_at.is_(None),
-    ):
+    context["links"], context["wa"] = _linked_whatsapp(db, actor, ids)
+    for row in _manual_followups(db, actor, ids):
         context["followups"][str(row.company_id)].append(row)
     context["states"] = {
         str(r.company_id): r

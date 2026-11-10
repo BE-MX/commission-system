@@ -26,7 +26,7 @@ export function useClientDesk(route) {
       const data = mode.value === 'unlinked' ? await api.conversations({ ...params, scope: scope.value || undefined }) : await api.customers({ ...params, filter: mode.value === 'suggested' ? 'suggested' : filter.value || 'all', reason: mode.value === 'suggested' ? filter.value || undefined : undefined })
       if (!listGate.current(token)) return
       rows.value = (data.items || []).map(row => mode.value === 'unlinked' ? { ...row, link_id: row.link?.id, phone_masked: row.phone_masked || row.phone, last_touch_at: row.last_at } : row); total.value = data.total || 0
-      if (mode.value !== 'unlinked' && !reading.value && rows.value.length && !selected.value) await select(rows.value[0], false)
+      if (mode.value !== 'unlinked' && !reading.value && rows.value.length && !selected.value) void select(rows.value[0], false)
     } catch (e) { if (listGate.current(token)) error.value = errorText(e) }
     finally { if (listGate.current(token)) loading.value = false }
   }
@@ -105,12 +105,20 @@ export function useClientDesk(route) {
     try { const chat = selectedChat.value; if (chat.link_id) await api.unlink(chat.link_id); else await api.link({ account_uid: chat.account_uid, conversation_uid: chat.conversation_uid, link_type: 'ignored', company_id: null, expected_link_id: null }); selectedChat.value = null; reading.value = false; await Promise.all([loadList(), refreshToday()]) }
     catch (e) { detailError.value = errorText(e) } finally { saving.value = false }
   }
-  watch([mode, filter, scope], () => { detailLoading.value = false; aborter?.abort(); detailGate.invalidate(); eventGate.invalidate(); evidenceGate.invalidate(); evidence.value = null; evidenceOpen.value = false; clearTimeout(poller); page.value = 1; selected.value = null; detail.value = null; selectedChat.value = null; reading.value = false; loadList() })
-  watch(keyword, () => { listGate.invalidate(); clearTimeout(timer); timer = setTimeout(() => { page.value = 1; loadList() }, 250) })
+  function reloadFirstPage() {
+    if (page.value === 1) void loadList()
+    else page.value = 1
+  }
+  watch([mode, filter, scope], () => { detailLoading.value = false; aborter?.abort(); detailGate.invalidate(); eventGate.invalidate(); evidenceGate.invalidate(); evidence.value = null; evidenceOpen.value = false; clearTimeout(poller); clearTimeout(timer); selected.value = null; detail.value = null; selectedChat.value = null; reading.value = false; reloadFirstPage() })
+  watch(keyword, () => { listGate.invalidate(); clearTimeout(timer); timer = setTimeout(reloadFirstPage, 250) })
   watch(page, loadList); watch(pageSize, () => { if (page.value === 1) loadList(); else page.value = 1 }); watch(source, () => loadTimeline(false))
   onBeforeUnmount(() => { aborter?.abort(); listGate.invalidate(); detailGate.invalidate(); evidenceGate.invalidate(); clearTimeout(timer); clearTimeout(poller) })
   async function init() {
-    try { await refreshToday(); await loadList(); if (route.query.company_id) await select({ company_id: String(route.query.company_id) }) } catch (e) { error.value = errorText(e) }
+    try {
+      await refreshToday()
+      if (route.query.company_id) void select({ company_id: String(route.query.company_id) })
+      await loadList()
+    } catch (e) { error.value = errorText(e) }
   }
   return { mode, filter, keyword, page, pageSize, total, rows, today, selected, detail, reading, loading, detailLoading, error, detailError, source, events, cursor, timelineLoading, evidence, evidenceOpen, evidenceError, evidenceLoading, dialog, form, saving, saveError, conflict, linkOptions, linkKeyword, scope, selectedChat, suggestion, state, busyAnalysis, init, loadList, select, loadTimeline, openEvidence, open, save, feedback, reanalyze, ignoreChat, searchLinks }
 }

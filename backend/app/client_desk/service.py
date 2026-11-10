@@ -380,70 +380,61 @@ def detail(db, user, company_id):
 def customer_list(
     db, user, filter="all", keyword="", page=1, page_size=30, reason=None
 ):
-    require_enabled(db, user)
+    actor = require_enabled(db, user)
     from app.invoice.models import CustomerProfile
+    from app.client_desk.sources import build_customer_sources
+    from app.client_desk.queue import visible_suggestion
+    from app.client_desk.source_context import list_last_touches, prepare
 
-    cards = list_private_companies(db, user)
-    ids = [int(c["company_id"]) for c in cards]
-    states = {
-        r.company_id: r
-        for r in db.query(State)
-        .filter(State.user_id == user_id(user), State.company_id.in_(ids))
-        .all()
-    }
+    folded_keyword = keyword.casefold()
+    cards = [
+        card
+        for card in list_private_companies(db, actor)
+        if folded_keyword in (card["name"] or "").casefold()
+        or keyword in card["company_id"]
+    ]
     grades = {
-        r.customer_id: r.customer_grade
-        for r in db.query(CustomerProfile)
-        .filter(CustomerProfile.customer_id.in_([str(x) for x in ids]))
-        .all()
+        cid: grade
+        for cid, grade in db.query(
+            CustomerProfile.customer_id, CustomerProfile.customer_grade
+        ).filter(CustomerProfile.customer_id.in_([c["company_id"] for c in cards]))
     }
+    if filter == "ungraded":
+        cards = [card for card in cards if grades.get(card["company_id"]) is None]
+    elif filter.startswith("grade:"):
+        allowed_grades = set(filter[6:].split(","))
+        cards = [
+            card for card in cards if grades.get(card["company_id"]) in allowed_grades
+        ]
+
     suggestions = {}
     for row in (
         db.query(Suggestion)
         .filter(
-            Suggestion.user_id == user_id(user),
+            Suggestion.user_id == user_id(actor),
             Suggestion.biz_date == beijing_today(),
-            Suggestion.company_id.in_(ids),
+            Suggestion.company_id.in_([int(c["company_id"]) for c in cards]),
         )
         .order_by(Suggestion.run_seq)
-        .all()
     ):
-        suggestions[row.company_id] = row
+        suggestions[str(row.company_id)] = row
+    suggestion_cards = [card for card in cards if card["company_id"] in suggestions]
+    context = prepare(db, actor, suggestion_cards) if suggestion_cards else None
+
+    # Only suggestions need full sources before paging to establish live visibility and rank.
     result = []
-    from app.client_desk.sources import build_customer_sources
-    from app.client_desk.queue import visible_suggestion
-
-    from app.client_desk.source_context import prepare
-
-    context = prepare(db, user, cards)
     for card in cards:
-        cid = int(card["company_id"])
-        state = states.get(cid)
+        cid = card["company_id"]
         row = suggestions.get(cid)
-        if (
-            keyword.casefold() not in (card["name"] or "").casefold()
-            and keyword not in card["company_id"]
-        ):
-            continue
-        grade = grades.get(card["company_id"])
-        if filter == "ungraded" and grade is not None:
-            continue
-        if filter.startswith("grade:") and grade not in filter[6:].split(","):
-            continue
-        source = build_customer_sources(
-            db, user, cid, realtime=False, card=card, context=context
-        )
-        suggestion = (
-            visible_suggestion(
-                db,
-                row,
-                source,
-                state,
-                beijing_now(),
+        suggestion = None
+        source = {}
+        if row is not None:
+            source = build_customer_sources(
+                db, actor, int(cid), realtime=False, card=card, context=context
             )
-            if row
-            else None
-        )
+            suggestion = visible_suggestion(
+                db, row, source, context["states"].get(cid), beijing_now()
+            )
         if filter == "suggested" and not suggestion:
             continue
         if reason and (
@@ -453,19 +444,28 @@ def customer_list(
         result.append(
             {
                 **card,
-                "grade": grade,
+                "grade": grades.get(cid),
                 "reason": suggestion.get("reason") if suggestion else None,
                 "rule_codes": suggestion.get("rule_codes", []) if suggestion else [],
                 "rank_score": float(row.rank_score) if suggestion else 0,
-                "last_touch_at": source["last_touch_at"],
-                "channel": source["last_touch_channel"],
+                "last_touch_at": source.get("last_touch_at"),
+                "channel": source.get("last_touch_channel"),
                 "analysis_state": row.status if suggestion else None,
                 "suggestion_id": str(row.id) if suggestion else None,
             }
         )
     result.sort(key=lambda r: (-r["rank_score"], int(r["company_id"])))
+    items = result[(page - 1) * page_size : page * page_size]
+    plain_ids = [
+        item["company_id"] for item in items if item["company_id"] not in suggestions
+    ]
+    if plain_ids:
+        touches = list_last_touches(db, actor, plain_ids)
+        for item in items:
+            if touch := touches.get(item["company_id"]):
+                item["last_touch_at"], item["channel"] = touch
     return {
-        "items": result[(page - 1) * page_size : page * page_size],
+        "items": items,
         "total": len(result),
         "page": page,
         "page_size": page_size,

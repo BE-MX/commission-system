@@ -153,6 +153,54 @@ def test_mirror_sql_overlay_exact_owner_and_unknown_amount(isolated, monkeypatch
     assert len(result["refs"]) == 2 and result["in_transit"] is None
 
 
+def test_customer_list_paginates_plain_customers_without_loading_full_sources(
+    isolated, monkeypatch
+):
+    db = isolated
+    db.execute(text(
+        "INSERT INTO lsordertest.customer_info VALUES "
+        "(803,'Ranked','US','[11]',NULL,NULL),(804,'Ordinary','US','[11]',NULL,NULL)"
+    ))
+    seen = []
+    monkeypatch.setattr(
+        sources, "research_sources", lambda db, user, cid: seen.append(cid) or []
+    )
+    touch = datetime(2026, 11, 4, 10)
+    db.add_all([
+        ClientDeskSuggestion(
+            user_id=1, company_id=803, biz_date=service.beijing_today(),
+            run_seq=1, rank_score=10, status="queued",
+        ),
+        CustomerProfile(customer_id="804", customer_grade="A"),
+        ClientDeskFollowup(
+            user_id=1, company_id=801, happened_at=touch, channel="phone",
+            content="Called", client_request_id="own",
+        ),
+        ClientDeskFollowup(
+            user_id=2, company_id=801, happened_at=datetime(2026, 11, 5, 10),
+            channel="email", content="Other user", client_request_id="other",
+        ),
+    ])
+    db.commit()
+
+    first = service.customer_list(db, 1, page_size=1)
+    second = service.customer_list(db, 1, page=2, page_size=1)
+    assert first["total"] == second["total"] == 3
+    assert first["items"][0]["company_id"] == "803"
+    assert first["items"][0]["rank_score"] == 10
+    plain = second["items"][0]
+    assert (plain["company_id"], plain["last_touch_at"], plain["channel"]) == (
+        "801", touch, "phone",
+    )
+    assert seen == [803, 803]
+
+    seen.clear()
+    filtered = service.customer_list(db, 1, filter="grade:A", keyword="orDIN")
+    assert [item["company_id"] for item in filtered["items"]] == ["804"]
+    assert service.customer_list(db, 1, keyword="Other")["total"] == 0
+    assert seen == []
+
+
 def test_calibrated_order_classification(monkeypatch):
     cfg = {
         "order_classification": {
