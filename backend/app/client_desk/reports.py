@@ -129,6 +129,8 @@ def report_rows(rows):
 
 
 async def send_report(db, user, now=None):
+    if not get_settings().CLIENT_DESK_REPORT_ENABLED:
+        return
     uid = actor_id(user)
     now = now or beijing_now()
     cfg = active(db, uid)

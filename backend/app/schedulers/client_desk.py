@@ -8,15 +8,16 @@ logger = logging.getLogger("commission.client_desk")
 
 
 def _users(db):
-    from app.auth.models import ArkUser
+    from app.client_desk.access import enrolled_user_ids
+    from app.invoice.xiaoman_service import resolve_okki_user_id
 
     settings = get_settings()
     if not settings.CLIENT_DESK_ENABLED:
         return []
-    return db.query(ArkUser).filter(
-        ArkUser.id.in_(settings.CLIENT_DESK_PILOT_USER_IDS),
-        ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None),
-    ).all()
+    return [
+        uid for uid in db.scalars(enrolled_user_ids(settings))
+        if resolve_okki_user_id(db, uid) is not None
+    ]
 
 
 def candidates_job():
@@ -41,6 +42,8 @@ def worker_job():
 
 
 async def report_job():
+    if not get_settings().CLIENT_DESK_REPORT_ENABLED:
+        return
     from app.client_desk.reports import send_report
 
     with SessionLocal() as db:
@@ -49,5 +52,5 @@ async def report_job():
                 await send_report(db, user)
             except Exception as exc:
                 db.rollback()
-                logger.warning("Morning report failed for user %s: %s", user.id, type(exc).__name__)
-                print(f"[CLIENT_DESK] Morning report failed for user {user.id}: {type(exc).__name__}", flush=True)
+                logger.warning("Morning report failed for user %s: %s", user, type(exc).__name__)
+                print(f"[CLIENT_DESK] Morning report failed for user {user}: {type(exc).__name__}", flush=True)

@@ -440,9 +440,10 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
             max_instances=1, coalesce=True)
         scheduler.add_job(worker_job, trigger="interval", minutes=1,
             id="client_desk_worker", replace_existing=True, max_instances=1, coalesce=True)
-        scheduler.add_job(report_job, trigger="cron", hour=8, minute=40,
-            timezone="Asia/Shanghai", id="client_desk_report", replace_existing=True,
-            max_instances=1, coalesce=True)
+        if settings.CLIENT_DESK_REPORT_ENABLED:
+            scheduler.add_job(report_job, trigger="cron", hour=8, minute=40,
+                timezone="Asia/Shanghai", id="client_desk_report", replace_existing=True,
+                max_instances=1, coalesce=True)
     if settings.WHATSAPP_AUTO_SYNC_ENABLED:
         scheduler.add_job(
             sync_whatsapp_events_job,

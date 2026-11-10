@@ -12,6 +12,7 @@ from app.ai.service import chat
 from app.ai.text_snapshot import prepare_text_chat
 from app.core.config import get_settings
 from app.core.time import beijing_now
+from .access import enrolled_user_ids
 from .models import ClientDeskSuggestion as Row, ClientDeskState as State
 from . import sources
 from .pack import build_pack, digest, PROTOCOL_HASH
@@ -47,7 +48,7 @@ def claim(db, now):
         .filter(
             Row.status == "queued",
             Row.queue_eligible.is_(True),
-            Row.user_id.in_(cfg.CLIENT_DESK_PILOT_USER_IDS),
+            Row.user_id.in_(enrolled_user_ids(cfg)),
             Row.biz_date == now.date(),
         )
         .order_by(Row.run_seq.desc(), Row.rank_score.desc(), Row.id)
@@ -328,6 +329,7 @@ def drain_queue(session_factory, limit=40):
         return
     with session_factory() as db:
         recover_expired(db, beijing_now())
+        user_ids = db.scalars(enrolled_user_ids(cfg)).all()
         db.commit()
 
     def worker(budget):
@@ -340,7 +342,7 @@ def drain_queue(session_factory, limit=40):
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         list(pool.map(worker, [len(range(slot, limit, 3)) for slot in range(3)]))
-    for uid in cfg.CLIENT_DESK_PILOT_USER_IDS:
+    for uid in user_ids:
         with session_factory() as db:
             try:
                 auto_done(db, uid)

@@ -1,9 +1,34 @@
 """Live source access and dependency validation, independent of legacy CRM rights."""
 
 from fastapi import HTTPException
+from sqlalchemy import or_, select
+from app.auth.models import ArkRole, ArkUser, ArkUserRole
 from app.whatsapp.access import live_actor, readable_accounts, require_body
 from app.whatsapp.models import WhatsAppAccount
 from app.client_desk.private_scope import user_id
+
+
+SALESPERSON_ROLE = "salesperson"
+
+
+def enrolled(settings, uid, roles=()):
+    return uid in settings.CLIENT_DESK_PILOT_USER_IDS or (
+        settings.CLIENT_DESK_SALESPERSON_ACCESS_ENABLED and SALESPERSON_ROLE in roles
+    )
+
+
+def enrolled_user_ids(settings):
+    members = ArkUser.id.in_(settings.CLIENT_DESK_PILOT_USER_IDS)
+    if settings.CLIENT_DESK_SALESPERSON_ACCESS_ENABLED:
+        salespeople = (
+            select(ArkUserRole.user_id)
+            .join(ArkRole, ArkRole.id == ArkUserRole.role_id)
+            .where(ArkRole.name == SALESPERSON_ROLE)
+        )
+        members = or_(members, ArkUser.id.in_(salespeople))
+    return select(ArkUser.id).where(
+        ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None), members
+    )
 
 
 def require_account(db, user, account_uid, *, for_ai=False, owner_only=False):
@@ -50,12 +75,14 @@ def require_enabled(db, user, write=False):
 
     settings = get_settings()
     uid = user_id(user)
-    if (
-        not settings.CLIENT_DESK_ENABLED
-        or uid not in settings.CLIENT_DESK_PILOT_USER_IDS
+    if not settings.CLIENT_DESK_ENABLED or (
+        not settings.CLIENT_DESK_SALESPERSON_ACCESS_ENABLED and not enrolled(settings, uid)
     ):
         raise HTTPException(403, "私海助理尚未对当前用户开启")
     try:
-        return live_actor(db, uid, "client_desk:write" if write else "client_desk:read")
+        actor = live_actor(db, uid, "client_desk:write" if write else "client_desk:read")
     except PermissionError as exc:
         raise HTTPException(403, "无私海助理操作权限") from exc
+    if not enrolled(settings, uid, actor["roles"]):
+        raise HTTPException(403, "私海助理尚未对当前用户开启")
+    return actor

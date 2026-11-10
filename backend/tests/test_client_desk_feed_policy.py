@@ -279,15 +279,7 @@ async def test_report_rechecks_policy_before_transport_and_ticket_redemption(
     from app.auth.models import ArkUser
     from app.client_desk import link_service
 
-    db.add(
-        ArkUser(
-            id=1,
-            username="reporter",
-            password_hash="fixture",
-            real_name="Tester",
-            dingtalk_id="recipient",
-        )
-    )
+    db.get(ArkUser, 1).dingtalk_id = "recipient"
     row = queued(
         db,
         status="succeeded",

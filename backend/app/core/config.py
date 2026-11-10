@@ -35,10 +35,12 @@ class Settings(BaseSettings):
     ALIBABA_FEED_LEASE_SECONDS: Annotated[int, Field(ge=10, le=3600)] = 120
     # Private-sea assistant remains opt-in until the offline pilot is accepted.
     CLIENT_DESK_ENABLED: bool = False
+    CLIENT_DESK_SALESPERSON_ACCESS_ENABLED: bool = False
     CLIENT_DESK_PILOT_USER_IDS: list[int] = Field(default_factory=list)
     CLIENT_DESK_NONWORKDAY_USER_IDS: list[int] = Field(default_factory=list)
     CLIENT_DESK_PRESET_NAME: str = "client_desk_daily"
     CLIENT_DESK_ALLOWED_PROVIDER_IDS: list[int] = Field(default_factory=list)
+    CLIENT_DESK_REPORT_ENABLED: bool = True
     CLIENT_DESK_REPORT_SECRET: str = Field(default="", repr=False)
     CLIENT_DESK_ORIGIN: str = ""
     CLIENT_DESK_RULES: dict = Field(default_factory=dict)

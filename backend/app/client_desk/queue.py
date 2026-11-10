@@ -8,6 +8,7 @@ from sqlalchemy import func
 from app.core.config import get_settings
 from app.core.time import beijing_now
 from app.whatsapp.access import live_actor
+from .access import enrolled
 from .calendar import is_workday
 from .models import ClientDeskState as State, ClientDeskSuggestion as Row
 from .private_scope import user_id
@@ -23,12 +24,14 @@ def actor_id(user):
 
 def active(db, uid):
     cfg = get_settings()
-    if not cfg.CLIENT_DESK_ENABLED or uid not in cfg.CLIENT_DESK_PILOT_USER_IDS:
+    if not cfg.CLIENT_DESK_ENABLED:
         raise HTTPException(403, "私海助理未启用")
     try:
-        live_actor(db, uid, "client_desk:read")
+        actor = live_actor(db, uid, "client_desk:read")
     except PermissionError as exc:
         raise HTTPException(403, "私海助理访问权限已变更") from exc
+    if not enrolled(cfg, uid, actor.get("roles", ())):
+        raise HTTPException(403, "私海助理未启用")
     return cfg
 
 

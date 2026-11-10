@@ -6,9 +6,9 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.client_desk import calendar, pack, queue, reports, rules, runner, validator
+from app.client_desk import access, calendar, pack, queue, reports, rules, runner, validator
 from app.client_desk.models import ClientDeskState as State, ClientDeskSuggestion as Row
-from app.auth.models import ArkUser
+from app.auth.models import ArkPermission, ArkRole, ArkRolePermission, ArkUser, ArkUserRole
 
 NOW = datetime(2026, 11, 4, 8, 40)
 DAY = NOW.date()
@@ -166,9 +166,11 @@ def test_pack_validation_injection_and_truncation():
 @pytest.fixture
 def db():
     engine = create_engine("sqlite://")
-    for model in [ArkUser, State, Row]:
+    for model in [ArkUser, ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, State, Row]:
         model.__table__.create(engine)
     with Session(engine) as session:
+        session.add(ArkUser(id=1, username="pilot", real_name="Pilot", password_hash="unused"))
+        session.commit()
         yield session
     engine.dispose()
 
@@ -181,6 +183,8 @@ def configured(monkeypatch):
     for k, v in {
         "ENABLED": True,
         "PILOT_USER_IDS": [1],
+        "SALESPERSON_ACCESS_ENABLED": False,
+        "REPORT_ENABLED": True,
         "REPORT_SECRET": "a" * 40,
         "ALLOWED_PROVIDER_IDS": [5],
         "ORIGIN": "https://desk.example",
@@ -225,6 +229,48 @@ def test_recovery_reclaims_only_without_call(db, configured):
     db.commit()
     assert first.status == "queued" and second.status == "ambiguous"
     assert not runner.guarded(db, a, NOW).count()
+
+
+def test_salesperson_access_and_worker_follow_the_current_role(db, configured, monkeypatch):
+    monkeypatch.setattr(queue, "live_actor", access.live_actor)
+    role = ArkRole(name="salesperson", label="Salesperson")
+    other = ArkRole(name="support", label="Support")
+    permission = ArkPermission(code="client_desk:read", module="client_desk", action="read", label="Read")
+    role.permissions.append(permission)
+    other.permissions.append(permission)
+    db.add_all([
+        ArkUser(id=2, username="sales", real_name="Sales", password_hash="unused", roles=[role]),
+        ArkUser(id=3, username="support", real_name="Support", password_hash="unused", roles=[other]),
+        ArkUser(id=4, username="inactive", real_name="Inactive", password_hash="unused", roles=[role], is_active=False),
+    ])
+    db.commit()
+    sale = queued(db, user_id=2, company_id=20)
+    queued(db, user_id=3, company_id=30, rank_score=100)
+    queued(db, user_id=4, company_id=40, rank_score=100)
+    with pytest.raises(HTTPException) as pilot_only:
+        access.require_enabled(db, 2)
+    assert pilot_only.value.status_code == 403
+    assert runner.claim(db, NOW) is None
+
+    configured.CLIENT_DESK_SALESPERSON_ACCESS_ENABLED = True
+    assert access.require_enabled(db, 2)["sub"] == "2"
+    assert queue.active(db, 2) is configured
+    for uid in (3, 4):
+        with pytest.raises(HTTPException) as denied:
+            access.require_enabled(db, uid)
+        assert denied.value.status_code == 403
+    assert runner.claim(db, NOW)[0] == sale.id
+    db.get(ArkUser, 2).roles = [other]
+    db.commit()
+    with pytest.raises(HTTPException) as revoked:
+        queue.active(db, 2)
+    assert revoked.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_disabled_report_returns_before_reading_or_sending(configured):
+    configured.CLIENT_DESK_REPORT_ENABLED = False
+    assert await reports.send_report(None, 1, NOW) is None
 
 
 @pytest.mark.parametrize(
@@ -295,15 +341,7 @@ async def test_report_one_delivery_and_one_authenticated_redeem(
 ):
     from app.client_desk import link_service
 
-    db.add(
-        ArkUser(
-            id=1,
-            username="tester",
-            password_hash="fixture",
-            real_name="Tester",
-            dingtalk_id="recipient",
-        )
-    )
+    db.get(ArkUser, 1).dingtalk_id = "recipient"
     row = queued(
         db,
         status="succeeded",
@@ -348,10 +386,6 @@ def test_daily_scan_all_rows_and_zero_duplicate_claims(db, configured, monkeypat
     from app.client_desk import history_import
 
     monkeypatch.setattr(history_import, "import_history", lambda *a: None)
-    db.add(
-        ArkUser(id=1, username="worker", password_hash="fixture", real_name="Tester")
-    )
-    db.commit()
     inputs = [
         source(i, conversations=[{"last_at": NOW, "direction": "inbound"}])
         for i in range(1, 56)
