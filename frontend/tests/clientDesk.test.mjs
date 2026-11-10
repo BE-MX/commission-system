@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict'
+import { webcrypto } from 'node:crypto'
 import { test } from 'node:test'
-import { latestRequestGate, safeDestination, normalizeDetail, analysisLabel, REASON_FILTERS, revalidatedDraft, copyOrFallback } from '../src/views/client_desk/deskController.js'
+import { requestKey, latestRequestGate, safeDestination, normalizeDetail, analysisLabel, REASON_FILTERS, revalidatedDraft, copyOrFallback } from '../src/views/client_desk/deskController.js'
+
+test('private-sea writes get distinct request IDs on LAN HTTP without randomUUID', (t) => {
+  t.mock.getter(globalThis, 'crypto', () => ({
+    getRandomValues: webcrypto.getRandomValues.bind(webcrypto),
+  }))
+  const first = requestKey()
+  const second = requestKey()
+  const uuidV4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+  assert.match(first, uuidV4)
+  assert.match(second, uuidV4)
+  assert.notEqual(first, second)
+})
 
 test('late customer / evidence responses lose authority after customer or filter changes', () => {
   const gate = latestRequestGate()

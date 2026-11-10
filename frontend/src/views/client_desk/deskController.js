@@ -1,3 +1,5 @@
+export { newRequestKey as requestKey } from '../../utils/requestKey.js'
+
 export const REASON_FILTERS = [
   { value: 'R1_UNREPLIED', label: '待回复' },
   { value: 'R7_AWAITING_CUSTOMER', label: '等客户回' },
@@ -6,7 +8,6 @@ export const REASON_FILTERS = [
 ]
 export const CHANNELS = { phone: '电话', whatsapp: 'WhatsApp', email: '邮件（手工）', tm: 'TM（手工）', meeting: '见面', sample: '寄样', other: '其他' }
 export const SOURCES = { all: '全部', whatsapp: 'WhatsApp', order: '订单', research: '背调', followup: '跟进' }
-export function requestKey() { return crypto.randomUUID() }
 export function errorText(error) {
   const detail = error?.response?.data?.detail
   return (typeof detail === 'object' ? detail?.message : detail) || error?.response?.data?.message || error?.message || '加载失败，请重试'
