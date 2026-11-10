@@ -179,6 +179,69 @@ def _ordinary_rename(db, invoice, old_no, new_no):
     db.commit()
 
 
+def _recorded_ordinary_rename(db, invoice, old_no, new_no, invalid=None):
+    from app.invoice import order_push_facts as facts
+    from app.invoice.cancellation_facts import object_binding
+
+    _ordinary_rename(db, invoice, old_no, new_no)
+    object_id, access_id = object_binding(db, invoice.id)
+    logs = db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id).order_by(InvoiceSyncLog.id).all()
+    for log in logs:
+        if invalid == 'legacy_create' and log.action == 'create':
+            continue
+        key = f'test-ordinary-rename-{log.action}'
+        payload = json.loads(log.request_digest)
+        reference = invoice.xiaoman_order_id
+        if invalid == 'wrong_order' and log.action == 'update':
+            payload['order_id'] = 999
+        data = {'invoice_id': invoice.id, 'attempt_key': key, 'action': log.action,
+                'original_order_id': reference if log.action == 'update' else None,
+                'command_input': {'original_payload': payload}, 'payload_fingerprint': facts.digest(payload)}
+        if invalid == 'wrong_fingerprint' and log.action == 'update':
+            data['payload_fingerprint'] = facts.digest({'name': 'altered'})
+        if invalid == 'malformed_command' and log.action == 'update':
+            data['command_input'] = ['malformed']
+        if invalid == 'wrong_reference' and log.action == 'update':
+            reference = '999'
+        if invalid != 'missing_attempt' or log.action != 'update':
+            facts.append(db, invoice.id, key, facts.START, data, object_id, access_id)
+            facts.append(db, invoice.id, key, facts.FACT + ':1',
+                         {'attempt_key': key, 'round': 1, 'result_class': 'accepted',
+                          'provider_reference': reference}, object_id, access_id)
+            facts.append(db, invoice.id, key, facts.FINISH,
+                         {'resolved': True, 'observation_fingerprint': facts.observation_fingerprint(db, invoice.id, key)},
+                         object_id, access_id)
+        # A bad durable reference must never fall back to the legacy digest.
+        if invalid != 'missing_attempt' or log.action != 'update':
+            log.request_digest = json.dumps({'22595163468': 'No'})
+        log.response_body = json.dumps({'order_id': invoice.xiaoman_order_id, 'attempt_reference': key})
+    db.commit()
+
+
+@pytest.mark.parametrize(('evidence', 'rename'), [
+    (None, True), ('legacy_create', True), ('wrong_order', False), ('wrong_fingerprint', False),
+    ('wrong_reference', False), ('missing_attempt', False), ('malformed_command', False),
+])
+def test_ordinary_rename_uses_recorded_push_identity(db, sync_case, evidence, rename):
+    user, invoice, _, fake = sync_case
+    old_no, new_no = fake['outbound']['serial_id'], 'RECORDED-RENAME'
+    _recorded_ordinary_rename(db, invoice, old_no, new_no, evidence)
+    actor = {'sub': str(user.id), 'permissions': PERMS, 'roles': []}
+
+    result = followup.run(db, invoice, actor)
+
+    assert result['status'] == 'done'
+    assert len(fake['posts']) == 1
+    assert fake['posts'][0]['outbound_invoice_id'] == 77
+    assert fake['outbound']['serial_id'] == (new_no if rename else old_no)
+    if rename:
+        assert fake['posts'][0]['serial_id'] == new_no
+        assert followup.run(db, invoice, actor)['status'] == 'done'
+        assert len(fake['posts']) == 1
+    else:
+        assert 'serial_id' not in fake['posts'][0]
+
+
 def test_ordinary_save_sync_rename_updates_original_outbound_without_linked_task(db, sync_case):
     user, invoice, _, fake = sync_case
     _ordinary_rename(db, invoice, fake['outbound']['serial_id'], 'ORDINARY-RENAME')
