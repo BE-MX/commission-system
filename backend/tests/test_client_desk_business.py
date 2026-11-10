@@ -30,6 +30,7 @@ def isolated(monkeypatch):
             "CREATE TABLE lsordertest.customer_info(company_id BIGINT,company_name TEXT,country_name TEXT,owner_user_ids TEXT,create_time TEXT,update_time TEXT)",
             "CREATE TABLE lsordertest.customer_contacts(id BIGINT,company_id BIGINT,name TEXT,email TEXT,tel TEXT)",
             "CREATE TABLE lsordertest.okki_orders(order_id BIGINT,company_id BIGINT,order_no TEXT,account_date DATE,amount_usd NUMERIC,status TEXT,status_name TEXT,trail TEXT,name TEXT,sample_kind TEXT)",
+            "CREATE TABLE lsordertest.okki_order_items(id BIGINT,order_id BIGINT,item_index INT,product_name TEXT,product_cn_name TEXT,product_model TEXT,quantity NUMERIC)",
             "CREATE TABLE ark_receivables(kind TEXT,remote_order_id TEXT,remote_order_name TEXT,customer_id TEXT)",
             "INSERT INTO lsordertest.customer_info VALUES(801,'Visible','US','[11]','2026-10-01 10:00:00','2026-11-01 00:00:00'),(802,'Other','UK','[111]','2026-10-01 10:00:00','2026-11-01 00:00:00')",
             "INSERT INTO lsordertest.customer_contacts VALUES(1,801,'Anna','anna@example.test','123')",
@@ -301,6 +302,59 @@ def test_timeline_equal_timestamp_strict_cursor(isolated, monkeypatch):
     first = timeline.timeline(isolated, 1, 801, limit=3)
     with pytest.raises(HTTPException):
         timeline.timeline(isolated, 1, 801, source="order", cursor=first["next_cursor"])
+
+
+def test_timeline_shows_existing_orders_and_keeps_rule_citations_readable(isolated, monkeypatch):
+    from app.client_desk import queue, timeline
+    from app.client_desk.rules import R2, R4
+
+    db = isolated
+    def check_owner(db, user, cid, **kwargs):
+        private_scope.assert_company_access(db, user, cid, realtime=False)
+
+    monkeypatch.setattr(sources, "assert_company_access", check_owner)
+    monkeypatch.setattr(queue, "visible_suggestion", lambda *a: {"rule_codes": [R4, R2]})
+    db.execute(text("UPDATE lsordertest.okki_orders SET name='  October order  ' WHERE order_id=1"))
+    db.execute(text("UPDATE lsordertest.okki_orders SET name='' WHERE order_id=2"))
+    db.execute(text(
+        "INSERT INTO lsordertest.okki_orders VALUES "
+        "(3,802,'O3','2026-10-01',99,'13972831656','已结束',NULL,'Other order','bulk')"
+    ))
+    db.execute(text(
+        "INSERT INTO lsordertest.okki_order_items VALUES "
+        "(11,1,0,'Wig','假发','M-1',2),(12,1,1,'','发片',NULL,1),"
+        "(31,3,0,'Other product',NULL,NULL,9)"
+    ))
+    db.add(ClientDeskSuggestion(
+        user_id=1, company_id=801, biz_date=service.beijing_today(), status="queued",
+    ))
+    db.commit()
+
+    rows = {row["event_key"]: row for row in timeline.timeline(db, 1, 801)["items"]}
+    assert rows["order:1"]["title"] == "October order"
+    assert rows["order:2"]["title"] == "订单 O2"
+    assert rows["created:801"]["title"] == "客户建档"
+    assert rows[f"rule:{R2}"]["title"] == "本人设置的跟进日期已到"
+    assert "products" not in rows["order:1"]
+    assert {"rule:CARD", f"rule:{R4}", "order:3"}.isdisjoint(rows)
+
+    order = timeline.event(db, 1, 801, "order:1")
+    assert (order["order_name"], order["order_no"], order["amount_usd"]) == ("October order", "O1", 20)
+    assert order["products"] == [
+        {"id": "11", "name": "Wig", "model": "M-1", "quantity": 2},
+        {"id": "12", "name": "发片", "model": None, "quantity": 1},
+    ]
+    unknown = timeline.event(db, 1, 801, "order:2")
+    assert unknown["amount_usd"] is None and unknown["products"] == []
+    assert timeline.event(db, 1, 801, "rule:CARD")["card"]["name"] == "Visible"
+    assert timeline.event(db, 1, 801, f"rule:{R4}")["title"] == "客户资料有更新"
+    with pytest.raises(HTTPException) as wrong_order:
+        timeline.event(db, 1, 801, "order:3")
+    assert wrong_order.value.status_code == 404
+    with pytest.raises(HTTPException) as wrong_owner:
+        timeline.event(db, 1, 802, "order:3")
+    assert wrong_owner.value.status_code == 404
+    assert not db.new and not db.dirty
 
 
 def test_scan_sources_never_runs_import_or_writes(isolated, monkeypatch):

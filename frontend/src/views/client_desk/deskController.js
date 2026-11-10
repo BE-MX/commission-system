@@ -1,3 +1,5 @@
+import { formatMoney } from '../../utils/money.js'
+
 export { newRequestKey as requestKey } from '../../utils/requestKey.js'
 
 export const REASON_FILTERS = [
@@ -8,6 +10,34 @@ export const REASON_FILTERS = [
 ]
 export const CHANNELS = { phone: '电话', whatsapp: 'WhatsApp', email: '邮件（手工）', tm: 'TM（手工）', meeting: '见面', sample: '寄样', other: '其他' }
 export const SOURCES = { all: '全部', whatsapp: 'WhatsApp', order: '订单', research: '背调', followup: '跟进' }
+const TIMELINE_TYPES = {
+  whatsapp: 'WhatsApp', alibaba_feed: 'TM 历史快照', order: '订单',
+  research: '背调', followup: '手工跟进', rule: '系统提醒', created: '客户建档',
+}
+
+export function timelineType(event) {
+  if (event.card) return '客户档案'
+  return TIMELINE_TYPES[event.source] || '客户记录'
+}
+
+export function timelineTitle(event) {
+  if (event.source === 'followup') return CHANNELS[event.channel] || '手工跟进'
+  return event.title || timelineType(event)
+}
+
+export function timelineSummary(event) {
+  if (event.source === 'order') {
+    return [event.order_name && event.order_no && `单号 ${event.order_no}`, event.status_name].filter(Boolean).join(' · ')
+  }
+  if (event.source === 'whatsapp') return `${event.count} 条消息`
+  if (event.source === 'rule' && event.next_followup_date) return `计划跟进 ${event.next_followup_date}`
+  return event.summary || event.content || ''
+}
+
+export function orderAmount(value) {
+  return formatMoney(value, { currency: 'USD', missing: '暂无同步金额' })
+}
+
 export function errorText(error) {
   const detail = error?.response?.data?.detail
   return (typeof detail === 'object' ? detail?.message : detail) || error?.response?.data?.message || error?.message || '加载失败，请重试'

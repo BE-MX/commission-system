@@ -4,9 +4,53 @@ import base64, json
 from datetime import datetime
 from app.core.time import beijing_now
 from fastapi import HTTPException
+from sqlalchemy import bindparam, text
 from app.client_desk.private_scope import user_id
 from app.client_desk.models import ClientDeskFollowup
+from app.client_desk.rules import R4, REASONS
 from app.client_desk.sources import build_customer_sources
+from app.invoice.product_service import _schema
+
+
+def order_names(db, company_id, ids):
+    if not ids:
+        return {}
+    stmt = text(
+        f"SELECT order_id, name FROM `{_schema()}`.okki_orders "
+        "WHERE company_id = :company_id AND order_id IN :ids"
+    ).bindparams(bindparam("ids", expanding=True))
+    return {
+        str(order_id): name.strip()
+        for order_id, name in db.execute(stmt, {"company_id": company_id, "ids": ids})
+        if name and name.strip()
+    }
+
+
+def order_event(event, names):
+    name = names.get(event["id"])
+    number = event.get("order_no")
+    return {
+        **event,
+        "order_name": name,
+        "title": name or (f"订单 {number}" if number else "历史订单"),
+    }
+
+
+def order_products(db, company_id, order_id):
+    schema = _schema()
+    stmt = text(f"""
+        SELECT oi.id, COALESCE(NULLIF(TRIM(oi.product_name), ''),
+                               NULLIF(TRIM(oi.product_cn_name), '')) AS name,
+               NULLIF(TRIM(oi.product_model), '') AS model, oi.quantity
+        FROM `{schema}`.okki_order_items oi
+        JOIN `{schema}`.okki_orders o ON o.order_id = oi.order_id
+        WHERE o.company_id = :company_id AND o.order_id = :order_id
+        ORDER BY oi.item_index, oi.id
+    """)
+    return [
+        {**row, "id": str(row["id"])}
+        for row in db.execute(stmt, {"company_id": company_id, "order_id": order_id}).mappings()
+    ]
 
 
 def all_events(db, user, company_id):
@@ -17,7 +61,8 @@ def all_events(db, user, company_id):
             "id": str(company_id),
             "event_key": "rule:CARD",
             "source": "rule",
-            "occurred_at": source["created_at"] or beijing_now(),
+            "title": "客户档案",
+            "occurred_at": source["created_at"],
             "card": source["card"],
         }
     )
@@ -30,7 +75,6 @@ def all_events(db, user, company_id):
     )
     from app.client_desk.models import ClientDeskSuggestion
     from app.client_desk.queue import visible_suggestion
-    from app.client_desk.rules import REASONS
     from app.core.time import beijing_today
 
     suggestion = (
@@ -54,7 +98,11 @@ def all_events(db, user, company_id):
                 "source": "rule",
                 "occurred_at": suggestion.snapshot_at or suggestion.created_at,
                 "rule_code": code,
-                "title": REASONS.get(code, code),
+                "title": "客户资料有更新" if code == R4 else REASONS.get(code, "系统跟进提醒"),
+                "summary": (
+                    "首次分析前已有订单或已审核背调，或这些资料晚于上次分析。"
+                    if code == R4 else None
+                ),
                 "biz_date": suggestion.biz_date,
                 "rule_version": suggestion.rule_version,
                 "snapshot_at": suggestion.snapshot_at,
@@ -79,6 +127,7 @@ def all_events(db, user, company_id):
                 "source": "created",
                 "occurred_at": created,
                 "title": "客户建档",
+                "card": source["card"],
             }
         )
     for o in source["orders"]:
@@ -88,7 +137,6 @@ def all_events(db, user, company_id):
                     **o,
                     "source": "order",
                     "occurred_at": o["account_date"],
-                    "title": o["order_no"],
                 }
             )
     for r in source["research"]:
@@ -109,6 +157,7 @@ def all_events(db, user, company_id):
                 "id": key,
                 "event_key": key,
                 "source": "whatsapp",
+                "title": "WhatsApp 沟通",
                 "occurred_at": max(m["at"] for m in messages),
                 "count": len(messages),
                 "messages": messages,
@@ -133,7 +182,7 @@ def all_events(db, user, company_id):
     events.extend(feed_events(db, user, company_id))
     for e in events:
         value = e["occurred_at"]
-        if not isinstance(value, datetime):
+        if value is not None and not isinstance(value, datetime):
             value = datetime.fromisoformat(str(value))
         e["occurred_at"] = value
     return events
@@ -144,10 +193,14 @@ def key(event):
 
 
 def timeline(db, user, company_id, source="all", cursor=None, limit=30):
+    # These keys remain available to existing AI citations, but they duplicate
+    # records that already have their own entries in the timeline.
+    citation_only = {"rule:CARD", f"rule:{R4}"}
     events = [
         e
         for e in all_events(db, user, company_id)
-        if source == "all" or e["source"] == source
+        if (source == "all" or e["source"] == source)
+        and e["event_key"] not in citation_only
     ]
     if cursor:
         try:
@@ -160,6 +213,7 @@ def timeline(db, user, company_id, source="all", cursor=None, limit=30):
         events = [e for e in events if key(e) < last]
     events.sort(key=key, reverse=True)
     page = events[:limit]
+    names = order_names(db, company_id, [e["id"] for e in page if e["source"] == "order"])
     next_cursor = (
         base64.urlsafe_b64encode(
             json.dumps(
@@ -171,7 +225,10 @@ def timeline(db, user, company_id, source="all", cursor=None, limit=30):
     )
     return {
         "items": [
-            {k: v for k, v in e.items() if k not in ("messages", "result")}
+            {
+                k: v for k, v in (order_event(e, names) if e["source"] == "order" else e).items()
+                if k not in ("messages", "result", "card")
+            }
             for e in page
         ],
         "next_cursor": next_cursor,
@@ -185,6 +242,12 @@ def event(db, user, company_id, event_key):
     )
     if found is None:
         raise HTTPException(404, "来源事件已不可见")
+    if found["source"] == "order":
+        order_id = found["id"]
+        return {
+            **order_event(found, order_names(db, company_id, [order_id])),
+            "products": order_products(db, company_id, order_id),
+        }
     return found
 
 

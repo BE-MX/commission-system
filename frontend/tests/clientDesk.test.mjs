@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { webcrypto } from 'node:crypto'
 import { test } from 'node:test'
-import { requestKey, latestRequestGate, safeDestination, normalizeDetail, analysisLabel, REASON_FILTERS, revalidatedDraft, copyOrFallback } from '../src/views/client_desk/deskController.js'
+import { requestKey, latestRequestGate, safeDestination, normalizeDetail, analysisLabel, REASON_FILTERS, revalidatedDraft, copyOrFallback, timelineType, timelineTitle, timelineSummary, orderAmount } from '../src/views/client_desk/deskController.js'
 
 test('private-sea writes get distinct request IDs on LAN HTTP without randomUUID', (t) => {
   t.mock.getter(globalThis, 'crypto', () => ({
@@ -38,6 +38,18 @@ test('uncertain analysis and source rules remain distinct from model success', (
   assert.match(analysisLabel('ambiguous'), /未确认/)
   assert.match(analysisLabel('rule_only'), /规则/)
   assert.deepEqual(REASON_FILTERS.map(x => x.value), ['R1_UNREPLIED','R7_AWAITING_CUSTOMER','R2_FOLLOWUP_DUE','R8_NEW_LEAD'])
+})
+
+test('timeline uses readable source names and preserves zero versus an unknown order amount', () => {
+  const order = { source: 'order', title: 'October order', order_name: 'October order', order_no: '24366', status_name: '已结束' }
+  assert.equal(timelineTitle(order), 'October order')
+  assert.equal(timelineSummary(order), '单号 24366 · 已结束')
+  assert.equal(timelineTitle({ source: 'rule' }), '系统提醒')
+  assert.equal(timelineType({ source: 'rule', card: { name: 'Customer' } }), '客户档案')
+  assert.equal(timelineTitle({ source: 'followup', channel: 'phone' }), '电话')
+  assert.match(orderAmount(0), /USD\s+0\.00/)
+  assert.match(orderAmount(241.92), /USD\s+241\.92/)
+  assert.equal(orderAmount(null), '暂无同步金额')
 })
 
 test('copy revalidates the exact current suggestion and refuses revoked or changed sources', async () => {

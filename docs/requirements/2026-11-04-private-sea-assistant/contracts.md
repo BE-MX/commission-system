@@ -41,7 +41,7 @@
 | GET /customers | read；filter=suggested/all/grade:S,A/grade:B/ungraded，keyword，page，page_size | items,total,page,page_size；公司键/名称、国别、分级、原因、渠道、last_touch_at、analysis_state；范围过滤在分页和计数前完成 |
 | GET /customers/{company_id} | read，实时归属复核 | card、contacts、grade、personal_state、最新可见 suggestion、orders_summary、research_summary、sync_times、关联的可用 WA 目标；详情曝光仅计该项，预取不开详情 |
 | GET /customers/{company_id}/timeline | read；source=all/whatsapp/order/research/followup；cursor、limit | items、next_cursor，建档也是事件。各源先做 ACL，再按 (occurred_at,source,id) 降序合并，下一页严格小于末键；筛选变化清 cursor |
-| GET /customers/{company_id}/timeline/events/{event_key} | read；拟补充展开契约，引用可直接请求 | 解析稳定事件键，WA 返回当天该会话有效原文及定位目标；号码、原文不得从前端自行拼数据源 |
+| GET /customers/{company_id}/timeline/events/{event_key} | read，引用可直接请求 | 按稳定事件键实时核验客户和来源权限。已有订单返回名称、单号、同步的美元金额、状态和产品明细。WhatsApp 返回当天该会话的有效原文。档案引用和资料变化提醒可打开证据，时间轴只列实际来源记录及有明确原因的跟进提醒。 |
 | PATCH /customers/{company_id}/state | write；remark、next_followup_date、next_followup_remark，expected_version | 仅改显式字段；null 清除，缺省不变；409 返回最新个人版本，保留本地编辑供比对 |
 | PUT /customers/{company_id}/grade | write；grade、expected_grade，采纳可带 suggestion_id | 校验建议归属、来源及旧值后更新共享等级；响应带 grade、作者、更新时间 |
 | POST /customers/{company_id}/followups | write；channel、content、happened_at、可选 next_followup_date / suggestion_id、client_request_id | 渠道 phone/whatsapp/email/tm/meeting/sample/other，内容去空，发生时间不得晚于当前；寄样预填发生日 +10 个工作日，可以改或清空。返回新事件、最近接触、人工日期 |
