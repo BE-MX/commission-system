@@ -91,6 +91,20 @@ def test_machine_and_admin_cannot_read_other_owner_body(business):
     assert link(client, headers, company_id=202).status_code == 404
 
 
+def test_mapped_admin_needs_the_current_pilot_seat(business):
+    client, db, headers, _, _ = business
+    db.query(AlibabaFeedSource).one().owner_aliases = {"Seller A": 2}
+    db.commit()
+    assert client.get("/business/records/1", headers=headers(2)).status_code == 403
+    assert client.get("/business/customers", headers=headers(2)).status_code == 403
+    assert client.get("/admin/pilot", headers=headers(2)).status_code == 200
+
+    db.get(AlibabaFeedPilot, 1).user_id = 2
+    db.commit()
+    assert client.get("/business/records/1", headers=headers(2)).status_code == 200
+    assert client.get("/business/records/1", headers=headers(1)).status_code == 403
+
+
 def test_link_idempotency_and_versions(business):
     client, db, headers, _, _ = business
     first = link(client, headers).json()["data"]

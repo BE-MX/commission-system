@@ -20,8 +20,7 @@ _PublicPoolQuota = Annotated[int, Field(gt=0, le=100)]
 
 
 class Settings(BaseSettings):
-    # External Alibaba ingestion is enrolled separately from the private-sea assistant.
-    # Human record access is a separate enrollment from transport and AI execution.
+    # The database pilot controls ingestion and manual viewing. Automation is separate.
     ALIBABA_FEED_AUTOMATION_ENABLED: bool = False
     ALIBABA_FEED_MAX_OBSERVATION_AGE_HOURS: Annotated[int, Field(gt=0, le=168)] = 30
     ALIBABA_FEED_MAX_BODY_BYTES: Annotated[int, Field(gt=0)] = 10 * 1024 * 1024

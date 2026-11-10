@@ -1,5 +1,6 @@
 """Qualification is truthful even when all automatic execution stays disabled."""
 from app.alibaba_feed.eligibility import rule_eligibility
+from app.alibaba_feed.models import AlibabaFeedPilot
 from app.core.config import get_settings
 from tests.test_alibaba_feed_core import NOW
 from tests.test_alibaba_feed_v11_normalization import v11_store, v11_payload, process  # noqa: F401
@@ -76,3 +77,7 @@ def test_automatic_execution_also_requires_current_pilot_enrollment(v11_store, m
     assert not rule_eligibility(v11_store[0], item, source, user_id=1, now=NOW)["allowed"]["reply_rules"]
     monkeypatch.setattr(settings, "CLIENT_DESK_PILOT_USER_IDS", [1])
     assert rule_eligibility(v11_store[0], item, source, user_id=1, now=NOW)["allowed"]["reply_rules"]
+    db = v11_store[0]
+    db.get(AlibabaFeedPilot, 1).user_id = 2
+    db.commit()
+    assert not rule_eligibility(db, item, source, user_id=1, now=NOW)["allowed"]["reply_rules"]
