@@ -225,3 +225,107 @@ def test_overview_routes_apply_permission_and_hide_out_of_scope_ids(db):
                           json={"deal_status": "unwon", "evidence": "核实"}).status_code == 403
         client.headers["Authorization"] = f'Bearer {create_access_token({"sub": str(owner.id), "permissions": []})}'
         assert client.get(f"{root}/customer-overview").status_code == 403
+
+
+def test_deal_override_updates_detail_filters_counts_and_restores_order_evidence(db):
+    owner = make_user(db, "Deal owner")
+    grant(db, owner, READ, WRITE)
+    customer = make_customer(db, owner, "Paid sample")
+    order = _order(db, customer, order_type="sample", status=order_constants.ORDER_SHIPPED)
+    db.flush()
+    customer_id, order_id = customer.id, order.id
+    db.add(FollowupCustomerProfile(customer_id=customer_id, wechat="existing-wechat", deal_status="unwon",
+                                   deal_evidence="建档时核实", deal_verified_by_user_id=owner.id,
+                                   deal_verified_at=beijing_now()))
+    db.commit()
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_db] = lambda: db
+    with TestClient(app, headers={"Authorization": f"Bearer {create_access_token(_user(owner))}"}) as client:
+        overview = f"/customers/{customer_id}/overview"
+        endpoint = f"/customers/{customer_id}/deal-status"
+        initial = client.get(overview).json()["data"]
+        assert initial["can_edit_deal"] and initial["deal_source"] == "system_order" and initial["sample_only"]
+
+        assert client.put(endpoint, json={"deal_status": "unknown", "reason": "  "}).status_code == 422
+        assert client.put(endpoint, json={"deal_status": "sample_only", "reason": "重审"}).status_code == 422
+        payload = {"deal_status": "unknown", "reason": "  样单归属待核对  "}
+        assert client.put(endpoint, json=payload).status_code == 200
+        assert client.put(endpoint, json=payload).status_code == 200  # retry must not create a duplicate event
+        row = client.get(overview).json()["data"]
+        assert (row["deal_status"], row["deal_source"], row["first_deal_date"]) == ("unknown", "manual_override", None)
+        assert row["deal_conflict"] and not row["sample_only"]
+        listing = client.get("/customer-overview", params={"deal_status": "unknown"}).json()["data"]
+        assert listing["items"][0]["deal_source"] == "manual_override"
+        assert listing["counts"] == {"total": 1, "won": 0, "unwon": 0, "unknown": 1, "sample_only": 0}
+        assert client.get("/customer-overview", params={"deal_status": "won"}).json()["data"]["total"] == 0
+
+        assert client.put(endpoint, json={"deal_status": "won", "reason": "已人工核实成交"}).status_code == 200
+        row = client.get(overview).json()["data"]
+        assert row["deal_status"] == "won" and not row["sample_only"]
+        assert row["first_deal_date"] == OLD_DATE.isoformat()
+
+        assert client.put(endpoint, json={"deal_status": None, "reason": "恢复订单判定"}).status_code == 200
+        row = client.get(overview).json()["data"]
+        assert row["deal_status"] == "won" and row["deal_source"] == "system_order" and row["sample_only"]
+        listing = client.get("/customer-overview", params={"deal_status": "sample_only"}).json()["data"]
+        assert listing["total"] == 1 and listing["counts"]["sample_only"] == 1
+
+    events = db.query(FollowupCollaborationEvent).filter_by(customer_id=customer_id).order_by(FollowupCollaborationEvent.id).all()
+    assert [event.action for event in events] == ["deal_status_updated", "deal_status_updated", "deal_status_restored"]
+    assert [(event.reason, event.details["deal_status"]) for event in events] == [
+        ("样单归属待核对", "unknown"), ("已人工核实成交", "won"), ("恢复订单判定", None),
+    ]
+    assert all(event.actor_user_id == owner.id and event.created_at for event in events)
+    profile = db.get(FollowupCustomerProfile, customer_id)
+    assert profile.deal_override_status is None and profile.deal_status == "unwon" and profile.wechat == "existing-wechat"
+    assert db.get(DomesticOrder, order_id).status == order_constants.ORDER_SHIPPED
+
+
+def test_deal_override_requires_live_permission_and_customer_scope(db):
+    owner, manager, viewer, stale_admin = (
+        make_user(db, name) for name in ("Managed owner", "Scoped manager", "Summary viewer", "Former admin")
+    )
+    grant(db, owner, READ, WRITE)
+    grant(db, manager, READ, COORDINATE)
+    grant(db, viewer, READ, WRITE)
+    grant(db, stale_admin, READ, WRITE)
+    managed = make_customer(db, owner, "Managed")
+    legacy = make_customer(db, owner, "Legacy")
+    for user in (owner, manager, viewer):
+        _scope(db, user, managed, owner)
+    db.add(FollowupResponsibility(customer_id=managed.id, owner_user_id=owner.id, status="following"))
+    db.commit()
+    managed_id, legacy_id = managed.id, legacy.id
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_db] = lambda: db
+    with TestClient(app) as client:
+        def authorize(user, permissions, roles=()):
+            token = create_access_token({"sub": str(user.id), "permissions": list(permissions), "roles": list(roles)})
+            client.headers["Authorization"] = f"Bearer {token}"
+
+        def can_edit(customer_id):
+            return client.get(f"/customers/{customer_id}/overview").json()["data"]["can_edit_deal"]
+
+        def update(customer_id):
+            return client.put(f"/customers/{customer_id}/deal-status", json={"deal_status": "unwon", "reason": "已核实"})
+
+        authorize(viewer, [READ, WRITE])
+        assert not can_edit(managed_id)
+        assert update(managed_id).status_code == 403
+        assert update(legacy_id).status_code == 404
+
+        authorize(stale_admin, [READ, WRITE], ["super_admin"])
+        assert not can_edit(legacy_id)
+        assert update(legacy_id).status_code == 403
+
+        authorize(manager, [READ, COORDINATE])
+        assert can_edit(managed_id)
+        assert update(managed_id).status_code == 200
+        assert update(legacy_id).status_code == 404
+
+        authorize(owner, [READ, WRITE])
+        assert can_edit(managed_id) and can_edit(legacy_id)

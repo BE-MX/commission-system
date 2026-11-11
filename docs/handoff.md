@@ -1,3 +1,8 @@
+## 2026-11-11 客户跟进可手动修改成交情况（待部署）
+
+- 客户详情的「成交情况」增加「修改」。有权人员可设置已成交、未成交、待核实或恢复自动判定，须填写原因。详情、列表、筛选和统计采用同一判定，保留原订单和历史档案。
+- 增量迁移为 `258_followup_deal_override`。随正式发布执行。已完成后端回归、前端构建与本地抽屉验收。
+
 ## 2026-11-11 项目雷达一期（Kimi，本地候选，未部署）
 
 - 工作区 `D:/MyProgram/commission-system-kimi-project-radar`，分支 `kimi/project-radar`。按 [一期设计](requirements/2026-11-10-project-radar/README.md) 实现 Web/钉钉统一收录、个人订阅隔离、GitHub/网站读取、AI 解读与字段锁、两层分级、扫描健康、每日早报、签名只读详情及 Stream 侧车。二期 agent 兜底、Star、MCP 和速递联动未做。

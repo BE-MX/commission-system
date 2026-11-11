@@ -4,7 +4,7 @@
     <div v-if="data || selected || collaboration" class="timeline">
       <dl v-if="selected || collaboration" class="tl-head">
         <div v-if="selected"><dt>地区</dt><dd>{{ regionLabel(selected) }}</dd></div>
-        <div v-if="selected"><dt>成交情况</dt><dd>{{ dealLabel(selected) }} <template v-if="selected.deal_source">· {{ labelFor(DEAL_SOURCE, selected.deal_source) }}</template></dd></div>
+        <CustomerDealStatus v-if="selected" :key="customerId" :customer="selected" @updated="collaborationUpdated" />
         <div v-if="selected?.first_deal_date"><dt>首次成交</dt><dd>{{ selected.first_deal_date }}</dd></div>
         <div v-if="selected?.owner_name && selected.owner_name !== assignee"><dt>归属销售</dt><dd>{{ selected.owner_name }}</dd></div>
         <div><dt>{{ selected?.owner_name && selected.owner_name === assignee ? '归属及当前跟进人' : '当前跟进人' }}</dt><dd>{{ assignee || '暂无' }}</dd></div>
@@ -112,9 +112,10 @@ import { useAuthStore } from '@/stores/auth'
 import { mayEditFollowup } from '../followupEdit'
 import { copyText } from '@/utils/clipboard'
 import { formatBeijingDateTime } from '@/utils/datetime'
-import { COLLABORATION_ACTION, COLLABORATION_STATUS, DEAL_SOURCE, DEVELOPMENT_STAGE, dealLabel, labelFor, regionLabel } from '../customerOverview'
+import { COLLABORATION_ACTION, COLLABORATION_STATUS, DEVELOPMENT_STAGE, labelFor, regionLabel } from '../customerOverview'
 import CollaborationPanel from './CollaborationPanel.vue'
 import CustomerSummaryActions from './CustomerSummaryActions.vue'
+import CustomerDealStatus from './CustomerDealStatus.vue'
 
 const emit = defineEmits(['record', 'edit', 'history', 'changed'])
 const auth = useAuthStore()

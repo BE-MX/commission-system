@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_permission
+from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok
 from app.domestic_followup import customer_overview, customer_overview_contacts
@@ -16,6 +16,7 @@ router = APIRouter()
 _require_read = require_permission(READ)
 _require_write = require_permission(READ, WRITE)
 _require_coordinate = require_permission(READ, COORDINATE)
+_require_deal_editor = require_any_permission(WRITE, COORDINATE)
 Scope = Literal["mine", "authorized", "collaborating", "available", "incoming"]
 DealStatus = Literal["all", "won", "unwon", "unknown", "sample_only"]
 CollaborationStatus = Literal["unassigned", "following", "handoff", "open", "stopped"]
@@ -37,6 +38,13 @@ class DealVerification(BaseModel):
 
     deal_status: Literal["won", "unwon", "unknown"]
     evidence: str = Field(min_length=1, max_length=500)
+
+
+class DealStatusUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    deal_status: Literal["won", "unwon", "unknown"] | None
+    reason: str = Field(min_length=1, max_length=500)
 
 
 @router.get("/customer-overview")
@@ -92,6 +100,24 @@ def deal_verification(
 ):
     try:
         return ok(customer_overview_contacts.verify_deal(db, user, customer_id, payload.deal_status, payload.evidence))
+    except PermissionError as exc:
+        db.rollback()
+        raise HTTPException(403, str(exc)) from exc
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.put("/customers/{customer_id}/deal-status")
+def edit_deal_status(
+    customer_id: int, payload: DealStatusUpdate, db: Session = Depends(get_db),
+    user: dict = Depends(_require_deal_editor),
+):
+    try:
+        return ok(customer_overview_contacts.update_deal_status(db, user, customer_id, payload.deal_status, payload.reason))
     except PermissionError as exc:
         db.rollback()
         raise HTTPException(403, str(exc)) from exc

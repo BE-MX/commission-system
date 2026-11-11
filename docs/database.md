@@ -966,7 +966,7 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 | `ark_dom_followup_collaborators` | 客户 ID 和用户 ID 组合主键。记录明确授予的协作关系。 |
 | `ark_dom_followup_handoffs` | `(customer_id,pending_marker)` 唯一，只有待接收单使用非空标记。保留双方、版本、原因、交接内容和待办核对快照。 |
 | `ark_dom_followup_collab_events` | `(customer_id,actor_user_id,idempotency_key)` 唯一。保存责任变更、原人及新人、原因、版本、任务结果和核实事件。 |
-| `ark_dom_followup_customer_profiles` | 客户 ID 主键。保存微信联系方式和人工成交核实结果、依据、人员及时间。 |
+| `ark_dom_followup_customer_profiles` | 客户 ID 主键。保存微信联系方式和人工成交核实结果、依据、人员及时间。迁移 `258_followup_deal_override` 增加可空的 `deal_override_status`，空值沿用自动判定。修改及恢复记录到 `ark_dom_followup_collab_events`。 |
 
 `ark_domestic_followups` 增加沟通结果、障碍、证据类型、共享摘要、有效推进与责任版本。`ark_domestic_followup_tasks` 增加可空计划用途，历史任务保留未分类。迁移登记沟通结果和推进障碍字典。已存在协作数据、结构化记录、计划用途或协调配置时，迁移拒绝降级。
 

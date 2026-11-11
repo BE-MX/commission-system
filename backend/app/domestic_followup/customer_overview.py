@@ -69,11 +69,13 @@ def _access(db, user, scope):
     )
     editable = or_(writable, and_(coordinated, literal(live_write), can_write))
     claimable = and_(scopes["available"], literal(live_write), can_write)
-    return and_(admitted, scopes[scope]), full, writable, managed, and_(scoped, incoming), coordinated, claimable, editable
+    legacy_deal_editor = and_(~managed, or_(legacy_member, literal(collaboration_access.has_live_super_admin(db, user))))
+    deal_editor = or_(coordinated, and_(literal(live_write), can_write, or_(and_(managed, writable), legacy_deal_editor)))
+    return and_(admitted, scopes[scope]), full, writable, managed, and_(scoped, incoming), coordinated, claimable, editable, deal_editor
 
 
 def _candidate_customers(db, user, scope, keyword, customer_id=None):
-    allowed, full, writable, managed, incoming, coordinated, claimable, editable = _access(db, user, scope)
+    allowed, full, writable, managed, incoming, coordinated, claimable, editable, deal_editor = _access(db, user, scope)
     assignee_id = case((managed, Responsibility.owner_user_id), else_=Customer.owner_user_id)
     collaboration_status = case(
         (managed, func.coalesce(Responsibility.status, "unassigned")),
@@ -96,11 +98,11 @@ def _candidate_customers(db, user, scope, keyword, customer_id=None):
             Responsibility.next_plan_date, managed.label("managed"),
             full.label("can_view_timeline"), writable.label("can_record"), incoming.label("incoming"),
             full.label("can_view_contacts"), editable.label("can_edit_contact"),
-            coordinated.label("can_verify_deal"), claimable.label("can_claim"),
+            coordinated.label("can_verify_deal"), deal_editor.label("can_edit_deal"), claimable.label("can_claim"),
             case((managed, recipient)).label("handoff_recipient_user_id"),
             Customer.first_order_date, Customer.last_order_date, Customer.total_order_count,
             Customer.total_sales_amount, Profile.deal_status.label("verified_status"),
-            Profile.deal_verified_at, Profile.deal_verified_by_user_id, Profile.deal_evidence,
+            Profile.deal_verified_at, Profile.deal_verified_by_user_id, Profile.deal_evidence, Profile.deal_override_status,
         )
         .select_from(Customer)
         .outerjoin(Responsibility, Responsibility.customer_id == Customer.id)
@@ -196,26 +198,28 @@ def _deal_evidence(candidates, orders, today):
     )
     has_system = o.system_date.is_not(None)
     contradictory_archive = and_(archive, verified, c.verified_status != "won")
-    status = case((has_system, "won"), (contradictory_archive, "unknown"), (verified, c.verified_status),
-                  (archive, "won"), else_="unknown")
+    manual = c.deal_override_status.is_not(None)
+    status = case((manual, c.deal_override_status), (has_system, "won"), (contradictory_archive, "unknown"),
+                  (verified, c.verified_status), (archive, "won"), else_="unknown")
     source = case(
-        (has_system, "system_order"), (contradictory_archive, "unverified"),
+        (manual, "manual_override"), (has_system, "system_order"), (contradictory_archive, "unverified"),
         (verified, "manual_verification"), (archive, "historical_archive"),
         else_="unverified",
     )
-    date_from_archive = and_(archive, or_(~verified, c.verified_status == "won"))
+    date_from_archive = and_(archive, or_(manual, ~verified, c.verified_status == "won"))
     first_date = case(
+        (status != "won", None),
         (and_(date_from_archive, or_(~has_system, c.first_order_date < o.system_date)), c.first_order_date),
         else_=o.system_date,
     )
     sample_only = and_(
-        has_system, o.has_regular == 0, ~func.coalesce(date_from_archive, false()),
+        ~manual, has_system, o.has_regular == 0, ~func.coalesce(date_from_archive, false()),
         ~func.coalesce(and_(verified, c.verified_status == "won"), false()),
     )
     conflict = or_(
         and_(status == "won", c.lifecycle_status == PROSPECT_LIFECYCLE),
-        and_(has_system, verified, c.verified_status != "won"),
-        contradictory_archive,
+        and_(manual, status != "won", or_(has_system, archive)),
+        and_(~manual, or_(and_(has_system, verified, c.verified_status != "won"), contradictory_archive)),
         and_(c.first_order_date.is_not(None), archive_conflict),
     )
     return status, source, first_date, sample_only, func.coalesce(conflict, false())
@@ -233,7 +237,7 @@ def _overview_rows(db, candidates, today):
             c.id, c.shop_name, c.custom_code, c.province, c.city, c.contact, c.phone, c.wechat,
             c.lifecycle_status, c.assignee_user_id, c.collaboration_status, c.stage, c.responsibility_version,
             c.can_view_timeline, c.can_record, c.incoming,
-            c.can_view_contacts, c.can_edit_contact, c.can_verify_deal, c.can_claim,
+            c.can_view_contacts, c.can_edit_contact, c.can_verify_deal, c.can_edit_deal, c.can_claim,
             owner.real_name.label("owner_name"), assignee.real_name.label("assignee_name"),
             recipient.real_name.label("handoff_recipient_name"),
             last.followup_date.label("last_followup_date"), author.real_name.label("last_followup_author"),
@@ -289,7 +293,7 @@ def _serialize_row(row):
         if data[key] is not None:
             data[key] = data[key].isoformat()
     for key in ("can_view_timeline", "can_record", "incoming", "sample_only", "deal_conflict", "can_view_contacts",
-                "can_edit_contact", "can_verify_deal", "can_claim"):
+                "can_edit_contact", "can_verify_deal", "can_edit_deal", "can_claim"):
         data[key] = bool(data[key])
     return data
 

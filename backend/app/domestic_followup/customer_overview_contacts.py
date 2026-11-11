@@ -152,3 +152,50 @@ def verify_deal(db: Session, user: dict, customer_id: int, status: str, evidence
     ))
     _commit(db)
     return {"id": customer_id, "verified_status": status, "verified_by_user_id": actor, "verified_at": now.isoformat()}
+
+
+def _can_edit_deal(db: Session, user: dict, customer: Customer) -> bool:
+    actor = access.user_id(user)
+    if not access.claims_allow(user, access.READ) or not access._holds(db, actor, access.READ, lock=True):
+        return False
+    if access.can_coordinate(db, user, customer, lock=True):
+        return True
+    if not access.has_live_write(db, user, lock=True):
+        return False
+    if access.customer_is_managed(db, customer, lock=True):
+        return access.can_develop(db, user, customer, lock=True)
+    return (visibility.in_legacy_customer_scope(db, user, customer.id, lock=True)
+            or access.has_live_super_admin(db, user, lock=True))
+
+
+def update_deal_status(db: Session, user: dict, customer_id: int, status: str | None, reason: str) -> dict:
+    customer = _customer_or_raise(access.lock_customer(db, customer_id))
+    if customer.status != 1:
+        raise LookupError("客户不存在")
+    if not _can_edit_deal(db, user, customer):
+        if not _has_contact_access(db, user, customer) and not access.has_summary_access(db, user, customer):
+            raise LookupError("客户不存在")
+        raise PermissionError("无权修改该客户的成交情况")
+
+    reason = reason.strip()
+    if not reason:
+        raise ValueError("请填写修改原因")
+    profile = db.get(Profile, customer_id, populate_existing=True, with_for_update=True)
+    previous = profile.deal_override_status if profile else None
+    result = {"id": customer_id, "deal_override_status": status}
+    if previous == status:
+        db.rollback()
+        return result
+    if profile is None:
+        profile = Profile(customer_id=customer_id)
+        db.add(profile)
+    profile.deal_override_status = status
+    responsibility = access.responsibility_for(db, customer_id)
+    db.add(FollowupCollaborationEvent(
+        customer_id=customer_id, actor_user_id=access.user_id(user),
+        action="deal_status_updated" if status is not None else "deal_status_restored",
+        responsibility_version=responsibility.version if responsibility else 0,
+        reason=reason, details={"previous_deal_status": previous, "deal_status": status},
+    ))
+    _commit(db)
+    return result
