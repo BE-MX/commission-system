@@ -20,6 +20,7 @@ from app.receipt import access, attachments, authority, batch_service, edit_serv
 from app.receipt.models import Receipt, ReceiptIntent, ReceiptAttachment, ReceiptLog
 from app.semifinished.models import InvoiceAllocation
 from app.invoice import shipment_inventory_service as inventory
+from app.invoice import shipment_outbound_evidence
 
 
 def _rows(db, model, predicate):
@@ -290,8 +291,10 @@ def _evidence(db, target, freight):
     order = remote.read(db, '/v1/invoices/order/info', {'order_id':target.xiaoman_order_id})
     if not isinstance(order,dict) or str(order.get('order_id')) != target.xiaoman_order_id or not remote.order_active(db,order):
         raise ValueError('发货订单证据不完整或原单已失效')
-    outbounds = linked_outbound_service.find_related(db,order)
+    outbounds = shipment_outbound_evidence.find_related(db, order)
     _validate_outbounds(outbounds)
+    # Quote and create must hash the same details even if list ordering changed.
+    outbounds = sorted(outbounds, key=lambda row: int(row['outbound_invoice_id']))
     data = {'receipt':snapshot,'order':order,'outbounds':outbounds,'freight':
         {identity:remote.target_snapshot(db,freight_target) for identity,freight_target in freight}}
     for identity,freight_target in freight:
@@ -319,6 +322,10 @@ def create(db, identity, body, user):
         db.commit()
     except linked_outbound_service.OutboundListChanged:
         raise HTTPException(409, '小满出库记录在核验期间发生变化，请重新获取报价',
+            headers={'Cache-Control':'private, no-store','Pragma':'no-cache'}) from None
+    except shipment_outbound_evidence.OutboundEvidenceNotReady as error:
+        # The business transaction has not begun, so the user can safely re-quote.
+        raise HTTPException(409, str(error),
             headers={'Cache-Control':'private, no-store','Pragma':'no-cache'}) from None
     except (ValueError,TypeError,okki_client.OkkiApiError,SQLAlchemyError,OSError,StorageError,HTTPException) as error:
         result_unavailable(error)

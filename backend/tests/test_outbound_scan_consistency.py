@@ -74,9 +74,10 @@ def test_changed_page_count_stops_before_reading_any_details(monkeypatch):
 
 
 @pytest.mark.parametrize('operation', ['quote', 'create'])
-@pytest.mark.parametrize('changed', [True, False])
-def test_evidence_conflict_releases_transaction_without_business_write(db, monkeypatch, operation, changed):
+@pytest.mark.parametrize('failure_kind', ['list_changed', 'proof_missing', 'bad_shape'])
+def test_evidence_conflict_releases_transaction_without_business_write(db, monkeypatch, operation, failure_kind):
     from app.invoice import shipment_quote_service as quotes, shipment_create_service as facts
+    from app.invoice.shipment_outbound_evidence import OutboundEvidenceNotReady
     invoice, user = NS(), {'sub': '1'}
     statements = []
     def observe(connection, cursor, statement, parameters, context, executemany):
@@ -87,7 +88,9 @@ def test_evidence_conflict_releases_transaction_without_business_write(db, monke
         return (invoice, user) if operation == 'quote' else (invoice, user, None)
     def evidence(*_):
         db.execute(text('SELECT 1'))
-        error = outbound.OutboundListChanged if changed else ValueError
+        if failure_kind == 'proof_missing':
+            raise OutboundEvidenceNotReady('出库关联同步中')
+        error = outbound.OutboundListChanged if failure_kind == 'list_changed' else ValueError
         raise error('private-provider-diagnostic')
     module = quotes if operation == 'quote' else facts
     monkeypatch.setattr(module, '_authorize', authorize)
@@ -100,11 +103,13 @@ def test_evidence_conflict_releases_transaction_without_business_write(db, monke
     try:
         with pytest.raises(HTTPException) as failure:
             getattr(module, operation)(db, 1, body, user)
-        assert failure.value.status_code == (409 if changed else 503)
+        assert failure.value.status_code == (503 if failure_kind == 'bad_shape' else 409)
         assert failure.value.headers['Cache-Control'] == 'private, no-store'
         assert 'private-provider-diagnostic' not in failure.value.detail
-        if changed:
+        if failure_kind == 'list_changed':
             assert failure.value.detail == '小满出库记录在核验期间发生变化，请重新获取报价'
+        if failure_kind == 'proof_missing':
+            assert failure.value.detail == '出库关联同步中'
         assert not statements and not db.in_transaction()
         assert not db.new and not db.dirty and not db.deleted
     finally:

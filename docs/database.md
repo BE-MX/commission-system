@@ -173,6 +173,7 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 | 表 | 责任及约束 |
 | --- | --- |
 | ark_shipment_settlements | 每批报价快照/状态/版本/请求摘要；唯一 invoice_id+sequence、settlement_no、request_key |
+| ark_outbound_link_proofs | 小满出库关联证明；主键 source_key+outbound_id。保存远端更新版本、列表时钟、状态、总数量、关联订单 ID；随镜像写入，可按小满来源重建 |
 | ark_shipment_settlement_items | 原始商品行 ID、数量、金额及远端行快照；唯一 settlement_id+invoice_item_id，商品行删除 RESTRICT |
 | ark_receivables | 商品/运费应收、客户币种、远端映射；business_key 与可空 remote_order_id 唯一 |
 | ark_receipt_batches | 一笔客户付款的总额、手续费、日期、方式、幂等键和版本 |

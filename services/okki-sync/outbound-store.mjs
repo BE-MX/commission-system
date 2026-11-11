@@ -31,7 +31,61 @@ function values(row, invoice, num) {
   });
 }
 
-export async function saveOutboundSnapshot(pool, inv, detail, { parseTs, num, inspectionSchema = 'commission_db' }) {
+function stamp(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) return false;
+  const date = new Date(value.replace(' ', 'T') + 'Z');
+  return Number.isFinite(date.valueOf()) && date.toISOString().slice(0, 19).replace('T', ' ') === value;
+}
+
+function quantityUnits(value) {
+  const match = /^(\d{1,40})(?:\.(\d{1,8}))?$/.exec(String(value));
+  return match ? BigInt(match[1] + (match[2] || '').padEnd(8, '0')) : null;
+}
+
+export function matchesAssociationProof(inv, saved) {
+  const quantity = quantityUnits(inv.product_total_count);
+  return Boolean(saved && stamp(inv.update_time) && stamp(saved.listedAt) && saved.listedAt > inv.update_time
+    && saved.proofVersion === inv.update_time && saved.proofStatus === String(inv.status)
+    && quantity !== null && quantity === quantityUnits(saved.proofQuantity));
+}
+
+export function associationProof(inv, detail, { listedAt, detailAt }) {
+  const quantity = quantityUnits(inv.product_total_count);
+  if (!stamp(inv.update_time) || !stamp(listedAt) || !stamp(detailAt) || listedAt <= inv.update_time || detailAt < listedAt
+      || String(detail.outbound_invoice_id) !== String(inv.outbound_invoice_id) || detail.update_time !== inv.update_time
+      || !/^\d{1,12}$/.test(String(inv.status)) || String(detail.status) !== String(inv.status)
+      || quantity === null || quantity !== quantityUnits(detail.product_total_count)) return null;
+  const orders = new Set();
+  let total = 0n;
+  for (const line of detail.record_list) {
+    const id = String(line.order_id);
+    const count = quantityUnits(line.outbound_count);
+    if (!/^(0|[1-9][0-9]{0,63})$/.test(id) || count === null
+        || (typeof line.order_id === 'number' && !Number.isSafeInteger(line.order_id))) return null;
+    if (id !== '0') orders.add(id);
+    total += count;
+  }
+  return total === quantity ? [...orders].sort() : null;
+}
+
+async function storeAssociationProof(conn, schema, inv, detail, proof) {
+  const { sourceKey, listedAt } = proof;
+  const orderIds = associationProof(inv, detail, proof);
+  const table = `\`${schema}\`.ark_outbound_link_proofs`;
+  if (orderIds === null) {
+    await conn.query(`DELETE FROM ${table} WHERE source_key=? AND outbound_id=?`, [sourceKey, inv.outbound_invoice_id]);
+    return;
+  }
+  await conn.query(`INSERT INTO ${table}
+      (source_key,outbound_id,remote_version,listed_at,remote_status,remote_quantity,order_ids)
+      VALUES (?,?,?,?,?,?,?)
+      ON DUPLICATE KEY UPDATE remote_version=VALUES(remote_version), listed_at=VALUES(listed_at),
+      remote_status=VALUES(remote_status), remote_quantity=VALUES(remote_quantity), order_ids=VALUES(order_ids)`,
+    [sourceKey, inv.outbound_invoice_id, inv.update_time, listedAt, String(inv.status),
+      String(inv.product_total_count), JSON.stringify(orderIds)]);
+}
+
+export async function saveOutboundSnapshot(pool, inv, detail, { parseTs, num, inspectionSchema = 'commission_db', proof }) {
   identity(inv.outbound_invoice_id);
   if (!detail || !Array.isArray(detail.record_list)) throw new Error('Complete outbound detail is required before advancing the mirror');
   if (String(detail.outbound_invoice_id) !== String(inv.outbound_invoice_id)) throw new Error('Outbound detail belongs to another invoice');
@@ -147,6 +201,7 @@ export async function saveOutboundSnapshot(pool, inv, detail, { parseTs, num, in
     const wholeChanged = previous && ((previous.remark || '') !== (inv.remark || '') || previous.serial_id !== inv.serial_id);
     await invalidateInspection(conn, inspection, inv, detail.record_list, materialChanged, Boolean(wholeChanged), localIds,
       { changedRemoteIds, invalidItemIds, removedItemIds });
+    if (proof) await storeAssociationProof(conn, inspectionSchema, inv, detail, proof);
     await conn.commit();
   } catch (error) {
     try { await conn.rollback(); } catch (rollbackError) { console.warn('Outbound rollback failed:', rollbackError.code || rollbackError.name); conn.destroy?.(); }

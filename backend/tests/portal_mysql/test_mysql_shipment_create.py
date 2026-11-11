@@ -16,6 +16,7 @@ from app.invoice.settlement_models import (ShipmentSettlement, SettlementItem, S
 from app.receipt import attachments, remote
 from app.invoice import shipment_create_service
 from app.invoice import shipment_inventory_service
+from app.invoice import shipment_outbound_evidence
 from app.semifinished.models import InvoiceAllocation
 from app.portal import authority as portal_authority
 from test_mysql_receipt_batch_presale import separate_proof
@@ -27,7 +28,7 @@ from test_mysql_receipt_reads import read_app  # noqa: F401
 from test_mysql_receipt_batch_create import batch_create_app, financial_snapshot  # noqa: F401
 
 
-ACTUAL_FIND_RELATED = linked_outbound_service.find_related
+ACTUAL_FIND_RELATED = shipment_outbound_evidence.find_related
 
 
 @pytest.fixture
@@ -86,6 +87,7 @@ def shipment_app(batch_create_app,monkeypatch):
     monkeypatch.setattr(remote,'order_snapshot',snapshot);monkeypatch.setattr(remote,'read',read)
     monkeypatch.setattr(remote,'order_active',lambda *_:True)
     monkeypatch.setattr(linked_outbound_service,'find_related',lambda *_:[])
+    monkeypatch.setattr(shipment_outbound_evidence,'find_related',lambda *_:[])
     return c
 
 
@@ -389,11 +391,16 @@ def historical_shipment(client,c,owner,monkeypatch):
         target=db.scalar(select(Receivable).where(Receivable.settlement_id==identity,Receivable.kind=='freight'))
         target.remote_order_id='90001';target.remote_order_name='HISTORY-F';target.remote_status='bound'
         freight_receipt.xiaoman_order_id=target.remote_order_id
-        record={'order_id':str(db.get(Invoice,c.invoice_id).xiaoman_order_id),'order_record_id':'101','outbound_count':4}
+        record={'order_id':str(db.get(Invoice,c.invoice_id).xiaoman_order_id),'order_record_id':'101',
+                'outbound_record_id':'92001','outbound_count':4}
         db.add(ShipmentOutbound(settlement_id=identity,invoice_id=c.invoice_id,outbound_no='OUT-'+uuid4().hex,
             status='shipped',remote_id='91001',payload={'record_list':[record]},payload_hash='a'*64))
         db.commit()
     provider={'fault':None}
+    def summary():
+        return {'outbound_invoice_id':'91001','status':2,'update_time':'2026-10-02 10:00:00',
+                'product_total_count':5 if provider['fault']=='different_quantity' else 4}
+
     def receipt_snapshot(db,target):
         c.io.append(('history-balance',target.id))
         return {'invoice_binding':remote.invoice_binding(target),'exchange_rate':725,'rows':[
@@ -409,10 +416,12 @@ def historical_shipment(client,c,owner,monkeypatch):
         elif fault=='uid_missing':line.pop('order_record_id')
         elif fault=='uid_unicode':line['order_record_id']='１０１'
         elif fault=='different_quantity':line['outbound_count']=5
-        return {'outbound_invoice_id':'91001','status':2,'record_list':[line,line] if fault=='duplicate_line' else [line]}
-    def provider_read(db,route,params=None):
+        return {**summary(),'record_list':[line,line] if fault=='duplicate_line' else [line]}
+    def provider_read(db,route,params=None,**transport):
         c.io.append(('history-provider',route))
-        if route=='/v1/invoices/outbound/list':return {'list':[{'outbound_invoice_id':'91001'}],'count':1}
+        if route=='/v1/invoices/outbound/list':
+            assert transport['include_envelope']
+            return {'now':'2026-10-02 10:00:01','data':{'list':[summary()],'count':1}}
         if route=='/v1/invoices/order/info':
             if str(params['order_id'])=='90001':
                 if provider['fault']=='freight_none':return None
@@ -425,7 +434,7 @@ def historical_shipment(client,c,owner,monkeypatch):
     monkeypatch.setattr(remote,'order_snapshot',receipt_snapshot)
     monkeypatch.setattr(remote,'read',provider_read)
     monkeypatch.setattr(remote,'order_receipts',lambda *_:[{'cash_collection_id':c.history_freight_remote_id,'amount':'20.00','currency':'USD','collect_status':1}])
-    monkeypatch.setattr(linked_outbound_service,'find_related',ACTUAL_FIND_RELATED)
+    monkeypatch.setattr(shipment_outbound_evidence,'find_related',ACTUAL_FIND_RELATED)
     from app.invoice import okki_client
     monkeypatch.setattr(okki_client,'ensure_access_token',lambda *_args,**_kwargs:'synthetic-token')
     monkeypatch.setattr(okki_client,'_get_json',lambda *_args,**_kwargs:detail())
