@@ -1,6 +1,5 @@
 """Current-authorized local shipment creation; external evidence never holds business locks."""
 from dataclasses import dataclass
-import hashlib
 import json
 import re
 from fastapi import HTTPException
@@ -13,7 +12,7 @@ from app.invoice.models import Invoice, InvoiceItem
 from app.invoice import presale_runtime as pools
 from app.invoice.presale_lines import remote_items
 from app.invoice.settlement_models import (ShipmentSettlement, SettlementItem, ShipmentOutbound,
-    SettlementEvent, Receivable, SettlementApplication, ReceiptBatch, BatchAttachment)
+    Receivable, SettlementApplication, ReceiptBatch, BatchAttachment)
 from app.portal.authority import lock_authority
 from app.portal.errors import PortalError, TransactionBusy
 from app.receipt import access, attachments, authority, batch_service, edit_service, remote, retry_service, service
@@ -21,6 +20,7 @@ from app.receipt.models import Receipt, ReceiptIntent, ReceiptAttachment, Receip
 from app.semifinished.models import InvoiceAllocation
 from app.invoice import shipment_inventory_service as inventory
 from app.invoice import shipment_outbound_evidence
+from app.invoice import shipment_quote_facts
 
 
 def _rows(db, model, predicate):
@@ -77,12 +77,13 @@ def _replay(db, invoice, existing, identity, body, current):
     if existing.quote_hash != body.quote_hash and db.scalar(select(SettlementFundingAmendment.id).where(
             SettlementFundingAmendment.settlement_id == existing.id).with_for_update()):
         raise HTTPException(409, '原批资金已受审计升级，请读取原批；旧创建请求不能重放为新报价')
-    hashes = {shipments.digest(body.model_dump(mode='json'))}
+    excluded = {'quote_facts'} if body.quote_facts is None else set()
+    hashes = {shipments.digest(body.model_dump(mode='json', exclude=excluded))}
     if body.payment_term == 'pay_first' and 'payment_term' not in existing.quote:
-        hashes.add(shipments.digest(body.model_dump(mode='json', exclude={'payment_term'})))
+        hashes.add(shipments.digest(body.model_dump(mode='json', exclude=excluded | {'payment_term'})))
     if existing.quote.get('funding_version') != 2:
-        legacy = body.model_dump(mode='json', exclude={'is_final', 'payment_term'})
-        hashes.add(shipments.digest(body.model_dump(mode='json', exclude={'is_final'})))
+        legacy = body.model_dump(mode='json', exclude=excluded | {'is_final', 'payment_term'})
+        hashes.add(shipments.digest(body.model_dump(mode='json', exclude=excluded | {'is_final'})))
         if legacy.get('payment') and legacy['payment'].get('purpose') == 'ordinary':
             legacy['payment'].pop('purpose', None)
         hashes.add(shipments.digest(legacy))
@@ -102,6 +103,10 @@ def _replay(db, invoice, existing, identity, body, current):
     if existing.quote.get('funding_version') == 2:
         related = {receipt.id: receipt for receipt in _rows(db, Receipt,
             Receipt.id.in_([app.receipt_id for app in apps]))}
+        if (set(related) != {app.receipt_id for app in apps} or any(
+                receipt.invoice_id != invoice.id or receipt.customer_id != invoice.customer_id
+                or receipt.currency != invoice.currency for receipt in related.values())):
+            raise HTTPException(409, '原发货结算回款所属订单、客户或币种已变化，请核对原单')
         pools.pool_lots(db, invoice, current=True)
         pools.validate_quote_applications(existing, apps, related)
     elif existing.is_final:
@@ -224,15 +229,14 @@ def _capture(db, invoice, body, current, *, payment=None, request_key=None):
     if request_key is not None and any(row.request_key == request_key for row in batches):
         raise HTTPException(409, '提交标识已用于其他付款批次，请先核对原单')
     proof_links = _rows(db, BatchAttachment, BatchAttachment.batch_id.in_([row.id for row in batches]))
-    logs = _rows(db, ReceiptLog, ReceiptLog.receipt_id.in_(by_receipt))
-    events = _rows(db, SettlementEvent, SettlementEvent.settlement_id.in_(by_settlement))
+    logs = _rows(db, ReceiptLog, ReceiptLog.receipt_id.in_(by_receipt)
+                 & ReceiptLog.action.in_(['late_result', 'credit_effective']))
     proofs = batch_service._proof_rows(db, ids, access.user_id(current)) if payment else []
     models = ((Invoice,[invoice]),(InvoiceItem,invoice.items),(Receipt,receipts),(Receipt,related),(ReceiptIntent,intents),
         (InvoiceAllocation,allocations),(ShipmentSettlement,settlements),(SettlementItem,items),(ShipmentOutbound,outbounds),
         (SettlementApplication,apps),(Receivable,targets),(ReceiptBatch,batches),(BatchAttachment,proof_links),
-        (ReceiptLog,logs),(SettlementEvent,events),(ReceiptAttachment,proofs))
-    values = [[model.__tablename__,[[getattr(row,col.name) for col in model.__table__.columns] for row in rows]] for model,rows in models]
-    fingerprint = hashlib.sha256(json.dumps(values,sort_keys=True,default=str).encode()).hexdigest()
+        (ReceiptLog,logs),(ReceiptAttachment,proofs))
+    fingerprint = shipment_quote_facts.local_facts(models)
     target = edit_service.OrderTarget(invoice.id,invoice.xiaoman_order_id,invoice.customer_id,
         invoice.currency,invoice.total_amount,invoice.surcharge_amount)
     freight = tuple((row.settlement_id,FreightTarget(*(getattr(row,col) for col in FreightTarget.__dataclass_fields__)))
@@ -286,9 +290,13 @@ def _validate_outbounds(outbounds):
 
 
 def _evidence(db, target, freight):
-    snapshot = remote.order_snapshot(db, target)
-    _validate_receipts(snapshot,target.currency,invoice_binding=remote.invoice_binding(target))
+    from app.receipt.receipt_index import verified_rows
     order = remote.read(db, '/v1/invoices/order/info', {'order_id':target.xiaoman_order_id})
+    if not isinstance(order, dict):
+        raise ValueError('发货订单证据不完整')
+    receipt_rows = verified_rows(db)
+    snapshot = remote.order_snapshot(db, target, detail=order, receipt_rows=receipt_rows)
+    _validate_receipts(snapshot,target.currency,invoice_binding=remote.invoice_binding(target))
     if not isinstance(order,dict) or str(order.get('order_id')) != target.xiaoman_order_id or not remote.order_active(db,order):
         raise ValueError('发货订单证据不完整或原单已失效')
     outbounds = shipment_outbound_evidence.find_related(db, order)
@@ -296,7 +304,7 @@ def _evidence(db, target, freight):
     # Quote and create must hash the same details even if list ordering changed.
     outbounds = sorted(outbounds, key=lambda row: int(row['outbound_invoice_id']))
     data = {'receipt':snapshot,'order':order,'outbounds':outbounds,'freight':
-        {identity:remote.target_snapshot(db,freight_target) for identity,freight_target in freight}}
+        {identity:remote.target_snapshot(db,freight_target,receipt_rows=receipt_rows) for identity,freight_target in freight}}
     for identity,freight_target in freight:
         _validate_receipts(data['freight'][identity],freight_target.currency,target_binding=[freight_target.id,
             freight_target.remote_order_id,str(freight_target.amount),freight_target.currency,freight_target.customer_id,freight_target.version])
@@ -341,7 +349,10 @@ def create(db, identity, body, user):
         return existing
     actual,_,_,final_files = _capture(db,invoice,body,current,payment=body.payment,request_key=body.request_key)
     if actual != expected or final_files != files:
-        raise HTTPException(409, '订单、发货资金或凭证在核验期间已变化，请保持原提交核对')
+        changed = shipment_quote_facts.changes(expected, actual, local=True)
+        if final_files != files:
+            changed = '、'.join(filter(None, [changed, '回款凭证绑定']))
+        raise HTTPException(409, f'{changed}在核验期间已变化，请重新核算后提交')
     inventory.require_stock(invoice, body, stock_target, stock)
     if body.payment and body.payment.payment_type not in payment_types:
         raise ValueError('请选择有效的回款方式')

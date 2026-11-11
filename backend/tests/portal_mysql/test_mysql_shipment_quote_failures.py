@@ -32,8 +32,8 @@ def test_current_authority_sql_failure_fixed_503_no_data(shipment_app,route):
 @pytest.mark.parametrize('fault',['rows_shape','amount','duplicate','order_shape'])
 def test_quote_untrusted_provider_data_fixed_503(shipment_app,fault,monkeypatch):
     c=shipment_app;original=remote.order_snapshot
-    def broken(db,target):
-        data=original(db,target)
+    def broken(db,target,**kwargs):
+        data=original(db,target,**kwargs)
         if fault=='rows_shape':data['rows']=None
         elif fault=='amount':data['rows'][0]['amount']='NaN'
         elif fault=='duplicate':data['rows'].append(dict(data['rows'][0]))
@@ -70,5 +70,12 @@ def test_success_quote_two_commits_then_final_rollback_no_business_dml(shipment_
             event.remove(Session,'after_commit',committed);event.remove(Session,'after_rollback',rolled_back);event.remove(c.ctx.engine,'before_cursor_execute',observe)
         guarded(response,200);assert response.json()['data']['new_payment_due']=='64.00'
         assert len(sessions)==1 and commits==[sessions[0],sessions[0]] and rollbacks and all(db is sessions[0] for db in rollbacks)
-        assert len(dml)==1 and 'owned_quote_success_metadata' in dml[0] and snapshot(c)==before and c.calls==[]
+        # Current route authority takes its coordination locks via writes. Only
+        # these exact lock assignments are allowed; business mutations still fail.
+        lock_assignments = {
+            'UPDATE ark_commerce_transition_policy SET version=ark_commerce_transition_policy.version, updated_at=%(updated_at)s',
+            'UPDATE ark_commerce_invoice_authorities SET lock_version=%(lock_version)s',
+        }
+        commercial = [sql for sql in dml if sql.split(' WHERE ')[0] not in lock_assignments]
+        assert len(commercial)==1 and 'owned_quote_success_metadata' in commercial[0] and snapshot(c)==before and c.calls==[]
         with Session(c.ctx.engine) as db:assert db.scalar(select(table.c.value).where(table.c.id==identity))=='new'

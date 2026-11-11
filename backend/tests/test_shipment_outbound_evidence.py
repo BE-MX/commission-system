@@ -32,7 +32,9 @@ def test_presale_evidence_uses_verified_versions_and_never_scans_all_details(db,
     target = SimpleNamespace(xiaoman_order_id='321', currency='USD', customer_id='123',
                              id=1, total_amount=0, surcharge_amount=0)
     order = {'order_id': '321', 'create_time': '2026-10-12 00:00:00'}
-    monkeypatch.setattr(remote, 'order_snapshot', lambda *_: {
+    from app.receipt import receipt_index
+    monkeypatch.setattr(receipt_index, 'verified_rows', lambda _: [])
+    monkeypatch.setattr(remote, 'order_snapshot', lambda *_, **_kwargs: {
         'rows': [], 'invoice_binding': remote.invoice_binding(target)})
     monkeypatch.setattr(remote, 'order_active', lambda *_: True)
 

@@ -39,8 +39,9 @@ def presale_payload(client,c,headers,amount):
     # Actual API already returns the compound presale version used by the frontend.
     response=client.get('/api/receipts/order-balance/'+str(c.invoice_id),headers=headers)
     assert response.status_code==200,response.text
-    assert response.json()['data']['settlement_id']==c.settlement_id
-    version=response.json()['data']['version']
+    matches=[row for row in response.json()['data']['payment_settlements'] if row['settlement_id']==c.settlement_id]
+    assert len(matches)==1
+    version=matches[0]['version']
     return {'request_key':uuid4().hex,'amount':str(amount),'bank_charge':'0','collection_date':'2026-10-06',
         'payment_type':'T/T','remark':'Presale shipment payment','attachment_ids':[c.proofs['unbound']],
         'allocations':[{'invoice_id':c.invoice_id,'settlement_id':c.settlement_id,'amount':str(amount),'balance_version':version}]}

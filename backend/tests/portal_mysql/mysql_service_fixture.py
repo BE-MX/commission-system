@@ -14,9 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser, ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, ArkLoginLog, ArkRefreshToken, ArkAccountUnlockAudit
 from app.customer.models import CustomerAccount, CustomerAssignment, CustomerExternalIdentity, CustomerObjectOwnership, CustomerSourceRecord, CustomerContactRelationship
-from app.invoice.models import Invoice, InvoiceItem, InvoiceDelegateGrant, StdPrice, PriceColorType, CustomerPriceRule
+from app.invoice.models import Invoice, InvoiceItem, InvoiceItemGroup, InvoiceDelegateGrant, StdPrice, PriceColorType, CustomerPriceRule
 from app.receipt.models import ReceiptIntent
 from app.core.time import beijing_now
+from app.commerce_transition.models import PlatformPolicy, InvoiceAuthority, AuthorityEvent
 from app.portal import auth_service as auth, admin_service, authority, quote_service, sku_source, pricing, catalog_service, order_queries, invoice_adapter
 from app.portal.access_policy import binding_fingerprint
 from app.portal.inventory import InventoryObservation
@@ -31,7 +32,8 @@ def service_schema(migrated):
     # fixtures, NOT migrations or proof of the complete upstream schema.
     models = (ArkUser, CustomerAccount, CustomerAssignment, CustomerExternalIdentity, CustomerObjectOwnership, CustomerSourceRecord, CustomerContactRelationship,
         ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, Invoice, InvoiceItem, InvoiceDelegateGrant,
-        ReceiptIntent, StdPrice, PriceColorType, CustomerPriceRule, ArkLoginLog, ArkRefreshToken, ArkAccountUnlockAudit)
+        ReceiptIntent, StdPrice, PriceColorType, CustomerPriceRule, ArkLoginLog, ArkRefreshToken, ArkAccountUnlockAudit,
+        CatalogGrant, PlatformPolicy, InvoiceAuthority, AuthorityEvent, InvoiceItemGroup)
     for model in models:
         with migrated.begin() as connection:
             inspector = inspect(connection)
@@ -50,6 +52,7 @@ def service_schema(migrated):
         connection.execute(text('CREATE TABLE okki_products (product_id BIGINT PRIMARY KEY, product_name VARCHAR(255), model VARCHAR(128), color VARCHAR(128), size VARCHAR(32), unit VARCHAR(32), disable_flag INT)'))
         connection.execute(text('CREATE TABLE okki_product_skus (product_id BIGINT, sku_id BIGINT PRIMARY KEY, disable_flag INT)'))
     with Session(migrated) as db:
+        db.add(PlatformPolicy(id=1, phase='legacy_only', version=1))
         root = ArkUser(username='mysql-admin', password_hash='test-only-not-a-login', real_name='Test Admin', is_active=True)
         roles = [ArkRole(name='super_admin', label='Admin'), ArkRole(name='sales', label='Sales')]
         db.add_all([root, *roles]); db.flush()

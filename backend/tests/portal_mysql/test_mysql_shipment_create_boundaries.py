@@ -64,7 +64,7 @@ def final_result(c,body,response):
         assert row.quote['deposit_applied']=='40.00' and row.quote['deposit_charge_applied']=='4.00'
         assert row.quote['new_payment_due']=='90.00' and row.quote['goods_payment_charge']=='6.00'
         apps=db.scalars(select(SettlementApplication).where(SettlementApplication.settlement_id==identity)).all()
-        assert len(apps)==1 and apps[0].component=='deposit' and apps[0].receipt_id==c.receipts['victim']
+        assert len(apps)==1 and apps[0].component=='goods' and apps[0].receipt_id==c.receipts['victim']
         assert apps[0].amount==40 and apps[0].bank_charge==4 and apps[0].status=='reserved'
         deposit=db.get(Receipt,apps[0].receipt_id)
         assert deposit.status=='active' and deposit.amount==40 and deposit.bank_charge==4
@@ -80,7 +80,7 @@ def test_final_deposit_without_new_payment_requires_no_receipt_action(shipment_a
     with c.app.client() as client:
         root=login(client,c,c.root_name)
         change_user(client,c,root,{'role_ids':[c.roles['invoice:write'],c.roles['shipment:write']]})
-        owner=login(client,c,c.owner_name);body=body_for(client,c,owner,payment=False,quantity=10)
+        owner=login(client,c,c.owner_name);body=body_for(client,c,owner,payment=False,quantity=10,is_final=True)
         identity=final_result(c,body,client.post(path(c),headers=owner,json=body));before=snapshot(c);c.io.clear()
         replay=client.post(path(c),headers=owner,json=body)
         assert replay.status_code==200 and replay.json()['data']['id']==identity and snapshot(c)==before and c.io==[]
@@ -91,11 +91,11 @@ def test_final_original_deposit_association_replay_rejects_no_repair(shipment_ap
     c=shipment_app
     with c.app.client() as client:
         root=login(client,c,c.root_name);authorize(client,c,root);owner=login(client,c,c.owner_name)
-        body=body_for(client,c,owner,payment=False,quantity=10);identity=final_result(c,body,client.post(path(c),headers=owner,json=body))
+        body=body_for(client,c,owner,payment=False,quantity=10,is_final=True);identity=final_result(c,body,client.post(path(c),headers=owner,json=body))
         with Session(c.ctx.engine) as db:
             app=db.scalar(select(SettlementApplication).where(SettlementApplication.settlement_id==identity))
             if change=='missing_application':db.delete(app)
-            elif change=='wrong_component':app.component='goods'
+            elif change=='wrong_component':app.component='freight'
             else:db.get(Receipt,c.receipts['victim']).invoice_id=c.second_invoice_id
             db.commit()
         before=snapshot(c);c.io.clear();response=client.post(path(c),headers=owner,json=body)
@@ -107,7 +107,7 @@ def test_final_competing_creates_reserve_original_deposit_once(shipment_app,same
     c=shipment_app;barrier=threading.Barrier(2);original=shipment_create_service._evidence;hits=[]
     with c.app.client() as client:
         root=login(client,c,c.root_name);authorize(client,c,root);owner=login(client,c,c.owner_name)
-        first=body_for(client,c,owner,payment=False,quantity=10);second=deepcopy(first)
+        first=body_for(client,c,owner,payment=False,quantity=10,is_final=True);second=deepcopy(first)
         if not same_key:second['request_key']=uuid4().hex
         def gate(*args):hits.append(threading.get_ident());barrier.wait(timeout=10);return original(*args)
         monkeypatch.setattr(shipment_create_service,'_evidence',gate)

@@ -169,7 +169,7 @@ def test_legacy_quote_balance_semantics_remain_operable(db, order):
     db.add(row); db.flush(); shipments.application(db, row, deposit, "deposit", Decimal("200"), Decimal("0"))
     body = ShipmentCreate(items=[{"invoice_item_id": order.items[0].id, "quantity": 3}],
         freight_amount="38", quote_hash=row.quote_hash, request_key=row.request_key)
-    row.request_hash = shipments.digest(body.model_dump(mode="json", exclude={"is_final"}))
+    row.request_hash = shipments.digest(body.model_dump(mode="json", exclude={"is_final", "quote_facts"}))
     db.add(SettlementItem(settlement_id=row.id, invoice_item_id=order.items[0].id,
         quantity=3, line_amount=627, snapshot={}))
     db.commit()
@@ -191,7 +191,7 @@ def legacy_final(db, order):
     shipments.application(db, row, receipt, "deposit", Decimal("200"), Decimal("0"))
     db.add(SettlementItem(settlement_id=row.id, invoice_item_id=order.items[0].id,
         quantity=3, line_amount=627, snapshot={}))
-    row.request_hash = shipments.digest(legacy_body(row, order).model_dump(mode="json", exclude={"is_final"}))
+    row.request_hash = shipments.digest(legacy_body(row, order).model_dump(mode="json", exclude={"is_final", "quote_facts"}))
     db.commit()
     return row, receipt
 

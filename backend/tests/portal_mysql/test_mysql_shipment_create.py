@@ -12,8 +12,11 @@ from app.auth.models import ArkPermission, ArkRole, ArkRolePermission
 from app.invoice import linked_outbound_service, settlement_policy, settlement_service
 from app.invoice.models import Invoice, InvoiceItem
 from app.invoice.settlement_models import (ShipmentSettlement, SettlementItem, ShipmentOutbound,
-    SettlementEvent, Receivable, SettlementApplication, ReceiptBatch, BatchAttachment)
-from app.receipt import attachments, remote
+    SettlementEvent, Receivable, SettlementApplication, ReceiptBatch, BatchAttachment,
+    OutboundLinkProof, SettlementFundingAmendment)
+from app.sales_return.models import SalesReturn, ReturnItem, ReturnAllocation, ReturnEffect, ReturnReceipt
+from app.shipping_inspection.models import ShippingInspection, ShippingOperationEvent
+from app.receipt import attachments, remote, receipt_index
 from app.invoice import shipment_create_service
 from app.invoice import shipment_inventory_service
 from app.invoice import shipment_outbound_evidence
@@ -48,7 +51,9 @@ def shipment_app(batch_create_app,monkeypatch):
             'warehouse_id':17,'enable_count':c.stock,'disable_flag':0}]}
     monkeypatch.setattr(shipment_inventory_service.okki_client,'_get_json',inventory)
     metadata=MetaData()
-    for model in (SettlementItem,ShipmentOutbound,SettlementEvent):
+    for model in (SettlementItem,ShipmentOutbound,SettlementEvent,OutboundLinkProof,
+                  SettlementFundingAmendment,SalesReturn,ReturnItem,ReturnAllocation,ReturnEffect,ReturnReceipt,
+                  ShippingInspection,ShippingOperationEvent):
         Table(model.__tablename__,metadata,*(Column(col.name,col.type,primary_key=col.primary_key,
             nullable=False if col.primary_key else True) for col in model.__table__.columns))
     metadata.create_all(c.ctx.engine)
@@ -78,25 +83,30 @@ def shipment_app(batch_create_app,monkeypatch):
         foreign=db.get(Invoice,c.foreign_invoice_id);foreign.order_type='presale';foreign.shipping_fee=0
         db.commit()
     c.shipment_roles=[c.roles['invoice:write'],c.roles['shipment:write'],c.roles['write']]
-    def snapshot(db,target):
+    def snapshot(db,target,**_kwargs):
         c.io.append(('shipment-balance',target.id))
         return {'invoice_binding':remote.invoice_binding(target),'exchange_rate':725,
             'rows':[{'cash_collection_id':c.deposit_remote_id,'amount':'36.00','currency':'USD','collect_status':1}]}
     def read(db,path,params=None):
         c.io.append(('shipment-order',path));return {'order_id':str(params['order_id']),'amount':'100.00','status':1}
     monkeypatch.setattr(remote,'order_snapshot',snapshot);monkeypatch.setattr(remote,'read',read)
+    monkeypatch.setattr(receipt_index,'verified_rows',lambda *_:[])
     monkeypatch.setattr(remote,'order_active',lambda *_:True)
     monkeypatch.setattr(linked_outbound_service,'find_related',lambda *_:[])
     monkeypatch.setattr(shipment_outbound_evidence,'find_related',lambda *_:[])
     return c
 
 
-def body_for(client,c,headers,*,payment=True,quantity=4,freight='20.00'):
+def body_for(client,c,headers,*,payment=True,quantity=4,freight='20.00',is_final=False):
     draft={'items':[{'invoice_item_id':c.item_id,'quantity':quantity}],'freight_amount':freight}
+    if is_final:
+        draft['is_final'] = True
     response=client.post(f'/api/invoices/{c.invoice_id}/shipment-quotes',headers=headers,json=draft)
     assert response.status_code==200,response.text
-    result={**draft,'quote_hash':response.json()['data']['quote_hash'],'request_key':uuid4().hex}
-    if payment:result['payment']={'amount':'32.00','bank_charge':'0','collection_date':'2026-10-06',
+    result={**draft,'quote_hash':response.json()['data']['quote_hash'],
+        'quote_facts':response.json()['data']['quote_facts'],'request_key':uuid4().hex}
+    # V2 uses the declared actual bank fee, rather than estimating it from the order.
+    if payment:result['payment']={'amount':'32.00','bank_charge':'2','collection_date':'2026-10-06',
         'payment_type':'T/T','attachment_ids':[c.proofs['unbound']],'remark':'Embedded shipment payment'}
     return result
 
@@ -254,7 +264,7 @@ def test_unlocked_evidence_allows_admin_then_current_rejects(shipment_app,enable
     c=shipment_app;c.app.settings.PORTAL_ENABLED=enabled
     monkeypatch.setattr(portal_authority,'get_settings',lambda:c.app.settings)
     ready=threading.Event();resume=threading.Event();original=attachments.verify_storage
-    def gate(*args):ready.set();assert resume.wait(10);return original(*args)
+    def gate(*args,**kwargs):ready.set();assert resume.wait(10);return original(*args,**kwargs)
     monkeypatch.setattr(attachments,'verify_storage',gate)
     with c.app.client() as client:
         root=login(client,c,c.root_name);authorize(client,c,root);owner=login(client,c,c.owner_name);body=body_for(client,c,owner)
@@ -274,7 +284,7 @@ def test_unlocked_evidence_allows_admin_then_current_rejects(shipment_app,enable
 @pytest.mark.parametrize('change',['invoice','item','receipt','intent','proof','allocation','late_log','settlement','target'])
 def test_complete_graph_changed_during_evidence_cannot_create(shipment_app,change,monkeypatch):
     c=shipment_app;ready=threading.Event();resume=threading.Event();original=remote.order_snapshot
-    def gate(*args):ready.set();assert resume.wait(10);return original(*args)
+    def gate(*args,**kwargs):ready.set();assert resume.wait(10);return original(*args,**kwargs)
     monkeypatch.setattr(remote,'order_snapshot',gate)
     with c.app.client() as client:
         root=login(client,c,c.root_name);authorize(client,c,root);owner=login(client,c,c.owner_name)
@@ -318,8 +328,8 @@ def test_exact_three_commit_faults_and_original_key_recovery(shipment_app,stage,
     def authorization(db,*args):
         if not any(db is item for item in sessions):sessions.append(db)
         return authorize_original(db,*args)
-    def refresh(db,target):
-        db.execute(token.update().where(token.c.id==1).values(value='refreshed'));return original_snapshot(db,target)
+    def refresh(db,target,**kwargs):
+        db.execute(token.update().where(token.c.id==1).values(value='refreshed'));return original_snapshot(db,target,**kwargs)
     with c.app.client() as client:
         root=login(client,c,c.root_name);authorize(client,c,root);owner=login(client,c,c.owner_name);body=body_for(client,c,owner);before=snapshot(c)
         monkeypatch.setattr(shipment_create_service,'_authorize',authorization);monkeypatch.setattr(remote,'order_snapshot',refresh)
@@ -374,6 +384,7 @@ def test_two_captures_make_only_one_active_settlement_and_payment(shipment_app,s
 def historical_shipment(client,c,owner,monkeypatch):
     # Build the original partial settlement through the actual creation endpoint.
     original=body_for(client,c,owner);original['payment']['amount']='64.00'
+    original['payment']['bank_charge']='4.00'  # Historical goods: 44 gross, 40 received remotely.
     response=client.post(path(c),headers=owner,json=original)
     assert response.status_code==200,response.text
     identity=response.json()['data']['id']
@@ -392,16 +403,29 @@ def historical_shipment(client,c,owner,monkeypatch):
         target.remote_order_id='90001';target.remote_order_name='HISTORY-F';target.remote_status='bound'
         freight_receipt.xiaoman_order_id=target.remote_order_id
         record={'order_id':str(db.get(Invoice,c.invoice_id).xiaoman_order_id),'order_record_id':'101',
-                'outbound_record_id':'92001','outbound_count':4}
-        db.add(ShipmentOutbound(settlement_id=identity,invoice_id=c.invoice_id,outbound_no='OUT-'+uuid4().hex,
+                'outbound_record_id':'92001','outbound_count':4,'product_id':1,'sku_id':2}
+        serial, mirror_id = 'OUT-'+uuid4().hex, str(90000000+identity)
+        customer_id = db.get(Invoice,c.invoice_id).customer_id
+        db.add(ShippingInspection(outbound_record_id=mirror_id,outbound_no=serial,status='submitted'))
+        db.add(ShipmentOutbound(settlement_id=identity,invoice_id=c.invoice_id,outbound_no=serial,
             status='shipped',remote_id='91001',payload={'record_list':[record]},payload_hash='a'*64))
         db.commit()
+    # Keep the actual inspection predicate, with explicit synthetic mirror reads.
+    from app.shipping_inspection import outbound_service
+    def mirror_record(db, remote_id):
+        assert str(remote_id) == '91001'
+        return {'outbound_record_id':mirror_id,'outbound_no':serial,'company_id':customer_id}
+    def mirror_items(db, record_id):
+        assert str(record_id) == mirror_id
+        return [deepcopy(record)]
+    monkeypatch.setattr(outbound_service,'get_record_by_outbound_invoice_id',mirror_record)
+    monkeypatch.setattr(outbound_service,'inspection_item_links',mirror_items)
     provider={'fault':None}
     def summary():
         return {'outbound_invoice_id':'91001','status':2,'update_time':'2026-10-02 10:00:00',
                 'product_total_count':5 if provider['fault']=='different_quantity' else 4}
 
-    def receipt_snapshot(db,target):
+    def receipt_snapshot(db,target,**_kwargs):
         c.io.append(('history-balance',target.id))
         return {'invoice_binding':remote.invoice_binding(target),'exchange_rate':725,'rows':[
             {'cash_collection_id':c.deposit_remote_id,'amount':'36.00','currency':'USD','collect_status':1},
@@ -434,10 +458,18 @@ def historical_shipment(client,c,owner,monkeypatch):
     monkeypatch.setattr(remote,'order_snapshot',receipt_snapshot)
     monkeypatch.setattr(remote,'read',provider_read)
     monkeypatch.setattr(remote,'order_receipts',lambda *_:[{'cash_collection_id':c.history_freight_remote_id,'amount':'20.00','currency':'USD','collect_status':1}])
+    monkeypatch.setattr(receipt_index,'verified_rows',lambda *_:[{'cash_collection_id':c.history_freight_remote_id,
+        'order_id':'90001','amount':'20.00','currency':'USD','collect_status':1}])
     monkeypatch.setattr(shipment_outbound_evidence,'find_related',ACTUAL_FIND_RELATED)
     from app.invoice import okki_client
     monkeypatch.setattr(okki_client,'ensure_access_token',lambda *_args,**_kwargs:'synthetic-token')
-    monkeypatch.setattr(okki_client,'_get_json',lambda *_args,**_kwargs:detail())
+    inventory_read = okki_client._get_json
+    def history_read(route, *args, **kwargs):
+        if route == '/v1/invoices/outbound/info':
+            return detail()
+        assert route == '/v1/product/inventory-list'
+        return inventory_read(route, *args, **kwargs)
+    monkeypatch.setattr(okki_client,'_get_json',history_read)
     next_body=body_for(client,c,owner,payment=False,quantity=2,freight='0')
     return provider,next_body
 

@@ -91,14 +91,13 @@ try {
       const quantity = page.locator('.el-table').first().getByRole('spinbutton')
       assert.equal(await quantity.getAttribute('aria-valuemax'), '10')
       await quantity.fill('2'); await quantity.press('Tab')
-      await page.getByRole('button', { name: '核算本批金额', exact: true }).click()
       await page.getByText('USD 200.00', { exact: true }).first().waitFor()
     } else {
       await page.locator('.el-alert--error').waitFor()
       assert.equal(state, 'outbound_uncertain')
-      const preview = page.getByRole('button', { name: '核算本批金额', exact: true })
-      if (scenario === 'denied') assert.equal(await preview.count(), 0)
-      else assert.equal(await preview.isDisabled(), true)
+      const submit = page.getByRole('button', { name: '生成本批结算单', exact: true })
+      if (scenario === 'denied') assert.equal(await page.locator('.shipment-products-table').count(), 0)
+      else assert.equal(await submit.isDisabled(), true)
     }
     assert.deepEqual(writes, ['/api/shipments/7/cancel-deleted-outbound'])
     assert.deepEqual(errors, []); assert.deepEqual(unexpected, [])

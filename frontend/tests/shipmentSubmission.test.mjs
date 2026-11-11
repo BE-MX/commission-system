@@ -12,6 +12,15 @@ test('shipment payment without screenshots keeps its original recovery command',
 })
 import {shipmentSubmissionKey,copyShipment,readShipmentSubmission,saveShipmentSubmission,clearShipmentSubmission,isShipmentReceipt,isShipmentObservation,uncertainShipment} from '../src/views/invoice/composables/shipmentSubmission.js'
 const command=()=>({invoice_id:1,body:{items:[{invoice_item_id:7,quantity:4}],freight_amount:'20.00',quote_hash:'a'.repeat(64),request_key:'original_shipment_123',payment:{amount:'32.00',bank_charge:'0',collection_date:'2026-10-06',payment_type:'T/T',attachment_ids:['proof'],remark:'ORIGINAL'}}})
+test('quote diagnostic facts remain frozen with the original request', () => {
+  const original = command(), store = memory()
+  original.body.quote_facts = { funding: 'b'.repeat(64), items: 'c'.repeat(64) }
+  saveShipmentSubmission(store, 1, original)
+  const changed = copyShipment(original)
+  changed.body.quote_facts.funding = 'd'.repeat(64)
+  assert.throws(() => saveShipmentSubmission(store, 1, changed))
+  assert.deepEqual(readShipmentSubmission(store, 1).body.quote_facts, original.body.quote_facts)
+})
 function memory(){const data=new Map();return{data,getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key)}}
 test('exact original invoice/body stays immutable across form edits',()=>{const store=memory(),original=command();saveShipmentSubmission(store,1,original);original.invoice_id=2;original.body.items[0].quantity=9;original.body.payment.attachment_ids.push('other');assert.deepEqual(readShipmentSubmission(store,1),command());const restored=readShipmentSubmission(store,1);restored.body.payment.remark='EDITED';assert.equal(readShipmentSubmission(store,1).body.payment.remark,'ORIGINAL')})
 test('actor slots and one pending invoice cannot be overwritten',()=>{const store=memory(),original=command();saveShipmentSubmission(store,1,original);assert.equal(readShipmentSubmission(store,2),null);for(const changed of [{...original,invoice_id:2},{...original,body:{...original.body,freight_amount:'30'}}])assert.throws(()=>saveShipmentSubmission(store,1,changed));clearShipmentSubmission(store,1,'wrong');assert.deepEqual(readShipmentSubmission(store,1),original);clearShipmentSubmission(store,1,original.body.request_key);assert.equal(readShipmentSubmission(store,1),null)})
