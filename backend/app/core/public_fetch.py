@@ -110,9 +110,18 @@ def fetch_public(
                         continue
                     if not proxy_url:
                         _validate_peer(response)
-                    response.raise_for_status()
                     content_type = response.headers.get("content-type", "").lower()
-                    if response.status_code != 304 and content_type and not content_type.startswith(_ALLOWED_CONTENT):
+                    if response.status_code == 304 and (
+                        "if-none-match" in response.request.headers
+                        or "if-modified-since" in response.request.headers
+                    ):
+                        return PublicResponse(
+                            url=current, status_code=304, content=b"",
+                            content_type=content_type, encoding=response.encoding or "utf-8",
+                            etag=response.headers.get("etag"),
+                        )
+                    response.raise_for_status()
+                    if content_type and not content_type.startswith(_ALLOWED_CONTENT):
                         raise ValueError("目标响应不是支持的文本类型")
                     declared = int(response.headers.get("content-length") or 0)
                     if declared > max_bytes:

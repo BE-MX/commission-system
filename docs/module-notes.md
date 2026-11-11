@@ -1376,5 +1376,6 @@ Agent 委派只允许现有 customer_order_copilot 的只读准备型工具。re
 - 外部事实仅取 GitHub/网页数据源；AI preset 为 `ark_project_radar_analyze`、`ark_project_radar_update_classify`，类型与方舟模块在运行时从 `sys_dict` 注入 user message。两个 preset 默认关闭，启用前在 AI 接入管理配置模型。
 - 扫描只认 Release/tag/changelog/RSS/追踪页文本差异，提交与 Star 不生成更新、不调用 AI。普通关注只推关键，重点推关键+普通，普通更新 7 天冷却，已采用只推破坏性与安全，静默不推。每人每天一条早报由数据库唯一约束保证。
 - 抓取统一走 `app/core/public_fetch.py` 与既有 `_validate_public_url/_validate_peer`，每跳重定向复验，限 5 跳、5MB、15 秒；代理与 GitHub token 走 Settings。失败进入 `ark_project_radar_scan_run` 和现有 APScheduler `ark_job_runs`，不等于“今日无更新”。
+- GitHub 的仓库或 Release 条件请求返回 HTTP 304 时保留已知版本、更新时间和 ETag。定时扫描可跳过未变化的内容，手动重新分析仍读取 README 并生成解读。
 - 钉钉 Stream 侧车在 `deploy/project-radar-bot/`，只转发，不持数据库凭据。机器入站 token 与详情签名密钥独立配置；公开详情仅 24 小时绑定本人单订阅的只读数据。
 - 真实钉钉收发、GitHub/X 网络与代理、20 条线索样本和生产 MySQL 迁移尚未验收。agent 兜底、GitHub Star、MCP、AI 工具速递联动、团队共享仍属二期，不在本次完成声明内。
