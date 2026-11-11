@@ -471,3 +471,21 @@ Windows journal replacement retries only transient WinError 5/32/33 on the same 
 - 后端先完成 `257_project_radar` 迁移，配置独立入站 token、详情签名密钥和雷达机器人 `app_key/app_secret/robotCode`，并给用户同步钉钉 ID、分配 `project_radar:write`。
 - 调度默认 `PROJECT_RADAR_ENABLED=false`。只有真实 Stream 回执、异步卡片、每日扫描/早报和失败告警验收后才开启；开启前分别实测办公室/北京到 GitHub API 与 X 嵌入接口的直连或代理。
 - 普通应用发布会携带侧车源码和 unit 模板，但目前没有自动安装或启用该常驻服务的授权与发布步骤；不得把登记视为已部署。安装、单活切换、真实消息验收与回滚仍需单独候选发布确认。
+
+## 项目雷达新加坡网站抓取
+
+方舟后端设置 `PROJECT_RADAR_SINGAPORE_SSH_HOST=radar-singapore` 后，网站读取遇到本地 DNS、连接或传输故障，或 HTTP 403、408、5xx 时，会经新加坡补抓一次。留空时使用现有主线路。该通道接受公开 HTTPS 网页和追踪页的 URL 与 ETag，逐跳校验并固定公网地址，保留站点证书校验、5 MiB 正文上限和最多 5 次跳转。
+
+1. 将固定候选的 `backend/app/project_radar/singapore_worker.py` 安装到新加坡 `/opt/ark-project-radar/singapore_worker.py`。文件和父目录由 root 持有。为读取建立专用非 root SSH 账号，例如 `ark-radar-fetch`，在其 `authorized_keys` 为每个方舟后端专用公钥配置以下固定命令。[OpenSSH 密钥限制](https://man.openbsd.org/sshd#AUTHORIZED_KEYS_FILE_FORMAT)
+
+   ```text
+   restrict,command="/usr/bin/python3 -I /opt/ark-project-radar/singapore_worker.py" ssh-ed25519 <backend-public-key>
+   ```
+
+2. 在办公室 NSSM 和北京 systemd **实际运行身份**的 SSH 配置中建立 `radar-singapore` 别名，指定新加坡主机、专用账号、独立的 `IdentityFile` 与经核验的 `UserKnownHostsFile`。从该身份用下面的固定命令检查返回的状态、正文和最终网址。检查私网目标会失败，并核验专用密钥只能启动固定抓取命令。
+
+   ```powershell
+   '{"url":"https://getcleanly.vercel.app/","etag":null}' | ssh -T -S none -o BatchMode=yes -o StrictHostKeyChecking=yes radar-singapore /usr/bin/false
+   ```
+
+3. 将两端后端的 `PROJECT_RADAR_SINGAPORE_SSH_HOST` 设置为该别名，随受管后端发布生效。验收从项目雷达详情重新分析直连失败的网站，确认日志显示新加坡补抓且详情写回。恢复原抓取路径时清空该设置，按受管入口重新加载配置。

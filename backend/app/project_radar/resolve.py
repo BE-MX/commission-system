@@ -7,12 +7,11 @@ import logging
 import re
 from urllib.parse import urlencode, urljoin, urlsplit
 
-from app.ai.service import chat
 from app.core.config import get_settings
-from app.core.public_fetch import clean_html, fetch_public
-from app.mcp.public_web_tools import _validate_public_url
-from app.project_radar.analysis import ANALYZE_PRESET, _json_value
-from app.project_radar.urls import canonicalize_url
+from app.core.public_fetch import fetch_public
+from app.project_radar.analysis import ANALYZE_PRESET, _json_value, chat_with_timeout_retry
+from app.project_radar.fetcher import RadarFetcher
+from app.project_radar.urls import canonicalize_url, validate_radar_url
 
 logger = logging.getLogger("commission.project_radar.resolve")
 _IGNORE_HOSTS = {"x.com", "twitter.com", "t.co", "mp.weixin.qq.com", "weixin.qq.com", "qq.com", "github.com"}
@@ -22,7 +21,7 @@ _URL_RE = re.compile(r"https?://[^\s<>\"'，。；、)\\]+", re.IGNORECASE)
 def _candidate(url, *, confirmed=True, reason=""):
     try:
         canonical = canonicalize_url(url)
-        _validate_public_url(canonical)
+        validate_radar_url(canonical, allow_singapore=not confirmed)
     except (ValueError, TypeError):
         return None
     host = urlsplit(canonical).hostname or ""
@@ -58,11 +57,7 @@ def extract_name_candidates(db, text: str, *, user_id=None) -> list[str]:
         "untrusted_content": (text or "")[:60000],
     }
     try:
-        result = chat(
-            db=db, preset_name=ANALYZE_PRESET,
-            messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
-            caller_module="project_radar", caller_user_id=user_id, snapshot_mode="metadata",
-        )
+        result = chat_with_timeout_retry(db, ANALYZE_PRESET, payload, user_id=user_id)
         names = _json_value(result.get("content") or "").get("names") or []
         return [str(name).strip()[:100] for name in names if str(name).strip()][:3]
     except Exception as exc:  # noqa: BLE001
@@ -75,6 +70,7 @@ def search_verified_candidates(names: list[str]) -> list[dict]:
     settings = get_settings()
     if not settings.AGENT_RUNTIME_BRAVE_SEARCH_API_KEY:
         return [{"title": name, "url": "", "confirmed": False, "reason": "搜索校验未配置"} for name in names]
+    fetcher = RadarFetcher()
     candidates = []
     for name in names:
         try:
@@ -88,8 +84,7 @@ def search_verified_candidates(names: list[str]) -> list[dict]:
                 candidate = _candidate(result.get("url") or "", confirmed=False)
                 if not candidate:
                     continue
-                page = fetch_public(candidate["url"])
-                evidence = clean_html(page.text)
+                evidence = fetcher.read_website(candidate["url"])
                 haystack = f"{evidence['title']}\n{evidence['text'][:30000]}".casefold()
                 if name.casefold() in haystack:
                     candidate.update({"confirmed": True, "reason": "搜索后已核对官网内容", "title": name})

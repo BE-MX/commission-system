@@ -1,5 +1,8 @@
 import json
 
+import httpx
+import pytest
+
 from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.project_radar.analysis import analyze_target, classify_update
 from app.project_radar.models import RadarTarget
@@ -50,12 +53,17 @@ def test_radar_ai_uses_enabled_presets_from_migration(db, monkeypatch):
 
     responses = iter([
         {"title": "Project B", "description": "Converts documents to Markdown"},
+        TimeoutError("name extraction deadline"),
         {"names": ["Project B"]},
+        httpx.ReadTimeout("classification timed out"),
         {"level": "key", "reason": "Breaking API change", "summary": ["Removed legacy API"]},
     ])
 
     def fake_post_json(*args, **kwargs):
-        return {"choices": [{"message": {"content": json.dumps(next(responses))}}]}
+        response = next(responses)
+        if isinstance(response, Exception):
+            raise response
+        return {"choices": [{"message": {"content": json.dumps(response)}}]}
 
     monkeypatch.setattr("app.ai.call_service.post_json", fake_post_json)
     target = RadarTarget(title="b", item_type="other", one_liner="b")
@@ -72,6 +80,37 @@ def test_radar_ai_uses_enabled_presets_from_migration(db, monkeypatch):
     logs = db.query(AiCallLog).order_by(AiCallLog.id).all()
     assert [(log.preset_name, log.model, log.status) for log in logs] == [
         ("ark_project_radar_analyze", "radar-analysis-model", "success"),
+        ("ark_project_radar_analyze", "radar-analysis-model", "error"),
         ("ark_project_radar_analyze", "radar-analysis-model", "success"),
+        ("ark_project_radar_update_classify", "radar-review-model", "error"),
         ("ark_project_radar_update_classify", "radar-review-model", "success"),
     ]
+
+
+@pytest.mark.parametrize(("failures", "statuses", "analyzed"), [
+    ([httpx.ReadTimeout], ["error", "success"], True),
+    ([httpx.ReadTimeout, TimeoutError], ["error", "error"], False),
+    ([RuntimeError], ["error"], False),
+])
+def test_radar_analysis_retries_only_one_timeout(db, monkeypatch, failures, statuses, analyzed):
+    provider = AiProvider(name="Radar retry provider", api_base="https://example.com/v1")
+    db.add(provider)
+    db.flush()
+    db.add(AiPreset(preset_name="ark_project_radar_analyze", provider_id=provider.id,
+                    model="radar-model", is_enabled=True))
+    db.commit()
+    calls = []
+
+    def post(*args, **kwargs):
+        calls.append(kwargs["body"])
+        if len(calls) <= len(failures):
+            raise failures[len(calls) - 1]("request failed")
+        return {"choices": [{"message": {"content": '{"description":"Readme analysis"}'}}]}
+
+    monkeypatch.setattr("app.ai.call_service.post_json", post)
+    target = RadarTarget(title="Original", item_type="other", one_liner="Original")
+    assert analyze_target(db, target, "readme")["analyzed"] is analyzed
+    assert target.description == ("Readme analysis" if analyzed else None)
+    assert len(calls) == len(statuses)
+    assert all(body == calls[0] for body in calls)
+    assert [log.status for log in db.query(AiCallLog).order_by(AiCallLog.id)] == statuses

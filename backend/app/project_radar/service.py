@@ -13,7 +13,7 @@ from app.core.time import beijing_now
 from app.project_radar.models import (
     RadarSource, RadarSubscription, RadarTarget, RadarUpdate,
 )
-from app.project_radar.urls import canonicalize_url
+from app.project_radar.urls import canonicalize_url, validate_radar_url
 
 _WATCH_BY_STATUS = {"trying": "key", "adopted": "adopted", "dropped": "silent"}
 _LOCKED_FIELDS = {"title", "item_type", "one_liner", "description", "ark_modules"}
@@ -56,11 +56,8 @@ def subscribe(
     ingest_job_id: int | None = None,
 ) -> RadarSubscription:
     canonical = canonicalize_url(raw_url)
-    if validator is None:
-        from app.mcp.public_web_tools import _validate_public_url
-        validator = _validate_public_url
     try:
-        validator(canonical)
+        (validator or validate_radar_url)(canonical)
     except (ValueError, TypeError) as exc:
         raise ValueError("该地址不允许访问") from exc
 

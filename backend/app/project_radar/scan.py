@@ -225,7 +225,7 @@ def scan_target(db: Session, target, *, fetcher: RadarFetcher, classifier=classi
     return scan_website_target(db, target, fetcher=fetcher, classifier=classifier)
 
 
-def scan_all(db: Session, *, fetcher: RadarFetcher | None = None, classifier=classify_update):
+def scan_all(db: Session, *, classifier, fetcher: RadarFetcher | None = None):
     fetcher = fetcher or RadarFetcher()
     today = beijing_today()
     run = db.query(RadarScanRun).filter(RadarScanRun.scan_date == today).one_or_none()

@@ -1,8 +1,11 @@
+from contextlib import nullcontext
 from datetime import datetime
 
 from app.auth.models import ArkUser
 from app.core.time import beijing_now
 from app.project_radar.models import RadarSnapshot, RadarTrackedPage, RadarUpdate
+from app.project_radar import scheduler
+from app.project_radar.fetcher import RadarFetcher
 from app.project_radar.scan import (
     apply_repo_result, compress_text, initialize_target, scan_all, scan_website_target, text_change_ratio,
 )
@@ -24,6 +27,30 @@ def _subscription(db):
 
 def _classifier(db, **kwargs):
     return {"level": kwargs["level"], "reason": "test", "summary": ["有更新"], "ark_impact": ""}
+
+
+def test_scheduled_scan_classifies_updates_outside_its_savepoint(db, monkeypatch):
+    _, target = _subscription(db)
+    ai_session = object()
+    used_sessions = []
+
+    def classify(session, **kwargs):
+        assert db.in_nested_transaction()
+        used_sessions.append(session)
+        return _classifier(session, **kwargs)
+
+    def fetch(self, target, *, include_content):
+        return {"facts": {"version": "v2.0.0"}, "latest_release": None}
+
+    monkeypatch.setattr(scheduler, "SessionLocal", lambda: nullcontext(ai_session))
+    monkeypatch.setattr(scheduler, "classify_update", classify)
+    monkeypatch.setattr(RadarFetcher, "read_repo", fetch)
+
+    run = scheduler._run_scan(db)
+
+    assert run.success_count == 1 and run.failed_count == 0
+    assert used_sessions == [ai_session]
+    assert db.query(RadarUpdate).filter_by(target_id=target.id).one().to_version == "v2.0.0"
 
 
 def test_commit_and_star_changes_do_not_create_update_or_call_ai(db):

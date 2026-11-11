@@ -1,9 +1,13 @@
 from datetime import timedelta
+import socket
 
 import pytest
 
 from app.auth.models import ArkPermission, ArkRole, ArkUser
+from app.core.config import get_settings
+from app.core.public_fetch import PublicResponse
 from app.core.time import beijing_now
+from app.mcp.public_web_tools import _validate_public_url
 from app.project_radar import ingest
 from app.project_radar.dingtalk_inbound import handle_inbound
 from app.project_radar.ingest import create_job, process_job, select_candidates
@@ -70,6 +74,31 @@ def test_job_and_message_are_idempotent_and_duplicate_only_appends_source(db):
     assert db.query(RadarSource).count() == source_count + 1
     assert duplicate.result["items"][0]["duplicate"] is True
     assert duplicate.result["items"][0]["subscription_id"] == first.id
+
+
+def test_new_website_can_be_ingested_when_only_singapore_resolves_it(db, monkeypatch):
+    url = "https://radar.example"
+    monkeypatch.setattr("app.mcp.public_web_tools._validate_public_url", _validate_public_url)
+    monkeypatch.setattr(get_settings(), "PROJECT_RADAR_SINGAPORE_SSH_HOST", "radar-singapore")
+
+    def missing_dns(*args, **kwargs):
+        raise socket.gaierror("local DNS unavailable")
+
+    monkeypatch.setattr(socket, "getaddrinfo", missing_dns)
+    relayed = []
+
+    def fetch(host, target_url, *, etag=None):
+        relayed.append((host, target_url))
+        return PublicResponse(target_url, 200, b"<title>Radar Site</title><h1>Useful page</h1>",
+                              "text/html", "utf-8", None)
+
+    monkeypatch.setattr("app.project_radar.fetcher.fetch_via_singapore", fetch)
+    user = _user(db)
+    job = process_job(db, create_job(db, user.id, url, channel="web"))
+
+    assert job.status == "completed"
+    assert [(item["title"], item["read_state"]) for item in job.result["items"]] == [("Radar Site", "ok")]
+    assert relayed == [("radar-singapore", url)]
 
 
 def test_multiple_candidates_select_only_requested_and_unconfirmed_never_auto_ingests(db):

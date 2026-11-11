@@ -1,8 +1,11 @@
+from types import SimpleNamespace
+
 import httpx
 import pytest
 
 from app.core import public_fetch
 from app.mcp.public_web_tools import _validate_public_url
+from app.project_radar.fetcher import RadarFetcher
 
 
 @pytest.mark.parametrize("url", [
@@ -94,3 +97,68 @@ def test_unconditional_304_is_rejected(monkeypatch):
 
     assert isinstance(exc.value.__cause__, httpx.HTTPStatusError)
     assert exc.value.__cause__.response.status_code == 304
+
+
+@pytest.mark.parametrize(("operation", "status", "use_singapore"), [
+    ("read_website", 200, False),
+    ("read_website", 403, True),
+    ("read_website", 404, False),
+    ("read_website", "dns", True),
+    ("read_website", "timeout", True),
+    ("read_website", "private", False),
+    ("read_page", 403, True),
+    ("read_repo", 403, False),
+    ("read_clue", 403, False),
+])
+def test_singapore_only_recovers_eligible_website_failures(monkeypatch, operation, status, use_singapore):
+    requests = []
+    relayed = []
+    settings = SimpleNamespace(
+        PROJECT_RADAR_HTTP_PROXY="", PROJECT_RADAR_X_PROXY="", PROJECT_RADAR_GITHUB_TOKEN="secret",
+        PROJECT_RADAR_SINGAPORE_SSH_HOST="radar-singapore",
+    )
+    monkeypatch.setattr("app.project_radar.fetcher.get_settings", lambda: settings)
+
+    def resolve(host, port, **kwargs):
+        if status == "dns":
+            raise public_fetch.socket.gaierror("lookup failed")
+        address = "127.0.0.1" if status == "private" else "93.184.216.34"
+        return [(2, 1, 6, "", (address, port))]
+
+    monkeypatch.setattr(public_fetch.socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(public_fetch, "_validate_peer", lambda response: None)
+    url = "https://example.com/docs"
+
+    def direct(request):
+        requests.append(request)
+        if status == "timeout":
+            raise httpx.ConnectTimeout("connect timed out")
+        return httpx.Response(status, text="<h1>Direct</h1>", headers={"content-type": "text/html"})
+
+    def singapore(host, url, *, etag=None):
+        relayed.append((host, url, etag))
+        return public_fetch.PublicResponse(url, 200, b"<h1>Singapore</h1>", "text/html", "utf-8", '"next"')
+
+    monkeypatch.setattr("app.project_radar.fetcher.fetch_via_singapore", singapore, raising=False)
+    fetcher = RadarFetcher(transport=httpx.MockTransport(direct))
+
+    if operation == "read_page":
+        result = fetcher.read_page(url, etag='"previous"')
+        assert result["etag"] == '"next"'
+    elif operation == "read_repo":
+        target = SimpleNamespace(canonical_url="https://github.com/a/b", repo_etag=None)
+        with pytest.raises(RuntimeError):
+            fetcher.read_repo(target)
+        assert requests[0].headers["Authorization"] == "Bearer secret"
+    elif operation == "read_clue":
+        with pytest.raises(RuntimeError):
+            fetcher.read_clue("https://x.com/user/status/123")
+    elif use_singapore or status == 200:
+        result = fetcher.read_website(url)
+        assert result["text"] == ("Singapore" if use_singapore else "Direct")
+    else:
+        with pytest.raises(ValueError if status == "private" else RuntimeError):
+            fetcher.read_website(url)
+
+    expected_etag = '"previous"' if operation == "read_page" else None
+    assert relayed == ([("radar-singapore", url, expected_etag)] if use_singapore else [])

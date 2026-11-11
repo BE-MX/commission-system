@@ -155,6 +155,7 @@ class Settings(BaseSettings):
     ANNOUNCEMENT_PUBLIC_BASE_URL: str = "https://leshine.cloud"
     PROJECT_RADAR_ENABLED: bool = False
     PROJECT_RADAR_HTTP_PROXY: str = ""
+    PROJECT_RADAR_SINGAPORE_SSH_HOST: str = ""
     PROJECT_RADAR_X_PROXY: str = ""
     PROJECT_RADAR_GITHUB_TOKEN: str = Field(default="", repr=False)
     PROJECT_RADAR_INBOUND_TOKEN: str = Field(default="", repr=False)

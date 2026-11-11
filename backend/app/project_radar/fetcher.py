@@ -3,19 +3,29 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import socket
+import subprocess
 from urllib.parse import urljoin, urlsplit
 
 import httpx
 
 from app.core.config import get_settings
 from app.core.public_fetch import clean_html, fetch_public
+from app.project_radar.singapore_fetch import fetch_via_singapore
 from app.project_radar.urls import external_datetime
+
+logger = logging.getLogger("commission.project_radar.fetch")
 
 
 def _status_code(exc: BaseException) -> int | None:
     cause = exc.__cause__
     return cause.response.status_code if isinstance(cause, httpx.HTTPStatusError) else None
+
+
+def _page_etag(value):
+    return value if value and len(value) <= 255 and value.isascii() and value.isprintable() else None
 
 
 def _repo_parts(canonical_url: str) -> tuple[str, str]:
@@ -57,6 +67,26 @@ class RadarFetcher:
             url, headers=request_headers, proxy_url=proxy or None,
             transport=self.transport,
         )
+
+    def _get_website(self, url, *, etag=None):
+        try:
+            return self._get(url, etag=etag)
+        except (RuntimeError, ValueError) as exc:
+            host = self.settings.PROJECT_RADAR_SINGAPORE_SSH_HOST
+            cause = exc.__cause__
+            status = _status_code(exc)
+            retryable_status = status is not None and (status in {403, 408} or 500 <= status < 600)
+            if not host or not (retryable_status or isinstance(cause, (httpx.TransportError, socket.gaierror))):
+                raise
+            reason = str(status) if status is not None else type(cause).__name__
+            logger.warning("Project radar website fetch retrying via Singapore (%s)", reason)
+            print(f"Project radar website fetch retrying via Singapore ({reason})", flush=True)
+            try:
+                return fetch_via_singapore(host, url, etag=etag)
+            except (OSError, subprocess.SubprocessError, ValueError, LookupError, TypeError) as error:
+                logger.warning("Project radar Singapore fetch failed (%s)", type(error).__name__)
+                print(f"Project radar Singapore fetch failed ({type(error).__name__})", flush=True)
+                raise RuntimeError("新加坡站点抓取失败") from error
 
     @staticmethod
     def _json(response):
@@ -114,7 +144,7 @@ class RadarFetcher:
         }
 
     def read_website(self, url):
-        response = self._get(url)
+        response = self._get_website(url)
         cleaned = clean_html(response.text)
         source_path = urlsplit(response.url).path.rstrip("/")
         pages = []
@@ -135,11 +165,12 @@ class RadarFetcher:
         }
 
     def read_page(self, url, *, etag=None):
-        response = self._get(url, etag=etag)
+        etag = _page_etag(etag)
+        response = self._get_website(url, etag=etag)
         if response.status_code == 304:
             return {"unchanged": True, "etag": etag, "text": ""}
         return {
-            "unchanged": False, "etag": response.etag or etag,
+            "unchanged": False, "etag": _page_etag(response.etag) or etag,
             "text": clean_html(response.text)["text"], "final_url": response.url,
         }
 

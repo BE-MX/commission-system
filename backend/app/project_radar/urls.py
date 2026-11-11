@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime
 import re
+import socket
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from app.core.config import get_settings
 from app.core.time import to_beijing_naive
 
 _URL_RE = re.compile(r"(?:https?://|github\.com/)[^\s<>，。；、]+", re.IGNORECASE)
@@ -57,6 +59,22 @@ def canonicalize_url(raw_url: str) -> str:
         if not key.lower().startswith("utm_") and key.lower() not in _TRACKING_PARAMS
     ])
     return urlunsplit((parsed.scheme.lower(), netloc, path, query, ""))
+
+
+def validate_radar_url(url: str, *, allow_singapore: bool = True) -> str:
+    from app.mcp.public_web_tools import _validate_public_url
+
+    try:
+        return _validate_public_url(url)
+    except ValueError as exc:
+        # Defer a local DNS failure to the remote fetcher, which validates every address before connecting.
+        if (
+            not allow_singapore or not isinstance(exc.__cause__, socket.gaierror)
+            or urlsplit(url).hostname == "github.com"
+            or not get_settings().PROJECT_RADAR_SINGAPORE_SSH_HOST
+        ):
+            raise
+        return url
 
 
 def external_datetime(value: str | datetime | None) -> datetime | None:

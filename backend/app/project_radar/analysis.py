@@ -6,6 +6,7 @@ import json
 import logging
 import re
 
+import httpx
 from sqlalchemy.orm import Session
 
 from app.ai.service import chat
@@ -15,6 +16,20 @@ from app.system.models import SysDict
 
 logger = logging.getLogger("commission.project_radar.ai")
 ANALYZE_PRESET = "ark_project_radar_analyze"
+
+
+def chat_with_timeout_retry(db: Session, preset_name: str, payload: dict, *, user_id: int | None = None) -> dict:
+    request = {
+        "db": db, "preset_name": preset_name,
+        "messages": [{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
+        "caller_module": "project_radar", "caller_user_id": user_id, "snapshot_mode": "metadata",
+    }
+    try:
+        return chat(**request)
+    except (httpx.TimeoutException, TimeoutError) as exc:
+        logger.warning("Project radar AI timed out; retrying %s once (%s)", preset_name, type(exc).__name__)
+        print(f"Project radar AI timed out; retrying {preset_name} once ({type(exc).__name__})", flush=True)
+    return chat(**request)
 
 
 def _json_value(text: str):
@@ -59,11 +74,7 @@ def analyze_target(db: Session, target, text: str, *, user_id: int | None = None
         "untrusted_content": (text or "")[:120_000],
     }
     try:
-        result = chat(
-            db=db, preset_name=ANALYZE_PRESET,
-            messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
-            caller_module="project_radar", caller_user_id=user_id, snapshot_mode="metadata",
-        )
+        result = chat_with_timeout_retry(db, ANALYZE_PRESET, payload, user_id=user_id)
         value = _json_value(result.get("content") or "")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Project radar analysis failed (%s)", type(exc).__name__)
@@ -108,11 +119,7 @@ def classify_update(db: Session, *, from_version, to_version, release_notes, lev
         "ark_modules": ark_modules or [], "untrusted_release_notes": (release_notes or "")[:80_000],
     }
     try:
-        result = chat(
-            db=db, preset_name="ark_project_radar_update_classify",
-            messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
-            caller_module="project_radar", caller_user_id=user_id, snapshot_mode="metadata",
-        )
+        result = chat_with_timeout_retry(db, "ark_project_radar_update_classify", payload, user_id=user_id)
         value = _json_value(result.get("content") or "")
         ai_level = value.get("level")
         allowed = {"key": {"key", "normal"}, "normal": {"key", "normal", "noise"}}[level]
