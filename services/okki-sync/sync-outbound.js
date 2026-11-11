@@ -17,9 +17,10 @@
  */
 
 import 'dotenv/config';
+import { createHash } from 'node:crypto';
 import { OkkiAuth, OKKI_CONFIG } from './auth.js';
 import pool, { closePool, withDbRetry } from './db.js';
-import { saveOutboundSnapshot } from './outbound-store.mjs';
+import { matchesAssociationProof, saveOutboundSnapshot } from './outbound-store.mjs';
 
 const auth = new OkkiAuth();
 const PAGE_SIZE = 100;
@@ -82,24 +83,25 @@ async function apiGet(pathAndQuery, { retryOn401 = true } = {}) {
   }
 }
 
-async function fetchListPage(page, startTime, endTime) {
+async function fetchListPage(page, startTime, endTime, withProof) {
   const qs = new URLSearchParams({
     count: PAGE_SIZE,
     start_index: page,
     time_type: 1, // 按 update_time 查
+    ...(withProof ? { removed: 0 } : {}),
     ...(startTime ? { start_time: startTime } : {}),
     ...(endTime   ? { end_time:   endTime   } : {}),
   });
   const data = await apiGet(`/v1/invoices/outbound/list?${qs}`);
   if (data.code !== 200) throw new Error(`Okki API 错误: ${data.message}`);
-  return data.data?.list || [];
+  return { list: data.data?.list || [], listedAt: data.now };
 }
 
 async function fetchDetail(outboundInvoiceId) {
   try {
     const data = await apiGet(`/v1/invoices/outbound/info?outbound_invoice_id=${outboundInvoiceId}`);
     if (data.code !== 200) return null;
-    return data.data;
+    return data;
   } catch (_) {
     return null;
   }
@@ -107,16 +109,14 @@ async function fetchDetail(outboundInvoiceId) {
 
 // 批量获取库内单据状态，用于“未变更则跳过”判断
 // 返回 Map<outbound_invoice_id, { updateTime: 'YYYY-MM-DD HH:MM:SS', itemCount: n }>
-async function getDbState(ids) {
+async function getDbState(ids, sourceKey, inspectionSchema) {
   const map = new Map();
   if (!ids || !ids.length) return map;
   const conn = await pool.getConnection();
   try {
     const [rows] = await conn.query(
-      `SELECT outbound_invoice_id,
-              DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s') AS update_time
-         FROM okki_outbound_records
-        WHERE outbound_invoice_id IN (?)`,
+      `SELECT outbound_invoice_id, DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s') AS update_time
+         FROM okki_outbound_records WHERE outbound_invoice_id IN (?)`,
       [ids]
     );
     const [cntRows] = await conn.query(
@@ -127,8 +127,17 @@ async function getDbState(ids) {
       [ids]
     );
     const cntMap = new Map(cntRows.map(r => [String(r.outbound_invoice_id), Number(r.cnt)]));
+    const proofMap = new Map();
+    if (sourceKey) {
+      const [proofs] = await conn.query(`SELECT outbound_id, remote_version AS proofVersion,
+          listed_at AS listedAt, remote_status AS proofStatus, remote_quantity AS proofQuantity
+          FROM \`${inspectionSchema}\`.ark_outbound_link_proofs WHERE source_key=? AND outbound_id IN (?)`,
+        [sourceKey, ids.map(String)]);
+      for (const proof of proofs) proofMap.set(String(proof.outbound_id), proof);
+    }
     for (const r of rows) {
       map.set(String(r.outbound_invoice_id), {
+        ...proofMap.get(String(r.outbound_invoice_id)),
         updateTime: r.update_time || null,
         itemCount:  cntMap.get(String(r.outbound_invoice_id)) || 0,
       });
@@ -143,9 +152,9 @@ async function getDbState(ids) {
 // DB 层
 // -------------------------------------------------------
 
-async function saveOutbound(inv, detail) {
+async function saveOutbound(inv, detail, proof) {
   return withDbRetry(() => saveOutboundSnapshot(pool, inv, detail, {
-    parseTs, num, inspectionSchema: process.env.ARK_INSPECTION_DB_NAME || 'commission_db',
+    parseTs, num, inspectionSchema: process.env.ARK_INSPECTION_DB_NAME || 'commission_db', proof,
   }), { label: `保存出库单 ${inv.outbound_invoice_id}` });
 }
 
@@ -154,6 +163,16 @@ async function saveOutbound(inv, detail) {
 // -------------------------------------------------------
 
 export async function syncOutbound(mode, startDate, endDate) {
+  const inspectionSchema = process.env.ARK_INSPECTION_DB_NAME || 'commission_db';
+  let sourceKey;
+  if (process.env.OUTBOUND_LINK_PROOFS === '1') {
+    if (!OKKI_CONFIG.clientId || !OKKI_CONFIG.baseUrl || !/^[A-Za-z0-9_]+$/.test(inspectionSchema)) {
+      throw new Error('Outbound association proofs require the provider client and Ark schema');
+    }
+    sourceKey = createHash('sha256').update(JSON.stringify([
+      OKKI_CONFIG.baseUrl.replace(/\/+$/, ''), String(OKKI_CONFIG.clientId),
+    ])).digest('hex');
+  }
   let startTime, endTime;
 
   if (mode === 'full') {
@@ -180,28 +199,31 @@ export async function syncOutbound(mode, startDate, endDate) {
   let page = 1, totalSaved = 0, totalFailed = 0, totalSkipped = 0, samplePrinted = false;
 
   while (true) {
-    const list = await fetchListPage(page, startTime, endTime);
+    const { list, listedAt } = await fetchListPage(page, startTime, endTime, Boolean(sourceKey));
     if (list.length === 0) break;
 
     // 本页所有单据的库内状态（仅当开启跳过时才查）
     const dbState = SKIP_UNCHANGED && !FORCE
-      ? await getDbState(list.map(x => x.outbound_invoice_id))
+      ? await getDbState(list.map(x => x.outbound_invoice_id), sourceKey, inspectionSchema)
       : new Map();
 
     await mapLimit(list, CONCURRENCY, async (inv) => {
       try {
         // 未变更且已有明细 → 跳过详情拉取与写库
         const st = dbState.get(String(inv.outbound_invoice_id));
-        if (st && st.updateTime === inv.update_time && st.itemCount > 0) {
+        if (st && st.updateTime === inv.update_time && st.itemCount > 0
+            && (!sourceKey || matchesAssociationProof(inv, st))) {
           totalSkipped++;
           return;
         }
 
-        const detail = await fetchDetail(inv.outbound_invoice_id);
-        if (detail === null) {
+        const response = await fetchDetail(inv.outbound_invoice_id);
+        if (response === null) {
           console.warn(`  ⚠️  详情拉取失败 outbound_invoice_id=${inv.outbound_invoice_id}`);
         }
-        await saveOutbound(inv, detail);
+        const detail = response?.data;
+        const proof = sourceKey ? { sourceKey, listedAt, detailAt: response?.now } : undefined;
+        await saveOutbound(inv, detail, proof);
         totalSaved++;
         if (!samplePrinted && detail?.record_list?.length > 0) {
           samplePrinted = true;

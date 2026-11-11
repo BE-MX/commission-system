@@ -9,6 +9,7 @@ from app.portal.authority import lock_authority
 from app.portal.errors import PortalError, TransactionBusy
 from app.receipt import access, authority, retry_service
 from app.invoice import shipment_inventory_service as inventory
+from app.invoice import shipment_outbound_evidence
 from app.invoice.linked_outbound_service import OutboundListChanged
 
 
@@ -53,12 +54,14 @@ def quote(db, identity, body, user):
         stock_target = inventory.capture(invoice)
         db.commit()
         try:
-            evidence = facts._evidence(db,target,freight)
+            evidence = facts._evidence(db, target, freight)
             stock = inventory.observe(stock_target, {item.invoice_item_id for item in body.items})
             db.commit()  # End provider token/cache work before final authority.
         except OutboundListChanged:
             raise HTTPException(409,'小满出库记录在核验期间发生变化，请重新获取报价',
                 headers={'Cache-Control':'private, no-store','Pragma':'no-cache'}) from None
+        except shipment_outbound_evidence.OutboundEvidenceNotReady as error:
+            raise HTTPException(409, str(error), headers={'Cache-Control':'private, no-store','Pragma':'no-cache'}) from None
         except (ValueError,TypeError,okki_client.OkkiApiError,SQLAlchemyError,OSError,HTTPException) as error:
             unavailable(error)
         finally:

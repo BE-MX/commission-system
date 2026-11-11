@@ -294,7 +294,7 @@ def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | 
 def _get_json(
     path: str, token: str, *, context: str, params: dict | None = None,
     timeout: float = REQUEST_TIMEOUT, allow_missing: bool = False,
-    client: httpx.Client | None = None,
+    client: httpx.Client | None = None, include_envelope: bool = False,
 ) -> dict | bool | None:
     """GET with Bearer auth. Returns payload data; None means auth failure
     (caller may retry with a fresh token); other failures raise.
@@ -327,7 +327,7 @@ def _get_json(
         logger.warning("OKKI GET %s error %s: %s", path, resp.status_code, detail)
         print(f"[okki_client] GET {path} error {resp.status_code}: {detail}", flush=True)
         raise OkkiApiError(f"OKKI {context}失败：{detail}")
-    return body.get("data") if isinstance(body.get("data"), dict) else body
+    return body.get("data") if not include_envelope and isinstance(body.get("data"), dict) else body
 
 
 def _parse_json(resp: httpx.Response, *, context: str) -> dict:

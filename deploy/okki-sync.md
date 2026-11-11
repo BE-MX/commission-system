@@ -34,4 +34,11 @@ deploy\deploy.bat --okki-sync-only .deploy_state\okki-sync-plan.json
 - 照片从人工核验远端身份收敛至本地身份；verified 保留远端身份，让主应用按原始镜像匹配后清除 overlay（主应用须包含 b245f534），保留业务快照、补验状态与打印授权；真实产品/数量变更则保留照片历史，撤回已提交检验并要求新证据。
 - 不修复无法证明对应关系的历史照片，不改原上传审计，不把机器同步冒充人工操作。
 
+## 预售出库关联证明上线顺序
+
+- 用标准发布入口先发布仅含兼容性新增表迁移 `259_outbound_link_proof` 的阶段候选，保持旧报价、提交和出库代码。现有 `--migrate-only` 固定用于其他历史迁移。核对北京镜像账号对 `ARK_INSPECTION_DB_NAME.ark_outbound_link_proofs` 有查询、插入、更新和删除权限；其小满 API 地址与应用 ID 要和承接预售的服务一致。
+- 用本文的镜像专项入口发布写入器，再在镜像运行环境启用 `OUTBOUND_LINK_PROOFS=1`。运行既有出库互斥锁下的 `node sync-outbound.js range YYYY-MM-DD YYYY-MM-DD`，分段覆盖最早仍可发货的小满预售订单创建日至今的更新范围。已存在完整镜像但无证明的出库单也会重读；在后续日常增量中补齐刚发生的更新。
+- 切换应用前，按有效出库列表的 ID、更新时间、状态与总量核对同租户证明覆盖，验证最早在用预售订单和 Stephanie 原单可完成双轮核验，未匹配的单据不超过实时补查预算。仅有表、cron 成功或镜像表头数相符均不足以启用。候选应用启用后，缺证超过预算会暂缓报价、提交或发送。
+- 回退时先切回兼容旧应用，再停证明写入。保留衍生证明表可缩短再次上线时间。
+
 验证命令：`node --test services/okki-sync/outbound-store.test.mjs`；`python -m pytest deploy/tests/test_okki_sync_release.py`。部署测试只用临时目录和模拟进程。生产 SQL 只读规划不能证明实际并发锁行为，正式激活后仍需运行验证。

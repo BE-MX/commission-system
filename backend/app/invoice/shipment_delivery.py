@@ -11,7 +11,8 @@ from sqlalchemy import and_, or_, update
 from app.core.config import get_settings
 from app.core.queue_scan import take
 from app.core.time import beijing_now
-from app.invoice import linked_outbound_service, okki_client, xiaoman_service
+from app.invoice import okki_client, shipment_outbound_evidence, xiaoman_service
+from app.invoice.linked_outbound_service import OutboundListChanged
 from app.invoice import presale_runtime as pools
 from app.invoice.lifecycle_guard import ensure_active
 from app.invoice.models import Invoice
@@ -89,7 +90,7 @@ def _live_candidate(db, invoice, settlement, *, pending=None):
             or order.get("currency") != invoice.currency
             or remote.money(order.get("amount")) != invoice.total_amount - Decimal(invoice.surcharge_amount or 0)):
         raise ValueError("预售主单小满身份或金额已变化")
-    related = linked_outbound_service.find_related(db, order)
+    related = shipment_outbound_evidence.find_related(db, order)
     check_outbounds(db, invoice, {"outbounds": related}, pending=pending)
     reserved = defaultdict(int)
     for document in related:
@@ -419,6 +420,17 @@ def deliver(db, outbound_id):
         db.rollback()
         logger.warning("shipment delivery failed id=%s (%s)", outbound_id, type(exc).__name__)
         print(f"[shipment_delivery] failed id={outbound_id} ({type(exc).__name__})", flush=True)
+        if not sent and isinstance(exc, (shipment_outbound_evidence.OutboundEvidenceNotReady, OutboundListChanged)):
+            # Only the worker holding the original, unsent claim may defer it.
+            now = beijing_now()
+            db.execute(update(ShipmentOutbound).where(
+                ShipmentOutbound.id == outbound_id, ShipmentOutbound.attempt_token == token,
+                ShipmentOutbound.status == "sending", ShipmentOutbound.remote_id.is_(None),
+                ShipmentOutbound.lease_until > now,
+            ).values(status="pending", attempt_token=None, lease_until=None, last_error=str(exc)[:500],
+                     last_check_attempt_at=now, version=ShipmentOutbound.version + 1))
+            db.commit()
+            return
         outbound = db.get(ShipmentOutbound, outbound_id)
         if outbound and outbound.attempt_token == token and outbound.status in {"sending", "verifying"}:
             uncertain = (bool(outbound.remote_id) or isinstance(exc, okki_client.OkkiOutcomeUncertainError)
@@ -465,8 +477,12 @@ def process_pending(db):
             db.rollback()
             logger.warning("shipment funding check failed id=%s (%s)", identity, type(exc).__name__)
             print(f"[shipment_delivery] funding check failed id={identity} ({type(exc).__name__})", flush=True)
+    retry_before = beijing_now() - timedelta(minutes=1)
     outbound_ids = take(db.query(ShipmentOutbound.id).filter(
-        ShipmentOutbound.status == "pending"), ShipmentOutbound.id, "shipment_outbound_pending", 10)
+        ShipmentOutbound.status == "pending",
+        or_(ShipmentOutbound.last_check_attempt_at.is_(None),
+            ShipmentOutbound.last_check_attempt_at < retry_before),
+    ), ShipmentOutbound.id, "shipment_outbound_pending", 10)
     db.commit()
     for identity in outbound_ids:
         try:

@@ -53,7 +53,7 @@ def prepared(c,client,monkeypatch):
     c.detail['record_list'][0].update(sale_price=10,product_unit='Piece')
     c.posts=[]
     monkeypatch.setattr(xiaoman_service,'get_settings',lambda:c.app.settings)
-    monkeypatch.setattr(shipment_delivery.linked_outbound_service,'find_related',lambda *_:[deepcopy(c.detail)])
+    monkeypatch.setattr(shipment_delivery.shipment_outbound_evidence,'find_related',lambda *_:[deepcopy(c.detail)])
     def post(path,token,payload,*,context):
         assert path=='/v1/invoices/outbound/push'
         c.posts.append(deepcopy(payload));c.detail['status']=2

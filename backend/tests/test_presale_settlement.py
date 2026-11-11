@@ -398,7 +398,7 @@ def test_first_batch_candidate_counts_unoccupied_remote_line_as_zero(db,presale,
         lambda: SimpleNamespace(OKKI_PRESALE_WAREHOUSE_ID=123))
     monkeypatch.setattr(shipment_delivery,"_live_funding",lambda *_:order)
     monkeypatch.setattr(shipment_delivery.remote,"order_active",lambda *_:True)
-    monkeypatch.setattr(shipment_delivery.linked_outbound_service,"find_related",lambda *_:[])
+    monkeypatch.setattr(shipment_delivery.shipment_outbound_evidence,"find_related",lambda *_:[])
     monkeypatch.setattr(shipment_delivery.xiaoman_service,"resolve_okki_user_id",lambda *_:42)
 
     payload=shipment_delivery._live_candidate(db,presale,row)
@@ -424,7 +424,7 @@ def test_next_batch_candidate_counts_existing_remote_outbound(db,presale,monkeyp
         lambda: SimpleNamespace(OKKI_PRESALE_WAREHOUSE_ID=123))
     monkeypatch.setattr(shipment_delivery,"_live_funding",lambda *_:order)
     monkeypatch.setattr(shipment_delivery.remote,"order_active",lambda *_:True)
-    monkeypatch.setattr(shipment_delivery.linked_outbound_service,"find_related",lambda *_:related)
+    monkeypatch.setattr(shipment_delivery.shipment_outbound_evidence,"find_related",lambda *_:related)
     monkeypatch.setattr(shipment_delivery,"check_outbounds",lambda *_args,**_kwargs:None)
     monkeypatch.setattr(shipment_delivery.xiaoman_service,"resolve_okki_user_id",lambda *_:42)
 
@@ -509,6 +509,45 @@ def test_partial_outbound_unknown_result_cannot_send_again(db,presale,monkeypatc
     assert task.status=="uncertain" and row.state=="outbound_uncertain"
     shipment_delivery.deliver(db,task.id)
     assert len(sent)==1
+
+
+def test_outbound_evidence_wait_defers_unsent_task_but_serial_conflict_blocks_it(db,presale,monkeypatch):
+    from app.invoice import shipment_delivery as delivery
+    from app.invoice.shipment_outbound_evidence import OutboundEvidenceNotReady
+
+    row = make(db, presale, freight="0.00")
+    payload = {"serial_id": row.settlement_no}
+    task = ShipmentOutbound(settlement_id=row.id, invoice_id=presale.id,
+        outbound_no=row.settlement_no, status="pending", payload=payload, payload_hash=service.digest(payload))
+    row.state = "outbound_pending"
+    db.add(task)
+    db.commit()
+    monkeypatch.setattr(delivery, "require_delivery", lambda: None)
+    monkeypatch.setattr(delivery, "_refresh_funding", lambda *_: True)
+    monkeypatch.setattr(delivery, "_dispatchable", lambda *_: True)
+    monkeypatch.setattr(delivery.okki_client, "push_outbound", lambda *_a, **_k: pytest.fail("must not send"))
+    lookups = []
+
+    def wait_for_proof(*_):
+        lookups.append("wait")
+        raise OutboundEvidenceNotReady("出库关联同步中")
+
+    monkeypatch.setattr(delivery, "_live_candidate", wait_for_proof)
+    delivery.deliver(db, task.id)
+    db.refresh(task)
+    db.refresh(row)
+    assert (task.status, task.attempt_token, task.lease_until, task.remote_id) == ("pending", None, None, None)
+    assert task.last_check_attempt_at is not None and row.state == "outbound_pending"
+    delivery.process_pending(db)
+    assert lookups == ["wait"]
+
+    monkeypatch.setattr(delivery, "_live_candidate", lambda *_: payload)
+    monkeypatch.setattr(delivery.okki_client, "find_outbound_by_serial", lambda *_: {"outbound_invoice_id": "401"})
+    delivery.deliver(db, task.id)
+    db.refresh(task)
+    db.refresh(row)
+    assert task.status == "failed" and row.state == "review_required"
+    assert "相同编号" in task.last_error
 
 
 def test_paused_presale_batch_cannot_release_send_or_retry_payment(db,presale,monkeypatch):
@@ -681,6 +720,10 @@ def test_status_two_funding_reconciles_all_active_remote_receipts(db,presale,mon
     monkeypatch.setattr(shipment_delivery.remote,"order_snapshot",lambda *_:{"rows":[
         {"cash_collection_id":"201","amount":"3000.00","currency":"USD","collect_status":1},
         {"cash_collection_id":"999","amount":"1.00","currency":"USD","collect_status":1}]})
+    def order_detail(_db, path, params):
+        assert path == "/v1/invoices/order/info" and params["order_id"] == presale.xiaoman_order_id
+        return {"order_id": presale.xiaoman_order_id}
+    monkeypatch.setattr(shipment_delivery.remote, "read", order_detail)
     with pytest.raises(ValueError,match="未分配的远端回款"):
         shipment_delivery._live_funding(db,presale,row)
 
