@@ -386,15 +386,19 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 | 方法与路径 | 权限 / 用途 |
 | --- | --- |
 | GET `/shipments/capabilities` | invoice:read/write、receipt:write 或 shipment:read；返回登记开关及两项外发能力，后两者目前固定 false |
-| POST `/invoices/{id}/shipment-quotes` | invoice:read/write；items[{invoice_item_id,quantity}]、freight_amount，返回金额分解与 quote_hash |
+| POST `/invoices/{id}/shipment-quotes` | invoice:read/write；items[{invoice_item_id,quantity}]、freight_amount，返回金额分解、quote_hash 与 quote_facts 分组摘要 |
 | GET `/invoices/{id}/shipment-inventory` | 当前 invoice:read/write 与订单数据范围；实时查询预售出库仓库可用库存，private, no-store；返回 invoice_id/warehouse_id/source=okki_live/queried_at/items[{invoice_item_id,product_id,sku_id,available_stock,reason}]。available_stock 为十进制字符串，查不到或异常为 null，不能当成零 |
-| POST `/invoices/{id}/shipment-settlements` | invoice:write + shipment:write；报价字段加 quote_hash/request_key，可选 payment（另需 receipt:write） |
+| POST `/invoices/{id}/shipment-settlements` | invoice:write + shipment:write；报价字段加 quote_hash/request_key，可选 quote_facts 与 payment（另需 receipt:write） |
 | GET `/shipments/order/{id}`、`/shipments/{id}` | shipment:read/write；items 列表或含 quote/balance/outbound/capabilities 的详情 |
 | POST `/shipments/{id}/cancel`、`pause`、`resume` | shipment:write；version/reason，订单归属与状态二次检查 |
 | POST `/shipments/{id}/cancel-deleted-outbound` | shipment:write；version/reason。实时核实原小满出库已删除，撤销商品批次并释放占用；已绑定且足额由预付货款抵扣的运费保持原订单及抵扣，不发送远端写入 |
 | POST `/receipts/batches` | receipt:write；amount/date/type/remark/attachment_ids、request_key、allocations[{invoice_id,settlement_id?,amount,balance_version}]。日期字段 collection_date，方式字段 payment_type；bank_charge 只能零，服务端自动分摊 |
 | GET `/receipts/batches/{id}` | receipt:read/write/admin；batch_no/amount/bank_charge/currency/status/version/items/attachment_ids，须能访问全部子订单 |
 | POST `/receipts/batches/{id}/void-entry` | receipt:admin；version/reason，仅本地且无远端效果的整批录入纠错 |
+
+报价响应 `quote_facts` 为 `items/amounts/exchange_rates/funding/outbounds/freight/document` 七组 SHA-256 摘要；客户端原样随首次提交、原请求查询及重试携带。它仅用于解释 `QUOTE_STALE` 的变化类别，服务端始终重新核验权限、资金、运费、库存与已有出库并重算 `quote_hash`，不信任客户端事实。未携带该可选字段的历史原请求继续使用原摘要格式；携带后属于冻结请求的一部分，不能在未知结果重试中替换。请求内主单详情只读一次、完整回款索引只核验一次并供本单及运费单共用；不同请求不复用，出库列表前后两次完整读取仍独立。
+
+前端修改数量、运费、末批确认或结算方式后，等待 600ms 自动核算；报价请求串行，过期响应不更新金额。主提交操作仅保留「生成本批结算单」。没有有效报价时此按钮先重算并要求确认金额；明确提交失败后保留数量并重新核算，显示具体变化类别；结果不确定时仍冻结原请求并走原编号核对，不自动创建或换号重提。
 
 预售库存按 `OKKI_PRESALE_WAREHOUSE_ID` 与产品/SKU 精确读取小满 `/v1/product/inventory-list` 的启用 `enable_count`，不合计其他仓库、不用 `real_count` 或镜像替代。单次查询独立申请含 `product` scope 的临时 token，不覆盖原发票 token 缓存。查询内复用连接，首个SKU确认鉴权后，后续每波最多4路并发；每个库存GET超时15秒，鉴权/网络等系统错误停止后续波，未知仍不当作零；不缓存库存快照。`queried_at` 为本次查询完成的北京时间，并非供应商更新时间。查询在业务锁外执行，返回前重查当前权限、订单范围和产品/仓库绑定。部分缺记录、停用以外的异常值或查询失败为待核对；明确停用或零数值为零。
 

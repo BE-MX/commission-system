@@ -1,6 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canChangeShipment, shipmentActionReason, isShipmentStateReceipt, remainingShipmentQuantity, hasActiveShipment, retainedFreightForReplacement } from '../src/views/invoice/composables/shipmentSettlementState.js'
+import { canChangeShipment, shipmentActionReason, isShipmentStateReceipt, remainingShipmentQuantity, hasActiveShipment, retainedFreightForReplacement, shipmentDisplayState } from '../src/views/invoice/composables/shipmentSettlementState.js'
+
+test('a synced outbound is displayed as awaiting inspection while its settlement remains active', () => {
+  const batch = { state: 'outbound_pending', outbound: { status: 'pending_remote', remote_id: '401' } }
+  assert.equal(shipmentDisplayState(batch), 'pending_remote')
+  assert.equal(hasActiveShipment([batch]), true)
+  assert.equal(shipmentDisplayState({ ...batch, outbound: { status: 'sending' } }), 'outbound_pending')
+  assert.equal(shipmentDisplayState({ ...batch, outbound: { ...batch.outbound, status: 'verifying' } }), 'outbound_pending')
+  assert.equal(shipmentDisplayState({ ...batch, outbound: { status: 'pending_remote' } }), 'outbound_pending')
+  assert.equal(shipmentDisplayState({ ...batch, state: 'outbound_uncertain' }), 'outbound_uncertain')
+  assert.equal(shipmentDisplayState({ ...batch, state: 'shipped' }), 'shipped')
+})
 
 test('settlement actions disappear after outbound creation or uncertain remote state', () => {
   assert.equal(canChangeShipment({ state: 'outbound_pending', outbound: { status: 'pending' } }, 'pause'), false)

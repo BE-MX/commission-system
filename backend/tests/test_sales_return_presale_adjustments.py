@@ -254,7 +254,7 @@ def test_return_to_quote_to_new_batch_is_fully_funded_without_rewriting_original
     # authorized caller. Exercise all actual local quote and funding writes.
     monkeypatch.setattr(settlement_service, "check_outbounds", lambda *_args, **_kwargs: None)
     body = ShipmentQuote(items=[{"invoice_item_id": item.id, "quantity": 6 if pool else 2}], freight_amount=0)
-    evidence = {"receipt": snapshot, "freight": {}, "outbounds": []}
+    evidence = {"order": {"order_id": invoice.xiaoman_order_id}, "receipt": snapshot, "freight": {}, "outbounds": []}
     calculated = settlement_service.build_quote(db, invoice, body, evidence, current=True)
     assert Decimal(calculated["new_payment_due"]) == 0
     request = ShipmentCreate(**body.model_dump(), quote_hash=calculated["quote_hash"],

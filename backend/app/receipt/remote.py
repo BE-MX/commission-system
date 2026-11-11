@@ -171,10 +171,10 @@ def invoice_binding(invoice):
             str(invoice.total_amount), str(invoice.surcharge_amount or 0)]
 
 
-def order_snapshot(db, invoice):
+def order_snapshot(db, invoice, *, detail=None, receipt_rows=None):
     if not invoice.xiaoman_order_id:
         return {"rows": [], "exchange_rate": None}
-    data = read(db, "/v1/invoices/order/info", {"order_id": invoice.xiaoman_order_id})
+    data = detail if detail is not None else read(db, "/v1/invoices/order/info", {"order_id": invoice.xiaoman_order_id})
     if not isinstance(data, dict):
         raise ValueError("小满订单详情格式不完整，请先核对订单")
     if (str(data.get("order_id")) != str(invoice.xiaoman_order_id)
@@ -182,11 +182,13 @@ def order_snapshot(db, invoice):
             or data.get("currency") != invoice.currency
             or money(data.get("amount")) != invoice.total_amount - money(invoice.surcharge_amount or 0)):
         raise ValueError("小满订单客户、币种或金额与方舟不一致，请先核对订单")
-    return {"rows": order_receipts(db, invoice.xiaoman_order_id), "exchange_rate": data.get("exchange_rate"),
+    rows = order_receipts(db, invoice.xiaoman_order_id) if receipt_rows is None else [
+        row for row in receipt_rows if str(row['order_id']) == str(invoice.xiaoman_order_id)]
+    return {"rows": rows, "exchange_rate": data.get("exchange_rate"),
             "invoice_binding": invoice_binding(invoice)}
 
 
-def target_snapshot(db, target):
+def target_snapshot(db, target, *, receipt_rows=None):
     """Verify a separately billed freight order before sending its receipt."""
     if target.kind != "freight" or target.remote_status != "bound" or not target.remote_order_id:
         raise ValueError("运费目标小满订单尚未核验")
@@ -202,7 +204,9 @@ def target_snapshot(db, target):
             or money(data.get("product_total_amount")) != 0
             or data.get("product_list") != []):
         raise ValueError("小满运费订单身份或金额已变化，回款暂停发送")
-    return {"rows": order_receipts(db, target.remote_order_id),
+    rows = order_receipts(db, target.remote_order_id) if receipt_rows is None else [
+        row for row in receipt_rows if str(row['order_id']) == str(target.remote_order_id)]
+    return {"rows": rows,
             "exchange_rate": data.get("exchange_rate"),
             "target_binding": [target.id, target.remote_order_id, str(target.amount),
                                target.currency, target.customer_id, target.version]}

@@ -1,6 +1,6 @@
 """Strict wire contracts: decimal strings, bounded batches and idempotency keys."""
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.receipt.schemas import ReceiptFields
 
@@ -27,6 +27,8 @@ class ShipmentQuote(BaseModel):
 
 class ShipmentCreate(ShipmentQuote):
     quote_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    quote_facts: dict[Literal['items', 'amounts', 'exchange_rates', 'funding', 'outbounds', 'freight', 'document'],
+                      Annotated[str, Field(pattern=r'^[a-f0-9]{64}$')]] | None = None
     request_key: str = Field(min_length=16, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
     payment: ReceiptFields | None = None
 

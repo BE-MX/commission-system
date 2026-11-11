@@ -1,4 +1,11 @@
 export const cancelledShipmentStates = ['cancelled', 'cancelled_keep_freight']
+export function shipmentDisplayState(row) {
+  if (row.state === 'outbound_pending' && row.outbound?.status === 'pending_remote' && row.outbound.remote_id) {
+    return 'pending_remote'
+  }
+  return row.state
+}
+
 export function hasActiveShipment(settlements) {
   return settlements.some(row => ![...cancelledShipmentStates, 'shipped'].includes(row.state))
 }

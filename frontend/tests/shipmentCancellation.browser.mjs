@@ -64,7 +64,7 @@ try {
       await page.goto(base + '/tests/shipmentSubmissionHarness.html')
       await page.getByRole('button', { name: '打开出库结算', exact: true }).click()
       const cancel = page.getByRole('button', { name: '取消本批次', exact: true })
-      const preview = page.getByRole('button', { name: '核算本批金额', exact: true })
+      const submit = page.getByRole('button', { name: '生成本批结算单', exact: true })
       await cancel.waitFor()
       assert.equal(await page.getByRole('button', { name: '一键填充', exact: true }).isDisabled(), true)
       if (blocked) {
@@ -80,7 +80,7 @@ try {
           await prompt.getByRole('textbox').fill('Temporarily hold this batch')
           await prompt.getByRole('button', { name: '暂停本批次', exact: true }).click()
           await page.getByRole('button', { name: '恢复', exact: true }).waitFor()
-          assert.equal(await preview.isDisabled(), true)
+          assert.equal(await submit.isDisabled(), true)
           await page.getByText(/当前批次已暂停，仍保留数量和预付款占用/).waitFor()
         } else {
           await page.getByText(/本批出库创建失败。可取消本批次后调整数量重新创建/).waitFor()
@@ -95,7 +95,7 @@ try {
         if (['failed_remote', 'failed_unavailable'].includes(scenario)) {
           await page.locator('.el-alert--error').getByText(scenario === 'failed_remote' ? /小满已有同编号出库单/ : /发货结算结果暂无法确认/).waitFor()
           assert.equal(state, 'review_required')
-          assert.equal(await preview.isDisabled(), true)
+          assert.equal(await submit.isDisabled(), true)
           assert.equal(await page.locator('.el-table').first().getByRole('spinbutton').getAttribute('max'), '6')
           assert.deepEqual(writes, ['/api/shipments/8/cancel'])
           assert.deepEqual(errors, []); assert.deepEqual(unexpected, [])
@@ -105,13 +105,12 @@ try {
         }
         await page.getByText('已释放', { exact: true }).waitFor()
         await page.waitForFunction(expected => window.saved.length === expected, failed ? 1 : 2)
-        assert.equal(await preview.isEnabled(), true)
+        assert.equal(await submit.isDisabled(), true)
         assert.ok(listReads >= (failed ? 2 : 3))
         const quantity = page.locator('.el-table').first().getByRole('spinbutton')
         assert.equal(await quantity.getAttribute('aria-valuemax'), '10')
         assert.equal(await quantity.getAttribute('aria-disabled'), 'false')
         await quantity.fill('2'); await quantity.press('Tab')
-        await preview.click()
         await page.getByText('USD 800.00', { exact: true }).waitFor()
         await page.getByText('ORIGINAL-1000', { exact: true }).waitFor()
         assert.deepEqual(writes, failed ? ['/api/shipments/8/cancel'] : ['/api/shipments/8/pause', '/api/shipments/8/cancel'])

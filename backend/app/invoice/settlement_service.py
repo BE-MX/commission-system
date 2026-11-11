@@ -20,6 +20,7 @@ from app.invoice.presale_order_revision import sources as revision_sources
 from app.invoice.settlement_policy import require_enabled, capabilities
 from app.receipt import access, remote, service as receipts
 from app.receipt.models import Receipt, ReceiptLog
+from app.invoice import shipment_quote_facts
 
 
 def digest(value):
@@ -244,8 +245,8 @@ def build_quote(db, invoice, body, evidence, *, current=False):
     if carried_freight:
         result.update(retained_freight_settlement_id=carried_freight.id,
             retained_freight_amount=str(carried_freight.quote['freight_amount']))
-    result["quote_hash"] = digest({"quote": result, "lines": lines, "evidence": evidence,
-                                   "funds": [(r.id, r.version, str(r.amount), str(r.bank_charge)) for r in pool_receipts]})
+    result['quote_facts'] = shipment_quote_facts.quote_facts(invoice, result, lines, evidence, pool_receipts)
+    result['quote_hash'] = digest(result['quote_facts'])
     result["capabilities"] = capabilities()
     return result
 
@@ -317,10 +318,13 @@ def create(db, invoice_id, body, user):
 def _create_verified(db, invoice, body, user, evidence, proof_evidence):
     """Local application only; current authority and immutable evidence held by caller."""
     from app.receipt import batch_service
-    actor, fingerprint = access.user_id(user), digest(body.model_dump(mode="json"))
+    actor = access.user_id(user)
+    fingerprint = digest(body.model_dump(mode='json', exclude={'quote_facts'} if body.quote_facts is None else set()))
     calculated = build_quote(db, invoice, body, evidence, current=True)
     if calculated["quote_hash"] != body.quote_hash:
-        raise ValueError("QUOTE_STALE：订单或余额已变化，请刷新报价")
+        changed = shipment_quote_facts.changes(body.quote_facts, calculated['quote_facts']) if (
+            body.quote_facts is not None and digest(body.quote_facts) == body.quote_hash) else '报价依据'
+        raise ValueError(f'QUOTE_STALE：{changed}已变化，请重新核算后提交')
     prior = _current(db.query(ShipmentSettlement).filter_by(invoice_id=invoice.id), True, ShipmentSettlement.id).all()
     sequence = max((item.sequence for item in prior), default=0) + 1
     row = ShipmentSettlement(invoice_id=invoice.id, sequence=sequence,

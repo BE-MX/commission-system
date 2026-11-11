@@ -10,6 +10,7 @@ from app.portal.errors import PortalError, TransactionBusy
 from app.receipt import access, authority, retry_service
 from app.invoice import shipment_inventory_service as inventory
 from app.invoice import shipment_outbound_evidence
+from app.invoice import shipment_quote_facts
 from app.invoice.linked_outbound_service import OutboundListChanged
 
 
@@ -69,7 +70,7 @@ def quote(db, identity, body, user):
         invoice,current = _authorize(db,identity,user)
         actual,_,_,_ = facts._capture(db,invoice,body,current)
         if actual != expected:
-            raise HTTPException(409,'订单或发货资金在核验期间已变化，请重新获取报价')
+            raise HTTPException(409, f'{shipment_quote_facts.changes(expected, actual, local=True)}在核验期间已变化，请重新核算')
         inventory.require_stock(invoice, body, stock_target, stock)
         result = shipments.build_quote(db,invoice,body,evidence,current=True)
         # Detach all returned values before releasing the final read locks.

@@ -3,7 +3,7 @@
     <div class="shipment-content" :aria-busy="busy || undefined">
       <p v-if="!denied">对应出库单的检验已提交即视为出库完成；撤回检验后恢复为未完成。小满出库单保持草稿状态。</p>
       <p v-if="busy" role="status">{{ checking ? '正在只读核对原提交…' : '正在处理原发货请求，请等待回执…' }}</p>
-      <el-alert v-if="error" ref="errorSummary" tabindex="-1" :title="error" type="error" :closable="false" />
+      <el-alert v-if="error || quoteError" ref="errorSummary" tabindex="-1" :title="error || quoteError" type="error" :closable="false" />
       <el-alert v-if="pending" title="原订单、数量、运费、报价和回款凭证已冻结。尚未查到不代表未提交，请勿另建结算。" type="warning" :closable="false" />
       <el-alert v-if="confirmationPending && !denied" title="原实际出库确认结果待核对，请先核对原结算。普通刷新不能证明未执行，请勿再次确认。" type="warning" :closable="false" />
       <p v-if="denied" role="status">当前身份或订单授权需重新确认，原提交内容已隐藏。</p>
@@ -61,7 +61,7 @@
       </el-form>
       <ResponsiveDescriptions v-if="selectedSettlement" :column="2" border class="quote-summary">
         <el-descriptions-item label="结算单">{{ selectedSettlement.settlement_no }}</el-descriptions-item>
-        <el-descriptions-item label="状态">{{ stateLabel(selectedSettlement.state) }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{ stateLabel(shipmentDisplayState(selectedSettlement)) }}</el-descriptions-item>
         <el-descriptions-item label="结算方式">{{ selectedSettlement.payment_term === 'ship_first' ? '先出库后回款' : '先付款后出库' }}</el-descriptions-item>
         <el-descriptions-item label="本批欠款">{{ selectedSettlement.balance ? money(selectedSettlement.balance.outstanding_amount) : '待核对' }}</el-descriptions-item>
         <el-descriptions-item label="已登记待生效">{{ selectedSettlement.balance ? money(selectedSettlement.balance.pending_amount) : '待核对' }}</el-descriptions-item>
@@ -86,7 +86,7 @@
       <summary>3 · 出库结算记录（{{ settlements.length }}）</summary>
       <el-table class="list-table" :data="settlements" border empty-text="暂无出库结算记录" v-sticky-scrollbar>
         <el-table-column prop="settlement_no" label="结算单号" min-width="180"><template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">{{ row.settlement_no }}</el-button></template></el-table-column>
-        <el-table-column prop="state" label="状态" min-width="160"><template #default="{ row }">{{ stateLabel(row.state) }}</template></el-table-column>
+        <el-table-column prop="state" :sort-by="shipmentDisplayState" label="状态" min-width="160"><template #default="{ row }">{{ stateLabel(shipmentDisplayState(row)) }}</template></el-table-column>
         <el-table-column label="结算方式" min-width="150"><template #default="{ row }">{{ row.payment_term === 'ship_first' ? '先出库后回款' : '先付款后出库' }}</template></el-table-column>
         <el-table-column label="本批欠款" min-width="130"><template #default="{ row }">{{ row.balance ? money(row.balance.outstanding_amount) : '待核对' }}</template></el-table-column>
         <el-table-column label="操作" class-name="table-action-column" min-width="200"><template #default="{ row }">
@@ -112,8 +112,8 @@
         <GlassButton v-permission="'shipment:write'" variant="primary" :loading="saving" :disabled="busy || denied || storageBlocked" @click="submit(true)">按原请求重试</GlassButton>
       </template>
       <template v-else>
-        <GlassButton v-if="!denied && !storageBlocked" :loading="quoting" :disabled="saving || loading || stockLoading || !!stockError || activeShipment || confirmationPending" @click="preview">核算本批金额</GlassButton>
-        <GlassButton v-permission="'shipment:write'" variant="primary" :loading="saving" :disabled="!quote || quoting || uploading || loading || stockLoading || !!stockError || denied || storageBlocked || confirmationPending" @click="submit(false)">生成本批结算单</GlassButton>
+        <span v-if="quoting" role="status">正在核算本批金额…</span>
+        <GlassButton v-permission="'shipment:write'" variant="primary" :loading="saving || quoting" :disabled="uploading || loading || stockLoading || !!stockError || denied || storageBlocked || confirmationPending || activeShipment || !body().items.length" @click="submit(false)">生成本批结算单</GlassButton>
       </template>
     </div></template>
   </el-dialog>
@@ -122,6 +122,7 @@
 </template>
 <script setup>
 import { newRequestKey } from '../../../utils/requestKey.js'
+import { createShipmentQuoteScheduler } from '../composables/shipmentAutoQuote.js'
 
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
@@ -131,7 +132,7 @@ import { stockRows, shipmentQuantityLimit, shipmentStockError, fillShipmentQuant
 import { useAuthStore } from '@/stores/auth'
 import GlassButton from '@/components/GlassButton.vue'
 import ReceiptFields from '@/views/receipt/ReceiptFields.vue'
-import { remainingShipmentQuantity, hasActiveShipment, canChangeShipment, shipmentActionReason, isShipmentStateReceipt, canReconcileOutbound, retainedFreightForReplacement } from '../composables/shipmentSettlementState'
+import { remainingShipmentQuantity, hasActiveShipment, canChangeShipment, shipmentActionReason, isShipmentStateReceipt, canReconcileOutbound, retainedFreightForReplacement, shipmentDisplayState } from '../composables/shipmentSettlementState'
 import { canRecoverOutbound, isOutboundRecoveryReceipt } from '../composables/shipmentOutboundRecovery.js'
 import ShipmentOutboundRecovery from './ShipmentOutboundRecovery.vue'
 import { cents, latestRequest } from '@/views/receipt/batchReceiptState'
@@ -144,6 +145,7 @@ const props = defineProps({ invoice: { type: Object, required: true } })
 const emit = defineEmits(['close', 'saved']), auth = useAuthStore()
 const lines = ref([]), freight = ref(0), quote = ref(null), settlements = ref([]), loading = ref(true), quoting = ref(false), saving = ref(false), uploading = ref(false), error = ref(''), registerPayment = ref(false)
 const recoveryTarget = ref(null)
+const quoteError = ref('')
 const stocks = ref(new Map()), stockLoading = ref(false), stockTime = ref(''), stockWarning = ref('')
 const stockError = computed(() => shipmentStockError(lines.value, stocks.value))
 const quantityLimit = row => shipmentQuantityLimit(row, stocks.value)
@@ -192,10 +194,12 @@ const isFinal = ref(false), paymentTerm = ref('pay_first')
 const quoteFields = [['goods_amount','货款'],['packaging_amount','包装费'],['handling_amount','手续费'],['freight_amount','运费'],['deposit_applied','本批抵扣定金'],['advance_applied','本批抵扣预付货款'],['new_payment_due','本批需补款']]
 const stateLabel = state => ({ pending: '待处理', pending_remote: '待提交检验', confirming: '实际出库确认中', confirm_uncertain: '实际出库待核对', shipped_unfunded: '已出库·回款异常', awaiting_verification: '待核验回款', outbound_uncertain: '出库结果待核对', review_required: '需人工复核', awaiting_payment: '待回款', ready: '待出库', queued: '已排队', outbound_pending: '出库待同步', completed: '已完成', shipped: '已出库', paused: '已暂停', cancelled: '已取消', cancelled_keep_freight: '已撤销·运费保留', failed: '处理失败', uncertain: '待核对' })[state] || state
 const body = () => ({ items: lines.value.filter(row => row.requested > 0).map(row => ({ invoice_item_id: row.id, quantity: row.requested })), freight_amount: String(freight.value || 0), is_final: isFinal.value, payment_term: paymentTerm.value })
-watch(() => JSON.stringify(body()), () => {
+const autoQuote = createShipmentQuoteScheduler(preview)
+watch(() => [JSON.stringify(body()), stockLoading.value, loading.value, activeShipment.value], () => {
   quoteRequest.next(); quote.value = null; quoting.value = false
   if (error.value === '请填写本批出库数量' && body().items.length) error.value = ''
-})
+  autoQuote.schedule()
+}, { flush: 'sync' })
 function protectedRow(row) { return confirmation.value ? protectConfirmation(row, confirmation.value) : row }
 function resolveConfirmation(result, submittedVersion) {
   if (!confirmation.value || !isConfirmationResolution(result, confirmation.value, submittedVersion)) return false
@@ -225,12 +229,16 @@ async function showDetail(row) {
   catch (e) { if (current(identity) && detailRequest.isCurrent(sequence)) failed(e) }
 }
 async function preview() {
-  if (pending.value || confirmationPending.value || busy.value || denied.value || storageBlocked.value || activeShipment.value) return
-  if (!body().items.length) { error.value = '请填写本批出库数量'; return }
-  if (stockLoading.value || stockError.value) { error.value = stockError.value || '请等待库存查询完成'; return }
-  const identity = generation, sequence = quoteRequest.next(); quoting.value = true; quote.value = null; error.value = ''
+  if (pending.value || confirmationPending.value || busy.value || loading.value || disposed || denied.value || storageBlocked.value || activeShipment.value) return
+  if (!body().items.length || stockLoading.value || stockError.value) return
+  const identity = generation, sequence = quoteRequest.next(); quoting.value = true; quote.value = null; quoteError.value = ''
   try { const result = await quoteShipment(props.invoice.id, body()); if (current(identity) && !pending.value && quoteRequest.isCurrent(sequence)) quote.value = result }
-  catch (e) { if (current(identity) && !pending.value && quoteRequest.isCurrent(sequence)) failed(e) }
+  catch (e) {
+    if (current(identity) && !pending.value && quoteRequest.isCurrent(sequence)) {
+      if ([401,403,404].includes(e?.response?.status)) failed(e)
+      else quoteError.value = `${e?.response?.data?.detail || e?.message || '本批金额暂无法核算'}。可修改数量或点击生成本批结算单重新核算。`
+    }
+  }
   finally { if (current(identity) && !pending.value && quoteRequest.isCurrent(sequence)) quoting.value = false }
 }
 async function close(done) {
@@ -266,7 +274,12 @@ async function inspect() {
 async function submit(retry = false) {
   if (busy.value || confirmationPending.value || uploading.value || denied.value || storageBlocked.value || (pending.value && !retry)) return
   if (!retry) {
-    if (!quote.value || loading.value || stockLoading.value || activeShipment.value) return
+    if (loading.value || stockLoading.value || activeShipment.value) return
+    if (!quote.value) {
+      await autoQuote.flush()
+      if (quote.value) void showError('金额已重新核算，请确认后点击生成本批结算单')
+      return
+    }
     if (stockError.value) { void showError(stockError.value); return }
     if (registerPayment.value && (!auth.hasPermission('receipt:write') || cents(payment.amount) == null || cents(payment.amount) <= 0 || cents(payment.amount) > cents(quote.value.new_payment_due) || !payment.collection_date || !payment.payment_type)) { void showError('请核对实际回款金额、日期、方式；回款不能超过本批应付'); return }
     try {
@@ -274,6 +287,7 @@ async function submit(retry = false) {
       const previous = readShipmentSubmission(window.sessionStorage, actor)
       if (previous) { frozen.value = previous; persisted.value = true; mayHaveSubmitted.value = true; state.value = 'uncertain'; hidePrivate(); await inspect(); return }
       frozen.value = { invoice_id: props.invoice.id, body: { ...body(), quote_hash: quote.value.quote_hash, request_key: newRequestKey(),
+        ...(quote.value.quote_facts ? { quote_facts: copyShipment(quote.value.quote_facts) } : {}),
         ...(registerPayment.value ? { payment: { ...copyShipment(payment), amount: String(payment.amount), bank_charge: String(payment.bank_charge || 0) } } : {}) } }
     } catch (e) { storageBlocked.value = true; hidePrivate(); void showError(e.message); return }
   }
@@ -301,6 +315,10 @@ async function submit(retry = false) {
     if (!pending.value && ![401,403,404].includes(e?.response?.status)) {
       saving.value = false; await restore()
       if (!current(identity)) return
+      if (!activeShipment.value && !pending.value && !denied.value) {
+        const requested = new Map(command.body.items.map(item => [item.invoice_item_id, item.quantity]))
+        lines.value.forEach(row => { row.requested = requested.get(row.id) || 0 })
+      }
     }
     failed(e)
   } finally { if (current(identity)) saving.value = false }
@@ -465,7 +483,7 @@ watch(() => [auth.accessToken, auth.user], () => { generation++; controller?.abo
 function beforeUnload(event) { if (pending.value || confirmationPending.value || busy.value) { event.preventDefault(); event.returnValue = '' } }
 window.addEventListener('beforeunload', beforeUnload)
 onBeforeRouteLeave(() => { if (closingBlocked.value) { msgError('原发货提交待核对，请先恢复原请求'); return false } })
-onBeforeUnmount(() => { disposed = true; generation++; errorSequence++; controller?.abort(); window.removeEventListener('beforeunload', beforeUnload) })
+onBeforeUnmount(() => { disposed = true; autoQuote.dispose(); generation++; errorSequence++; controller?.abort(); window.removeEventListener('beforeunload', beforeUnload) })
 onMounted(restore)
 </script>
 <style scoped>

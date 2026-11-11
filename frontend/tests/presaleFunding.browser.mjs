@@ -14,8 +14,10 @@ try {
       sync_status:'synced',collect_status:1,xiaoman_receipt_id:'7001',currency:'USD',amount:'1077',bank_charge:'0',
       collection_date:'2026-10-08',payment_type:'Other',remark:'',attachments:[]})
     page.on('pageerror', e => errors.push(e.message))
-    await page.route(base+'/api/**', async route => {
-      const request = route.request(), path = new URL(request.url()).pathname
+    await page.route('**/*', async route => {
+      const request = route.request(), url = new URL(request.url()), path = url.pathname
+      if (url.origin !== new URL(base).origin) return route.abort()
+      if (!path.startsWith('/api/')) return route.continue()
       const respond = data => route.fulfill({json:{code:200,message:'ok',data}})
       if (path === '/api/receipts/invoice-summary/1') {
         summaryReads++
@@ -55,8 +57,10 @@ try {
     const shippingContext = await browser.newContext({viewport:{width,height:900},reducedMotion:'reduce'})
     const shipping = await shippingContext.newPage(), quotes = [], submissions = [], shippingErrors = []
     shipping.on('pageerror', e => shippingErrors.push(e.message))
-    await shipping.route(base+'/api/**', async route => {
-      const request = route.request(), path = new URL(request.url()).pathname
+    await shipping.route('**/*', async route => {
+      const request = route.request(), url = new URL(request.url()), path = url.pathname
+      if (url.origin !== new URL(base).origin) return route.abort()
+      if (!path.startsWith('/api/')) return route.continue()
       const respond = data => route.fulfill({json:{code:200,message:'ok',data}})
       if (path === '/api/invoice/invoices/1') return respond({id:1,invoice_no:'TEST-SHIP',currency:'USD',
         items:[{id:7,product_name:'Product A',quantity:4}]})
@@ -80,19 +84,16 @@ try {
     })
     await shipping.goto(base+'/tests/shipmentSubmissionHarness.html')
     await shipping.getByRole('button',{name:'打开出库结算',exact:true}).click()
-    const preview = shipping.getByRole('button',{name:'核算本批金额',exact:true})
     const submit = shipping.getByRole('button',{name:'生成本批结算单',exact:true})
-    await preview.click()
-    await shipping.getByText('请填写本批出库数量',{exact:true}).waitFor()
+    await expect(submit).toBeDisabled()
     assert.equal(quotes.length,0)
     await shipping.locator('.el-table').first().getByRole('spinbutton').fill('2')
     await shipping.keyboard.press('Tab')
-    await expect(shipping.getByText('请填写本批出库数量',{exact:true})).toHaveCount(0)
-    await preview.click(); await expect(submit).toBeEnabled()
+    await shipping.locator('.quote-summary').getByText('本批发货，定金保留',{exact:true}).waitFor()
     assert.equal(quotes[0].is_final,false)
     await shipping.locator('label.el-checkbox').filter({hasText:'人工确认：这是最后一批发货，可抵扣定金'}).click()
-    await expect(submit).toBeDisabled()
-    await preview.click(); await expect(submit).toBeEnabled()
+    await expect(shipping.locator('.quote-summary')).toHaveCount(0)
+    await shipping.locator('.quote-summary').getByText('人工确认最后一批',{exact:true}).waitFor()
     assert.equal(quotes[1].is_final,true)
     const summary = shipping.locator('.el-descriptions').filter({hasText:'扣减后可用预付货款'})
     await expect(summary).toContainText('412.00')
@@ -102,7 +103,7 @@ try {
     assert.equal(submissions[0].is_final,true)
     assert.deepEqual(submissions[0].items,[{invoice_item_id:7,quantity:2}])
     assert.deepEqual(shippingErrors,[])
-    results.push({width,manualFinal:true,quantityErrorCleared:true,balancesSeparated:true})
+    results.push({width,manualFinal:true,emptyQuantityBlocked:true,balancesSeparated:true})
     await shippingContext.close()
   }
   console.log(JSON.stringify({passed:true,results}))
