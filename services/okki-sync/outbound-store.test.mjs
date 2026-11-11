@@ -15,7 +15,7 @@ async function saver(db) {
   const save = new Function('pool', 'withDbRetry', 'saveOutboundSnapshot', helpers + section + ';return saveOutbound;')(
     { getConnection: async () => db }, fn => fn(), store,
   );
-  return (invoice, detail) => save(invoice, detail && { outbound_invoice_id: invoice.outbound_invoice_id, update_time: invoice.update_time, ...detail });
+  return (invoice, detail, proof) => save(invoice, detail && { outbound_invoice_id: invoice.outbound_invoice_id, update_time: invoice.update_time, ...detail }, proof);
 }
 
 class MemoryConnection {
@@ -30,7 +30,8 @@ class MemoryConnection {
   event = null;
   photos = [];
   audits = [];
-  async beginTransaction() { this.snapshot = structuredClone({ rows: this.rows, header: this.header, inspection: this.inspection, event: this.event, audits: this.audits, photos: this.photos }); }
+  proof = null;
+  async beginTransaction() { this.snapshot = structuredClone({ rows: this.rows, header: this.header, inspection: this.inspection, event: this.event, audits: this.audits, photos: this.photos, proof: this.proof }); }
   async commit() { this.snapshot = null; }
   async rollback() { if (this.snapshot) Object.assign(this, this.snapshot); this.snapshot = null; }
   release() { this.released++; }
@@ -44,6 +45,8 @@ class MemoryConnection {
     if (/^SELECT .*FROM okki_outbound_record_items/.test(q)) return [structuredClone(this.rows.filter(row => String(row.outbound_invoice_id) === String(params[0])))];
     this.writes++;
     if (this.failAt === this.writes) throw new Error('Injected database failure');
+    if (q.startsWith('INSERT') && q.includes('.ark_outbound_link_proofs')) { this.proof = structuredClone(params); return [{ affectedRows: 1 }]; }
+    if (q.startsWith('DELETE') && q.includes('.ark_outbound_link_proofs')) { this.proof = null; return [{ affectedRows: 1 }]; }
     if (q.startsWith('UPDATE') && q.includes('.ark_shipping_inspections')) {
       assert.ok(q.indexOf('recalled_at=') < q.indexOf("status='draft'"), 'Recall audit must evaluate the original submitted status');
       if (this.inspection.status === 'submitted') { this.inspection.recalled_at = 'BEIJING_NOW'; this.inspection.recalled_by = 0; }
@@ -131,6 +134,36 @@ test('duplicate or missing remote identity aborts before touching rows', async (
   await assert.rejects(save(inv, { record_list: [item('600'), item('600')] }));
   await assert.rejects(save(inv, { record_list: [item(null)] }));
   assert.deepEqual(db.rows, before);
+});
+
+test('outbound association is certified only when the list clock closed the update second before detail GET', async () => {
+  const { associationProof } = await import('./outbound-store.mjs');
+  const summary = { ...inv, status: 1, product_total_count: '2.00' };
+  const detail = { ...summary, record_list: [item('600', { order_id: '901' })] };
+  const read = { listedAt: '2026-10-08 10:00:01', detailAt: '2026-10-08 10:00:01' };
+  assert.deepEqual(associationProof(summary, detail, read), ['901']);
+  assert.equal(associationProof(summary, detail, { ...read, listedAt: inv.update_time }), null);
+  assert.equal(associationProof(summary, detail, { ...read, detailAt: inv.update_time }), null);
+  assert.equal(associationProof(summary, { ...detail, record_list: [] }, read), null);
+  assert.equal(associationProof(summary, { ...detail, record_list: [item('600')] }, read), null);
+  assert.deepEqual(associationProof(summary, { ...detail, record_list: [item('600', { order_id: 0 })] }, read), []);
+});
+
+test('mirror transaction stores closed links and removes an unprovable replacement', async () => {
+  const db = new MemoryConnection();
+  const save = await saver(db);
+  const summary = { ...inv, status: 1, product_total_count: 2 };
+  const proof = { sourceKey: 'tenant-hash', listedAt: '2026-10-08 10:00:01', detailAt: '2026-10-08 10:00:02' };
+  const snapshot = order => ({ ...summary, record_list: [item('600', { order_id: order })] });
+  await save(summary, snapshot('901'), proof);
+  assert.deepEqual(db.proof, ['tenant-hash', '500', summary.update_time, proof.listedAt, '1', '2', '["901"]']);
+  db.failAt = db.writes + 3; // Header and item update, then proof persistence.
+  await assert.rejects(save(summary, snapshot('902'), proof), /Injected database failure/);
+  assert.equal(db.rows[0].order_id, '901');
+  assert.equal(db.proof.at(-1), '["901"]');
+  await save(summary, snapshot('902'), { ...proof, listedAt: summary.update_time });
+  assert.equal(db.rows[0].order_id, '902');
+  assert.equal(db.proof, null);
 });
 
 test('confirmed empty detail list removes old rows', async () => {

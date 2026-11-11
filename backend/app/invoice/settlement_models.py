@@ -5,6 +5,19 @@ from app.core.database import Base
 from app.core.time import beijing_now
 
 
+class OutboundLinkProof(Base):
+    """Association evidence written by the OKKI mirror after a closed version second."""
+
+    __tablename__ = "ark_outbound_link_proofs"
+    source_key = Column(String(64), primary_key=True, comment="小满接口地址与应用身份摘要")
+    outbound_id = Column(String(64), primary_key=True, comment="小满出库单 ID")
+    remote_version = Column(String(19), nullable=False, comment="小满出库单北京时间更新版本")
+    listed_at = Column(String(19), nullable=False, comment="小满有效列表响应的北京时间")
+    remote_status = Column(String(12), nullable=False, comment="已核验的小满出库状态")
+    remote_quantity = Column(String(64), nullable=False, comment="已核验的小满出库总数量")
+    order_ids = Column(JSON, nullable=False, comment="完整明细关联的小满销售订单 ID")
+
+
 class ShipmentSettlement(Base):
     __tablename__ = "ark_shipment_settlements"
     id = Column(BigInteger, primary_key=True, autoincrement=True)

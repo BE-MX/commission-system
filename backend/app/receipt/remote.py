@@ -8,12 +8,12 @@ from app.invoice import okki_client
 from app.core.time import beijing_now
 
 
-def read(db, path, params=None):
+def read(db, path, params=None, **transport):
     for force in (False, True):
         token = okki_client.ensure_access_token(db, force=force)
         for attempt in range(2):
             try:
-                data = okki_client._get_json(path, token, context="回款查询", params=params)
+                data = okki_client._get_json(path, token, context="回款查询", params=params, **transport)
                 break
             except okki_client.OkkiApiError as exc:
                 if attempt or not isinstance(exc.__cause__, (httpx.TimeoutException, httpx.NetworkError)):

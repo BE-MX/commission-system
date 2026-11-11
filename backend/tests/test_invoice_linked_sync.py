@@ -2,6 +2,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
+import httpx
 import pytest
 from app.core.time import beijing_now
 from app.invoice import linked_sync_service as linked, linked_outbound_service as outbound, sync_coordinator
@@ -274,14 +275,31 @@ def test_outbound_scan_does_not_hide_cross_customer_order_link(monkeypatch):
 def test_outbound_parallel_details_read_every_id_and_fail_closed(monkeypatch):
     monkeypatch.setattr(outbound.okki_client, "ensure_access_token", lambda _: "test-token")
     calls = []
-    def get(_path, _token, *, context, params):
+    clients = []
+    def get(_path, _token, *, context, params, client=None):
         identity = params["outbound_invoice_id"]
         calls.append(identity)
+        clients.append(client)
+        if identity == "2" and calls.count(identity) == 1:
+            raise outbound.okki_client.OkkiApiError("connection closed") from httpx.RemoteProtocolError("connection closed")
         return {"outbound_invoice_id": identity, "record_list": []}
     monkeypatch.setattr(outbound.okki_client, "_get_json", get)
     rows = outbound._read_details(None, ["1", "2", "3"])
     assert [row["outbound_invoice_id"] for row in rows] == ["1", "2", "3"]
-    assert sorted(calls) == ["1", "2", "3"]
+    assert sorted(calls) == ["1", "2", "2", "3"]
+    assert clients[0] is not None and all(client is clients[0] for client in clients)
+    assert clients[0].is_closed
+
+    def disconnected(*_args, client, **_kwargs):
+        clients.append(client)
+        raise outbound.okki_client.OkkiApiError("connection closed") from httpx.RemoteProtocolError("connection closed")
+
+    clients.clear()
+    monkeypatch.setattr(outbound.okki_client, "_get_json", disconnected)
+    with pytest.raises(outbound.okki_client.OkkiApiError, match="connection closed"):
+        outbound._read_details(None, ["1"])
+    assert len(clients) == 2 and clients[0] is clients[1] and clients[0].is_closed
+
     monkeypatch.setattr(outbound.okki_client, "_get_json", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(remote, "read", lambda *_args: (_ for _ in ()).throw(ValueError("auth failed")))
     with pytest.raises(ValueError, match="auth failed"):

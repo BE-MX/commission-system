@@ -9,7 +9,10 @@ from app.invoice import okki_client
 from app.receipt import remote
 
 
-def _read_details(db, identities):
+MAX_CONCURRENT_DETAIL_READS = 4
+
+
+def _read_details(db, identities, **transport):
     """Read every listed document without sharing the SQLAlchemy session across threads."""
     if not identities:
         return []
@@ -19,16 +22,23 @@ def _read_details(db, identities):
         for attempt in range(2):
             try:
                 return okki_client._get_json("/v1/invoices/outbound/info", token,
-                    context="关联出库详情", params={"outbound_invoice_id": identity})
+                    context="关联出库详情", params={"outbound_invoice_id": identity}, client=client, **transport)
             except okki_client.OkkiApiError as exc:
-                if attempt or not isinstance(exc.__cause__, (httpx.TimeoutException, httpx.NetworkError)):
+                if attempt or not isinstance(exc.__cause__, (
+                    httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError,
+                )):
                     raise
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    limits = httpx.Limits(max_connections=MAX_CONCURRENT_DETAIL_READS,
+                          max_keepalive_connections=MAX_CONCURRENT_DETAIL_READS)
+    with (
+        httpx.Client(limits=limits) as client,
+        ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DETAIL_READS) as pool,
+    ):
         rows = list(pool.map(fetch, identities))
     # One token refresh is safe here because these are GETs. A failed result
     # still stops the entire scan rather than treating a document as absent.
-    return [remote.read(db, "/v1/invoices/outbound/info", {"outbound_invoice_id": identity})
+    return [remote.read(db, "/v1/invoices/outbound/info", {"outbound_invoice_id": identity}, **transport)
             if row is None else row for identity, row in zip(identities, rows)]
 
 
@@ -36,10 +46,11 @@ class OutboundListChanged(ValueError):
     """Concurrent supplier edits require a fresh quote, never an absence result."""
 
 
-def _list_identities(db, params):
-    seen, identities, expected = set(), [], None
+def _list_rows(db, params, *, read=None):
+    read = read or remote.read
+    seen, expected = {}, None
     for page in range(1, 501):
-        data = remote.read(db, "/v1/invoices/outbound/list", {**params, "start_index": page})
+        data = read(db, "/v1/invoices/outbound/list", {**params, "start_index": page})
         if not isinstance(data, dict):
             raise ValueError("出库单列表格式不完整")
         rows, count = data.get("list"), data.get("count")
@@ -57,10 +68,9 @@ def _list_identities(db, params):
                 raise ValueError("出库单列表缺少ID，请重新核对")
             if identity in seen:
                 raise OutboundListChanged("出库单分页已变化，请重新核对")
-            seen.add(identity)
-            identities.append(identity)
+            seen[identity] = row
         if len(seen) == expected:
-            return identities
+            return seen
         if not rows or len(seen) > expected:
             break
     raise ValueError("出库单扫描未完成，未判定关联状态")
@@ -75,7 +85,7 @@ def find_related(db, order):
     # let ordinary updates move IDs across page boundaries during long scans.
     # Keep update-time coverage and cross-customer links; neither is filterable.
     params = dict(start_time=stamp + " 00:00:00", time_type=1, count=100, removed=0)
-    identities = _list_identities(db, params)
+    identities = list(_list_rows(db, params))
     found = []
     for offset in range(0, len(identities), 100):
         batch = identities[offset:offset + 100]
@@ -94,7 +104,7 @@ def find_related(db, order):
                 found.append(detail)
     # A matching count alone misses a delete plus insert. Ordering may change
     # after an ordinary update, but membership must remain complete and equal.
-    if set(_list_identities(db, params)) != set(identities):
+    if set(_list_rows(db, params)) != set(identities):
         raise OutboundListChanged("出库单列表已变化，请重新核对")
     return found
 
