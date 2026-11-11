@@ -10,6 +10,7 @@ import json
 import os
 import platform
 from pathlib import Path
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -26,17 +27,56 @@ UNIT_DIRECTORY = Path("/etc/systemd/system")
 NODE_VERSION = "v22.23.2"
 # Official nodejs.org/dist/v22.23.2/SHASUMS256.txt (linux-x64.tar.xz).
 NODE_SHA256 = "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307"
+OFFICIAL_NPM_REGISTRY = "https://registry.npmjs.org/"
+TENCENT_NPM_URL = re.compile(r"""https?://mirrors\.tencentyun\.com/npm(?=/|[\s'"<>),\]]|$)(?:/[^\s'"<>),\]]*)?""", re.I)
+NPM_RETRYABLE_ERROR = re.compile(
+    r"\b(?:ERR_PNPM_FETCH_504|ETIMEDOUT|ESOCKETTIMEDOUT|ERR_SOCKET_TIMEOUT|ERR_PNPM_FETCH_ETIMEDOUT)\b"
+    r"|\b(?:npm error|status(?: code)?[:=]?|failed with)\s+504\b"
+    r"|\b504\s+gateway\b|\b(?:timed out|socket timeout|network timeout)\b",
+    re.I,
+)
 
 
-def run(args, cwd, capture=False):
+def run(args, cwd, capture=False, *, npm_env=None, capture_diagnostics=False):
     environment = dict(os.environ)
+    for key, value in (npm_env or {}).items():
+        environment.pop(key.upper(), None)
+        environment[key] = value
     executable = Path(str(args[0]))
-    if executable.is_absolute() and executable.name in {"node", "npx"}:
+    if executable.is_absolute() and executable.name in {"node", "npm", "npx"}:
         environment["PATH"] = str(executable.parent) + os.pathsep + environment.get("PATH", "")
-    result = subprocess.run([str(a) for a in args], cwd=cwd, check=True, text=True,
-                            stdout=subprocess.PIPE if capture else sys.stderr,
-                            stderr=sys.stderr, timeout=900, env=environment)
+    result = subprocess.run([str(a) for a in args], cwd=cwd, check=not capture_diagnostics, text=True,
+                            stdout=subprocess.PIPE if capture or capture_diagnostics else sys.stderr,
+                            stderr=subprocess.STDOUT if capture_diagnostics else sys.stderr,
+                            timeout=900, env=environment)
+    if capture_diagnostics:
+        sys.stderr.write(result.stdout)
+        result.check_returncode()
     return result.stdout.strip() if capture else ""
+
+
+def run_pnpm(args, cwd, registry):
+    if not TENCENT_NPM_URL.fullmatch(registry):
+        run(args, cwd, npm_env={"npm_config_registry": registry})
+        return registry
+
+    try:
+        run(args, cwd, npm_env={
+            "npm_config_registry": registry,
+            "npm_config_fetch_timeout": "15000",
+            "npm_config_fetch_retries": "0",
+        }, capture_diagnostics=True)
+        return registry
+    except subprocess.CalledProcessError as error:
+        # npm and pnpm report failures on different streams. Match the failing
+        # URL and status together so errors from other hosts still stop the build.
+        if not any(TENCENT_NPM_URL.search(line) and NPM_RETRYABLE_ERROR.search(TENCENT_NPM_URL.sub("", line))
+                   for line in error.output.splitlines()):
+            raise
+    print("Tencent npm mirror timed out or returned HTTP 504; retrying with the official npm registry.",
+          file=sys.stderr, flush=True)
+    run(args, cwd, npm_env={"npm_config_registry": OFFICIAL_NPM_REGISTRY})
+    return OFFICIAL_NPM_REGISTRY
 
 
 def ensure_node(state):
@@ -149,8 +189,9 @@ def prepare(root, source, python):
             # Do not rebuild the same checkout while its live wrangler watches it.
             raise RuntimeError("Prepared colorwork build changed; use a fresh candidate")
     else:
-        run([*pnpm, "install", "--frozen-lockfile"], folder)
-        run([*pnpm, "build"], folder)
+        registry = run([Path(node).with_name("npm"), "config", "get", "registry"], folder, True)
+        registry = run_pnpm([*pnpm, "install", "--frozen-lockfile"], folder, registry)
+        run_pnpm([*pnpm, "build"], folder, registry)
         built = {"node": list(version), "files": {
             p.relative_to(folder / "dist").as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in (folder / "dist").rglob("*") if p.is_file()}}

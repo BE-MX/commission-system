@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 from unittest.mock import Mock
 
@@ -128,11 +129,13 @@ def test_prepare_only_never_uses_live_store_and_repeat_does_not_rebuild(candidat
     commands = []
     monkeypatch.setattr(release, "ensure_node", lambda _: "/managed/bin/node")
 
-    def command(args, cwd, capture=False):
+    def command(args, cwd, capture=False, **kwargs):
         args = [str(a) for a in args]
         commands.append(args)
         if args[-1] == "--version":
             return release.NODE_VERSION
+        if args[-3:] == ["config", "get", "registry"]:
+            return "https://registry.npmjs.org/"
         if args[-1] == "build":
             output = folder / "dist/server/index.js"
             output.parent.mkdir(parents=True)
@@ -149,6 +152,66 @@ def test_prepare_only_never_uses_live_store_and_repeat_does_not_rebuild(candidat
     assert all(str(state / "validation" / source.name) == cmd[-1] for cmd in migrations)
     assert not any("systemctl" in cmd for cmd in commands)
     assert not (state / "data").exists()
+
+
+@pytest.mark.parametrize(("diagnostic", "fallback"), [
+    ("npm error 504 Gateway Time-out - GET https://mirrors.tencentyun.com/npm/pnpm", True),
+    ("npm error network timeout at: https://mirrors.tencentyun.com/npm/pnpm", True),
+    ("npm error network request to https://mirrors.tencentyun.com/npm/pnpm failed, reason: ETIMEDOUT", True),
+    ("ERR_PNPM_FETCH_504 GET https://mirrors.tencentyun.com/npm/pkg/-/pkg.tgz", True),
+    ("ERR_PNPM_OUTDATED_LOCKFILE Cannot install with frozen-lockfile", False),
+    ("ERR_PNPM_FETCH_403 GET https://mirrors.tencentyun.com/npm/package-504", False),
+    ("npm error 504 Gateway Time-out - GET https://another-registry.invalid/pkg", False),
+])
+def test_colorwork_prepare_falls_back_only_for_tencent_fetch_failures(candidate, monkeypatch, diagnostic, fallback):
+    root, source, state, folder, _ = candidate
+    mirror = "https://mirrors.tencentyun.com/npm"
+    official = "https://registry.npmjs.org/"
+    attempts = []
+    monkeypatch.setenv("npm_config_registry", mirror)
+    monkeypatch.setattr(release, "ensure_node", lambda _: "/managed/bin/node")
+
+    def command(args, *, cwd, check, stdout, stderr, **kwargs):
+        result = subprocess.CompletedProcess(args, 0, "")
+        if args[-1] == "--version":
+            result.stdout = release.NODE_VERSION
+        elif args[-3:] == ["config", "get", "registry"]:
+            result.stdout = mirror
+        elif Path(args[0]).name == "npx":
+            env = {key.lower(): value for key, value in kwargs["env"].items()}
+            registry = env["npm_config_registry"]
+            attempts.append((args[2:], registry))
+            if "install" in args and registry == mirror:
+                if stderr == subprocess.STDOUT:
+                    assert env["npm_config_fetch_timeout"] == "15000"
+                    assert env["npm_config_fetch_retries"] == "0"
+                result.returncode = 1
+                result.stdout = diagnostic if stdout == subprocess.PIPE else None
+            elif args[-1] == "build":
+                output = folder / "dist/server/index.js"
+                output.parent.mkdir(parents=True)
+                output.write_text("built code")
+        elif args[:2] == ["id", "-un"]:
+            result.stdout = "ubuntu"
+        if check:
+            result.check_returncode()
+        return result
+
+    monkeypatch.setattr(release.subprocess, "run", command)
+    install = ["pnpm@10.33.2", "install", "--frozen-lockfile"]
+    if fallback:
+        release.prepare(root, source, "/python")
+        assert attempts == [
+            (install, mirror),
+            (install, official),
+            (["pnpm@10.33.2", "build"], official),
+        ]
+        assert (state / ("build-" + source.name + ".json")).is_file()
+    else:
+        with pytest.raises(subprocess.CalledProcessError):
+            release.prepare(root, source, "/python")
+        assert attempts == [(install, mirror)]
+        assert not (state / ("build-" + source.name + ".json")).exists()
 
 
 def test_downloaded_node_archive_must_match_pinned_digest(tmp_path, monkeypatch):

@@ -321,6 +321,8 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 
 `remote_backend.py` 依次调用 `colorwork_release.py` prepare/activate，自动准备固定 Node/pnpm、构建、受限运行配置、
 隔离 D1 验证、正式 D1/R2 整体备份与迁移、回环运行服务 `ark-colorwork` 及 readiness 检查。
+北京构建使用腾讯 npm 镜像时，单次请求超时设为 15 秒。镜像请求超时或返回 HTTP 504 时，
+当前命令改用 npm 官方源重试一次，本轮后续构建命令沿用官方源。发布日志会记录切换，服务器 npm 配置无需修改。
 `--prepare-only` 不启动服务、不改正式 D1/R2。同候选复用校验后的制品，同成功候选重跑不重启模块。
 
 仅更新 Wrangler 时，从当前北京工作台成功版本切出候选并提交依赖锁文件。用候选工作区的
