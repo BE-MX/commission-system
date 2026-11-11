@@ -1,0 +1,23 @@
+[Unit]
+Description=Leshine Ark Project Radar DingTalk Stream Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=leshine-dsh
+Group=leshine-dsh
+WorkingDirectory=/opt/leshine-ark/current/deploy/project-radar-bot
+EnvironmentFile=/etc/leshine/project-radar-bot.env
+ExecStart=/opt/leshine-ark-project-radar-bot/.venv/bin/python bot.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

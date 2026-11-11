@@ -329,6 +329,21 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 - `ark_ai_presets` — AI 预设（preset_name, provider_id, model, system_prompt, parameters）
 - `ark_ai_call_logs` — AI 调用日志（caller_module, preset_name, tokens, duration_ms, status）
 - `ark_shipping_daily_reports` — 物流日报（user_id, report_date, html_content, short_url, is_pushed）；`(user_id, report_date)` 唯一约束，每日 08:30 自动生成
+- **项目雷达（257 迁移，一期候选）**：目标与个人订阅分离，业务时间均为 naive 北京时间，外部带 offset 时间先换算再落库。
+  - `ark_project_radar_target` — 全局追踪目标；`canonical_url` 保留归一地址，`url_hash` 为唯一键；版本、Release 日期、Star、协议、语言等事实与 AI 解读分列；含 ETag、读取状态、连续失败与扫描配置。
+  - `ark_project_radar_tracked_page` — 网站 changelog/RSS/价格/文档追踪页；`(target_id,url)` 唯一。
+  - `ark_project_radar_update` — Release、tag 或页面文本变化产生的更新；`(target_id,event_key)` 幂等，保留规则/AI 分级、理由、摘要与原文证据。
+  - `ark_project_radar_subscription` — 个人收藏；`(user_id,target_id)` 唯一，含状态、关注级别、标签、笔记 `remark`、字段锁 `overrides`、AI 建议、未读和普通推送冷却；`removed_at` 软删除，30 天内可恢复。
+  - `ark_project_radar_source` — 个人来源，保留原始链接、渠道与输入，`ingest_job_id` 防止任务重试重复追加来源。
+  - `ark_project_radar_snapshot` — 去噪正文压缩快照，保留最近 5 版和文本 hash。
+  - `ark_project_radar_ingest_job` — 持久收录任务，`request_key` 唯一，含候选、结果、错误与重试次数。
+  - `ark_project_radar_dialog` — 每人一个候选/补充/卡片上下文，含过期时间。
+  - `ark_project_radar_user_setting` / `ark_project_radar_global_setting` — 个人早报设置与全局扫描设置。
+  - `ark_project_radar_scan_run` — 每日扫描健康度，记录成功/失败数。
+  - `ark_project_radar_digest` — 早报；`(user_id,digest_date)` 唯一，保存正文、投递状态和钉钉回执。
+  - `ark_project_radar_delivery` — 订阅与更新的个人投递关系；`(subscription_id,update_id)` 唯一，防止重复推送。
+  - `ark_project_radar_outbox` — 钉钉异步消息发件箱，`dedup_key` 唯一，失败可见，不把网络不确定结果冒充成功。
+  - 同迁移为 `project_radar_type`、`ark_module` 字典播种，并在存在启用 Provider 时创建默认关闭的 `project_radar_analyze`、`project_radar_update_classify` 预设；启用前需在 AI 接入管理配置模型。
 - `ark_insight_sources` — 信源配置表（name, source_type, url, keywords JSON, exclude_keywords JSON, proxy_url, css_selector, request_headers JSON, config_json JSON, fetch_interval_hours, is_active, pipeline, sort_order）；source_type 扩展为 `google_alerts_rss/pinterest_scrape/google_trends_rss/amazon_bestseller/competitor_rss/competitor_html/aihot_api/xpoz/competitor_monitor/perplexity/amazon/manual`；config_json 存差异化配置（cron/target_accounts/monitor_fields 等）；keywords 做「包含」过滤，exclude_keywords 做「排除」过滤，proxy_url 供 Google Alerts / Trends / Pinterest 走代理
 - `ark_safety_stock` — 安全库存配置（product_id UNIQUE, safety_stock, lead_time_days, safety_factor, source: 0手动/1公式/2TFT）
 - `ark_stock_daily_reports` — 安全库存日报（report_date UNIQUE, shortage_skus/warning_skus JSON, dingtalk_sent）

@@ -899,6 +899,17 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 - `POST /api/shortlink` — 生成短链（接收 `{"url": "..."}`,返回 `{"short_url": "https://leshine.work/s/xxxxxx"}`）
 - `/s/{code}` — 短链 302 跳转(双查找:先查 `ark_short_links` 命中即跳并 `click_count+1`;落空查 `shipment_tracking.short_code` 跳承运商官网;都未命中跳 `SHORT_LINK_BASE_URL` 兜底页)
 - `/api/ai` — AI 接入管理（Provider/Preset/调用日志 CRUD + 连通性测试）
+- `/api/project-radar` — 项目雷达（一期候选，个人订阅与更新追踪；统一响应信封）
+  - `GET /subscriptions` — 本人订阅列表，支持 `view/keyword/item_type/module/read_state/page/page_size`，需 `project_radar:read`
+  - `POST /ingest` — 创建一个或多个链接的持久收录任务，需 `project_radar:write`；后台读取与 AI 分析异步执行
+  - `GET /jobs/{id}` — 查询本人收录进度；`POST /jobs/{id}/select` — 按 `1 3` 或 `全部` 选择已校验候选，未确认名称不能收录
+  - `GET /subscriptions/{id}` — 本人详情；`PATCH /subscriptions/{id}` — 修改状态、关注级别、标签、笔记与锁定字段；`DELETE /subscriptions/{id}` — 软移出，30 天内可恢复
+  - `POST /subscriptions/{id}/reanalyze` — 后台重新读取与分析，人工 overrides 不被覆盖
+  - `GET /health` — 今日扫描、本人早报和失败发件箱健康状态
+  - `GET /settings` / `PUT /settings` — 个人早报时间、无更新策略与沉睡提醒；`PUT /settings/global` — 全局扫描时间和普通更新冷却，需 `project_radar:admin`
+  - `POST /digest` — 管理员将本人当天早报放入发件箱；每人每天由 `(user_id,digest_date)` 唯一约束保证一条
+  - `GET /public/{subscription_id}?user_id=&token=` — 24 小时签名只读详情，绑定本人和单订阅，不能修改数据；签名无效或越权返回 403
+  - `POST /inbound/dingtalk` — 北京 Stream 侧车机器入站，使用独立 `X-Project-Radar-Token`；业务层再匹配 `users.dingtalk_id` 并校验 `project_radar:write`，消息 ID 幂等
 - `/api/insight` — 方舟洞见（信源配置/情报采集库/行业情报速览/行业日报/AI 工具/内部报告/案例库/周会纪要）
   - `GET /sources` / `POST /sources` / `PUT /sources/{id}` / `DELETE /sources/{id}` — 信源 CRUD（需 `insight:admin`）
   - `GET /sources/{id}` — 信源详情

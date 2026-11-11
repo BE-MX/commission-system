@@ -98,6 +98,17 @@
       "migration_status": "verified-2026-09-26"
     },
     {
+      "host": "beijing",
+      "name": "project-radar-bot",
+      "manager": "systemd",
+      "source": "deploy/project-radar-bot",
+      "runtime": "/opt/leshine-ark/current/deploy/project-radar-bot",
+      "unit": "project-radar-bot.service",
+      "database_writer": false,
+      "write_path": "Authenticated loopback project-radar API; no database credentials",
+      "migration_status": "pending-real-dingtalk-verification"
+    },
+    {
       "host": "singapore",
       "name": "okki-sync",
       "manager": "systemd",

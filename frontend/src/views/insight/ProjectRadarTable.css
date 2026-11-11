@@ -1,0 +1,3 @@
+.radar-page .radar-table .el-table__row { cursor: pointer; }
+.radar-page .radar-table .radar-row-unread td:first-child { box-shadow: inset 3px 0 0 var(--tag-gold-solid); }
+.radar-page .candidate-list .el-checkbox { height: auto; padding: 10px; border: 1px solid var(--border-color); border-radius: 9px; white-space: normal; }

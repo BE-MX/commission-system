@@ -153,6 +153,16 @@ class Settings(BaseSettings):
     TASK_MODULE_SYNC_ENABLED: bool = False
     DOMESTIC_REVIEW_NOTICE_BASE_URL: str = "https://leshine.cloud"
     ANNOUNCEMENT_PUBLIC_BASE_URL: str = "https://leshine.cloud"
+    PROJECT_RADAR_ENABLED: bool = False
+    PROJECT_RADAR_HTTP_PROXY: str = ""
+    PROJECT_RADAR_X_PROXY: str = ""
+    PROJECT_RADAR_GITHUB_TOKEN: str = Field(default="", repr=False)
+    PROJECT_RADAR_INBOUND_TOKEN: str = Field(default="", repr=False)
+    PROJECT_RADAR_DETAIL_SECRET: str = Field(default="", repr=False)
+    PROJECT_RADAR_PUBLIC_BASE_URL: str = "https://leshine.cloud"
+    PROJECT_RADAR_DINGTALK_APP_KEY: str = ""
+    PROJECT_RADAR_DINGTALK_APP_SECRET: str = Field(default="", repr=False)
+    PROJECT_RADAR_DINGTALK_ROBOT_CODE: str = ""
 
     # ── 智能获客公海背调批次 ─────────────────────────────
     # 默认关闭，完成 105 迁移并确认业务库只读账号可查询后再开启。

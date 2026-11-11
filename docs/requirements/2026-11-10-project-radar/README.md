@@ -1,6 +1,8 @@
 # 项目雷达 · 需求与功能设计
 
-日期：2026-11-10　状态：设计提案 + 高保真原型，尚未实现；已经过一轮独立审查并修订（见 §11）。原型：[prototype/index.html](prototype/index.html)，纯前端演示，数据为样例，版本号与日期不代表真实项目现状。
+日期：2026-11-10　状态：一期代码候选（本地实现与隔离验证完成，未部署）；设计已经过一轮独立审查并修订（见 §11）。原型：[prototype/index.html](prototype/index.html)，纯前端演示，数据为样例，版本号与日期不代表真实项目现状。
+
+> 实施说明：后端位于 `backend/app/project_radar/`，主站页面为 `/insight/project-radar`，迁移为 `257_project_radar`。实际表名按仓库命名法统一为 `ark_project_radar_*`，个人笔记 ORM/数据库字段为 `remark`，API 仍返回 `note`。二期 agent 兜底、GitHub Star、MCP 收录和工具速递联动不在本次范围。真实钉钉 Stream、GitHub/X 网络、20 条线索样本和生产迁移尚需部署前验收，不能以隔离测试替代。
 
 ## 0. 一句话
 

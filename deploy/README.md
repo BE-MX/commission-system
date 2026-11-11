@@ -459,3 +459,13 @@ For an inspected no-DDL failure that has restored the previous clean checkout/st
 
 
 Windows journal replacement retries only transient WinError 5/32/33 on the same atomic rename for a bounded 2.25 seconds; it never replays a deployment phase. A persistent denial preserves the previous JSON and candidate `.next` for inspection. Readiness recovery also accepts inspected failed checkpoints with exactly `office` or `office, beijing-backend` completed, only when the installed candidate and running-service receipt match. It re-runs the normal publisher under the original release binding rather than skipping unverified phases. Recovery receipts include the inspected journal hash so a new reviewed checkpoint never overwrites earlier evidence.
+
+
+## 项目雷达 Stream 侧车（一期候选，未部署）
+
+`deploy/project-radar-bot/` 是北京单活的轻量 Stream 转发服务，仅把单聊文本转发到本机 `POST /api/project-radar/inbound/dingtalk`，业务与 AI 均在方舟后端执行。依赖锁定在侧车自己的 `requirements.txt`，不污染后端环境；`environment.example` 只列变量名，实际凭据放 `/etc/leshine/project-radar-bot.env`，不得写入仓库或复制 `.env`。
+
+- 服务登记：`platforms.json` 的 `project-radar-bot`；unit 模板：`deploy/systemd/project-radar-bot.service`。
+- 后端先完成 `257_project_radar` 迁移，配置独立入站 token、详情签名密钥和雷达机器人 `app_key/app_secret/robotCode`，并给用户同步钉钉 ID、分配 `project_radar:write`。
+- 调度默认 `PROJECT_RADAR_ENABLED=false`。只有真实 Stream 回执、异步卡片、每日扫描/早报和失败告警验收后才开启；开启前分别实测办公室/北京到 GitHub API 与 X 嵌入接口的直连或代理。
+- 普通应用发布会携带侧车源码和 unit 模板，但目前没有自动安装或启用该常驻服务的授权与发布步骤；不得把登记视为已部署。安装、单活切换、真实消息验收与回滚仍需单独候选发布确认。

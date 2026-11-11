@@ -38,6 +38,7 @@ from app.design_image import models as _design_image_models  # noqa: F401
 from app.ai_chat import models as _ai_chat_models  # noqa: F401
 from app.sales_automation import models as _sales_automation_models  # noqa: F401
 from app.insight import models as _insight_models  # noqa: F401
+from app.project_radar import models as _project_radar_models  # noqa: F401
 from app.customer_media import models as _customer_media_models  # noqa: F401
 from app.agent_runtime import models as _agent_runtime_models  # noqa: F401
 from app.semifinished import models as _semifinished_models  # noqa: F401

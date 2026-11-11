@@ -1,5 +1,5 @@
 {
-  "source_sha256": "61382a02ac7e46c2323642eebf9de6827a3cc2f55630da005970d95bf39e8310",
+  "source_sha256": "20ac6b88d4816627557da5468ddb7309dc1e438f12d651f92193c21dffa170e2",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -2571,6 +2571,9 @@
           "insight_case:write",
           "insight_minutes:read",
           "insight_minutes:write",
+          "project_radar:read",
+          "project_radar:write",
+          "project_radar:admin",
           "training:read",
           "training:write",
           "training:admin"
@@ -2596,6 +2599,9 @@
           "insight_case:write",
           "insight_minutes:read",
           "insight_minutes:write",
+          "project_radar:read",
+          "project_radar:write",
+          "project_radar:admin",
           "training:read",
           "training:write",
           "training:admin"
@@ -2621,6 +2627,9 @@
           "insight_case:write",
           "insight_minutes:read",
           "insight_minutes:write",
+          "project_radar:read",
+          "project_radar:write",
+          "project_radar:admin",
           "training:read",
           "training:write",
           "training:admin"
@@ -2646,6 +2655,9 @@
           "insight_case:write",
           "insight_minutes:read",
           "insight_minutes:write",
+          "project_radar:read",
+          "project_radar:write",
+          "project_radar:admin",
           "training:read",
           "training:write",
           "training:admin"
@@ -2671,6 +2683,37 @@
           "insight_case:write",
           "insight_minutes:read",
           "insight_minutes:write",
+          "project_radar:read",
+          "project_radar:write",
+          "project_radar:admin",
+          "training:read",
+          "training:write",
+          "training:admin"
+        ]
+      }
+    ],
+    "ProjectRadar": [
+      {
+        "permission": "project_radar:read"
+      },
+      {
+        "permission": "project_radar:read"
+      },
+      {
+        "anyPermission": [
+          "insight:read",
+          "insight:internal_read",
+          "insight:admin",
+          "insight_library:read",
+          "insight_daily:read",
+          "insight_ai_tools:read",
+          "insight_case:read",
+          "insight_case:write",
+          "insight_minutes:read",
+          "insight_minutes:write",
+          "project_radar:read",
+          "project_radar:write",
+          "project_radar:admin",
           "training:read",
           "training:write",
           "training:admin"
@@ -2699,6 +2742,9 @@
           "insight_case:write",
           "insight_minutes:read",
           "insight_minutes:write",
+          "project_radar:read",
+          "project_radar:write",
+          "project_radar:admin",
           "training:read",
           "training:write",
           "training:admin"
@@ -2732,6 +2778,9 @@
           "insight_case:write",
           "insight_minutes:read",
           "insight_minutes:write",
+          "project_radar:read",
+          "project_radar:write",
+          "project_radar:admin",
           "training:read",
           "training:write",
           "training:admin"
@@ -2765,6 +2814,9 @@
           "insight_case:write",
           "insight_minutes:read",
           "insight_minutes:write",
+          "project_radar:read",
+          "project_radar:write",
+          "project_radar:admin",
           "training:read",
           "training:write",
           "training:admin"
@@ -2790,6 +2842,9 @@
           "insight_case:write",
           "insight_minutes:read",
           "insight_minutes:write",
+          "project_radar:read",
+          "project_radar:write",
+          "project_radar:admin",
           "training:read",
           "training:write",
           "training:admin"

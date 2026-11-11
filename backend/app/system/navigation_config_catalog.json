@@ -1,5 +1,5 @@
 {
-  "source_sha256": "61382a02ac7e46c2323642eebf9de6827a3cc2f55630da005970d95bf39e8310",
+  "source_sha256": "20ac6b88d4816627557da5468ddb7309dc1e438f12d651f92193c21dffa170e2",
   "nodes": [
     {
       "id": "customerPortal",
@@ -2362,7 +2362,7 @@
       "titleSync": false,
       "path": "/training/digests",
       "external": false,
-      "rule": "training:read / training:write / training:admin / training:read / training:write / training:admin / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / training:read / training:write / training:admin",
+      "rule": "training:read / training:write / training:admin / training:read / training:write / training:admin / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / project_radar:read / project_radar:write / project_radar:admin / training:read / training:write / training:admin",
       "business": "",
       "phase": false
     },
@@ -2382,7 +2382,7 @@
       "titleSync": false,
       "path": "/insight/intelligence",
       "external": false,
-      "rule": "insight:read / insight:read / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / training:read / training:write / training:admin",
+      "rule": "insight:read / insight:read / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / project_radar:read / project_radar:write / project_radar:admin / training:read / training:write / training:admin",
       "business": "",
       "phase": false
     },
@@ -2402,7 +2402,7 @@
       "titleSync": false,
       "path": "/insight/library",
       "external": false,
-      "rule": "insight_library:read / insight_library:read / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / training:read / training:write / training:admin",
+      "rule": "insight_library:read / insight_library:read / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / project_radar:read / project_radar:write / project_radar:admin / training:read / training:write / training:admin",
       "business": "",
       "phase": false
     },
@@ -2422,7 +2422,7 @@
       "titleSync": false,
       "path": "/insight/industry-daily",
       "external": false,
-      "rule": "insight_daily:read / insight_daily:read / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / training:read / training:write / training:admin",
+      "rule": "insight_daily:read / insight_daily:read / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / project_radar:read / project_radar:write / project_radar:admin / training:read / training:write / training:admin",
       "business": "",
       "phase": false
     },
@@ -2442,7 +2442,27 @@
       "titleSync": false,
       "path": "/insight/ai-tools",
       "external": false,
-      "rule": "insight_ai_tools:read / insight_ai_tools:read / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / training:read / training:write / training:admin",
+      "rule": "insight_ai_tools:read / insight_ai_tools:read / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / project_radar:read / project_radar:write / project_radar:admin / training:read / training:write / training:admin",
+      "business": "",
+      "phase": false
+    },
+    {
+      "id": "ProjectRadar",
+      "kind": "page",
+      "label": "项目雷达",
+      "icon": "Aim",
+      "parent": "insight",
+      "order": 25,
+      "visible": true,
+      "builtin": true,
+      "protected": false,
+      "badge": "",
+      "badgePlace": "text",
+      "badgeTone": "gold",
+      "titleSync": false,
+      "path": "/insight/project-radar",
+      "external": false,
+      "rule": "project_radar:read / project_radar:read / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / project_radar:read / project_radar:write / project_radar:admin / training:read / training:write / training:admin",
       "business": "",
       "phase": false
     },
@@ -2462,7 +2482,7 @@
       "titleSync": false,
       "path": "/insight/reports",
       "external": false,
-      "rule": "insight:internal_read / insight:internal_read / insight:admin / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / training:read / training:write / training:admin",
+      "rule": "insight:internal_read / insight:internal_read / insight:admin / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / project_radar:read / project_radar:write / project_radar:admin / training:read / training:write / training:admin",
       "business": "",
       "phase": false
     },
@@ -2482,7 +2502,7 @@
       "titleSync": false,
       "path": "/insight/cases",
       "external": false,
-      "rule": "insight_case:read / insight_case:write / insight:admin / insight_case:read / insight_case:write / insight:admin / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / training:read / training:write / training:admin",
+      "rule": "insight_case:read / insight_case:write / insight:admin / insight_case:read / insight_case:write / insight:admin / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / project_radar:read / project_radar:write / project_radar:admin / training:read / training:write / training:admin",
       "business": "",
       "phase": false
     },
@@ -2502,7 +2522,7 @@
       "titleSync": false,
       "path": "/insight/minutes",
       "external": false,
-      "rule": "insight_minutes:read / insight_minutes:write / insight:admin / insight_minutes:read / insight_minutes:write / insight:admin / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / training:read / training:write / training:admin",
+      "rule": "insight_minutes:read / insight_minutes:write / insight:admin / insight_minutes:read / insight_minutes:write / insight:admin / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / project_radar:read / project_radar:write / project_radar:admin / training:read / training:write / training:admin",
       "business": "",
       "phase": false
     },
@@ -2522,7 +2542,7 @@
       "titleSync": false,
       "path": "/insight/sources",
       "external": false,
-      "rule": "insight:admin / insight:admin / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / training:read / training:write / training:admin",
+      "rule": "insight:admin / insight:admin / insight:read / insight:internal_read / insight:admin / insight_library:read / insight_daily:read / insight_ai_tools:read / insight_case:read / insight_case:write / insight_minutes:read / insight_minutes:write / project_radar:read / project_radar:write / project_radar:admin / training:read / training:write / training:admin",
       "business": "",
       "phase": false
     },

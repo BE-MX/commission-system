@@ -42,7 +42,9 @@ AUTH_EXEMPT_FILES = ("mini/router.py", "auth/router.py", "api/short_link.py", "s
                      "customer_image/public_router.py")  # 客户生图：Invite token 即凭证，每请求回查 active invitation
 # 无鉴权豁免的端点路径关键词
 AUTH_EXEMPT_ROUTES = ("share", "callback", "login", "health", "print/", "entry",
-                      "upload/{token}")  # entry=PM门牌换token(限速+防枚举)；upload/{token}=展会扫码上传手机页，令牌即凭证
+                      "upload/{token}",  # entry=PM门牌换token(限速+防枚举)；upload/{token}=展会扫码上传手机页，令牌即凭证
+                      "public/{subscription_id}",  # 项目雷达：24小时签名绑定本人和单订阅的只读详情
+                      "inbound/dingtalk")  # 项目雷达：独立机器 token + 钉钉 ID 与写权限逐条校验
 
 FORBIDDEN_EXPO_WORDS = ["便宜", "划算", "性价比", "打折", "薅羊毛"]
 

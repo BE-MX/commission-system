@@ -448,3 +448,18 @@ Linux 北京默认空网关，使用本地 workerd；代理标记阻断误配置
 ### 办公室内网 HTTPS（2026-09-16 已验证）
 
 `https://lan.leshine.cloud` 解析到 192.168.100.3（2026-09-20 已同步公共 DNS、办公室网关 DNS、Caddy 监听与防火墙），由独立 NSSM ArkOfficeHttps/Caddy 提供443并代理现有8001。仅放行192.168.100.0/23，未新增公网端口映射；原业务服务不变。证书到期2026-12-15，手动DNS-01续期，尚无自动续期。配置及恢复约束见 deploy/README.md 的办公室内网HTTPS专项入口。证书健康和匿名鉴权已验证，物理手机扫码未验收；上述 2026-09-20 记录当时未覆盖 station 接口；后续应用发布见交接文档，不能由 HTTPS 启用推断物理手机扫码已验收。
+
+
+## 项目雷达（一期候选，未部署）
+
+项目雷达由 `backend/app/project_radar/` 自包含领域模块实现，目标与个人订阅分表，个人笔记、状态和字段锁互不可见。Web 与钉钉共用持久收录任务；固定程序先检测 Release/tag/changelog/追踪页变化，`app.ai.service.chat` 只做解读与一级以内复核，事实版本与日期不交给模型生成。所有用户 URL 和每一跳重定向经共享公网校验，限制协议、端口、5MB、15 秒与最多 5 跳。
+
+```text
+钉钉单聊 → 北京 project-radar-bot（Stream，仅转发）
+          → 北京 FastAPI inbound（机器 token + 钉钉 ID + 写权限）
+          → 持久 ingest job / 后台读取与 AI / 钉钉 outbox
+办公室单活 Scheduler → 每日扫描与健康记录 → 个人早报 → 钉钉 outbox
+共享 MySQL：ark_project_radar_*（目标、订阅、更新、投递与健康）
+```
+
+签名详情通过主站公开路由 `/insight/project-radar/shared/:id` 和单订阅只读 API 提供，24 小时绑定本人，不能修改数据。调度默认关闭；agent 兜底、GitHub Star、MCP 与团队共享属于后续阶段。部署登记见 `deploy/platforms.json`，真实外部连通性与生产状态以交接记录为准。

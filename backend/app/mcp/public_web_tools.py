@@ -70,11 +70,18 @@ def _validate_public_url(url: str) -> str:
     if host == "localhost" or host.endswith((".localhost", ".local", ".internal")):
         raise ValueError("目标地址不是公开互联网主机")
     try:
-        addresses = {
-            item[4][0] for item in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
-        }
-    except socket.gaierror as exc:
-        raise ValueError("目标域名无法解析") from exc
+        literal_address = ipaddress.ip_address(host)
+    except ValueError:
+        literal_address = None
+    if literal_address is not None:
+        addresses = {str(literal_address)}
+    else:
+        try:
+            addresses = {
+                item[4][0] for item in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+            }
+        except socket.gaierror as exc:
+            raise ValueError("目标域名无法解析") from exc
     if not addresses or any(not _public_ip(item) for item in addresses):
         raise ValueError("目标域名解析到非公开地址")
     return parsed.geturl()

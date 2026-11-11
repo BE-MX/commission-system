@@ -44,6 +44,12 @@ const routes = [
   },
   ...fullscreenRoutes,
   {
+    path: '/insight/project-radar/shared/:subscriptionId',
+    name: 'ProjectRadarPublicDetail',
+    component: () => import('@/views/insight/ProjectRadarPublicDetail.vue'),
+    meta: { title: '项目雷达详情', public: true },
+  },
+  {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/auth/LoginPage.vue'),

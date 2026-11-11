@@ -103,6 +103,10 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
     from app.tracking.polling_service import poll_active_shipments
     from app.tracking.staging_service import scan_staging
     from app.insight.scheduler import generate_industry_daily, generate_ai_tools, generate_intelligence_overview
+    from app.project_radar.scheduler import scan_job as project_radar_scan_job
+    from app.project_radar.scheduler import digest_job as project_radar_digest_job
+    from app.project_radar.scheduler import outbox_job as project_radar_outbox_job
+    from app.project_radar.scheduler import ingest_retry_job as project_radar_ingest_retry_job
     from app.stock.scheduler import generate_stock_daily_report
     from app.color.social_extract_service import extract_social_colors, aggregate_sales_by_color
     from app.whatsapp.scheduler import sync_whatsapp_accounts_job, sync_whatsapp_events_job
@@ -362,6 +366,19 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
         trigger="cron", hour=8, minute=40,
         id=JOB_INSIGHT_INTELLIGENCE, replace_existing=True,
     )
+    if settings.PROJECT_RADAR_ENABLED:
+        scheduler.add_job(project_radar_scan_job, trigger="interval", minutes=1,
+                          id="project_radar_scan", replace_existing=True, max_instances=1,
+                          coalesce=True, misfire_grace_time=3600)
+        scheduler.add_job(project_radar_digest_job, trigger="interval", minutes=1,
+                          id="project_radar_digest", replace_existing=True, max_instances=1,
+                          coalesce=True, misfire_grace_time=600)
+        scheduler.add_job(project_radar_outbox_job, trigger="interval", seconds=10,
+                          id="project_radar_outbox", replace_existing=True, max_instances=1,
+                          coalesce=True, misfire_grace_time=60)
+        scheduler.add_job(project_radar_ingest_retry_job, trigger="interval", minutes=5,
+                          id="project_radar_ingest_retry", replace_existing=True, max_instances=1,
+                          coalesce=True, misfire_grace_time=300)
     scheduler.add_job(
         generate_stock_daily_report,
         trigger="cron", hour=8, minute=30,

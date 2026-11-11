@@ -155,6 +155,7 @@ export const MENU_GROUPS = {
       'insight_library:read', 'insight_daily:read', 'insight_ai_tools:read',
       'insight_case:read', 'insight_case:write',
       'insight_minutes:read', 'insight_minutes:write',
+      'project_radar:read', 'project_radar:write', 'project_radar:admin',
       'training:read', 'training:write', 'training:admin',
     ],
   },
@@ -1330,6 +1331,13 @@ export const NAV_ENTRIES = [
       group: 'insight', title: 'AI 工具速递', icon: MagicStick, order: 20,
       permission: 'insight_ai_tools:read',
     },
+  },
+  {
+    path: '/insight/project-radar',
+    name: 'ProjectRadar',
+    component: () => import('@/views/insight/ProjectRadar.vue'),
+    title: '项目雷达', permission: 'project_radar:read',
+    menu: { group: 'insight', title: '项目雷达', icon: Aim, order: 25, permission: 'project_radar:read' },
   },
   {
     path: '/insight/reports',

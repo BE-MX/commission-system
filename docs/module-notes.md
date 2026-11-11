@@ -70,6 +70,7 @@ UI 注意：从 DetailDrawer 打开的核查弹窗必须 append-to-body，避免
 | 系统管理 | `role:read` / `role:write` / `role:delete` | 角色管理 |
 | AI 接入 | `ai:admin` / `ai:invoke` | AI 管理/调用 |
 | 方舟洞见 | `insight:read` / `insight:write` / `insight:internal_read` / `insight:admin` | 查看/上传/内部报告/管理 |
+| 项目雷达 | `project_radar:read` / `project_radar:write` / `project_radar:admin` / `project_radar:read_all` | 本人查看/收录编辑/全局管理/全部订阅数据范围（二期） |
 | 备货管理 | `stock:read` / `stock:write` / `stock:admin` | 查看/设置/管理 |
 | 库存色块图 | `colorwork_download:read` / `colorwork_edit:read` / `colorwork_master:read` | 库存图直接下载/实时库存图修改/原始库存图文件（三个页面独立授权） |
 | 素材管理 | `asset:read` / `asset:write` / `asset:delete` / `asset:admin` | 查看素材库/上传编辑/删除/标签维度管理 |
@@ -1367,3 +1368,13 @@ Agent 委派只允许现有 customer_order_copilot 的只读准备型工具。re
 ### AI 运行配置维护（2026-11-09）
 
 提供商运行参数已迁入 `runtime_config`，预设可用 `transport` 覆盖；图片/知识库的指纹与冻结配置必须包含新增的实际调用字段。图片摘参重试与网络重试共用尝试次数预算，异常计数累计此前已发请求。知识库校验指纹后冻结同一份配置供正文及语义核验使用，租约按该快照的有效超时延长。生图系统提示词现会参与生成/编辑请求并纳入指纹。启动种子只创建缺失配置，不再覆写已有提示词。运维迁移约束与前台字段见 [参数维护交付报告](reports/2026-11-09-ai-admin-settings.md)。
+
+
+## 项目雷达一期候选（2026-11-11，未部署）
+
+- 领域模块 `backend/app/project_radar/` 分为 ingest / resolve / fetcher / scan / analysis / classify / digest / dingtalk_inbound / dingtalk_sender，Web 与钉钉共用持久任务。全局目标与个人订阅分表，个人 `remark`、状态和 `overrides` 不共享。
+- 外部事实仅取 GitHub/网页数据源；AI preset 为 `project_radar_analyze`、`project_radar_update_classify`，类型与方舟模块在运行时从 `sys_dict` 注入 user message。两个 preset 默认关闭，启用前在 AI 接入管理配置模型。
+- 扫描只认 Release/tag/changelog/RSS/追踪页文本差异，提交与 Star 不生成更新、不调用 AI。普通关注只推关键，重点推关键+普通，普通更新 7 天冷却，已采用只推破坏性与安全，静默不推。每人每天一条早报由数据库唯一约束保证。
+- 抓取统一走 `app/core/public_fetch.py` 与既有 `_validate_public_url/_validate_peer`，每跳重定向复验，限 5 跳、5MB、15 秒；代理与 GitHub token 走 Settings。失败进入 `ark_project_radar_scan_run` 和现有 APScheduler `ark_job_runs`，不等于“今日无更新”。
+- 钉钉 Stream 侧车在 `deploy/project-radar-bot/`，只转发，不持数据库凭据。机器入站 token 与详情签名密钥独立配置；公开详情仅 24 小时绑定本人单订阅的只读数据。
+- 真实钉钉收发、GitHub/X 网络与代理、20 条线索样本和生产 MySQL 迁移尚未验收。agent 兜底、GitHub Star、MCP、AI 工具速递联动、团队共享仍属二期，不在本次完成声明内。
