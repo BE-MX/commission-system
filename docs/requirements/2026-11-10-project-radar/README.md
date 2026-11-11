@@ -281,7 +281,7 @@ AI 解读字段存在 target 上，所有人共享；你改过的版本存在自
 - **抓取层复用洞见**：`insight/fetcher.py` 已有带代理的 HTML 和 RSS 抓取。实施时把它抽成共享工具，加上 §9.4 的安全校验，两个模块共用；不另写第二套。失败计数沿用洞见信源的 `consecutive_failures` / `last_error` 模式。
 - **与「AI 工具速递」的边界**：速递是「外面新出了什么」，面向所有人，每天一份日报；雷达是「我关注的东西变了什么」，按人订阅。速递条目上加「收进雷达」按钮，两者在 08:00 和 08:35 分开推送，内容不重复。
 - 前端：`views/insight/ProjectRadar.vue` + `composables/useProjectRadar.js`；navigation.js 新增一条入口（红线 10）；列表参照 ExpoLeads 标杆（红线 14）。
-- AI 全部走 `app.ai.service.chat`。后台新增两个 preset：`project_radar_analyze`、`project_radar_update_classify`。类型与模块的值域运行时从字典注入 user message（红线 7）。
+- AI 全部走 `app.ai.service.chat`。后台新增两个 preset：`ark_project_radar_analyze`、`ark_project_radar_update_classify`。类型与模块的值域运行时从字典注入 user message（红线 7）。
 
 ### 9.2 各环节运行位置
 

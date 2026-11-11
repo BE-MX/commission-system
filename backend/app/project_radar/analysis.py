@@ -14,6 +14,7 @@ from app.project_radar.models import RadarSubscription
 from app.system.models import SysDict
 
 logger = logging.getLogger("commission.project_radar.ai")
+ANALYZE_PRESET = "ark_project_radar_analyze"
 
 
 def _json_value(text: str):
@@ -59,7 +60,7 @@ def analyze_target(db: Session, target, text: str, *, user_id: int | None = None
     }
     try:
         result = chat(
-            db=db, preset_name="project_radar_analyze",
+            db=db, preset_name=ANALYZE_PRESET,
             messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
             caller_module="project_radar", caller_user_id=user_id, snapshot_mode="metadata",
         )
@@ -108,7 +109,7 @@ def classify_update(db: Session, *, from_version, to_version, release_notes, lev
     }
     try:
         result = chat(
-            db=db, preset_name="project_radar_update_classify",
+            db=db, preset_name="ark_project_radar_update_classify",
             messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
             caller_module="project_radar", caller_user_id=user_id, snapshot_mode="metadata",
         )

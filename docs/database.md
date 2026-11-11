@@ -343,7 +343,7 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
   - `ark_project_radar_digest` — 早报；`(user_id,digest_date)` 唯一，保存正文、投递状态和钉钉回执。
   - `ark_project_radar_delivery` — 订阅与更新的个人投递关系；`(subscription_id,update_id)` 唯一，防止重复推送。
   - `ark_project_radar_outbox` — 钉钉异步消息发件箱，`dedup_key` 唯一，失败可见，不把网络不确定结果冒充成功。
-  - 同迁移为 `project_radar_type`、`ark_module` 字典播种，并在存在启用 Provider 时创建默认关闭的 `project_radar_analyze`、`project_radar_update_classify` 预设；启用前需在 AI 接入管理配置模型。
+  - 同迁移为 `project_radar_type`、`ark_module` 字典播种，并在存在启用 Provider 时创建默认关闭的 `ark_project_radar_analyze`、`ark_project_radar_update_classify` 预设；启用前需在 AI 接入管理配置模型。
 - `ark_insight_sources` — 信源配置表（name, source_type, url, keywords JSON, exclude_keywords JSON, proxy_url, css_selector, request_headers JSON, config_json JSON, fetch_interval_hours, is_active, pipeline, sort_order）；source_type 扩展为 `google_alerts_rss/pinterest_scrape/google_trends_rss/amazon_bestseller/competitor_rss/competitor_html/aihot_api/xpoz/competitor_monitor/perplexity/amazon/manual`；config_json 存差异化配置（cron/target_accounts/monitor_fields 等）；keywords 做「包含」过滤，exclude_keywords 做「排除」过滤，proxy_url 供 Google Alerts / Trends / Pinterest 走代理
 - `ark_safety_stock` — 安全库存配置（product_id UNIQUE, safety_stock, lead_time_days, safety_factor, source: 0手动/1公式/2TFT）
 - `ark_stock_daily_reports` — 安全库存日报（report_date UNIQUE, shortage_skus/warning_skus JSON, dingtalk_sent）
