@@ -139,10 +139,16 @@ def initialize_target(db: Session, target, fetched, *, analyzer=None):
         target.release_etag = fetched.get("release_etag")
     else:
         target.title = fetched.get("title") or target.title
-        for page in fetched.get("tracked_pages") or []:
-            exists = db.query(RadarTrackedPage).filter_by(target_id=target.id, url=page["url"]).first()
-            if not exists:
-                db.add(RadarTrackedPage(target_id=target.id, url=page["url"], page_kind=page["page_kind"]))
+        pages = fetched.get("tracked_pages") or []
+        if pages:
+            known_hashes = {url_hash for (url_hash,) in db.query(RadarTrackedPage.url_hash).filter_by(target_id=target.id)}
+            for page in pages:
+                url = page["url"]
+                url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
+                if url_hash in known_hashes:
+                    continue
+                db.add(RadarTrackedPage(target_id=target.id, url=url, url_hash=url_hash, page_kind=page["page_kind"]))
+                known_hashes.add(url_hash)
         if not target.last_updated_at:
             target.last_updated_at = beijing_now()
     target.read_state = "ok" if (fetched.get("text") or target.kind == "repo") else "limited"

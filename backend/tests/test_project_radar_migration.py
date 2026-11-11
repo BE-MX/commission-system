@@ -36,13 +36,21 @@ def test_project_radar_migration_creates_seeded_tables_in_foreign_key_order():
         connection.execute(sa.text("INSERT INTO ark_ai_providers (id, is_enabled) VALUES (1, 1)"))
         with Operations.context(MigrationContext.configure(connection)):
             migration.upgrade()
-        tables = set(sa.inspect(connection).get_table_names())
+        inspector = sa.inspect(connection)
+        tables = set(inspector.get_table_names())
         expected = {f"ark_project_radar_{name}" for name in (
             "target", "tracked_page", "update", "subscription", "source", "snapshot", "ingest_job",
             "dialog", "user_setting", "global_setting", "scan_run", "digest", "delivery", "outbox",
         )}
         assert expected <= tables
-        columns = {column["name"] for column in sa.inspect(connection).get_columns("ark_project_radar_subscription")}
+        tracked_page = "ark_project_radar_tracked_page"
+        tracked_columns = {column["name"]: column for column in inspector.get_columns(tracked_page)}
+        assert tracked_columns["url"]["type"].length == 1024
+        assert tracked_columns["url_hash"]["type"].length == 64
+        assert ["target_id", "url_hash"] in [
+            key["column_names"] for key in inspector.get_unique_constraints(tracked_page)
+        ]
+        columns = {column["name"] for column in inspector.get_columns("ark_project_radar_subscription")}
         assert "remark" in columns and "note" not in columns
         assert connection.scalar(sa.text("SELECT COUNT(*) FROM sys_dict WHERE type IN ('project_radar_type', 'ark_module')")) == 20
         presets = connection.execute(sa.text("SELECT preset_name, is_enabled FROM ark_ai_presets")).all()

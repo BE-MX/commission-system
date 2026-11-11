@@ -19,7 +19,7 @@ from app.invoice.models import CustomerProfile, Invoice, InvoiceDelegateGrant, I
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
 from app.invoice.shipping_policy import validate_payment_channel
 from app.invoice.screenshot_token import verify_preview_token
-from app.invoice.screenshot_source import external_source_key, is_external_source_key
+from app.invoice.screenshot_source import external_source_key, is_external_source_key, matched_order_id
 from app.invoice.time_utils import beijing_now, to_beijing_time
 
 _HEADER_FIELDS = (
@@ -322,9 +322,7 @@ def _own_okki_order_id(invoice: Invoice) -> str | None:
     """
     if invoice.xiaoman_order_id:
         return str(invoice.xiaoman_order_id)
-    if invoice.source_type == "okki_screenshot" and not is_external_source_key(invoice.source_order_id):
-        return str(invoice.source_order_id) if invoice.source_order_id else None
-    return None
+    return matched_order_id(invoice.source_type, invoice.source_order_id)
 
 
 def resolve_okki_flags(db: Session, invoice: Invoice) -> dict:

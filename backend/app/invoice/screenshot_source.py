@@ -22,3 +22,9 @@ def external_source_key(customer_id, order_name) -> str | None:
 
 def is_external_source_key(value) -> bool:
     return str(value or "").startswith(EXTERNAL_SOURCE_PREFIX)
+
+
+def matched_order_id(source_type, source_order_id) -> str | None:
+    if source_type == "okki_screenshot" and source_order_id and not is_external_source_key(source_order_id):
+        return str(source_order_id)
+    return None

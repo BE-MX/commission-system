@@ -57,13 +57,14 @@ class RadarTrackedPage(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     target_id = Column(Integer, ForeignKey("ark_project_radar_target.id", ondelete="CASCADE"), nullable=False, comment="追踪目标ID")
     url = Column(String(1024), nullable=False, comment="追踪页地址")
+    url_hash = Column(String(64), nullable=False, comment="完整追踪页地址SHA-256")
     page_kind = Column(String(16), nullable=False, default="changelog", comment="页面类型changelog/rss/pricing/docs")
     enabled = Column(Boolean, nullable=False, default=True, comment="是否启用")
     etag = Column(String(255), nullable=True, comment="页面HTTP ETag")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
 
     __table_args__ = (
-        UniqueConstraint("target_id", "url", name="uq_radar_page_target_url"),
+        UniqueConstraint("target_id", "url_hash", name="uq_radar_page_target_url_hash"),
         Index("idx_radar_page_target", "target_id", "enabled"),
         {"comment": "项目雷达-网站追踪页"},
     )

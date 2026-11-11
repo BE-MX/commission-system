@@ -66,11 +66,12 @@ def upgrade():
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("target_id", sa.Integer(), sa.ForeignKey("ark_project_radar_target.id", ondelete="CASCADE"), nullable=False),
         sa.Column("url", sa.String(1024), nullable=False),
+        sa.Column("url_hash", sa.String(64), nullable=False),
         sa.Column("page_kind", sa.String(16), nullable=False, server_default="changelog"),
         sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("etag", sa.String(255), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.UniqueConstraint("target_id", "url", name="uq_radar_page_target_url"),
+        sa.UniqueConstraint("target_id", "url_hash", name="uq_radar_page_target_url_hash"),
         sa.Index("idx_radar_page_target", "target_id", "enabled"),
         comment="项目雷达-网站追踪页",
     )

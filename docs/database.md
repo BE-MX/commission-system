@@ -331,7 +331,7 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 - `ark_shipping_daily_reports` — 物流日报（user_id, report_date, html_content, short_url, is_pushed）；`(user_id, report_date)` 唯一约束，每日 08:30 自动生成
 - **项目雷达（257 迁移，一期候选）**：目标与个人订阅分离，业务时间均为 naive 北京时间，外部带 offset 时间先换算再落库。
   - `ark_project_radar_target` — 全局追踪目标；`canonical_url` 保留归一地址，`url_hash` 为唯一键；版本、Release 日期、Star、协议、语言等事实与 AI 解读分列；含 ETag、读取状态、连续失败与扫描配置。
-  - `ark_project_radar_tracked_page` — 网站 changelog/RSS/价格/文档追踪页；`(target_id,url)` 唯一。
+  - `ark_project_radar_tracked_page` — 网站 changelog/RSS/价格/文档追踪页；保留最多 1024 字符的完整地址，以 `(target_id,url_hash)` 唯一去重，`url_hash` 是完整地址的 SHA-256。
   - `ark_project_radar_update` — Release、tag 或页面文本变化产生的更新；`(target_id,event_key)` 幂等，保留规则/AI 分级、理由、摘要与原文证据。
   - `ark_project_radar_subscription` — 个人收藏；`(user_id,target_id)` 唯一，含状态、关注级别、标签、笔记 `remark`、字段锁 `overrides`、AI 建议、未读和普通推送冷却；`removed_at` 软删除，30 天内可恢复。
   - `ark_project_radar_source` — 个人来源，保留原始链接、渠道与输入，`ingest_job_id` 防止任务重试重复追加来源。

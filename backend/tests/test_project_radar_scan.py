@@ -4,7 +4,7 @@ from app.auth.models import ArkUser
 from app.core.time import beijing_now
 from app.project_radar.models import RadarSnapshot, RadarTrackedPage, RadarUpdate
 from app.project_radar.scan import (
-    apply_repo_result, compress_text, scan_all, scan_website_target, text_change_ratio,
+    apply_repo_result, compress_text, initialize_target, scan_all, scan_website_target, text_change_ratio,
 )
 from app.project_radar.service import subscribe
 
@@ -73,9 +73,10 @@ def test_archived_repository_is_key_without_release(db):
 def test_website_uses_text_diff_threshold_and_compressed_snapshots(db):
     subscription, target = _subscription(db)
     target.kind = "website"
-    page = RadarTrackedPage(target_id=target.id, url="https://example.com/changelog", page_kind="changelog")
-    db.add(page)
-    db.flush()
+    initialize_target(db, target, {
+        "tracked_pages": [{"url": "https://example.com/changelog", "page_kind": "changelog"}],
+    })
+    page = db.query(RadarTrackedPage).filter_by(target_id=target.id).one()
     before = "\n".join(f"stable line {i}" for i in range(30))
     db.add(RadarSnapshot(target_id=target.id, tracked_page_id=page.id, captured_at=beijing_now(),
                          clean_text_compressed=compress_text(before), text_hash="old"))
@@ -89,6 +90,21 @@ def test_website_uses_text_diff_threshold_and_compressed_snapshots(db):
     assert len(updates) == 1 and updates[0].raw_ref["change_ratio"] > 0.08
     assert db.query(RadarSnapshot).filter_by(tracked_page_id=page.id).count() == 2
     assert text_change_ratio(before, before) == 0
+
+
+def test_website_tracks_complete_urls_with_a_shared_long_prefix(db):
+    _, target = _subscription(db)
+    target.kind = "website"
+    prefix = "https://example.com/" + "a" * (1023 - len("https://example.com/"))
+    urls = [prefix + "a", prefix + "A"]
+    pages = [{"url": url, "page_kind": "changelog"} for url in [*urls, urls[0]]]
+
+    initialize_target(db, target, {"tracked_pages": pages})
+    initialize_target(db, target, {"tracked_pages": pages})
+
+    tracked = db.query(RadarTrackedPage).filter_by(target_id=target.id).all()
+    assert {page.url for page in tracked} == set(urls)
+    assert len({page.url_hash for page in tracked}) == len(tracked) == 2
 
 
 def test_scan_failure_is_visible_in_health_and_does_not_silent_pass(db):

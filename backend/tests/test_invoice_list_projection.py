@@ -2,11 +2,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 import hashlib
 
+import pytest
 from sqlalchemy import text
 
 from app.core.time import beijing_now
 from app.invoice.detail_receipt_snapshot import page_orders
 from app.invoice.models import Invoice, InvoiceItem
+from app.invoice.screenshot_source import external_source_key
 from app.invoice.service import list_invoices
 from app.receipt import receipt_index
 from app.receipt.models import Receipt, ReceiptIndexState
@@ -139,3 +141,53 @@ def test_page_snapshot_reuses_only_current_validated_publication(db, monkeypatch
     snapshot(db, [remote_row("R1", "901", "60", 1)])
     assert page_orders(db, {"901"})["901"][0]["amount"] == "60"
     assert len(reads) == 2
+
+def test_invoice_list_does_not_show_zero_for_an_existing_screenshot_order_without_binding(db):
+    invoice(db, "SCREENSHOT", source_type="okki_screenshot", source_order_id="901",
+            sync_status="not_synced")
+    invoice(db, "EXTERNAL", source_type="okki_screenshot",
+            source_order_id=external_source_key("100", "External Order"), sync_status="not_synced")
+    invoice(db, "ORDINARY", sync_status="not_synced")
+
+    items, _ = list_invoices(db, user={"roles": ["super_admin"]})
+    assert {item["invoice_no"]: item["received_amount"] for item in items} == {
+        "SCREENSHOT": None,
+        "EXTERNAL": Decimal("0"),
+        "ORDINARY": Decimal("0"),
+    }
+
+
+@pytest.mark.parametrize(("sync_status", "send_phase"), [
+    ("uncertain", "sending"),
+    ("syncing", "sending"),
+    ("syncing", None),
+])
+def test_invoice_list_hides_zero_and_partial_totals_when_unbound_receipt_is_uncertain(db, sync_status, send_phase):
+    empty = invoice(db, "UNCERTAIN-EMPTY", xiaoman_order_id="901")
+    partial = invoice(db, "UNCERTAIN-PARTIAL", xiaoman_order_id="902")
+    pending = invoice(db, "PENDING", xiaoman_order_id="903")
+    failed = invoice(db, "FAILED", xiaoman_order_id="904")
+    freight = invoice(db, "FREIGHT", xiaoman_order_id="905")
+    voided = invoice(db, "VOIDED", xiaoman_order_id="906")
+    preparing = invoice(db, "PREPARING", xiaoman_order_id="907")
+    receipt(db, empty, sync_status=sync_status, send_phase=send_phase)
+    receipt(db, partial, sync_status=sync_status, send_phase=send_phase)
+    receipt(db, partial, receipt_no="CONFIRMED", request_key="confirmed",
+            sync_status="synced", xiaoman_receipt_id="R1")
+    receipt(db, pending)
+    receipt(db, failed, sync_status="failed", send_phase="rejected")
+    receipt(db, freight, sync_status="uncertain", send_phase="sending", purpose="freight")
+    receipt(db, voided, sync_status="uncertain", send_phase="sending", status="voided")
+    receipt(db, preparing, sync_status="syncing", send_phase="preparing")
+    snapshot(db, [remote_row("R1", "902", "48", 1)], age=30)
+
+    items, _ = list_invoices(db, user={"roles": ["super_admin"]})
+    assert {item["invoice_no"]: item["received_amount"] for item in items} == {
+        "UNCERTAIN-EMPTY": None,
+        "UNCERTAIN-PARTIAL": None,
+        "PENDING": Decimal("0"),
+        "FAILED": Decimal("0"),
+        "FREIGHT": Decimal("0"),
+        "VOIDED": Decimal("0"),
+        "PREPARING": Decimal("0"),
+    }

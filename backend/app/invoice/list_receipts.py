@@ -8,6 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.invoice import detail_access, detail_receipt_snapshot
+from app.invoice.screenshot_source import matched_order_id
 from app.models.business import OkkiReceipt
 from app.receipt import access, remote
 from app.receipt.models import Receipt
@@ -38,8 +39,16 @@ def amounts(db, invoices, user):
 
     result = {inv.id: (inv.internal_received, inv.total_amount)
               for inv in invoices if inv.transaction_mode == "local"}
-    legacy = [inv for inv in invoices if inv.transaction_mode != "local"
-              and (inv.xiaoman_order_id or inv.sync_status not in ("sync_uncertain", "synced"))]
+    # A matched screenshot order can already have receipts before Ark has a sync binding.
+    legacy = [
+        inv for inv in invoices
+        if inv.transaction_mode != "local" and (
+            inv.xiaoman_order_id or (
+                inv.sync_status not in ("sync_uncertain", "synced")
+                and not matched_order_id(inv.source_type, inv.source_order_id)
+            )
+        )
+    ]
     if not legacy:
         return result
 
@@ -62,7 +71,8 @@ def amounts(db, invoices, user):
     local = query.filter(Receipt.invoice_id.in_([inv.id for inv in legacy]), Receipt.purpose != "freight")
     for receipt in local.with_entities(Receipt.invoice_id, Receipt.customer_id, Receipt.currency,
                                        Receipt.xiaoman_order_id, Receipt.xiaoman_receipt_id,
-                                       Receipt.status, Receipt.sync_status, Receipt.amount, Receipt.bank_charge):
+                                       Receipt.status, Receipt.sync_status, Receipt.send_phase,
+                                       Receipt.amount, Receipt.bank_charge):
         local_by_invoice[receipt.invoice_id].append(receipt)
 
     # For remote-only receipts, require customer identity and no competing
@@ -142,12 +152,17 @@ def _confirmed_amount(invoice, rows, local, identities):
             if identity in by_id:
                 return None
             continue
+        # An uncertain POST may already be recorded in OKKI even without a remote ID.
+        if row.sync_status == "uncertain" or (
+            row.sync_status == "syncing" and row.send_phase in ("sending", None)
+        ):
+            return None
         if (row.customer_id != invoice.customer_id or row.currency != invoice.currency
                 or (identity and row.xiaoman_order_id != invoice.xiaoman_order_id)):
             return None
         if identity:
             match = by_id.get(identity)
-            if row.sync_status == "uncertain" or not match:
+            if not match:
                 return None
             try:
                 if match[0] != remote.net_amount(row):
