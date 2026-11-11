@@ -146,13 +146,19 @@ def stage_static(outputs, prepared):
         folder, leaf = ("frontend-pm", "dist-lan") if name == "pm-lan" else (name, "dist")
         destination = prepared["live"] / folder / leaf
         files = manifest(dist)
-        current = manifest(destination) if (destination / "index.html").exists() else {}
-        if all(current.get(k) == v for k, v in files.items()) and marker("office-" + name).get("files") == files:
-            continue
+        current = tree(destination)
+        if (destination / "index.html").exists():
+            if "index.html" not in current:
+                raise ValueError("Build is missing index.html")
+            if any(part.startswith(".") for path in current for part in path.split("/")):
+                raise ValueError("Hidden files cannot be published")
+            matches_candidate = all(current.get(path) == digest for path, digest in files.items())
+            if matches_candidate and marker("office-" + name).get("files") == files:
+                continue
         cache_path = STATE / ('office-stage-' + name + '.json')
         no_links(cache_path)
         binding = dict(revision=prepared['revision'], destination=str(destination.resolve()),
-                       files=files, current=tree(destination))
+                       files=files, current=current)
         if cache_path.exists():
             cache = json.loads(cache_path.read_text(encoding='utf-8'))
             staged = Path(cache['staged'])
