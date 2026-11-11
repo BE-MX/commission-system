@@ -244,11 +244,10 @@ function start(anchor, canvas, limit) {
   }
 
   // Run the simulation ahead so the wake is already full on the first frame (and for the reduced-motion still).
-  function prewarm() {
+  function prewarm(e) {
     particles = []
     track = []
     clock = 0
-    const e = engine()
     seedDust(e)
     for (let i = 0; i < 90; i++) step(1 / 30, e)
     draw(e)
@@ -294,7 +293,10 @@ function start(anchor, canvas, limit) {
       canvas.width = Math.round(width * dpr)
       canvas.height = Math.round(height * dpr)
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      prewarm()
+      // Seed from the title's layout position: at mount it is still rising into place, and a wake
+      // prewarmed against that offset would carry a visible step once the title settles.
+      const top = Math.round(text.y + text.h / 2 - nextHeight / 2)
+      prewarm({ x: text.x + 4, y: text.y - top + text.h * 0.54, h: text.h, right: text.x + text.w })
     }
     sync()
   }
@@ -329,7 +331,8 @@ onUnmounted(() => dispose())
 <style scoped>
 .ark-wake {
   position: absolute; left: 0; pointer-events: none; mix-blend-mode: screen;
-  animation: ark-wake-in 600ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  /* The wake lights after the title has settled, so the ark reads as getting under way. */
+  animation: ark-wake-in 900ms cubic-bezier(0.23, 1, 0.32, 1) 420ms both;
 }
 @keyframes ark-wake-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {

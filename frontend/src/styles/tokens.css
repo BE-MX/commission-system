@@ -94,6 +94,12 @@
   --login-border: rgba(212, 175, 110, 0.22);
   --login-surface: rgba(24, 23, 24, 0.96);
   --login-shadow: rgba(0, 0, 0, 0.35);
+  --login-rim-light: rgba(242, 223, 176, 0.5);
+  --login-rim-warm: rgba(212, 175, 110, 0.34);
+  --login-glare: rgba(242, 223, 176, 0.95);
+  --login-glare-soft: rgba(242, 223, 176, 0.055);
+  --login-focus-ring: rgba(212, 175, 110, 0.16);
+  --login-button-sheen: rgba(255, 255, 255, 0.3);
 
   /* ── Primary: LeShine Gold ── */
   --color-primary:        #D4941C;

@@ -8,33 +8,24 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import landContours from '@/assets/world-land.json'
+import { paintWorldMap } from './worldMapPainter'
 
+// `avoid` returns the element whose children (the brand copy) must stay readable over the map.
+const props = defineProps({ avoid: { type: Function, default: null } })
 const mapRef = ref(null)
 const motionRef = ref(null)
 let dispose = () => {}
 
-// Natural Earth 1:110m land, public domain; source and processing in DESIGN.md.
-// Market regions are rough lon/lat hulls; their edges get feathered, so precision is not needed.
-const GLOW_REGIONS = [
-  [[-172, 76], [-75, 80], [-60, 62], [-52, 47], [-78, 22], [-100, 22], [-125, 28], [-170, 56]],
-  [[-16, 35], [-16, 62], [4, 76], [34, 76], [46, 68], [42, 44], [28, 35], [10, 36]],
-  [[26, 42], [45, 42], [62, 38], [62, 22], [56, 12], [43, 11], [32, 29], [26, 31]],
-  [[104, -12], [162, -12], [162, -50], [104, -50]],
-]
-// Neighbours that fall inside the feathered hulls: Africa (Mediterranean and Red Sea coasts) and
-// Mexico/Caribbean (North America glows only for the US and Canada), carved out along their borders.
-const EXCLUDED_REGIONS = [
-  [[-18, 36], [-5.5, 35.9], [10, 37.6], [11.5, 33], [32.3, 31.4], [32.6, 29.8], [35.6, 23], [38.6, 17.8], [43.4, 12.4], [52, 11.8], [52, -36], [-18, -36]],
-  [[-130, 32.6], [-117.1, 32.6], [-114.8, 32.5], [-111, 31.3], [-108.2, 31.3], [-106.4, 31.8], [-104.5, 29.6], [-101.4, 29.8], [-99.5, 27.5], [-97.2, 25.9], [-90, 24.3], [-80, 23.4], [-72, 21.5], [-60, 16], [-60, 0], [-130, 0]],
-]
+// Opening: a light wave leaves Qingdao and uncovers the map as it travels.
+const INTRO = 1900
+const LOOP_START = 3200
+const FIRST_FLIGHT = [1500, 1250, 1000, 800]
+// Afterwards each route keeps its own pace, so arrivals never fall into a metronome.
+const FLIGHT = [5200, 4300, 3500, 3100]
+const REST = [1700, 2300, 1500, 2600]
+const WAVE_FIRST = 7000, WAVE_EVERY = 11000, WAVE_SPAN = 3600
+const IDLE_FRAME = 1000 / 30 - 4, HOT_FRAME = 12
 
-const DESTINATIONS = [
-  { name: '北美', lon: -100, lat: 45 },
-  { name: '欧洲', lon: 10, lat: 50 },
-  { name: '中东', lon: 50, lat: 25 },
-  { name: '澳洲', lon: 135, lat: -25 },
-]
-const ORIGIN = { name: '青岛', lon: 120.383, lat: 36.067 }
 
 onMounted(() => {
   const canvas = mapRef.value
@@ -42,84 +33,54 @@ onMounted(() => {
   const ctx = canvas.getContext('2d')
   const fx = motion.getContext('2d')
   if (!ctx || !fx) return
+  const root = canvas.parentElement
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
   const compact = window.matchMedia('(max-width: 1023px)')
+  const fine = window.matchMedia('(hover: hover) and (pointer: fine)')
   const palette = getComputedStyle(canvas)
   const gold = palette.getPropertyValue('--login-gold').trim()
   const light = palette.getPropertyValue('--login-gold-light').trim()
   let width = 0, height = 0, dpr = 1, frame = 0, previous = null, elapsed = 0
   let routes = []
-  let grainTile = null, resizeTimer = 0
+  let resizeTimer = 0
   let origin = { x: 0, y: 0 }
+  // Coast glow at CSS-pixel resolution: every moving light is this one bitmap seen through a mask.
+  const coast = document.createElement('canvas'), scratch = document.createElement('canvas')
+  const coastCtx = coast.getContext('2d'), mask = scratch.getContext('2d')
+  const spark = sprite()
+  let unit = 1, reach = 1, veiled = false, hot = true
+  // `lite` is the cheap path a slow machine falls back to: no opening, no pointer effects, 30fps.
+  let sized = false, lite = false, probed = 0, probeTime = 0, slowFrames = 0
+  let bounds = { left: 0, top: 0 }
+  const pointer = { x: 0, y: 0, seen: false }
+  const torch = { x: 0, y: 0, power: 0 }
+  const shift = { x: 0, y: 0 }
 
-  function point(location) {
-    const scale = Math.min((width - 40) / 360, (height - 48) / 155)
-    return { x: width / 2 + location.lon * scale, y: height / 2 + (10 - location.lat) * scale }
+  // Soft round glow reused for comet heads and flares, so a frame allocates no gradients for them.
+  function sprite() {
+    const surface = document.createElement('canvas')
+    surface.width = surface.height = 64
+    const context = surface.getContext('2d')
+    const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32)
+    gradient.addColorStop(0, light)
+    gradient.addColorStop(0.16, tint(gold, 0.7))
+    gradient.addColorStop(0.5, tint(gold, 0.16))
+    gradient.addColorStop(1, tint(gold, 0))
+    context.fillStyle = gradient
+    context.fillRect(0, 0, 64, 64)
+    return surface
+  }
+
+  // Same hue at a given alpha; fading to plain `transparent` would pass through grey.
+  function tint(hex, alpha) {
+    const value = parseInt(hex.slice(1), 16)
+    return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`
   }
 
   function dot(context, x, y, radius) {
     context.beginPath()
     context.arc(x, y, radius, 0, Math.PI * 2)
     context.fill()
-  }
-
-  function tracePolygons(context, polygons) {
-    context.beginPath()
-    for (const polygon of polygons) {
-      polygon.forEach(([lon, lat], index) => {
-        const p = point({ lon, lat })
-        if (index === 0) context.moveTo(p.x, p.y)
-        else context.lineTo(p.x, p.y)
-      })
-      context.closePath()
-    }
-  }
-
-  function layer() {
-    const surface = document.createElement('canvas')
-    surface.width = canvas.width
-    surface.height = canvas.height
-    const context = surface.getContext('2d')
-    context.setTransform(dpr, 0, 0, dpr, 0, 0)
-    return { surface, context }
-  }
-
-  function grain() {
-    const surface = document.createElement('canvas')
-    surface.width = surface.height = 96
-    const context = surface.getContext('2d')
-    const noise = context.createImageData(96, 96)
-    for (let i = 0; i < noise.data.length; i += 4) {
-      const v = Math.random() < 0.5 ? 0 : 255
-      noise.data[i] = noise.data[i + 1] = noise.data[i + 2] = v
-      noise.data[i + 3] = Math.random() * 22
-    }
-    context.putImageData(noise, 0, 0)
-    return surface
-  }
-
-  function glow(context, x, y, radius, alpha) {
-    const gradient = context.createRadialGradient(x, y, 0, x, y, radius)
-    gradient.addColorStop(0, light)
-    gradient.addColorStop(0.3, gold)
-    gradient.addColorStop(1, 'transparent')
-    context.fillStyle = gradient
-    context.globalAlpha = alpha
-    dot(context, x, y, radius)
-  }
-
-  // Feathered hulls: draw the shape off-canvas and keep only its shadow, the one blur every canvas engine has.
-  function regionMask(context, feather, polygons = GLOW_REGIONS) {
-    const shift = width + feather * 4
-    context.save()
-    context.translate(-shift, 0)
-    context.shadowOffsetX = shift * dpr
-    context.shadowBlur = feather * dpr
-    context.shadowColor = light
-    context.fillStyle = light
-    tracePolygons(context, polygons)
-    context.fill()
-    context.restore()
   }
 
   function sample(route, t) {
@@ -130,198 +91,222 @@ onMounted(() => {
     }
   }
 
-  function drawMap() {
-    ctx.clearRect(0, 0, width, height)
-    const unit = point({ lon: 1, lat: 0 }).x - point({ lon: 0, lat: 0 }).x
-    // Land body: lit tint, inner rim, contour rings and grain, then light pooled around the markets.
-    tracePolygons(ctx, landContours)
-    ctx.save()
-    ctx.clip()
-    // Key light from the upper left keeps the tint from reading as one flat slab.
-    const top = point({ lon: -180, lat: 80 }), bottom = point({ lon: 180, lat: -55 })
-    const body = ctx.createLinearGradient(top.x, top.y, bottom.x * 0.55, bottom.y)
-    body.addColorStop(0, light)
-    body.addColorStop(0.45, gold)
-    body.addColorStop(1, gold)
-    ctx.fillStyle = body
-    ctx.globalAlpha = 0.16
-    ctx.fillRect(0, 0, width, height)
-    const falloff = ctx.createLinearGradient(top.x, top.y, bottom.x * 0.55, bottom.y)
-    falloff.addColorStop(0, 'rgba(0, 0, 0, 0)')
-    falloff.addColorStop(1, 'rgba(0, 0, 0, 0.16)')
-    ctx.fillStyle = falloff
-    ctx.globalAlpha = 1
-    ctx.fillRect(0, 0, width, height)
-    // Inner rim: a faint glow just inside every coast lifts each continent like a raised plate.
-    tracePolygons(ctx, landContours)
-    ctx.lineJoin = 'round'
-    ctx.strokeStyle = gold
-    ctx.shadowColor = gold
-    ctx.lineWidth = unit * 4
-    ctx.shadowBlur = unit * 8 * dpr
-    ctx.globalAlpha = 0.07
-    ctx.stroke()
-    ctx.lineWidth = unit * 1.2
-    ctx.shadowBlur = unit * 2.5 * dpr
-    ctx.globalAlpha = 0.22
-    ctx.stroke()
-    ctx.shadowBlur = 0
-    // Contour rings: stroke-then-erase leaves a hairline at each offset; the land clip keeps the inner one.
-    const rings = layer()
-    const r = rings.context
-    r.lineJoin = 'round'
-    r.strokeStyle = gold
-    for (let step = 4; step >= 1; step--) {
-      tracePolygons(r, landContours)
-      r.globalCompositeOperation = 'source-over'
-      r.globalAlpha = 0.45 * (1 - (step - 1) / 4)
-      r.lineWidth = unit * step * 2.2 + 0.8
-      r.stroke()
-      r.globalCompositeOperation = 'destination-out'
-      r.globalAlpha = 1
-      r.lineWidth = unit * step * 2.2 - 0.8
-      r.stroke()
+  // Where an element sits by layout alone (offset chain), in viewport coordinates: the copy's entrance
+  // and the title's float are transforms, and labels must not be placed against a box caught mid-move.
+  function layoutBox(element) {
+    let left = 0, top = 0
+    for (let node = element; node; node = node.offsetParent) {
+      left += node.offsetLeft
+      top += node.offsetTop
     }
-    ctx.globalAlpha = 0.22
-    ctx.drawImage(rings.surface, 0, 0, width, height)
-    // Film grain breaks up the digital flatness without adding a visible pattern.
-    grainTile ??= grain()
-    ctx.fillStyle = ctx.createPattern(grainTile, 'repeat')
-    ctx.globalAlpha = 0.28
-    ctx.fillRect(0, 0, width, height)
-    ctx.globalCompositeOperation = 'lighter'
-    for (const location of DESTINATIONS) {
-      const { x, y } = point(location)
-      glow(ctx, x, y, unit * 34, 0.22)
+    return { left: left - window.scrollX, top: top - window.scrollY, width: element.offsetWidth, height: element.offsetHeight }
+  }
+
+  // Rectangles of the brand copy in canvas coordinates, padded so labels keep a little air.
+  function keepClear() {
+    const target = props.avoid?.()
+    if (!target || compact.matches) return []
+    return Array.from(target.children, layoutBox)
+      .filter(box => box.width > 0 && box.height > 0)
+      .map(box => ({
+        left: box.left - bounds.left - 10, top: box.top - bounds.top - 10,
+        right: box.left + box.width - bounds.left + 10, bottom: box.top + box.height - bounds.top + 10,
+      }))
+  }
+
+  // The static map hides behind a radial mask while the opening wave uncovers it; one inline style per frame.
+  function reveal(radius) {
+    const value = radius === null ? '' : `radial-gradient(circle at ${origin.x.toFixed(1)}px ${origin.y.toFixed(1)}px, black ${Math.max(0, radius - 100).toFixed(1)}px, transparent ${radius.toFixed(1)}px)`
+    canvas.style.webkitMaskImage = value
+    canvas.style.maskImage = value
+    veiled = radius !== null
+  }
+
+  const opening = () => reach * (1 - (1 - Math.min(1, Math.max(0, (elapsed - 120) / INTRO))) ** 1.9)
+
+  // Where a route's comet is: in flight (path position `t`) or `landed` that many ms ago.
+  function flight(index) {
+    const loopFrom = LOOP_START + index * 700
+    if (elapsed < loopFrom) {
+      const p = (elapsed - 200 - index * 110) / FIRST_FLIGHT[index]
+      if (p < 0) return null
+      return p < 1 ? { t: 1 - (1 - p) ** 2.4, glow: Math.min(1, p * 12), tail: 0.24 } : { landed: (p - 1) * FIRST_FLIGHT[index] }
     }
-    glow(ctx, point(ORIGIN).x, point(ORIGIN).y, unit * 42, 0.26)
-    const lift = layer()
-    regionMask(lift.context, unit * 7)
-    lift.context.globalCompositeOperation = 'destination-out'
-    regionMask(lift.context, unit * 1.2, EXCLUDED_REGIONS)
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.globalAlpha = 0.1
-    ctx.drawImage(lift.surface, 0, 0, width, height)
-    ctx.restore()
-    tracePolygons(ctx, landContours)
-    ctx.strokeStyle = gold
-    ctx.lineWidth = 0.7
-    ctx.globalAlpha = 0.3
-    ctx.stroke()
-    // Market halo: coastline light that only survives inside the feathered region hulls.
-    const halo = layer()
-    const h = halo.context
-    h.lineJoin = 'round'
-    // Bloom: wide faint passes first so light falls off gradually, as if shining up out of the map.
-    tracePolygons(h, landContours)
-    h.strokeStyle = gold
-    h.shadowColor = gold
-    h.lineWidth = 1.2
-    for (const [blur, alpha] of [[20, 0.9], [9, 0.6], [3, 0.45]]) {
-      h.shadowBlur = unit * blur * dpr
-      h.globalAlpha = alpha
-      h.stroke()
+    const p = ((elapsed - loopFrom) % (FLIGHT[index] + REST[index])) / FLIGHT[index]
+    return p < 1 ? { t: p * p * (3 - 2 * p), glow: Math.min(1, p * 10, (1 - p) * 14), tail: 0.2 } : { landed: (p - 1) * FLIGHT[index] }
+  }
+
+  // Tapered tail of short strokes behind a glowing head.
+  function comet(route, state) {
+    const head = sample(route, state.t)
+    let from = head
+    fx.strokeStyle = light
+    for (let step = 1; step <= 14; step++) {
+      const t = state.t - (step / 14) * state.tail
+      if (t < 0) break
+      const to = sample(route, t)
+      const keep = 1 - step / 15
+      fx.globalAlpha = state.glow * keep ** 1.5 * 0.9
+      fx.lineWidth = 0.5 + keep * 2.1
+      fx.beginPath()
+      fx.moveTo(from.x, from.y)
+      fx.lineTo(to.x, to.y)
+      fx.stroke()
+      from = to
     }
-    h.shadowBlur = unit * 0.8 * dpr
-    h.shadowColor = light
-    h.strokeStyle = light
-    h.lineWidth = 1
-    h.globalAlpha = 0.8
-    h.stroke()
-    const mask = layer()
-    regionMask(mask.context, unit * 6)
-    mask.context.globalCompositeOperation = 'destination-out'
-    regionMask(mask.context, unit * 1.2, EXCLUDED_REGIONS)
-    h.shadowBlur = 0
-    h.setTransform(1, 0, 0, 1, 0, 0)
-    h.globalCompositeOperation = 'destination-in'
-    h.globalAlpha = 1
-    h.drawImage(mask.surface, 0, 0)
-    ctx.globalCompositeOperation = 'lighter'
-    ctx.globalAlpha = 1
-    ctx.drawImage(halo.surface, 0, 0, width, height)
-    ctx.globalCompositeOperation = 'source-over'
-    origin = point(ORIGIN)
-    routes = DESTINATIONS.map(location => {
-      const end = point(location)
-      return { end, control: { x: (origin.x + end.x) / 2, y: Math.min(origin.y, end.y) - Math.min(65, Math.abs(origin.x - end.x) * 0.2) } }
-    })
-    ctx.strokeStyle = gold
-    ctx.globalAlpha = 0.2
-    ctx.lineWidth = 0.8
-    for (const route of routes) {
-      ctx.beginPath()
-      ctx.moveTo(origin.x, origin.y)
-      ctx.quadraticCurveTo(route.control.x, route.control.y, route.end.x, route.end.y)
-      ctx.stroke()
-    }
-    for (const location of [...DESTINATIONS, ORIGIN]) {
-      const { x, y } = point(location)
-      const isOrigin = location === ORIGIN
-      if (isOrigin) {
-        const glow = ctx.createRadialGradient(x, y, 0, x, y, 34)
-        glow.addColorStop(0, light)
-        glow.addColorStop(0.25, gold)
-        glow.addColorStop(1, 'transparent')
-        ctx.fillStyle = glow
-        ctx.globalAlpha = 0.38
-        dot(ctx, x, y, 34)
-        ctx.strokeStyle = light
-        ctx.lineWidth = 1
-        ctx.globalAlpha = 0.55
-        ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.stroke()
-      } else {
-        ctx.globalAlpha = 0.1
-        dot(ctx, x, y, 10)
-      }
-      ctx.globalAlpha = isOrigin ? 1 : 0.8
-      ctx.fillStyle = light
-      dot(ctx, x, y, isOrigin ? 4.5 : 2)
-      ctx.globalAlpha = isOrigin ? 0.95 : 0.65
-      ctx.font = isOrigin ? '600 12px "Microsoft YaHei", sans-serif' : '11px "Microsoft YaHei", sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(location.name, x, y + (isOrigin ? 32 : 19))
-      ctx.fillStyle = gold
-    }
-    ctx.globalAlpha = 1
+    fx.globalAlpha = state.glow * 0.9
+    fx.drawImage(spark, head.x - 15, head.y - 15, 30, 30)
+    fx.globalAlpha = state.glow
+    dot(fx, head.x, head.y, 1.7)
+  }
+
+  function circle(x, y, radius, alpha, lineWidth) {
+    fx.globalAlpha = alpha
+    fx.lineWidth = lineWidth
+    fx.beginPath()
+    fx.arc(x, y, radius, 0, Math.PI * 2)
+    fx.stroke()
   }
 
   function drawMotion() {
     fx.clearRect(0, 0, width, height)
     fx.fillStyle = light
-    routes.forEach((route, index) => {
-      // Fixed start/control/end points; timing is independent of display refresh rate.
-      const phase = (elapsed / 6500 + index * 0.25) % 1
-      for (let tail = 7; tail >= 0; tail--) {
-        const t = phase - tail * 0.008
-        if (t < 0) continue
-        const p = sample(route, t)
-        fx.globalAlpha = (1 - tail / 8) * Math.min(1, phase * 12, (1 - phase) * 12) * 0.85
-        dot(fx, p.x, p.y, tail === 0 ? 2 : 1.2)
-      }
-    })
-    // Two staggered rings keep Qingdao visibly active without a flashing beacon.
     fx.strokeStyle = light
-    fx.lineWidth = 1.3
+    // Lights are [x, y, inner radius, outer radius, peak position, strength]; coasts glow where they fall.
+    const lights = []
+    const wave = (radius, band, strength) => lights.push([origin.x, origin.y, Math.max(0, radius - band), radius + band * 0.3, 0.74, strength])
+
+    if (elapsed < 120 + INTRO) {
+      const radius = opening(), fade = 1 - radius / reach
+      reveal(radius + 24)
+      wave(radius, 170, 1)
+      circle(origin.x, origin.y, radius, 0.18 * fade, 1)
+    } else if (veiled) reveal(null)
+    if (elapsed < 700) {
+      // Ignition: Qingdao flares once before the wave leaves.
+      const p = elapsed / 700, size = 40 + p * 170
+      fx.globalAlpha = (1 - p) ** 2
+      fx.drawImage(spark, origin.x - size / 2, origin.y - size / 2, size, size)
+    }
+    // Every so often the wave goes out again, quieter, so the map keeps breathing after the opening.
+    const since = (elapsed - WAVE_FIRST) % WAVE_EVERY
+    if (!lite && elapsed >= WAVE_FIRST && since < WAVE_SPAN) {
+      const p = since / WAVE_SPAN, strength = Math.min(1, p * 8) * (1 - p) ** 1.2
+      const radius = reach * (1 - (1 - p) ** 1.7)
+      wave(radius, 130, 0.8 * strength)
+      circle(origin.x, origin.y, radius, 0.14 * strength, 1)
+    }
+
+    routes.forEach((route, index) => {
+      const state = flight(index)
+      if (!state) return
+      if (state.landed === undefined) return comet(route, state)
+      const p = state.landed / 1400
+      if (p >= 1) return
+      // Arrival: a ripple on the node, a flash, and that market's coast swelling with light.
+      const swell = p < 0.14 ? p / 0.14 : (1 - (p - 0.14) / 0.86) ** 1.6
+      lights.push([route.end.x, route.end.y, 0, unit * 30, 0, 0.8 * swell])
+      circle(route.end.x, route.end.y, 3 + p * 20, 0.6 * (1 - p) ** 2, 1)
+      const size = 26 + p * 14
+      fx.globalAlpha = 0.8 * (1 - p) ** 3
+      fx.drawImage(spark, route.end.x - size / 2, route.end.y - size / 2, size, size)
+    })
+
+    // Two staggered rings keep Qingdao visibly active without a flashing beacon.
+    const calm = Math.min(1, elapsed / 600)
     for (let ring = 0; ring < 2; ring++) {
       const phase = (elapsed / 3600 + ring * 0.5) % 1
-      fx.globalAlpha = 0.5 * (1 - phase) ** 2
-      fx.beginPath()
-      fx.arc(origin.x, origin.y, 10 + phase * 28, 0, Math.PI * 2)
-      fx.stroke()
+      circle(origin.x, origin.y, 10 + phase * 28, 0.5 * (1 - phase) ** 2 * calm, 1.3)
     }
     fx.globalAlpha = 0.9
     dot(fx, origin.x, origin.y, 4.8 + Math.sin(elapsed / 1400) * 0.6)
+
+    if (torch.power > 0.02) {
+      // The pointer carries a light: coasts near it brighten, with a faint warm pool underneath.
+      lights.push([torch.x, torch.y, 0, 170, 0, torch.power])
+      fx.globalAlpha = 0.06 * torch.power
+      fx.drawImage(spark, torch.x - 140, torch.y - 140, 280, 280)
+    }
+
+    // Each light is composited inside its own bounding box, so a pulse or the torch costs a small blit
+    // rather than the whole canvas; it goes behind the comets and rings already drawn this frame.
+    fx.globalCompositeOperation = 'destination-over'
     fx.globalAlpha = 1
+    for (const [x, y, inner, outer, peak, strength] of lights) {
+      const left = Math.max(0, Math.floor(x - outer)), top = Math.max(0, Math.floor(y - outer))
+      const w = Math.min(coast.width, Math.ceil(x + outer)) - left, h = Math.min(coast.height, Math.ceil(y + outer)) - top
+      if (w <= 0 || h <= 0) continue
+      const gradient = mask.createRadialGradient(x, y, inner, x, y, outer)
+      if (peak > 0) gradient.addColorStop(0, 'rgba(0, 0, 0, 0)')
+      gradient.addColorStop(peak, `rgba(0, 0, 0, ${strength.toFixed(3)})`)
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      mask.save()
+      mask.beginPath()
+      mask.rect(left, top, w, h)
+      mask.clip()
+      mask.clearRect(left, top, w, h)
+      mask.fillStyle = gradient
+      mask.fillRect(left, top, w, h)
+      mask.globalCompositeOperation = 'source-in'
+      mask.drawImage(coast, left, top, w, h, left, top, w, h)
+      mask.restore()
+      fx.drawImage(scratch, left, top, w, h, left, top, w, h)
+    }
+    fx.globalCompositeOperation = 'source-over'
+  }
+
+  // Pointer light and parallax ease toward their targets at a rate independent of frame rate.
+  // Returns whether anything is still moving, which keeps the loop at full frame rate; a pointer resting
+  // on the map keeps its light but lets the loop fall back to idle.
+  function follow(delta) {
+    const live = pointer.seen && fine.matches && !lite
+    const x = pointer.x - bounds.left - shift.x, y = pointer.y - bounds.top - shift.y
+    const over = live && x > -40 && x < width + 40 && y > -40 && y < height + 40
+    if (over) {
+      // A torch that was off lands under the pointer instead of sweeping in from where it last was.
+      const ease = torch.power < 0.02 ? 1 : 1 - Math.exp(-delta / 110)
+      torch.x += (x - torch.x) * ease
+      torch.y += (y - torch.y) * ease
+    }
+    torch.power += ((over ? 1 : 0) - torch.power) * (1 - Math.exp(-delta / (over ? 180 : 360)))
+    // The map slides a few pixels against the pointer, which sets it behind the copy and the card.
+    const targetX = live ? (0.5 - pointer.x / window.innerWidth) * 18 : 0
+    const targetY = live ? (0.5 - pointer.y / window.innerHeight) * 12 : 0
+    const drift = 1 - Math.exp(-delta / 280)
+    shift.x += (targetX - shift.x) * drift
+    shift.y += (targetY - shift.y) * drift
+    slide(`translate3d(${Math.round(shift.x * 50) / 50}px, ${Math.round(shift.y * 50) / 50}px, 0)`)
+    return (over && Math.abs(x - torch.x) + Math.abs(y - torch.y) > 0.3)
+      || Math.abs((over ? 1 : 0) - torch.power) > 0.004
+      || Math.abs(targetX - shift.x) + Math.abs(targetY - shift.y) > 0.05
+  }
+
+  function slide(value) {
+    if (root.style.transform !== value) root.style.transform = value
   }
 
   function animate(time) {
     frame = requestAnimationFrame(animate)
     if (previous === null) previous = time
     const delta = time - previous
-    if (delta < 1000 / 30) return
-    elapsed += Math.min(delta, 100)
+    // Idle runs at 30fps; the opening and pointer movement follow the display.
+    if (delta > 0 && delta < (hot ? HOT_FRAME : IDLE_FRAME)) return
+    const passed = Math.min(delta, 100)
+    elapsed += passed
     previous = time
+    // Slow-machine check: the first frames carry page start-up work and are skipped. After that, four frames
+    // slower than 20fps, or twelve that cannot average 25fps, finish the opening at once and keep the cheap
+    // path; counting slow frames (not one long gap) keeps a single hitch on a fast machine from tripping it.
+    if (!lite && elapsed < 120 + INTRO && delta > 0 && ++probed > 3) {
+      probeTime += Math.min(delta, 250)
+      if (delta > 50) slowFrames++
+      if (slowFrames >= 4 || (probed === 15 && probeTime / 12 > 40)) {
+        lite = true
+        elapsed = 120 + INTRO
+      }
+    }
+    const moving = follow(passed)
+    hot = !lite && (moving || elapsed < LOOP_START)
     drawMotion()
   }
 
@@ -329,36 +314,74 @@ onMounted(() => {
     cancelAnimationFrame(frame)
     frame = 0
     previous = null
+    hot = !lite
     fx.clearRect(0, 0, width, height)
-    // Small screens keep the same composition as a still, saving battery behind the form.
-    if (!document.hidden && !reduced.matches && !compact.matches && width > 0 && height > 0) {
+    // Small screens and reduced motion keep the same composition as a still: no opening, nothing follows the pointer.
+    const still = reduced.matches || compact.matches
+    if (still) {
+      elapsed = Math.max(elapsed, LOOP_START)
+      torch.power = shift.x = shift.y = 0
+      slide('')
+      reveal(null)
+    } else if (width > 0 && height > 0 && elapsed < 120 + INTRO) {
+      // Veil the map before its first paint so the opening never flashes the finished picture.
+      reveal(opening())
+    }
+    if (!document.hidden && !still && width > 0 && height > 0) {
       frame = requestAnimationFrame(animate)
     }
   }
 
+  function measure() {
+    const rect = root.getBoundingClientRect()
+    bounds = { left: rect.left - shift.x, top: rect.top - shift.y }
+    return rect
+  }
+
   function resize() {
-    const bounds = canvas.parentElement.getBoundingClientRect()
-    width = Math.max(0, bounds.width)
-    height = Math.max(0, bounds.height)
-    dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const rect = measure()
+    const ratio = Math.min(window.devicePixelRatio || 1, 2)
+    // ResizeObserver reports once as soon as it observes; repainting then would stall the opening for nothing.
+    if (sized && rect.width === width && rect.height === height && ratio === dpr) return
+    sized = true
+    width = Math.max(0, rect.width)
+    height = Math.max(0, rect.height)
+    dpr = ratio
     for (const [surface, context] of [[canvas, ctx], [motion, fx]]) {
       surface.width = Math.round(width * dpr)
       surface.height = Math.round(height * dpr)
       context.setTransform(dpr, 0, 0, dpr, 0, 0)
     }
-    if (width > 40 && height > 48) drawMap()
+    if (width > 40 && height > 48) {
+      const blocks = keepClear()
+      coast.width = scratch.width = Math.round(width)
+      coast.height = scratch.height = Math.round(height)
+      ;({ unit, origin, reach, routes } = paintWorldMap(ctx, { land: landContours, width, height, dpr, gold, light, blocks, glowCtx: coastCtx }))
+    }
     syncMotion()
   }
+
+  function track(event) {
+    if (event.pointerType === 'touch') return
+    pointer.x = event.clientX
+    pointer.y = event.clientY
+    pointer.seen = true
+  }
+  function release() { pointer.seen = false }
 
   // The base map costs several full-size blur passes, so redraw once the size settles; CSS stretches the old frame meanwhile.
   const observer = new ResizeObserver(() => {
     clearTimeout(resizeTimer)
     resizeTimer = setTimeout(resize, 120)
   })
-  observer.observe(canvas.parentElement)
+  observer.observe(root)
   reduced.addEventListener('change', syncMotion)
   compact.addEventListener('change', syncMotion)
   document.addEventListener('visibilitychange', syncMotion)
+  window.addEventListener('pointermove', track, { passive: true })
+  window.addEventListener('scroll', measure, { passive: true })
+  window.addEventListener('resize', measure, { passive: true })
+  document.documentElement.addEventListener('pointerleave', release)
   resize()
   dispose = () => {
     cancelAnimationFrame(frame)
@@ -367,6 +390,10 @@ onMounted(() => {
     reduced.removeEventListener('change', syncMotion)
     compact.removeEventListener('change', syncMotion)
     document.removeEventListener('visibilitychange', syncMotion)
+    window.removeEventListener('pointermove', track)
+    window.removeEventListener('scroll', measure)
+    window.removeEventListener('resize', measure)
+    document.documentElement.removeEventListener('pointerleave', release)
   }
 })
 onUnmounted(() => dispose())

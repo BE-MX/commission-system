@@ -4,7 +4,7 @@
     <div class="login-atmosphere" aria-hidden="true"></div>
     <img :src="logoGold" class="bg-watermark" aria-hidden="true" alt="" />
     <div class="login-map">
-      <WorldMapCanvas />
+      <WorldMapCanvas :avoid="brandCopy" />
     </div>
     <ArkWakeCanvas :anchor="titleTextRef" :limit="brandPanelRef" />
 
@@ -13,7 +13,7 @@
       <!-- Left Panel - Brand Zone -->
       <div ref="brandPanelRef" class="brand-panel">
         <!-- Brand Header -->
-        <div class="brand-header login-enter">
+        <div class="brand-header login-rise" style="--rise: 0">
           <div class="brand-lockup">
             <img :src="logoGold" class="brand-logo" alt="leShine Hair" />
             <span class="brand-divider"></span>
@@ -22,15 +22,15 @@
         </div>
 
         <!-- Main Title Block -->
-        <div class="brand-copy login-enter">
-          <p class="brand-eyebrow"><span class="brand-dot"></span>AI 驱动的企业协同平台</p>
+        <div ref="brandCopyRef" class="brand-copy">
+          <p class="brand-eyebrow login-rise" style="--rise: 1"><span class="brand-dot"></span>AI 驱动的企业协同平台</p>
           <h1 class="brand-title">
-            <span ref="titleTextRef" class="brand-title-text">莱莎方舟</span>
+            <span class="brand-title-rise login-rise" style="--rise: 2"><span ref="titleTextRef" class="brand-title-text">莱莎方舟</span></span>
           </h1>
-          <p class="brand-latin">LeShine Ark Platform</p>
-          <span class="brand-rule"></span>
-          <p class="brand-desc">贯通业务 <b>·</b> 沉淀知识 <b>·</b> 智能协同</p>
-          <div class="brand-pillars">
+          <p class="brand-latin login-rise" style="--rise: 3">LeShine Ark Platform</p>
+          <span class="brand-rule" style="--rise: 4"></span>
+          <p class="brand-desc login-rise" style="--rise: 5">贯通业务 <b>·</b> 沉淀知识 <b>·</b> 智能协同</p>
+          <div class="brand-pillars login-rise" style="--rise: 6">
             <span>客户经营</span><i></i><span>产销履约</span><i></i><span>业绩核算</span><i></i><span>创意设计</span><i></i><span>知识洞察</span>
           </div>
         </div>
@@ -43,7 +43,10 @@
 
       <!-- Right Panel - Login Form -->
       <div class="form-side">
-        <div class="login-card login-enter">
+        <div ref="cardRef" class="login-card">
+          <!-- Rim light: lit from the map side, plus a gold glint that follows the pointer along the edge. -->
+          <div class="login-card__rim" aria-hidden="true"><span ref="rimGlowRef" class="login-card__glow"></span></div>
+          <div class="login-card__sheen" aria-hidden="true"><span ref="sheenGlowRef" class="login-card__glow login-card__glow--soft"></span></div>
           <!-- Form Header (brand logo serves all viewports) -->
           <div class="mb-8">
             <img :src="logoGold" class="form-logo" alt="leShine Hair" />
@@ -52,7 +55,7 @@
 
           <form @submit.prevent="handleSubmit">
             <!-- Username -->
-            <div class="relative">
+            <div class="login-field relative">
               <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
               </svg>
@@ -67,7 +70,7 @@
             </div>
 
             <!-- Password -->
-            <div class="relative mt-4">
+            <div class="login-field relative mt-4">
               <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
               </svg>
@@ -111,7 +114,7 @@
             <button
               type="submit"
               :disabled="loading"
-              class="tech-btn-primary w-full h-12 mt-8 text-base font-semibold flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+              class="tech-btn-primary login-submit w-full h-12 mt-8 text-base font-semibold flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               <svg
                 v-if="loading"
@@ -145,6 +148,7 @@
 
 <script setup>import { msgWarning, msgSuccessText, msgError } from '@/utils/feedback'
 import { ref } from 'vue'
+import { usePointerGlow } from './composables/usePointerGlow'
 import { useRoute, useRouter } from 'vue-router'
 import { isAuthOperationSuperseded, useAuthStore } from '@/stores/auth'
 import WorldMapCanvas from '@/components/WorldMapCanvas.vue'
@@ -157,6 +161,21 @@ import { readSessionItem } from '@/utils/safeSessionStorage'
 
 const titleTextRef = ref(null)
 const brandPanelRef = ref(null)
+const brandCopyRef = ref(null)
+const brandCopy = () => brandCopyRef.value
+const cardRef = ref(null)
+const rimGlowRef = ref(null)
+const sheenGlowRef = ref(null)
+usePointerGlow(cardRef, [rimGlowRef, sheenGlowRef])
+
+// A refused sign-in shakes the card once: the answer lands where the user is looking.
+function reject() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  cardRef.value?.animate?.(
+    [0, -7, 5, -3, 1, 0].map(x => ({ transform: `translateX(${x}px)` })),
+    { duration: 360, easing: 'cubic-bezier(0.36, 0.07, 0.19, 0.97)' },
+  )
+}
 
 const router = useRouter()
 const route = useRoute()
@@ -172,6 +191,7 @@ const handleSubmit = async () => {
   if (loading.value) return
   if (!username.value || !password.value) {
     msgWarning('请输入用户名和密码')
+    reject()
     return
   }
 
@@ -191,16 +211,19 @@ const handleSubmit = async () => {
     }
     if (redirect === EXPO_KIOSK_PATH && !authStore.hasPermission('expo:write')) {
       msgError('当前账号没有展会试戴权限，请更换展会设备账号')
+      reject()
       return
     }
     if (isFxSettlementPath(redirect) && !authStore.hasPermission('fx_settlement:read')) {
       msgError('当前账号没有结汇助手权限，请联系管理员开通或更换账号')
+      reject()
       return
     }
     router.push(redirect.startsWith('/') ? redirect : '/')
   } catch (error) {
     if (isAuthOperationSuperseded(error)) return
     msgError(error.message || '登录失败，请检查用户名和密码', error)
+    reject()
   } finally {
     loading.value = false
   }
@@ -209,6 +232,7 @@ const handleSubmit = async () => {
 
 <style scoped>
 .login-page {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   position: relative; isolation: isolate; width: 100%; min-height: 100vh; min-height: 100svh;
   overflow: clip; background: var(--login-bg); color: var(--login-text);
 }
@@ -236,42 +260,79 @@ const handleSubmit = async () => {
 .brand-logo { height: 40px; width: auto; display: block; }
 .brand-divider { width: 1px; height: 24px; background: var(--login-border); }
 .brand-wordmark-sub { font-family: 'Outfit', sans-serif; font-size: 10px; letter-spacing: 0.3em; color: var(--login-muted); }
-.brand-eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; font-size: 13px; letter-spacing: 0.18em; color: var(--login-gold); }
-.brand-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--login-gold); }
+.brand-eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; font-size: 13px; letter-spacing: 0.18em; color: var(--login-gold); text-shadow: 0 0 6px var(--login-bg), 0 1px 12px var(--login-bg); }
+.brand-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--login-gold); box-shadow: 0 0 10px var(--login-gold);
+  animation: dot-pulse 3.2s cubic-bezier(0.45, 0, 0.55, 1) 1.2s infinite alternate;
+}
+@keyframes dot-pulse { to { opacity: 0.45; } }
 .brand-title {
   position: relative; margin: 0; white-space: nowrap; font-size: clamp(42px, 4.4vw, 64px);
   font-weight: 700; line-height: 1.2; letter-spacing: 0.06em;
   animation: ark-sailing 7s cubic-bezier(0.37, 0, 0.63, 1) infinite;
 }
+.brand-title-rise { display: inline-block; }
+/* A band of light crosses the gilded title now and then, like a reflection sliding over metal. */
 .brand-title-text {
   position: relative; z-index: 1;
-  background: linear-gradient(115deg, var(--login-gold-light), var(--login-gold));
+  background:
+    linear-gradient(105deg, transparent 40%, var(--login-text) 50%, transparent 60%) 100% 0 / 260% 100% no-repeat,
+    linear-gradient(115deg, var(--login-gold-light), var(--login-gold));
   background-clip: text; -webkit-background-clip: text; color: transparent;
   filter: drop-shadow(0 2px 8px var(--login-bg));
+  animation: title-sheen 9s cubic-bezier(0.45, 0, 0.55, 1) 1.6s infinite;
 }
+@keyframes title-sheen { 0% { background-position: 100% 0, 0 0; } 22%, 100% { background-position: 0 0, 0 0; } }
 @keyframes ark-sailing {
   0%, 100% { transform: translate(0, 0); }
   50% { transform: translate(8px, -3px); }
 }
 .brand-latin { position: relative; text-shadow: 0 1px 8px var(--login-bg); margin: 12px 0 0; font-family: 'Outfit', sans-serif; font-size: 11px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--login-dim); }
-.brand-rule { display: block; width: 36px; height: 1px; margin: 24px 0; background: var(--login-gold); }
+.brand-rule {
+  display: block; width: 36px; height: 1px; margin: 24px 0; background: var(--login-gold);
+  animation: rule-draw 620ms var(--ease-out) both; animation-delay: calc(var(--rise) * 60ms + 60ms);
+}
+@keyframes rule-draw { from { opacity: 0; clip-path: inset(0 100% 0 0); } to { opacity: 1; clip-path: inset(0 0 0 0); } }
 .brand-desc { position: relative; text-shadow: 0 1px 8px var(--login-bg); margin: 0; font-size: 15px; letter-spacing: 0.08em; color: var(--login-muted); }
 .brand-desc b { margin: 0 5px; color: var(--login-gold); font-weight: 400; }
-.brand-pillars { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; font-size: 11px; color: var(--login-dim); }
+.brand-pillars { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; font-size: 11px; color: var(--login-dim); text-shadow: 0 0 6px var(--login-bg), 0 1px 10px var(--login-bg); }
 .brand-pillars i { width: 1px; height: 10px; background: var(--login-border); }
 .brand-footer { margin: 0; font-size: 11px; line-height: 1.8; color: var(--login-dim); }
 .brand-footer span { margin-left: 12px; }
 .form-side { position: relative; flex: 0 0 500px; display: flex; align-items: center; justify-content: center; min-width: 0; padding: 64px 48px 88px 24px; }
 .login-card {
-  width: 100%; max-width: 420px; padding: 40px 34px; border-radius: 20px;
+  --card-radius: 20px;
+  position: relative; width: 100%; max-width: 420px; padding: 40px 34px; border-radius: var(--card-radius);
   background: linear-gradient(145deg, var(--login-surface), var(--login-bg));
   border: 1px solid var(--login-border);
   box-shadow: 0 24px 64px var(--login-shadow), inset 0 1px 0 var(--login-wash);
+  animation: card-in 300ms var(--ease-out) both;
 }
+/* The form is what everyone came for: it arrives quickly and leaves the spectacle to the map. */
+@keyframes card-in { from { opacity: 0; transform: translateY(10px) scale(0.985); } }
+/* The rim is a 1px ring cut out with a mask: lit on the side facing the map, warm at the far corner. */
+.login-card__rim, .login-card__sheen { position: absolute; overflow: hidden; pointer-events: none; }
+.login-card__rim {
+  inset: -1px; padding: 1px; border-radius: calc(var(--card-radius) + 1px);
+  background: linear-gradient(100deg, var(--login-rim-light), transparent 36%, transparent 72%, var(--login-rim-warm));
+  -webkit-mask: linear-gradient(black, black) content-box, linear-gradient(black, black);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(black, black) content-box exclude, linear-gradient(black, black);
+}
+.login-card__sheen { inset: 0; border-radius: var(--card-radius); }
+/* Moved by usePointerGlow with transforms only. */
+.login-card__glow {
+  position: absolute; left: 0; top: 0; width: 340px; height: 340px; border-radius: 50%; opacity: 0;
+  background: radial-gradient(circle, var(--login-glare), transparent 62%);
+}
+.login-card__glow--soft { width: 520px; height: 520px; background: radial-gradient(circle, var(--login-glare-soft), transparent 64%); }
 .form-logo { height: 36px; width: auto; display: block; }
 .login-card .text-white\/60 { color: var(--login-muted); }
 .tech-input { color: var(--login-text); border-color: var(--login-border); transition: border-color 160ms ease, box-shadow 160ms ease; }
 .tech-input::placeholder { color: var(--login-dim); }
+.tech-input:focus { border-color: var(--login-gold); box-shadow: 0 0 0 3px var(--login-focus-ring); }
+.login-field > svg:first-child { transition: color 180ms ease; }
+.login-field:focus-within > svg:first-child { color: var(--login-gold); }
 .password-toggle {
   position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: grid; place-items: center;
   width: 40px; height: 40px; padding: 0; border: 0; border-radius: 6px;
@@ -282,7 +343,13 @@ const handleSubmit = async () => {
 .forgot-link { color: var(--login-gold); font-size: 13px; white-space: nowrap; text-decoration: none; }
 .tech-btn-primary { background: var(--button-primary); color: var(--button-surface); transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 160ms ease; }
 .tech-btn-primary:hover:not(:disabled) { background: var(--button-primary-hover); filter: none; box-shadow: none; }
-.tech-btn-primary:active:not(:disabled) { background: var(--button-primary-active); }
+.tech-btn-primary:active:not(:disabled) { background: var(--button-primary-active); transform: scale(0.97); }
+/* One pass of light over the button when the pointer arrives; it resets instantly on leave. */
+.login-submit { position: relative; overflow: hidden; }
+.login-submit::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; transform: translateX(-110%);
+  background: linear-gradient(105deg, transparent 34%, var(--login-button-sheen) 50%, transparent 66%);
+}
 .tech-btn-primary:focus-visible { outline: 2px solid var(--button-primary-border); outline-offset: 3px; }
 .tech-btn-primary:disabled { opacity: 0.7; cursor: wait; }
 .tech-btn-primary:disabled:active { transform: none; }
@@ -292,6 +359,7 @@ const handleSubmit = async () => {
   .password-toggle:hover { color: var(--button-primary-border); }
   .forgot-link:hover { text-decoration: underline; }
   .tech-btn-primary:not(:disabled):hover { box-shadow: 0 4px 20px var(--button-focus); }
+  .login-submit:not(:disabled):hover::after { transform: translateX(110%); transition: transform 600ms var(--ease-out); }
 }
 .site-filing {
   position: absolute; right: 24px; bottom: 18px; left: 24px;
@@ -302,9 +370,11 @@ const handleSubmit = async () => {
 .site-filing a:hover { color: var(--login-gold-light); }
 .site-filing a:focus-visible { outline: 1px solid currentColor; outline-offset: 4px; }
 .site-filing__divider { width: 1px; height: 10px; background: var(--login-border); }
-.login-enter { animation: login-enter 280ms cubic-bezier(0.23, 1, 0.32, 1) both; }
-.brand-copy { animation-delay: 60ms; }
-@keyframes login-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+/* Brand copy settles out of a soft blur in a short cascade; the form never waits for it. */
+.login-rise { animation: login-rise 560ms var(--ease-out) both; animation-delay: calc(var(--rise) * 60ms + 60ms); }
+.login-rise.brand-title-rise { animation-duration: 760ms; }
+@keyframes login-rise { from { opacity: 0; transform: translateY(12px); filter: blur(6px); } }
+@keyframes login-fade { from { opacity: 0; } }
 @media (min-width: 1024px) and (max-height: 760px) {
   .brand-copy { padding-bottom: 16px; }
   .brand-rule { margin: 18px 0; }
@@ -334,8 +404,10 @@ const handleSubmit = async () => {
   .login-map { top: 290px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .login-enter, .brand-title { animation: none; }
+  .login-rise, .login-card, .brand-rule { animation: login-fade 200ms ease both; }
+  .brand-title, .brand-title-text, .brand-dot { animation: none; }
+  .login-submit::after { display: none; }
   .tech-btn-primary { transition: none; }
-  .tech-btn-primary:active { transform: none; }
+  .tech-btn-primary:active:not(:disabled) { transform: none; }
 }
 </style>
