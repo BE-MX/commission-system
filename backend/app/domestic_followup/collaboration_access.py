@@ -37,6 +37,18 @@ def claims_allow(user, code):
     return "super_admin" in (user.get("roles") or ()) or code in (user.get("permissions") or ())
 
 
+def has_live_super_admin(db, user, *, lock=False):
+    if "super_admin" not in (user.get("roles") or ()):
+        return False
+    stmt = (select(ArkUser.id)
+            .join(ArkUserRole, ArkUserRole.user_id == ArkUser.id)
+            .join(ArkRole, ArkRole.id == ArkUserRole.role_id)
+            .where(ArkUser.id == user_id(user), ArkUser.is_active.is_(True),
+                   ArkUser.deleted_at.is_(None), ArkRole.name == "super_admin")
+            .limit(1))
+    return db.scalar(stmt.with_for_update(read=True) if lock else stmt) is not None
+
+
 def _scope_matches():
     return or_(
         FollowupScope.customer_id == DomesticCustomer.id,

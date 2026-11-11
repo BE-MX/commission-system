@@ -11,7 +11,7 @@ from app.ai.service import chat
 from app.core.config import get_settings
 from app.core.public_fetch import clean_html, fetch_public
 from app.mcp.public_web_tools import _validate_public_url
-from app.project_radar.analysis import _json_value
+from app.project_radar.analysis import ANALYZE_PRESET, _json_value
 from app.project_radar.urls import canonicalize_url
 
 logger = logging.getLogger("commission.project_radar.resolve")
@@ -59,7 +59,7 @@ def extract_name_candidates(db, text: str, *, user_id=None) -> list[str]:
     }
     try:
         result = chat(
-            db=db, preset_name="project_radar_analyze",
+            db=db, preset_name=ANALYZE_PRESET,
             messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
             caller_module="project_radar", caller_user_id=user_id, snapshot_mode="metadata",
         )

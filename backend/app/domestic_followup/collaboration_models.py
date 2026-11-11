@@ -113,6 +113,7 @@ class FollowupCustomerProfile(Base):
     customer_id = Column(Integer, ForeignKey(_CUSTOMER), primary_key=True, comment="内贸客户ID")
     wechat = Column(String(120), comment="客户微信号")
     deal_status = Column(String(16), comment="人工核实的成交结论")
+    deal_override_status = Column(String(16), comment="手动设置的跟进成交状态，NULL时按原口径判定")
     deal_evidence = Column(Text, comment="人工核实成交时提供的依据")
     deal_verified_by_user_id = Column(_UINT, ForeignKey(_USER), comment="成交核实人")
     deal_verified_at = Column(DateTime, comment="成交核实时间（北京时间）")

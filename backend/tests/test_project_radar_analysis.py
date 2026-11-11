@@ -1,7 +1,9 @@
 import json
 
-from app.project_radar.analysis import analyze_target
+from app.ai.models import AiCallLog, AiPreset, AiProvider
+from app.project_radar.analysis import analyze_target, classify_update
 from app.project_radar.models import RadarTarget
+from app.project_radar.resolve import extract_name_candidates
 from app.system.models import SysDict
 
 
@@ -33,3 +35,43 @@ def test_ai_receives_runtime_dictionaries_and_cannot_write_version(db, monkeypat
     assert prompt["allowed_ark_modules"] == ["知识库"]
     assert result["analyzed"] is True and target.version == "v9.0.0"
     assert target.item_type == "open_source" and len(target.ark_modules) == 1
+
+def test_radar_ai_uses_enabled_presets_from_migration(db, monkeypatch):
+    provider = AiProvider(name="Radar test provider", api_base="https://example.com/v1")
+    db.add(provider)
+    db.flush()
+    db.add_all([
+        AiPreset(preset_name="ark_project_radar_analyze", provider_id=provider.id,
+                 model="radar-analysis-model", is_enabled=True),
+        AiPreset(preset_name="ark_project_radar_update_classify", provider_id=provider.id,
+                 model="radar-review-model", is_enabled=True),
+    ])
+    db.commit()
+
+    responses = iter([
+        {"title": "Project B", "description": "Converts documents to Markdown"},
+        {"names": ["Project B"]},
+        {"level": "key", "reason": "Breaking API change", "summary": ["Removed legacy API"]},
+    ])
+
+    def fake_post_json(*args, **kwargs):
+        return {"choices": [{"message": {"content": json.dumps(next(responses))}}]}
+
+    monkeypatch.setattr("app.ai.call_service.post_json", fake_post_json)
+    target = RadarTarget(title="b", item_type="other", one_liner="b")
+    analyzed = analyze_target(db, target, "Project B converts documents to Markdown.")
+    names = extract_name_candidates(db, "I use Project B.")
+    review = classify_update(
+        db, from_version="v1.0.0", to_version="v2.0.0",
+        release_notes="Removed the legacy API.", level="normal",
+    )
+
+    assert analyzed["analyzed"] and target.description == "Converts documents to Markdown"
+    assert names == ["Project B"]
+    assert review["level"] == "key" and review["reason"] == "Breaking API change"
+    logs = db.query(AiCallLog).order_by(AiCallLog.id).all()
+    assert [(log.preset_name, log.model, log.status) for log in logs] == [
+        ("ark_project_radar_analyze", "radar-analysis-model", "success"),
+        ("ark_project_radar_analyze", "radar-analysis-model", "success"),
+        ("ark_project_radar_update_classify", "radar-review-model", "success"),
+    ]

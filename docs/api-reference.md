@@ -2866,16 +2866,17 @@ AI 整理走 `app.ai.service.chat` facade，预设 `domestic_followup_parse`（�
 
 `GET /followups`、`/followups/authors`、`/drafts`、`/tasks`、`/tasks/summary`、`/items` 均接受 `potential_only=true`（默认 false），与原有数据范围和筛选取交集，只返回客户**当前** `lifecycle_status=潜在` 的数据；无客户的草稿在勾选时不显示。此筛选不改变详情/历史的查看权限。
 
-### 客户总览与接力协作（255 迁移，本地开发）
+### 客户总览与接力协作（255 迁移，手动成交状态需 258 迁移）
 
 业务规则与权限矩阵见[已确认需求](requirements/2026-11-09-domestic-followup-collaboration.md)。下列路径沿用 `/api/domestic-followup` 前缀。
 
 | 方法 | 相对路径 | 请求与结果 |
 | --- | --- | --- |
 | GET | `/customer-overview` | 按客户分页。支持关键词、地区、成交、协作状态、当前跟进人、联系日期、生命周期及范围。返回 `items,total,page,page_size,counts,regions,assignees`。`deal_status` 为 `all/won/unwon/unknown/sample_only`，`scope` 为 `mine/authorized/collaborating/available/incoming`。统计保留成交以外的筛选及相同权限。 |
-| GET | `/customers/{id}/overview` | 客户级摘要。按权限投影联系方式、成交依据、最近联系和允许的动作。 |
+| GET | `/customers/{id}/overview` | 客户级摘要。按权限投影联系方式、成交依据、最近联系和允许的动作。客户总览行和摘要均返回 `can_edit_deal`；手动修改生效时 `deal_source` 为 `manual_override`。 |
 | PUT | `/customers/{id}/contact` | 窄字段更新，支持联系人、电话、微信、省市。疑似重复返回 409，只有有权查看的匹配客户才返回摘要。 |
-| PUT | `/customers/{id}/deal-verification` | 客户范围内的协调员提交 `deal_status` 和核实依据，保留事件。系统订单事实优先。 |
+| PUT | `/customers/{id}/deal-verification` | 客户范围内的协调员提交 `deal_status` 和核实依据，保留事件。按自动口径判定时系统订单优先。 |
+| PUT | `/customers/{id}/deal-status` | 设置客户跟进的手动成交状态。提交 `deal_status`（`won/unwon/unknown` 或 `null` 恢复自动判定）及必填 `reason`（最多 500 字），返回 `id`、`deal_override_status`。按实时角色和客户范围校验，状态变更同事务留痕。 |
 | POST | `/customers/prospect` | 扩展原快速建档。店名必填，联系方式、省市和明确未成交确认可选。同事务建立客户和跟进责任。 |
 | GET | `/customers/{id}/timeline` | 以 `offset`、`event_type=all/followup/shipment` 分页读取授权历史，返回 `has_more`、`next_offset`。新增协作权限与发货读取分别判断。 |
 | GET | `/collaboration/{id}`、`/collaboration/{id}/events` | 当前责任、版本、动作和交接包，以及分页审计事件。 |
