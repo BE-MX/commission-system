@@ -1063,6 +1063,7 @@ export async function parseTemplateSource(args: {
     schemaVersion: 1,
     template: {
       ...currentTemplate,
+      cleanBaseUrl: undefined,
       width: psd.width,
       height: psd.height,
       initialColorCount: cards.filter((card) => card.kind !== 'display').length,

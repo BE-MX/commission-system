@@ -20,6 +20,7 @@ import {
 } from '@/lib/source-versions';
 import type { AuthorizedUser } from '@/lib/server/auth';
 import { CATALOG, serverTemplateById } from '@/lib/server/catalog';
+import { verifiedSourceBackground } from '@/lib/server/source-background';
 import { psdDimensions, JPG_LIMIT, PSD_LIMIT, PSD_PART_SIZE } from '@/lib/server/uploads';
 
 type SqlValue = string | number | null;
@@ -323,7 +324,7 @@ export async function sourceContextForVersion(templateId: string, versionId: str
   return {
     row,
     config,
-    template: { ...config.template, sourceVersionId: row.id, availableLengths: config.availableLengths },
+    template: { ...config.template, cleanBaseUrl: verifiedSourceBackground(config.template, row.assetManifestJson), sourceVersionId: row.id, availableLengths: config.availableLengths },
     colors: effectiveSourceColors(config),
     sourceVersion: {
       id: row.id,
@@ -676,6 +677,8 @@ async function validateParsedConfig(row: StoredSourceVersion, input: unknown) {
     schemaVersion: 1,
     template: {
       ...raw.template,
+      // A newly parsed candidate cannot inherit its parent's certified texture.
+      cleanBaseUrl: undefined,
       id: original.id,
       productName: original.productName,
       radio: original.radio,
@@ -992,7 +995,7 @@ export function sourceVersionConfig(row: StoredSourceVersion) {
   return {
     ...config,
     availableLengths: allowedLengths,
-    template: { ...config.template, availableLengths: allowedLengths },
+    template: { ...config.template, cleanBaseUrl: verifiedSourceBackground(config.template, row.assetManifestJson), availableLengths: allowedLengths },
     parseIssues: sourceReviewIssues(config.parseIssues, config.template.initialCards, CATALOG.colors, allowedLengths),
   };
 }

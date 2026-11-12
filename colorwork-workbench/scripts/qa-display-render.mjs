@@ -39,11 +39,15 @@ try {
     fillRect: () => {}, save: () => {}, restore: () => {}, strokeRect: () => {}, scale: () => {},
     drawImage: (image, ...args) => calls.push({ src: image.src, args }),
     fillText: (value) => calls.push({ text: value }),
-    getImageData: (_x, _y, width, height) => ({ data: new Uint8ClampedArray(width * height * 4), width, height }),
+    getImageData: (_x, _y, width, height) => ({ data: new Uint8ClampedArray(width * height * 4).fill(255), width, height }),
   };
   globalThis.Image = class {
     width = 124; height = 124;
-    set src(value) { this._src = value; queueMicrotask(() => this.onload?.()); }
+    set src(value) {
+      this._src = value;
+      if (value.endsWith('/base.png') || value.endsWith('/reference.jpg')) { this.width = 1000; this.height = 1500; }
+      queueMicrotask(() => this.onload?.());
+    }
     get src() { return this._src; }
   };
   const fakeDocument = { createElement: () => ({ width: 0, height: 0, getContext: () => context }) };
