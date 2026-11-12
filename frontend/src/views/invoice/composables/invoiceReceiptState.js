@@ -1,5 +1,18 @@
 import { toMoneyCents } from './invoiceSettlement.js'
 
+export function invoiceReceiptSyncGuidance(form) {
+  if (!form.id || form.transaction_mode === 'local') return null
+  if (['cancel_pending', 'cancelled'].includes(form.status)) return null
+  if (form.receipt_sync_refresh_required) return { message: '同步状态未能刷新，请关闭并重新打开订单，核对结果后再补登记回款。', canSync: false }
+  if (form.linked_sync_id) return { message: '订单关联同步尚未完成，请先处理上方的关联同步任务，完成后再补登记回款。', canSync: false }
+  if (form.sync_status === 'sync_uncertain') return { message: '订单同步结果待核对，请先返回订单列表“处理待核对”，核对原同步结果后再补登记回款。', canSync: false }
+  if (['armed', 'ready'].includes(form.receipt_draft?.status)) return { message: '首次回款正在处理中，请等待处理完成后刷新资金汇总，再核对是否需要补登记回款。', canSync: false }
+  const needsSync = form.receipt_order_dirty || ['not_synced', 'sync_failed'].includes(form.sync_status)
+  if (!needsSync) return null
+  if (form.presale_edit_blocked_reason) return { message: form.presale_edit_blocked_reason, canSync: false }
+  return { message: '订单尚未完成同步，请先保存并同步，再补登记回款。同步成功后重新打开订单，在下方登记实际到账款。', canSync: true }
+}
+
 export function projectReceiptBalance(balance, total) {
   const due = toMoneyCents(total), effective = toMoneyCents(balance.effective_amount)
   const registered = toMoneyCents(balance.registered_amount)

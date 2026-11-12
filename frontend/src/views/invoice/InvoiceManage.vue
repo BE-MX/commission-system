@@ -389,7 +389,7 @@
                 :on-total-discount-change="applyTotalDiscount"
               />
 
-              <InvoiceReceiptFields v-if="!invoiceIsLocal(form)" class="form-card" :form="form" :total="formTotal" :locked="editor.receiptLocked.value" />
+              <InvoiceReceiptFields v-if="!invoiceIsLocal(form)" class="form-card" :form="form" :total="formTotal" :locked="editor.receiptLocked.value" @sync="saveAndSync" />
             </aside>
           </div>
         </el-form>

@@ -374,6 +374,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       transaction_route: data.transaction_route || data.transaction_mode || 'legacy',
       local_customer_id: data.local_customer_id || (String(data.customer_id || '').startsWith('ark:') ? Number(String(data.customer_id).slice(4)) : null),
       receipt_draft: data.receipt_draft ? { ...data.receipt_draft, amount: data.receipt_draft.amount == null ? 0 : Number(data.receipt_draft.amount) } : null,
+      receipt_sync_refresh_required: false,
       shipping_fee: Number(data.shipping_fee || 0),
       surcharge_amount: Number(data.surcharge_amount || 0),
       internal_discount: normalizeDiscount(data.internal_discount),
@@ -936,18 +937,42 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // 保存 → 校验 → 推送小满；只在确认成功后显示持续提示，失败保留编辑现场。
   async function saveAndSync() {
     if (invoiceIsLocal(form)) { msgWarning('方舟独立订单请保存后在订单履约中确认，不发送小满'); return }
+    if (form.receipt_sync_refresh_required) { msgWarning('同步状态未能刷新，请关闭并重新打开订单，核对结果后再操作'); return }
+    if (form.sync_status === 'sync_uncertain') { msgWarning('请先返回订单列表“处理待核对”，核对原同步结果后再操作'); return }
+    if (form.linked_sync_id) { msgWarning('请先处理未结束的关联同步任务'); return }
+    if (form.presale_edit_blocked_reason) { msgWarning(form.presale_edit_blocked_reason); return }
     if (saveAndSyncSubmitting.value) {
       msgWarning('发票正在保存并同步，请勿重复提交')
+      return
+    }
+    if (form.receipt_action_open || form.receipt_action_busy || form.receipt_uploading || form.receipt_proof_dirty || form.receipt_remark_editing || form.receipt_remark_saving) {
+      msgWarning('请先完成或关闭当前回款操作，并保存回款截图或备注变更')
       return
     }
 
     saveAndSyncSubmitting.value = true
     try {
       const groupOnly = hasOnlyGroupChanges()
-      const useLinked = !groupOnly && Boolean(form.id && form.xiaoman_order_id)
-      const saved = await saveDraft({ linked: useLinked, confirmZeroReceipt: !groupOnly })
+      const needsSave = !form.id || hasUnsavedChanges.value
+      if (!needsSave && form.sync_status === 'synced') {
+        msgSuccessText('订单已同步且没有未保存修改，可直接补登记回款')
+        return
+      }
+      if (!needsSave && ['stock', 'presale'].includes(form.order_type) && form.receipt_draft?.eligible !== false && !Number(form.receipt_draft?.amount || 0)) {
+        try {
+          await confirmAction('当前回款金额为0，是否确认提交？', '提交确认', {
+            type: 'warning', confirmButtonText: '确认提交', cancelButtonText: '取消',
+          })
+        } catch (error) {
+          if (isFeedbackCancelled(error)) return
+          throw error
+        }
+      }
+      const useLinked = needsSave && !groupOnly && Boolean(form.id && form.xiaoman_order_id)
+      // A saved unsynced order needs a push, not another linked edit of identical data.
+      const saved = needsSave ? await saveDraft({ linked: useLinked, confirmZeroReceipt: !groupOnly }) : { ...form }
       if (!saved) return
-      if (lastSaveType.value === 'groups') {
+      if (needsSave && lastSaveType.value === 'groups' && saved.sync_status === 'synced') {
         msgSuccessText('订单业务数据未变化，无需同步')
         return
       }
@@ -960,9 +985,26 @@ export function useInvoiceEditor({ onSaved } = {}) {
         }
         return
       }
-      const outcome = await validateThenSync(form.id, showIssues)
+      const outcome = await validateThenSync(saved.id, showIssues, { isCurrent: () => form.id === saved.id })
       if (outcome === INVOICE_SYNC_OUTCOME.DUPLICATE) return
       onSaved?.() // 同步会改单据状态，列表需按最新状态再刷一次
+      if (form.id !== saved.id || outcome === INVOICE_SYNC_OUTCOME.CANCELLED) return
+      // Failed/uncertain pushes also change persisted state. Keep the drawer's
+      // next action authoritative without overwriting edits made during the request.
+      try {
+        const current = await getInvoice(saved.id)
+        if (form.id !== saved.id) return
+        if (!hasUnsavedChanges.value) resetForm(current)
+        else {
+          for (const key of ['status', 'sync_status', 'xiaoman_order_id', 'xiaoman_order_no', 'linked_sync_id', 'synced_at']) form[key] = current[key]
+        }
+        form.receipt_sync_refresh_required = false
+      } catch {
+        if (form.id !== saved.id) return
+        form.receipt_sync_refresh_required = true
+        msgWarning('同步状态未能刷新，请关闭并重新打开订单，核对结果后再操作')
+        return
+      }
       if (outcome === INVOICE_SYNC_OUTCOME.SUCCESS) {
         showSyncCompletion(saved.invoice_no)
         if (!hasUnsavedChanges.value) {
