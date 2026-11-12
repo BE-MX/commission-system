@@ -47,3 +47,13 @@ def test_feedback_date_and_write_permission_are_enforced(api, monkeypatch):
     result = client.post('/api/client-desk/suggestions/5/feedback',json={'value':'snoozed','date':'2026-11-12'})
     assert result.status_code == 200
     assert result.json()['data']['date'] == '2026-11-12'
+
+
+def test_copy_draft_requests_explicit_fresh_ownership(api, monkeypatch):
+    from app.client_desk import service
+    app, client = api
+    app.dependency_overrides[get_current_user] = lambda: {'sub': '1', 'roles': [], 'permissions': ['client_desk:read']}
+    monkeypatch.setattr(service, 'detail', lambda *a: {'fresh': False})
+    monkeypatch.setattr(service, 'fresh_detail', lambda *a: {'fresh': True})
+    assert client.get('/api/client-desk/customers/801').json()['data']['fresh'] is False
+    assert client.get('/api/client-desk/customers/801?fresh=true').json()['data']['fresh'] is True

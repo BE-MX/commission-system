@@ -24,6 +24,8 @@ JWT 管理入口 POST `/api/alibaba-feed/sources`、PATCH `/api/alibaba-feed/sou
 
 客户读取包含 `/today`、`/customers`、`/customers/{company_id}`、详情下的 `/timeline` 和 `/timeline/events/{event_key}`。个人状态 PATCH `/state`，共享等级 PUT `/grade`，手工记录 POST `/followups`，重新分析 POST `/reanalyze`，建议反馈 POST `/suggestions/{id}/feedback`。会话入口 `/unlinked-conversations`、POST `/wa-links`、DELETE `/wa-links/{id}`。WhatsApp 跳转经 POST 客户下 `/wa-open` 复核。日期由 GET `/calendar/sample-followup` 计算。
 
+2026-11-12 读取优化（本地实现，待发布）：档案、时间轴、事件详情仅小满归属成功结果可复用 60 秒，本人私海清单可复用 45 秒；平台权限、来源授权和建议依赖仍逐请求检查。复制草稿使用 `GET /customers/{company_id}?fresh=true`，与写操作、`wa-open` 一样每次实时核验归属。`/customers` 普通列表按已存分数先分页，仅当前页实时判定建议，失效建议可能仍排前但不显示内容；`suggested` 与 `reason` 筛选仍先实时判定再计算总数和分页。
+
 GET `/reports/handoff` 仅公开无敏感内容壳。POST `/reports/redeem` 需登录和收件人匹配，原子消费短时签名票据。不会兑换全平台登录态。请求字段、并发和响应说明见[私海接口契约](requirements/2026-11-04-private-sea-assistant/contracts.md)，实际字段以 `app/client_desk/router.py` 和 `report_router.py` 为准。
 
 ## 全局导航配置（2026-11-03，待部署）

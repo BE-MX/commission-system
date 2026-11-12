@@ -38,7 +38,8 @@
                 <button class="link" :aria-label="`查看详情：${timelineTitle(event)}`" @click="openEvidence(event.event_key)">查看详情</button>
               </li>
             </ul>
-            <p v-if="!events.length && !timelineLoading" class="muted">此渠道暂无可见记录。</p>
+            <el-alert v-if="timelineError" :title="timelineError" type="error" :closable="false"><el-button text @click="loadTimeline(false)">重试时间轴</el-button></el-alert>
+            <p v-if="!events.length && !timelineLoading && !timelineError" class="muted">此渠道暂无可见记录。</p>
             <el-button v-if="cursor" :loading="timelineLoading" @click="loadTimeline(true)">加载更多</el-button>
             <p v-if="timelineLoading" class="muted">正在读取时间轴…</p>
           </section>
@@ -69,7 +70,7 @@ import TimelineEventDetails from './TimelineEventDetails.vue'
 import { useClientDesk } from './useClientDesk'
 const route = useRoute()
 const desk = useClientDesk(route)
-const { mode, filter, keyword, page, pageSize, total, rows, today, selected, detail, reading, loading, detailLoading, error, detailError, source, events, cursor, timelineLoading, evidence, evidenceOpen, evidenceError, evidenceLoading, dialog, form, saving, saveError, conflict, linkOptions, linkKeyword, scope, selectedChat, suggestion, state, busyAnalysis, loadList, select, loadTimeline, openEvidence, open, save, feedback, reanalyze, ignoreChat, searchLinks } = desk
+const { mode, filter, keyword, page, pageSize, total, rows, today, selected, detail, reading, loading, detailLoading, error, detailError, source, events, cursor, timelineLoading, timelineError, evidence, evidenceOpen, evidenceError, evidenceLoading, dialog, form, saving, saveError, conflict, linkOptions, linkKeyword, scope, selectedChat, suggestion, state, busyAnalysis, loadList, select, loadTimeline, openEvidence, open, save, feedback, reanalyze, ignoreChat, searchLinks } = desk
 const tabs = [{ key: 'suggested', label: '今日建议' }, { key: 'all', label: '全部客户' }, { key: 'unlinked', label: '未关联会话' }]
 const grades = [{ value: 'grade:S,A', label: 'S / A' }, { value: 'grade:B', label: 'B' }, { value: 'ungraded', label: '未分级' }]
 const dialogTitles = { note: '关键备注', date: '下次跟进', grade: '客户分级', record: '记一笔', snooze: '稍后提醒', link: '关联到我的客户' }
@@ -84,7 +85,7 @@ async function copyDraft() {
   try {
     // Copy is a new disclosure boundary: re-read live dependencies, including
     // TM tombstones and revoked links, rather than copying the cached draft.
-    const fresh = await revalidatedDraft(clientDeskApi.customer, customer, suggestionId,
+    const fresh = await revalidatedDraft(clientDeskApi.freshCustomer, customer, suggestionId,
       () => selected.value === customer && String(suggestion.value?.id) === String(suggestionId))
     detail.value = fresh
     const result = await copyOrFallback(fresh.suggestion.draft, text => navigator.clipboard.writeText(text),

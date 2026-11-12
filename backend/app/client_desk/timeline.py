@@ -10,6 +10,7 @@ from app.client_desk.models import ClientDeskFollowup
 from app.client_desk.rules import R4, REASONS
 from app.client_desk.sources import build_customer_sources
 from app.invoice.product_service import _schema
+from app.client_desk.read_scope import scope_request
 
 
 def order_names(db, company_id, ids):
@@ -179,7 +180,7 @@ def all_events(db, user, company_id):
                 "manual": True,
             }
         )
-    events.extend(feed_events(db, user, company_id))
+    events.extend(feed_events(db, user, company_id, source=source))
     for e in events:
         value = e["occurred_at"]
         if value is not None and not isinstance(value, datetime):
@@ -192,6 +193,7 @@ def key(event):
     return (event["occurred_at"].isoformat(), event["source"], event["id"])
 
 
+@scope_request(read_only=True)
 def timeline(db, user, company_id, source="all", cursor=None, limit=30):
     # These keys remain available to existing AI citations, but they duplicate
     # records that already have their own entries in the timeline.
@@ -235,6 +237,7 @@ def timeline(db, user, company_id, source="all", cursor=None, limit=30):
     }
 
 
+@scope_request(read_only=True)
 def event(db, user, company_id, event_key):
     found = next(
         (e for e in all_events(db, user, company_id) if e["event_key"] == event_key),
@@ -251,7 +254,7 @@ def event(db, user, company_id, event_key):
     return found
 
 
-def feed_events(db, user, company_id):
+def feed_events(db, user, company_id, *, source=None):
     from .models import ClientDeskSuggestion
     from .access import dependencies_valid
     from .source_policy import restricted_row
@@ -269,7 +272,7 @@ def feed_events(db, user, company_id):
     for row in rows:
         if not restricted_row(row) or not row.selected_feed_item_ids:
             continue
-        if not dependencies_valid(db, user, company_id, row.source_dependencies):
+        if not dependencies_valid(db, user, company_id, row.source_dependencies, source=source):
             continue
         try:
             material = select_for_analysis(

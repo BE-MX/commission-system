@@ -1,5 +1,17 @@
 # 私海助理实现与验证记录
 
+## 2026-11-12 读取性能优化（Codex，Git 交付，未发布）
+
+工作区 `D:/MyProgram/commission-system-codex-private-sea-read-speed`，分支 `codex/private-sea-read-speed`。新增契约见 [读取性能补充](contracts.md#1-持久化与所有权)。没有数据库迁移，未调用生产或变更开关。
+
+- 档案普通冷请求仅一次小满归属调用、一次私海清单和一次来源组装；摘要及受限建议复用该来源的 AI 依赖视图。档案/时间轴/详情共享 60 秒成功归属缓存，私海清单缓存 45 秒，写入/WhatsApp/复制仍实时核验，来源 ACL 不缓存。
+- 全部客户分页前只取建议 ID、客户、轮次与已存排序分，分页后读取本页完整建议与来源；今日建议仍维持实时判定与总数口径。消息只投影所需字段，普通列表的最近接触通过数据库 `MAX` 聚合，保留实时来源 ACL 和本人手工跟进范围。
+- 前端档案与时间轴并行、独立报错重试；today 数据用于列表，15 秒内连续操作复用，强刷和写后按请求代际更新。分析轮询不取消时间轴，结束后补刷。Unicode 搜索与 Python 3.12 的 casefold 保持一致。
+- 已验证：隔离 SQLite 私海相关回归 73 项、Alibaba 业务边界 31 项通过；前端 `npm run test:client-desk` 16 项通过；独立审查发现的缓存竞态、转入转出缺卡、列表 TM 实时性、前端迟到响应及轮询中断均已修复并复核。构建和约定检查的最终结果见当前 [交接记录](../../handoff.md)。
+- 浏览器验收未完成：Computer Use 无法可靠识别 Windows Chrome 当前 URL，要求中止操作。未点击或导航，不能记为通过；恢复用隔离夹具保留在 `tmp/private-sea-ui/`，其服务已停止。前端行为回归使用真实 composable、Vue watcher 和受控延迟 API；尚无生产耗时数据。
+
+## 2026-11-04 原始实现记录
+
 2026-11-04 · 独立分支 `codex/private-sea-assistant` · 本地实现，默认关闭
 
 工作目录为 `D:/MyProgram/commission-system-codex-private-sea-assistant`。依据产品 v0.2、三份开发文档与两块原型实现。开发阶段的事实和启用前需要验证的条件分别列在下方。

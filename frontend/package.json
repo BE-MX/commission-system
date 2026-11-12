@@ -13,6 +13,7 @@
     "test:domestic-followup": "node --test tests/domesticFollowup.test.mjs tests/domesticFollowupOverview.test.mjs tests/domesticFollowupEdit.test.mjs",
     "test:invoice-layout": "node --test tests/invoiceLayout.test.mjs",
     "test:customer-workspace": "node --test tests/customerWorkspace.test.mjs",
+    "test:client-desk": "node --experimental-vm-modules --test tests/clientDesk.test.mjs tests/clientDeskLoading.test.mjs",
     "test:invoice-import": "node --test tests/invoicePasteImport.test.mjs",
     "test:invoice-screenshot": "node --test tests/invoiceScreenshotImport.test.mjs",
     "test:invoice-settlement": "node --test tests/invoiceSettlement.test.mjs",

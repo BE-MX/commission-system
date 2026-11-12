@@ -1,7 +1,7 @@
 """Bounded collection source reads shared by scans and customer lists."""
 
 from collections import defaultdict
-from sqlalchemy import text, bindparam
+from sqlalchemy import text, bindparam, func
 from app.client_desk.private_scope import user_id
 from app.client_desk.access import require_enabled
 from app.client_desk.models import ClientDeskState, ClientDeskFollowup, ClientDeskWaLink
@@ -40,17 +40,37 @@ def _manual_followups(db, actor, ids):
 
 def list_last_touches(db, actor, ids):
     """Read recent-contact fields for a page without assembling customer dossiers."""
-    _, whatsapp = _linked_whatsapp(db, actor, ids)
+    from app.client_desk.sources import visible_wa_query
+    from app.whatsapp.models import WhatsAppConversation, WhatsAppMessage
+
+    if not ids:
+        return {}
     touches = defaultdict(list)
-    for cid, conversations in whatsapp.items():
-        for _, _, messages in conversations:
-            last = messages[-1]
-            touches[cid].append((last.sent_at or last.received_at, "whatsapp"))
-    for cid, at, channel in _manual_followups(db, actor, ids).with_entities(
+    # The same live account/consent/link scope as dossier sources, without bodies.
+    whatsapp = visible_wa_query(db, actor, company_ids=ids).join(
+        WhatsAppMessage,
+        (WhatsAppMessage.account_uid == WhatsAppConversation.account_uid)
+        & (WhatsAppMessage.conversation_uid == WhatsAppConversation.conversation_uid),
+    ).filter(WhatsAppMessage.deleted_at.is_(None)).with_entities(
+        ClientDeskWaLink.company_id,
+        func.max(func.coalesce(WhatsAppMessage.sent_at, WhatsAppMessage.received_at)),
+    ).group_by(ClientDeskWaLink.company_id)
+    for cid, at in whatsapp:
+        if at is not None:
+            touches[str(cid)].append((at, "whatsapp"))
+    latest = _manual_followups(db, actor, ids).with_entities(
+        ClientDeskFollowup.company_id,
+        func.max(ClientDeskFollowup.happened_at).label("last_at"),
+    ).group_by(ClientDeskFollowup.company_id).subquery()
+    for cid, at, channel in _manual_followups(db, actor, ids).join(
+        latest,
+        (ClientDeskFollowup.company_id == latest.c.company_id)
+        & (ClientDeskFollowup.happened_at == latest.c.last_at),
+    ).with_entities(
         ClientDeskFollowup.company_id,
         ClientDeskFollowup.happened_at,
         ClientDeskFollowup.channel,
-    ):
+    ).order_by(ClientDeskFollowup.id):
         touches[str(cid)].append((at, channel))
     return {
         cid: max(values, key=lambda touch: touch[0]) for cid, values in touches.items()

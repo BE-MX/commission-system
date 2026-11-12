@@ -53,15 +53,17 @@ def require_account(db, user, account_uid, *, for_ai=False, owner_only=False):
     return account
 
 
-def dependencies_valid(db, user, company_id, dependencies):
+def dependencies_valid(db, user, company_id, dependencies, *, source=None):
     if not dependencies:
         return False
     from app.client_desk.sources import build_customer_sources
 
-    current = build_customer_sources(db, user, company_id, for_ai=True, realtime=False)
+    current = source if source is not None else build_customer_sources(
+        db, user, company_id, for_ai=True, realtime=False
+    )
     expected = dict(dependencies)
     feed = expected.pop("alibaba_feed", None)
-    if current["source_dependencies"] != expected:
+    if current.get("ai_source_dependencies", current["source_dependencies"]) != expected:
         return False
     if feed is not None:
         from app.alibaba_feed.business_service import dependencies_valid as feed_valid

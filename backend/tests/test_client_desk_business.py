@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
-from app.client_desk import service, schemas, sources, private_scope, access
+from app.client_desk import service, schemas, sources, private_scope, access, source_context
 from app.client_desk.models import (
     ClientDeskState,
     ClientDeskFollowup,
@@ -16,6 +16,9 @@ from app.client_desk.models import (
 from app.auth.models import ArkUser
 from app.invoice.models import CustomerProfile, InvoiceCustomerOverlay
 from app.system.models import SysDict
+from app.whatsapp.models import (
+    WhatsAppAccount, WhatsAppConversation, WhatsAppMessage, WhatsAppBodyGrant,
+)
 
 
 @pytest.fixture
@@ -47,6 +50,10 @@ def isolated(monkeypatch):
         ClientDeskFollowup,
         ClientDeskSuggestion,
         ClientDeskWaLink,
+        WhatsAppAccount,
+        WhatsAppConversation,
+        WhatsAppMessage,
+        WhatsAppBodyGrant,
     ]:
         model.__table__.create(engine)
     with Session(engine, expire_on_commit=False) as db:
@@ -55,6 +62,7 @@ def isolated(monkeypatch):
         monkeypatch.setattr(private_scope, "resolve_okki_user_id", lambda *a: 11)
         monkeypatch.setattr(sources, "research_sources", lambda *a: [])
         monkeypatch.setattr(access, "require_enabled", lambda *a, **kw: {"sub": "1"})
+        monkeypatch.setattr(source_context, "require_enabled", lambda *a, **kw: {"sub": "1"})
         monkeypatch.setattr(sources, "visible_wa", lambda *a, **kw: [])
         yield db
     engine.dispose()
@@ -193,7 +201,7 @@ def test_customer_list_paginates_plain_customers_without_loading_full_sources(
     assert (plain["company_id"], plain["last_touch_at"], plain["channel"]) == (
         "801", touch, "phone",
     )
-    assert seen == [803, 803]
+    assert seen == [803]
 
     seen.clear()
     filtered = service.customer_list(db, 1, filter="grade:A", keyword="orDIN")
@@ -233,7 +241,7 @@ def test_link_cas_rebind_and_revoke(isolated, monkeypatch):
     from app.whatsapp.models import WhatsAppConversation
 
     db = isolated
-    WhatsAppConversation.__table__.create(db.get_bind())
+    WhatsAppConversation.__table__.create(db.get_bind(), checkfirst=True)
     db.add(
         WhatsAppConversation(
             id=1, account_uid="a", conversation_uid="c", chat_id="chat", is_group=False

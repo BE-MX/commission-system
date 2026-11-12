@@ -356,7 +356,7 @@ def visible_suggestion(db, row, source, state, now):
     )
     if restricted_row(row):
         matching = dependencies_valid(
-            db, row.user_id, row.company_id, row.source_dependencies
+            db, row.user_id, row.company_id, row.source_dependencies, source=source
         )
     stale = row.status == "succeeded" and (
         not matching

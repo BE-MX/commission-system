@@ -7,6 +7,7 @@ export const clientDeskApi = {
   today: params => unwrap(clientDeskClient.get('/today', { ...options, params })),
   customers: params => unwrap(clientDeskClient.get('/customers', { ...options, params })),
   customer: (id, signal) => unwrap(clientDeskClient.get(`/customers/${encodeURIComponent(id)}`, { ...options, signal })),
+  freshCustomer: id => unwrap(clientDeskClient.get(`/customers/${encodeURIComponent(id)}`, { ...options, params: { fresh: true } })),
   timeline: (id, params, signal) => unwrap(clientDeskClient.get(`/customers/${encodeURIComponent(id)}/timeline`, { ...options, params, signal })),
   evidence: (id, key, signal) => unwrap(clientDeskClient.get(`/customers/${encodeURIComponent(id)}/timeline/events/${encodeURIComponent(key)}`, { ...options, signal })),
   state: (id, data) => unwrap(clientDeskClient.patch(`/customers/${encodeURIComponent(id)}/state`, data, options)),

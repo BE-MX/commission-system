@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.client_desk import schemas, service, link_service, timeline
 from app.client_desk.access import require_enabled
+from app.client_desk.read_scope import scope_request
 
 router = APIRouter(tags=["client-desk"])
 
@@ -50,10 +51,12 @@ def sample_date(
 @router.get("/customers/{company_id}")
 def get_customer(
     company_id: int,
+    fresh: bool = False,
     db: Session = Depends(get_db),
     user=Depends(require_permission("client_desk:read")),
 ):
-    return ok(service.detail(db, user, company_id))
+    load = service.fresh_detail if fresh else service.detail
+    return ok(load(db, user, company_id))
 
 
 @router.get("/customers/{company_id}/timeline")
@@ -109,6 +112,7 @@ def add_followup(
 
 
 @router.post("/customers/{company_id}/reanalyze", status_code=202)
+@scope_request()
 def reanalyze(
     company_id: int,
     payload: schemas.ReanalyzePost,

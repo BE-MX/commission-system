@@ -1,3 +1,4 @@
+import { casefold } from '../../utils/casefold.js'
 import { formatMoney } from '../../utils/money.js'
 
 export { newRequestKey as requestKey } from '../../utils/requestKey.js'
@@ -58,6 +59,14 @@ export function latestRequestGate() {
 export function normalizeDetail(data) {
   const suggestion = data.suggestion ? { ...data.suggestion, draft: data.suggestion.draft_message ?? data.suggestion.draft } : null
   return { ...data, personal_state: { ...data.personal_state, brief_md: data.brief_md ?? data.personal_state?.brief_md, last_analyzed_at: data.last_analyzed_at ?? data.personal_state?.last_analyzed_at }, suggestion }
+}
+
+export function suggestedPage(items, { keyword = '', reason = '', page = 1, pageSize = 20 }) {
+  const folded = casefold(keyword)
+  const matches = items.filter(row => (
+    !reason || row.rule_codes?.includes(reason)
+  ) && (casefold(row.name || '').includes(folded) || String(row.company_id).includes(keyword)))
+  return { items: matches.slice((page - 1) * pageSize, page * pageSize), total: matches.length }
 }
 
 export async function revalidatedDraft(loadCustomer, customerId, suggestionId, isCurrent) {

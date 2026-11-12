@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from fastapi import HTTPException
 from sqlalchemy import text
 from app.client_desk.private_scope import (
     assert_company_access,
@@ -23,7 +24,7 @@ def digest(value):
     ).hexdigest()
 
 
-def visible_wa(
+def visible_wa_query(
     db, user, company_id=None, *, for_ai=False, owner_only=False, company_ids=None
 ):
     uid = user_id(user)
@@ -58,11 +59,27 @@ def visible_wa(
             ClientDeskWaLink.deleted_at.is_(None),
             ClientDeskWaLink.link_type.in_(["linked", "imported"]),
         )
+    return query
+
+
+def visible_wa(
+    db, user, company_id=None, *, for_ai=False, owner_only=False, company_ids=None
+):
+    pairs = visible_wa_query(
+        db, user, company_id, for_ai=for_ai, owner_only=owner_only, company_ids=company_ids
+    ).all()
+    accounts = readable_accounts(db, user_id(user), crm=True, ai=for_ai)
     result = []
-    pairs = query.all()
     conv_ids = [conv.conversation_uid for conv, _ in pairs]
     messages = (
-        db.query(WhatsAppMessage)
+        db.query(
+            WhatsAppMessage.id, WhatsAppMessage.account_uid,
+            WhatsAppMessage.conversation_uid, WhatsAppMessage.source_revision,
+            WhatsAppMessage.content_text, WhatsAppMessage.content_preview,
+            WhatsAppMessage.content_type, WhatsAppMessage.direction,
+            WhatsAppMessage.sent_at, WhatsAppMessage.received_at,
+            WhatsAppMessage.deleted_at,
+        )
         .filter(
             WhatsAppMessage.conversation_uid.in_(conv_ids),
             WhatsAppMessage.account_uid.in_(accounts),
@@ -185,10 +202,18 @@ def build_customer_sources(
         assert_company_access(db, user, company_id, realtime=realtime)
     if card is None:
         card = next(
-            c
-            for c in list_private_companies(db, user)
-            if c["company_id"] == str(company_id)
+            (c for c in list_private_companies(db, user) if c["company_id"] == str(company_id)),
+            None,
         )
+        if card is None:
+            # Ownership and list TTLs differ; newly transferred customers may
+            # be absent from an otherwise valid cached list.
+            card = next(
+                (c for c in list_private_companies(db, user, refresh=True) if c["company_id"] == str(company_id)),
+                None,
+            )
+        if card is None:
+            raise HTTPException(404, "客户不存在或已转出")
     card = dict(card)
     schema = _schema()
     if context is not None:

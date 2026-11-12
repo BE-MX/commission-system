@@ -17,6 +17,7 @@ from app.client_desk.private_scope import (
     list_private_companies,
 )
 from app.client_desk.access import require_enabled, dependencies_valid
+from app.client_desk.read_scope import scope_request
 
 
 def atomic_insert(db, model, values, key_columns):
@@ -101,6 +102,7 @@ def suggestion_for(db, user, suggestion_id, company_id=None):
     return row
 
 
+@scope_request()
 def patch_state(db, user, company_id, payload):
     scoped(db, user, company_id, True)
     row = lock_state(db, user_id(user), company_id)
@@ -134,6 +136,7 @@ def seed_grade_dictionary(db):
         )
 
 
+@scope_request()
 def put_grade(db, user, company_id, payload):
     scoped(db, user, company_id, True)
     from app.invoice.models import CustomerProfile
@@ -183,6 +186,7 @@ def put_grade(db, user, company_id, payload):
     }
 
 
+@scope_request()
 def add_followup(db, user, company_id, payload):
     scoped(db, user, company_id, True)
     state = lock_state(db, user_id(user), company_id)
@@ -253,6 +257,7 @@ def set_cooldowns(state, suggestion, days, day=None):
     state.rule_cooldowns = cooldowns
 
 
+@scope_request()
 def feedback(db, user, suggestion_id, payload):
     require_enabled(db, user, True)
     suggestion = suggestion_for(db, user, suggestion_id)
@@ -305,11 +310,17 @@ def feedback(db, user, suggestion_id, payload):
     }
 
 
+@scope_request()
+def fresh_detail(db, user, company_id):
+    """Copying a draft always starts with a fresh ownership check."""
+    return detail(db, user, company_id)
+
+
+@scope_request(read_only=True)
 def detail(db, user, company_id):
     from app.client_desk.sources import build_customer_sources
     from app.client_desk.queue import visible_suggestion
 
-    scoped(db, user, company_id)
     source = build_customer_sources(db, user, company_id)
     state = (
         db.query(State)
@@ -333,7 +344,9 @@ def detail(db, user, company_id):
         db.commit()
     brief = (
         state.brief_md
-        if state and dependencies_valid(db, user, company_id, state.brief_dependencies)
+        if state and dependencies_valid(
+            db, user, company_id, state.brief_dependencies, source=source
+        )
         else None
     )
     from app.client_desk.calendar import offset_workdays
@@ -377,6 +390,7 @@ def detail(db, user, company_id):
     }
 
 
+@scope_request(cache_companies=True)
 def customer_list(
     db, user, filter="all", keyword="", page=1, page_size=30, reason=None
 ):
@@ -407,9 +421,13 @@ def customer_list(
             card for card in cards if grades.get(card["company_id"]) in allowed_grades
         ]
 
+    live_filter = filter == "suggested" or bool(reason)
+    suggestion_query = db.query(Suggestion) if live_filter else db.query(
+        Suggestion.id, Suggestion.company_id, Suggestion.run_seq, Suggestion.rank_score
+    )
     suggestions = {}
     for row in (
-        db.query(Suggestion)
+        suggestion_query
         .filter(
             Suggestion.user_id == user_id(actor),
             Suggestion.biz_date == beijing_today(),
@@ -418,10 +436,24 @@ def customer_list(
         .order_by(Suggestion.run_seq)
     ):
         suggestions[str(row.company_id)] = row
+    total = len(cards)
+    if not live_filter:
+        # Stored rank determines all-customer order, even when advice has expired.
+        cards.sort(key=lambda card: (
+            -float(suggestions[card["company_id"]].rank_score or 0)
+            if card["company_id"] in suggestions else 0,
+            int(card["company_id"]),
+        ))
+        cards = cards[(page - 1) * page_size : page * page_size]
+        page_suggestion_ids = [suggestions[c["company_id"]].id for c in cards if c["company_id"] in suggestions]
+        suggestions = {
+            str(row.company_id): row
+            for row in db.query(Suggestion).filter(Suggestion.id.in_(page_suggestion_ids))
+        } if page_suggestion_ids else {}
     suggestion_cards = [card for card in cards if card["company_id"] in suggestions]
     context = prepare(db, actor, suggestion_cards) if suggestion_cards else None
 
-    # Only suggestions need full sources before paging to establish live visibility and rank.
+    # Suggested/reason filters retain live evaluation before counting and paging.
     result = []
     for card in cards:
         cid = card["company_id"]
@@ -447,15 +479,19 @@ def customer_list(
                 "grade": grades.get(cid),
                 "reason": suggestion.get("reason") if suggestion else None,
                 "rule_codes": suggestion.get("rule_codes", []) if suggestion else [],
-                "rank_score": float(row.rank_score) if suggestion else 0,
+                "rank_score": float(row.rank_score or 0) if row and (suggestion or not live_filter) else 0,
                 "last_touch_at": source.get("last_touch_at"),
                 "channel": source.get("last_touch_channel"),
                 "analysis_state": row.status if suggestion else None,
                 "suggestion_id": str(row.id) if suggestion else None,
             }
         )
-    result.sort(key=lambda r: (-r["rank_score"], int(r["company_id"])))
-    items = result[(page - 1) * page_size : page * page_size]
+    if live_filter:
+        result.sort(key=lambda r: (-r["rank_score"], int(r["company_id"])))
+        total = len(result)
+        items = result[(page - 1) * page_size : page * page_size]
+    else:
+        items = result
     plain_ids = [
         item["company_id"] for item in items if item["company_id"] not in suggestions
     ]
@@ -466,12 +502,13 @@ def customer_list(
                 item["last_touch_at"], item["channel"] = touch
     return {
         "items": items,
-        "total": len(result),
+        "total": total,
         "page": page,
         "page_size": page_size,
     }
 
 
+@scope_request(cache_companies=True)
 def today(db, user, reason=None):
     result = customer_list(
         db, user, filter="suggested", page_size=100000, reason=reason
@@ -495,6 +532,7 @@ def today(db, user, reason=None):
     }
 
 
+@scope_request()
 def wa_open(db, user, company_id, payload):
     from urllib.parse import quote
     import re
