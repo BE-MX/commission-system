@@ -1,7 +1,7 @@
 import { workbenchUrl } from '@/lib/workbench-url';
 import { writePsd, type Layer, type Psd } from 'ag-psd';
 import type { Selection, StockColor, TemplateSummary } from '@/lib/catalog';
-import { activeColorsFor, layoutFor, sizeText } from '@/lib/poster';
+import { activeColorsFor, layoutFor, loadRedrawBackground, sizeText } from '@/lib/poster';
 import {
   createInventoryOverlayPlan,
   drawInventoryOverlayPlan,
@@ -79,7 +79,7 @@ export async function createLayeredPsd(
     throw new Error('当前颜色数量无法生成 PSD。');
   const needsHot = active.some(({ entry }) => entry.kind !== 'display' && entry.hot);
   const [base, hot, ...photos] = await Promise.all([
-    loadImage(item.baseUrl),
+    loadRedrawBackground(item).then((image) => image ?? loadImage(item.baseUrl)),
     needsHot ? loadImage(item.hotUrl ?? '/api/runtime-assets/hot.png') : Promise.resolve(null),
     ...active.map(({ color }) => loadImage(color.image)),
   ]);

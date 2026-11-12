@@ -46,6 +46,8 @@ export type TemplateSummary = {
   referenceJpgName: string;
   referenceUrl: string;
   baseUrl: string;
+  /** Complete texture background; source baseUrl may contain transparent cutouts. */
+  cleanBaseUrl?: string;
   hotUrl?: string;
   dynamicBounds: [number, number, number, number];
   availableLengths?: number[];

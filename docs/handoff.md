@@ -1,3 +1,11 @@
+## 2026-11-12 库存图文字白底纠正（Git 交付，未部署）
+
+在同一 `codex/colorwork-label-redraw` 分支继续修正色号／尺寸白板：四套已核对源文件通过封存 SHA 与完整底图绑定，绘字透出真实背景；未知／新设计保留原流程，避免错用旧背景或阻断导出。已补回归及独立审查。亮哥已授权合并并推送 main；本次 Git 交付不包含部署。见 [修复与验证记录](reports/2026-11-12-colorwork-missing-label-redraw.md)。
+
+## 2026-11-12 库存图尺寸补齐与导出叠字修复（母版已生效，代码未发布）
+
+用户授权下通过页面补齐4套母版6个有货尺寸，另此前已补1个；23套前后快照仅预期条目变化，保留旧版本。实际下载发现源配置缺失文字位置时重绘会叠字，隔离分支 `codex/colorwork-label-redraw` 已修复 JPG 的同排文字定位与旧字清除，回归及构建通过；本次随白底修复交付 main，尚未部署。明细与证据见 [核验记录](reports/2026-11-12-colorwork-missing-label-redraw.md)。色号对应不确定的未改。
+
 ## 2026-11-12 私海助理读取提速（Codex，Git 交付，未发布）
 
 - 工作区 `D:/MyProgram/commission-system-codex-private-sea-read-speed`，分支 `codex/private-sea-read-speed`，从 `main@4e6f269c` 创建；保留其他任务的未提交内容。亮哥已授权合并并推送 main，本次 Git 交付不包含部署，未访问生产。

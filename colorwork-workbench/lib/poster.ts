@@ -54,6 +54,32 @@ async function loadBaseImage(item: TemplateSummary) {
   return { image: await loadImage(item.baseUrl), fromReference: false };
 }
 
+/** Restore real artwork only when the server has certified its source binding. */
+export async function loadRedrawBackground(item: TemplateSummary) {
+  const cleanUrl = item.cleanBaseUrl ?? (item.baseUrl.startsWith('/api/runtime-assets/') ? item.baseUrl : undefined);
+  // Other source versions retain their existing rendering contract. A matching
+  // template name or a similar picture is not proof of a certified background.
+  if (!cleanUrl) return null;
+  const clean = await loadImage(cleanUrl);
+  if (clean.width !== item.width || clean.height !== item.height) {
+    throw new Error('无文字底图与当前源文件尺寸不一致，请检查配套素材。');
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = item.width;
+  canvas.height = item.height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('当前浏览器无法校验母版底图。');
+  context.drawImage(clean, 0, 0);
+  const pixels = context.getImageData(0, 0, item.width, item.height).data;
+  for (let index = 3; index < pixels.length; index += 4) {
+    if (pixels[index] < 250) throw new Error('无文字底图不完整，文字下方需要保留原背景纹理。');
+  }
+  // Source/reference byte fingerprints are checked on the server. Pixel
+  // similarity cannot certify artwork changes; static reference JPGs may also
+  // be thumbnails while their complete backgrounds are full-resolution.
+  return clean;
+}
+
 export function activeColorsFor(
   colors: StockColor[],
   item: TemplateSummary,
@@ -70,13 +96,40 @@ export function activeColorsFor(
     );
 }
 
+function sourceLabelBounds(
+  item: TemplateSummary,
+  card: TemplateSummary['initialCards'][number],
+  field: 'colorLabel' | 'sizeLabel',
+): [number, number, number, number] | null {
+  const known = card.geometry?.[field];
+  if (known) return known;
+  if (!card.geometry || card.kind === 'display') return null;
+  if (!item.cleanBaseUrl && !item.baseUrl.startsWith('/api/runtime-assets/')) return null;
+  const [left, top, right, bottom] = card.geometry.swatch;
+  // Some approved PSD imports have an unbound text layer. Its ink is still in
+  // the reference JPG. Use the nearest stock card in the same row to recover
+  // the caption band for both erasing that ink and positioning the new text.
+  const peer = item.initialCards
+    .filter((candidate) => candidate !== card && candidate.kind !== 'display' &&
+      candidate.geometry?.[field] &&
+      Math.abs(candidate.geometry.swatch[1] - top) <= 4 &&
+      Math.abs(candidate.geometry.swatch[3] - bottom) <= 4)
+    .sort((a, b) => Math.abs(a.geometry!.swatch[0] - left) - Math.abs(b.geometry!.swatch[0] - left))[0];
+  if (!peer?.geometry) return null;
+  const bounds = peer.geometry[field]!;
+  const offset = bottom - peer.geometry.swatch[3];
+  // The missing label may be wider than the peer's text (e.g. Cookies Cream).
+  return [left - 10, bounds[1] + offset, right + 10, bounds[3] + offset];
+}
+
 function slotFromGeometry(
   card: TemplateSummary['initialCards'][number],
+  item: TemplateSummary,
 ): LayoutSlot {
   const [left, top, right, bottom] = card.geometry!.swatch;
   const size = Math.min(right - left, bottom - top);
-  const colorLabel = card.geometry!.colorLabel;
-  const sizeLabel = card.geometry!.sizeLabel;
+  const colorLabel = sourceLabelBounds(item, card, 'colorLabel');
+  const sizeLabel = sourceLabelBounds(item, card, 'sizeLabel');
   const codeSize = colorLabel
     ? Math.max(12, Math.min(25, colorLabel[3] - colorLabel[1] + 2))
     : Math.max(12, Math.min(25, Math.round(size * 0.1)));
@@ -109,7 +162,7 @@ function sourceLayoutForActive(item: TemplateSummary, active: ActiveColor[]) {
   // Otherwise moving a card only changes the editor list, not the exported JPG.
   return [...cards]
     .sort((left, right) => left!.order - right!.order || left!.entryId.localeCompare(right!.entryId))
-    .map((card) => slotFromGeometry(card!));
+    .map((card) => slotFromGeometry(card!, item));
 }
 
 function sameReferenceComposition(item: TemplateSummary, active: ActiveColor[]) {
@@ -272,27 +325,19 @@ function fitFont(
   return result;
 }
 
-function clearBusinessRegions(
-  context: CanvasRenderingContext2D,
-  item: TemplateSummary,
-) {
+function clearUnverifiedSourceRegions(context: CanvasRenderingContext2D, item: TemplateSummary) {
+  // Preserve the pre-existing behavior for arbitrary uploaded source artwork.
+  // Only certified source/background pairs may replace it with real texture.
   context.save();
-  // clearRect leaves transparent pixels. Those pixels become black when the
-  // canvas is exported as JPG, which is especially visible under labels.
-  // The repaint path uses white business panels instead.
   context.fillStyle = '#ffffff';
   for (const card of item.initialCards) {
     const geometry = card.geometry;
     for (const bounds of [geometry?.swatch, geometry?.colorLabel, geometry?.sizeLabel, geometry?.hotBadge]) {
       if (!bounds) continue;
       const [left, top, right, bottom] = bounds;
-      const padding = 3;
-      context.fillRect(
-        Math.max(0, left - padding),
-        Math.max(0, top - padding),
-        Math.min(item.width, right + padding) - Math.max(0, left - padding),
-        Math.min(item.height, bottom + padding) - Math.max(0, top - padding),
-      );
+      context.fillRect(Math.max(0, left - 3), Math.max(0, top - 3),
+        Math.min(item.width, right + 3) - Math.max(0, left - 3),
+        Math.min(item.height, bottom + 3) - Math.max(0, top - 3));
     }
   }
   context.restore();
@@ -315,6 +360,9 @@ export async function paintPoster(
   const baseResult = await loadBaseImage(item);
   const preserveReferenceComposition = baseResult.fromReference &&
     sameReferenceComposition(item, active);
+  const background = preserveReferenceComposition
+    ? baseResult.image
+    : await loadRedrawBackground(item);
   const [photos, hot] = await Promise.all([
     preserveReferenceComposition
       ? Promise.resolve([] as HTMLImageElement[])
@@ -331,8 +379,8 @@ export async function paintPoster(
 
   context.fillStyle = '#fff';
   context.fillRect(0, 0, output.width, output.height);
-  context.drawImage(baseResult.image, 0, 0, output.width, output.height);
-  if (!preserveReferenceComposition) clearBusinessRegions(context, item);
+  context.drawImage(background ?? baseResult.image, 0, 0, output.width, output.height);
+  if (!preserveReferenceComposition && !background) clearUnverifiedSourceRegions(context, item);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
   context.textAlign = 'center';

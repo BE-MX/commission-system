@@ -1,0 +1,26 @@
+[
+  {
+    "templateId": "20g-genius-weft-regular",
+    "referenceSha256": "f754d73457e6342f86625a5ed917ac8eebf9f5b0b39890184ceb49893475017e",
+    "sourceBaseSha256": "53a7f67433a6d423b7a2132b972e504b0545a9de2a89b8ff9f232b2363e0f928",
+    "cleanBaseSha256": "431da5f1d09d0d6c953bba1ffa52ce9295664634fc668e60a374e4266435338c"
+  },
+  {
+    "templateId": "20g-genius-weft-super",
+    "referenceSha256": "a0e08c1a67a7805204087369c5a0c136590ef4080b7e3d2d1bf1a182fe4ff7f5",
+    "sourceBaseSha256": "9e5d4b9bb3b9b9827cf716f72295debf7ba7a137bdfae9787d327d7e1fe96d15",
+    "cleanBaseSha256": "75f5219a9a4d16cbd171aafa545ce2a0f9573739a660b20f7b8ef606b97de3b5"
+  },
+  {
+    "templateId": "50g-genius-weft-super",
+    "referenceSha256": "6deda8d71b9338aa4fd409942abb95f1ce73ae8f4574d22ad82f7da33078f654",
+    "sourceBaseSha256": "d56266e7c84af4065a9a5ee181bcd49b9770b5ebf946314de7e89abb756389cf",
+    "cleanBaseSha256": "2bbf1f215ece57b21d2d04c5a03c1e8bc6f84344026e86adbf451b03997f2691"
+  },
+  {
+    "templateId": "butterfly-weft-genius-genius-super",
+    "referenceSha256": "75cc32797e2e1fe752017d0267db06e19a3daa3bf2b8591f17936e279066d007",
+    "sourceBaseSha256": "93c6d9ab29fa83e97481f3f36f41d1cc2eee6f0898d0bc5158709ab1b40e00b4",
+    "cleanBaseSha256": "07305630db4e9161369c9ad2c915b45c38db6ac09fe26c1ca47c832b54da7a1d"
+  }
+]
