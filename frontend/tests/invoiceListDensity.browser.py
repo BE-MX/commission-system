@@ -135,13 +135,16 @@ with sync_playwright() as p:
     copy = first.get_by_role('button', name='复制发票号 TEST-1104')
     initial_route = page.evaluate('invoiceDensityTest.route()')
     copy.click()
-    expect(page.get_by_text('发票号已复制', exact=True)).to_be_visible()
+    expect(page.get_by_text('复制成功', exact=True)).to_be_visible()
+    expect(copy.locator('.el-icon')).to_be_hidden()
     assert page.evaluate('testClipboard.writes') == ['TEST-1104']
     assert page.locator('.el-drawer:visible').count() == 0
     assert page.evaluate('invoiceDensityTest.route()') == initial_route
+    expect(copy.locator('.el-icon')).to_be_visible()
     page.evaluate('testClipboard.fail = true')
     copy.click()
     expect(page.get_by_text('复制失败，请重试', exact=True)).to_be_visible()
+    expect(copy.locator('.el-icon')).to_be_visible()
     assert page.evaluate('testClipboard.writes') == ['TEST-1104']
     assert page.locator('.el-drawer:visible').count() == 0
     assert page.evaluate('invoiceDensityTest.route()') == initial_route

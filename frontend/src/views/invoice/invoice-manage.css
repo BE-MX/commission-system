@@ -170,6 +170,7 @@
 
 .invoice-copy-button:hover { color: var(--button-primary-link); }
 .invoice-copy-button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.invoice-copy-button .is-copying { visibility: hidden; }
 @media (hover: none) { .invoice-copy-button { flex-basis: 44px; min-height: 44px; } }
 
 .invoice-meta-line {
