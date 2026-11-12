@@ -442,8 +442,8 @@ class XiaomanSettings(Base):
 class InvoiceCustomerOverlay(Base):
     """手动从 OKKI 同步的客户资料 overlay：补 lsordertest.customer_info 的同步延迟。
 
-    业务库镜像是只读红线（ark_app 对 lsordertest 仅 SELECT），手动同步结果落
-    方舟自有表；product_service.search_customers 合并两源——镜像 update_time
+    手动同步同事务修复业务镜像负责人并留审计，其他资料保留在方舟自有表；
+    product_service.search_customers 合并两源——镜像 update_time
     不新于 overlay 的 source_update_time 时以 overlay 为准（手动同步即最新），
     镜像追上后自动让位。
     """

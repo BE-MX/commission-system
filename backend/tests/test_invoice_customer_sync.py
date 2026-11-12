@@ -186,8 +186,8 @@ def test_sync_okki_failure_is_readable(db, bound_user, monkeypatch):
         customer_sync_service.sync_customer_from_okki(db, company_name="Acme")
 
 
-def test_sync_concurrent_insert_race_falls_back_to_update(db, bound_user, monkeypatch):
-    """并发同步同一客户：检查窗口后另一请求已落库 → PK 冲突回退为更新，不抛 500"""
+def test_sync_concurrent_insert_race_rejects_stale_response(db, bound_user, monkeypatch):
+    """镜像也将被写入：另一请求已落库时必须重取，不能拿旧响应覆盖新归属。"""
     _add_overlay(db, 88001, "Acme Hair Co", [OTHER_UID])  # 模拟并发请求已抢先落库
     _mock_okki(monkeypatch, [_candidate(88001, "Acme Hair Co")], {88001: _info(88001, "Acme Hair Co", [OKKI_UID])})
 
@@ -202,24 +202,21 @@ def test_sync_concurrent_insert_race_falls_back_to_update(db, bound_user, monkey
         return real_get(model, pk, **kw)
 
     monkeypatch.setattr(db, "get", flaky_get)
-    result = customer_sync_service.sync_customer_from_okki(db, company_name="Acme Hair Co")
-    assert result["company_id"] == "88001"
-    assert result["created"] is False
-    # 回退为更新：owner 已被纠正为最新
-    assert db.get(InvoiceCustomerOverlay, "88001").owner_user_ids == [str(OKKI_UID)]
+    with pytest.raises(customer_sync_service.CustomerSyncError, match="其他同步更新"):
+        customer_sync_service.sync_customer_from_okki(db, company_name="Acme Hair Co")
+    assert db.get(InvoiceCustomerOverlay, "88001").owner_user_ids == [str(OTHER_UID)]
 
 
-def test_sync_tolerates_malformed_okki_payload(db, bound_user, monkeypatch):
-    """OKKI 字段形状漂移（owner 是 dict、trail_status 是 str）不抛 500"""
+def test_sync_tolerates_malformed_display_fields(db, bound_user, monkeypatch):
+    """不影响归属的展示字段形状漂移仍可容忍。"""
     info = _info(88001, "Acme Hair Co", [OKKI_UID])
-    info["owner"] = {"user_id": OKKI_UID}  # 应为 list，故意给 dict
     info["trail_status"] = "成交"  # 应为 dict，故意给 str
     info["country_region"] = ["US"]  # 应为 dict，故意给 list
     _mock_okki(monkeypatch, [_candidate(88001, "Acme Hair Co")], {88001: info})
 
     result = customer_sync_service.sync_customer_from_okki(db, company_name="Acme Hair Co")
     assert result["company_id"] == "88001"
-    assert result["is_public_sea"] is True  # 形状异常的 owner 按空处理，不崩
+    assert result["is_public_sea"] is False
     assert result["country_name"] == "US"
 
 

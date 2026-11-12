@@ -10,6 +10,7 @@
 - 前端：Vue 3 + Element Plus + Vite 5；微信小程序（生产报工）
 - 数据库：腾讯云 RDS MySQL 双库
   - `commission_db` 读写；`lsordertest` 业务镜像默认只读跨查。写例外：管理员回款日期修复对 `okki_receipts.collection_date` 的受审计单列 UPDATE；销量备货行级库存同步仅通过 `stock.inventory_sync_service`，按当前用户 `stock:read` + `stock:write` 权限，将已完整校验的小满单产品库存写入 `okki_inventory` 并同事务保存审计。禁止借此修改其他镜像表、人工调整库存或删除缺失记录。
+  - 发票客户手动同步例外：仅 `invoice:write` 的同步入口可经 `invoice.customer_mirror_service`，按已核验身份和负责人列表的 OKKI 详情更新 `customer_info.owner_user_ids`（数字 JSON 数组）；缺行时只插入 `company_id/company_name/country_name/owner_user_ids`。镜像、overlay、审计必须同事务；不得改现有行其他字段、接受客户端自填归属或扩大为通用业务库写权限。
   - **生产迁移只由部署入口统一检查并执行一次，禁止开发机升级共享生产库**（2026-09-05 起；此前「开发机直接 upgrade head」的做法已作废）
   - 数据库未知 revision、领先于发布代码或多 head 必须阻断，不能 stamp/downgrade 掩盖差异；破坏性 schema 迁移先冻结全部相关写实例；普通发布不复制或覆盖数据库
   - 开发验证只用隔离库；现存开发配置尚未隔离前，不执行迁移或写入型测试

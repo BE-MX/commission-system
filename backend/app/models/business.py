@@ -25,7 +25,7 @@ class UserBasic(BusinessBase):
 
 
 class CustomerInfo(BusinessBase):
-    """业务库客户表（只读）"""
+    """业务库客户投影；受控负责人写入仅通过 invoice.customer_mirror_service。"""
     __tablename__ = "customer_info"
     __table_args__ = {"schema": BUSINESS_SCHEMA}
 

@@ -6,7 +6,7 @@ side, keyed by a normalized attribute tuple so re-entry reuses the same row.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Iterable
 
@@ -14,6 +14,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.time import to_beijing_naive
 from app.trade.service import local_mode
 from app.invoice.models import CustomProduct, InvoiceCustomerOverlay
 from app.invoice.price_service import make_match_key, normalize_color, normalize_length, normalize_text
@@ -158,15 +159,15 @@ def _merge_customer_overlays(
 
 
 def _parse_ts(value) -> datetime | None:
-    """解析 OKKI/镜像时间戳：'YYYY-MM-DD HH:MM:SS'、ISO 或 epoch 秒；失败返回 None。"""
+    """把 OKKI/镜像时间戳统一为北京 naive 时间，避免时区/服务器位置影响归属。"""
     if value in (None, ""):
         return None
     if isinstance(value, datetime):
-        return value
+        return to_beijing_naive(value)
     text = str(value).strip()
     try:
-        return datetime.fromisoformat(text)
-    except ValueError:
+        return to_beijing_naive(datetime.fromisoformat(text))
+    except (ValueError, OverflowError):
         pass
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
@@ -175,7 +176,7 @@ def _parse_ts(value) -> datetime | None:
             continue
     if text.isdigit():
         try:
-            return datetime.fromtimestamp(int(text))
+            return to_beijing_naive(datetime.fromtimestamp(int(text), timezone.utc))
         except (OverflowError, OSError, ValueError):
             return None
     return None

@@ -1250,6 +1250,8 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 
 `customer_picker_service` 先判定少量 overlay 的新旧，再用数据库 UNION/COUNT/LIMIT 查询；不能把全量镜像客户载入应用内存（本次只读核验约26.8万条）。生产镜像字符串列为 `utf8mb4_0900_ai_ci`，Ark overlay 为 `utf8mb4_unicode_ci`；跨库 UNION 的客户名/国家必须显式统一 collation，否则仅在有效 overlay 出现时才报1271错误。联系人归属必须依据合并后的客户，不能先按旧镜像 owner 过滤。
 
+2026-11-13 客户归属同步修复：仅更新 overlay 不能修复直接读取 `customer_info` 的选择器。手动入口现在同事务更新原表负责人、overlay 与镜像变更审计；原表 owner 必须写数字 JSON 数组，字符串/布尔数组不能视为已同步（MySQL JSON_CONTAINS 区分类型）。已有客户仅更新 owner，缺行只补 ID/名称/国家/owner，其他资料仍由镜像管道维护；不伪造全量资料 `update_time`。上游缺失/畸形 owner 不当公海清空，只有明确 `[]` 才清归属；查询前后快照与行锁拒绝并发覆盖。读写共用北京 naive 时间解析，支持 ISO offset/Z/epoch，避免同步成功后选择器混用 aware/naive 时间报错。迁移 262 与运行账号最小列级授权见 runbook，本地修复不代表已发布。
+
 ### 2026-09-17 出库单客户名称遮罩
 
 出库单列表的打印 HTML（`buildOutboundDoc`）和 Word 导出（`build_outbound_word`）仅在生成文档时将客户名称去除首尾空白、保留前三个 Unicode 字符并追加 `***`。非空名称不足三个字符时保留现有字符并追加 `***`，空名称保持空白。列表、API 原始字段、扫码详情、验货单和持久数据均不变。

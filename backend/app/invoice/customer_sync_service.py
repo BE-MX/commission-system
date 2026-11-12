@@ -3,18 +3,18 @@
 背景：发票录入的客户搜索读 lsordertest.customer_info 只读镜像（外部同步管道
 维护），OKKI 新客户或负责人变更存在同步延迟，私海过滤下会查不到客户。
 本服务直连 OKKI 开放平台（company scope，查重 + 详情两个只读接口）拉取该客户
-最新数据，写入方舟自有 overlay 表（不动业务库只读红线），
-product_service.search_customers 合并 overlay 后立即可搜到。
+最新数据，更新 customer_info 负责人（缺行则补最小客户记录），并同事务写入
+方舟 overlay 与镜像变更审计，确保直接读取镜像的客户选择器也立即可见。
 """
 
 import logging
+from copy import deepcopy
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.invoice import okki_client
+from app.invoice import customer_mirror_service, okki_client, product_service
 from app.invoice.models import InvoiceCustomerOverlay
-from app.models.business import CustomerInfo, UserBasic
+from app.models.business import UserBasic
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +56,22 @@ def _pick_candidate(candidates: list[dict], company_name: str) -> dict:
 def _apply_info(row: InvoiceCustomerOverlay, info: dict) -> list[str]:
     """把 OKKI 详情映射到 overlay 行，返回发生变化的字段名列表。
 
-    OKKI 响应字段形状不设防（文档与实际可能漂移）：非标量/列表字段一律
-    isinstance 兜底，形状异常按空值处理而不是抛 AttributeError 变 500。
+    负责人影响真实客户归属：缺失或结构异常必须拒绝，只有明确空列表才是公海。
+    其余展示字段继续容忍上游字段形状漂移。
     """
     owners_raw = info.get("owner")
-    owners = owners_raw if isinstance(owners_raw, list) else []
-    owner_ids = [
-        str(o.get("user_id")) for o in owners
-        if isinstance(o, dict) and o.get("user_id") not in (None, "")
-    ]
+    if not isinstance(owners_raw, list):
+        raise CustomerSyncError("OKKI 返回的客户负责人信息不完整，未更新客户归属，请稍后重试")
+    owner_ids = []
+    for owner in owners_raw:
+        value = owner.get("user_id") if isinstance(owner, dict) else None
+        if (not isinstance(value, (int, str)) or isinstance(value, bool)
+                or not str(value).isascii() or not str(value).isdigit()
+                or not 0 < int(value) <= 9223372036854775807):
+            raise CustomerSyncError("OKKI 返回的客户负责人 ID 异常，未更新客户归属，请稍后重试")
+        value = str(int(value))
+        if value not in owner_ids:
+            owner_ids.append(value)
     trail = info.get("trail_status")
     trail = trail if isinstance(trail, dict) else {}
     country = str(info.get("country") or "").strip()
@@ -81,8 +88,8 @@ def _apply_info(row: InvoiceCustomerOverlay, info: dict) -> list[str]:
         "owner_user_ids": owner_ids,
         "source_update_time": str(info.get("update_time") or "").strip() or None,
     }
-    if not values["company_name"]:
-        raise CustomerSyncError("OKKI 返回的客户详情缺少公司名称，请稍后重试")
+    if not isinstance(info.get("name"), str) or not values["company_name"] or len(values["company_name"]) > 255:
+        raise CustomerSyncError("OKKI 返回的客户公司名称缺失或无效，请稍后重试")
     changed = []
     for field, value in values.items():
         current = getattr(row, field)
@@ -101,14 +108,21 @@ def _owner_names(db: Session, owner_ids: list[str]) -> list[str]:
     try:
         rows = db.query(UserBasic).filter(UserBasic.user_id.in_(owner_ids)).all()
     except Exception as exc:  # noqa: BLE001 - 人员镜像不可读不阻断同步结果
-        logger.warning("owner name lookup failed: %s", exc)
+        logger.warning("owner name lookup failed: %s", type(exc).__name__)
+        print(f"[customer-sync] owner name lookup failed: {type(exc).__name__}", flush=True)
         return list(owner_ids)
     by_id = {str(r.user_id): str(r.full_name or r.nickname or r.user_id) for r in rows}
     return [by_id.get(oid, oid) for oid in owner_ids]
 
 
+def _overlay_snapshot(row):
+    if row is None:
+        return None
+    return {field: deepcopy(getattr(row, field)) for field in (*_FIELD_LABELS, "source_update_time", "updated_at")}
+
+
 def sync_customer_from_okki(db: Session, *, company_name: str, operator_id: int | None = None) -> dict:
-    """按公司名同步一个 OKKI 客户的最新资料到 overlay。抛 CustomerSyncError（可读）。"""
+    """同步客户镜像归属与 overlay；调用者负责一并提交或回滚审计。"""
     name = str(company_name or "").strip()
     if not name:
         raise CustomerSyncError("请输入客户公司名称")
@@ -124,37 +138,52 @@ def sync_customer_from_okki(db: Session, *, company_name: str, operator_id: int 
         )
     chosen = _pick_candidate(candidates, name)
     company_id = str(chosen.get("company_id") or "").strip()
-    if not company_id.isdigit():
+    if not company_id.isascii() or not company_id.isdigit() or not 0 < int(company_id) <= 9223372036854775807:
         raise CustomerSyncError(f"OKKI 返回的客户 ID「{company_id}」异常，请联系管理员")
+    company_id = str(int(company_id))
+
+    expected_overlay = _overlay_snapshot(db.get(InvoiceCustomerOverlay, company_id))
+    expected_mirror = customer_mirror_service.capture(db, company_id)
 
     try:
         info = okki_client.get_company_info(db, int(company_id))
     except okki_client.OkkiApiError as exc:
         raise CustomerSyncError(str(exc)) from exc
 
-    row = db.get(InvoiceCustomerOverlay, company_id)
+    if not isinstance(info, dict) or str(info.get("company_id")) != company_id:
+        raise CustomerSyncError("OKKI 返回的客户身份与查询结果不一致，未更新客户资料")
+    incoming = InvoiceCustomerOverlay(company_id=company_id)
+    _apply_info(incoming, info)  # Validate before any customer write.
+
+    # Lock only after the external request. A slower response cannot overwrite
+    # another completed manual sync, even if OKKI update_time did not advance.
+    row = db.query(InvoiceCustomerOverlay).filter_by(company_id=company_id).populate_existing().with_for_update().one_or_none()
+    if _overlay_snapshot(row) != expected_overlay:
+        raise CustomerSyncError("客户资料已被其他同步更新，请重新同步")
+    previous_time = product_service._parse_ts(row.source_update_time) if row else None
+    incoming_time = product_service._parse_ts(incoming.source_update_time)
+    if previous_time and (incoming_time is None or incoming_time < previous_time):
+        raise CustomerSyncError("OKKI 返回的客户资料早于上次手动同步，请稍后重试")
+
+    try:
+        mirror_changed = customer_mirror_service.apply(db, incoming, expected_mirror, operator_id=operator_id)
+    except customer_mirror_service.CustomerMirrorSyncError as exc:
+        raise CustomerSyncError(str(exc)) from exc
+
     created = row is None
     if created:
-        # 并发同步同一客户：savepoint 兜底 PK 冲突，回退到更新分支（同 ensure_custom_product 范式）
-        try:
-            with db.begin_nested():
-                row = InvoiceCustomerOverlay(company_id=company_id, company_name=name)
-                db.add(row)
-                db.flush()
-        except IntegrityError:
-            logger.warning("customer overlay 并发插入回退为更新 company_id=%s", company_id)
-            row = db.get(InvoiceCustomerOverlay, company_id)
-            if row is None:
-                raise
-            created = False
+        row = InvoiceCustomerOverlay(company_id=company_id, company_name=name)
+        db.add(row)
     changed = _apply_info(row, info)
+    if mirror_changed and "owner_user_ids" not in changed:
+        changed.append("owner_user_ids")
     row.synced_by = operator_id
     db.flush()
 
     owner_ids = [str(v) for v in (row.owner_user_ids or [])]
     owner_names = _owner_names(db, owner_ids)
     # 镜像里本来就有 → 本次是纠偏（owner 过期等）；完全没有 → 新客户补入
-    in_mirror = db.get(CustomerInfo, company_id) is not None
+    in_mirror = expected_mirror is not None
 
     display_changed = [_FIELD_LABELS[f] for f in changed if f in _FIELD_LABELS]
     if created and not in_mirror:

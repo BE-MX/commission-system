@@ -209,7 +209,7 @@ OPERATIONS_ALERT_TIMEOUT_SECONDS=10
 生产数据库账号边界：
 
 - `ark_app` 是办公室和北京后端的唯一运行账号；对 `commission_db.*` 仅授予 `SELECT, INSERT, UPDATE, DELETE`。
-- 方舟登录、报表、采购节、库存和订单分析会跨库读取 `lsordertest`；`ark_app` 对 `lsordertest.*` 授予 `SELECT`。唯一写例外是管理员回款日期修复，仅授予 `okki_receipts.collection_date` 列级 `UPDATE`；不授予其他业务库写入或 DDL。
+- 方舟登录、报表、采购节、库存和订单分析会跨库读取 `lsordertest`；`ark_app` 对 `lsordertest.*` 授予 `SELECT`。写例外遵守 CLAUDE.md 的指定入口：回款日期修复仅 `okki_receipts.collection_date` 列级 UPDATE；客户手动同步仅 `customer_info.owner_user_ids` 列级 UPDATE，缺行仅允许插入 ID/名称/国家/负责人。库存同步权限按其发布记录核验；不得授予业务库全表写入或 DDL。
 - `root` 只用于受控 Alembic/维护窗口，不能写入生产 `.env` 或用于 NSSM 日常运行。
 
 首次创建或修复运行账号时，用 DBA 账号执行并用 `SHOW GRANTS FOR 'ark_app'@'%';` 核验：
@@ -218,7 +218,11 @@ OPERATIONS_ALERT_TIMEOUT_SECONDS=10
 GRANT SELECT, INSERT, UPDATE, DELETE ON commission_db.* TO 'ark_app'@'%';
 GRANT SELECT ON lsordertest.* TO 'ark_app'@'%';
 GRANT UPDATE (collection_date) ON lsordertest.okki_receipts TO 'ark_app'@'%';
+GRANT UPDATE (owner_user_ids) ON lsordertest.customer_info TO 'ark_app'@'%';
+GRANT INSERT (company_id, company_name, country_name, owner_user_ids) ON lsordertest.customer_info TO 'ark_app'@'%';
 ```
+
+客户归属同步发布要求（262）：上述客户表授权仅在获得目标环境发布授权后由 DBA 执行；审计迁移由 `deploy/deploy.bat` 统一执行。先核验业务库 `customer_info` 使用 InnoDB、`company_id` 唯一索引存在、其他必填列有默认值，确保最小插入与跨库事务成立。2026-11-13 本次只读核验结构符合，但 `ark_app` 尚只有业务库 SELECT 与回款日期 UPDATE，未执行客户授权。应用写权限或审计表缺失时接口应返回 503，不能忽略错误只写 overlay。上线验收需使用实际运行账号，确认一次同步后原表为数字 JSON 数组、当前负责人可选、旧负责人不可选、审计完整；禁止开发机迁移/测试写共享库。回滚代码应保留审计及正确客户数据，按审计逐条核对后才可恢复具体值，不批量清空或删除。
 
 后端心跳 claim 示例（值为 SHA-256，不是明文 token）：
 

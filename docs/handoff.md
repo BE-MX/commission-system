@@ -1,3 +1,14 @@
+## 2026-11-13 发票客户手动同步修复原表负责人（Codex，已授权全局发布）
+
+- 用户指出选择客户的手动同步仅更新 Ark overlay，`customer_info.owner_user_ids` 未填充，直接读取原表的选择器仍不可见。截图客户 Hallie Ducharme 原表当前值由用户手工补入，不能当作旧代码同步成功证据。
+- 工作区 `D:/MyProgram/commission-system-codex-invoice-customer-owner-sync`，分支 `codex/invoice-customer-owner-sync`，基于 `main@c819a31d`；保留主目录和其他任务改动。亮哥后续已明确授权合并推送、拉取最新代码并全局部署；实际发布结果以随后核验记录为准。实现与测试阶段未写生产、未调用真实 OKKI。
+- 手动同步同事务更新原表负责人、方舟 overlay 和审计。已有原表行仅显式 UPDATE `owner_user_ids`，缺行只插入 ID/名称/国家/负责人，其他资料由原管道维护；原表 owner 使用数字 JSON 数组。数据库自身可更新 `updated_at`，外部资料版本 `update_time` 不变。
+- 验证上游客户身份和完整 owner 列表；缺失/畸形归属拒绝，明确 `[]` 才清为公海。查询前后快照、版本判断和行锁拒绝慢响应覆盖较新归属；SQL/审计/commit 失败回滚并返回 503，不能只写 overlay 就报成功。搜索和写入共用北京时间解析，修复 ISO offset/Z 与 epoch 比较。
+- 新增审计迁移 `262_invoice_customer_sync_log` 接 `261_followup_insights`，已检查全部分支迁移历史及单 head；迁移文件依项目约定暂存，未执行生产迁移。发布前仍需核对最新编号和 schema。
+- 验证：原缺陷 5 个回归先失败；四个相关 SQLite 测试文件 71 项通过，收尾时间极值补丁再跑专项 41 项通过（合计 72 个不同相关用例）；真实临时 MySQL 8.4.6 的迁移、JSON_CONTAINS、跨库回滚、并发锁及最小列级权限共 6 项通过。独立复审无阻断项，约定严格检查和差异检查通过；仅保留 jose 既有弃用警告。无前端修改，未执行浏览器或生产功能验收。
+- 只读核验 `customer_info` 为 InnoDB，`company_id` 唯一索引及最小插入所需默认值符合；`ark_app` 当前没有该表写权限。发布需要经授权增加 `UPDATE(owner_user_ids)`、`INSERT(company_id,company_name,country_name,owner_user_ids)`，并由统一部署入口执行审计迁移，详见 [运行手册](runbook.md)。本地 `.env` 连接权限不代表运行账号权限。
+- Git 巡检使用 `--no-fetch` 本地快照，仅报告既有其他任务欠账。MySQL 测试进程由夹具正常关闭，运行元数据/日志位于 `tmp/mysql-customer-01/`；递归清理其中本次新建 data/temp 的动作被自动审批拒绝（仅返回 `blocked by policy`），目录暂留，未换工具绕过。
+
 ## 2026-11-12 客户跟进统计看板 P1/P2 接续完成（Codex，Git 交付未部署）
 
 - 接续 Kimi 未完成分支，在 `D:/MyProgram/commission-system-codex-followup-stats`、`codex/domestic-followup-stats-complete` 独立完成；原 Kimi 工作区保留。亮哥已授权提交、合并 main 并推送 origin；本次不部署、未访问生产。

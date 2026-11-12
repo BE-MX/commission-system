@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from app.portal.upstream_authority import begin_employee_authority_write, begin_employee_document_write
 from sqlalchemy.orm import Session
 
@@ -290,15 +290,22 @@ def sync_customer_from_okki(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:write")),
 ):
-    """镜像同步延迟时的自助入口：OKKI 只读接口拉取，写方舟 overlay 表（不写业务库）。"""
+    """OKKI 只读拉取，事务内更新镜像负责人、overlay 与审计。"""
     try:
         result = customer_sync_service.sync_customer_from_okki(
             db, company_name=body.company_name, operator_id=_user_id(current_user),
         )
-        db.commit()  # 覆盖 overlay upsert + 可能的惰性 token 刷新
+        db.commit()  # Mirror, overlay, audit and possible token refresh commit together.
     except customer_sync_service.CustomerSyncError as exc:
         db.rollback()
+        logger.warning("Customer sync rejected operator=%s", _user_id(current_user))
+        print(f"[customer-sync] rejected operator={_user_id(current_user)}", flush=True)
         raise HTTPException(400, str(exc)) from exc
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.warning("Customer sync persistence failed: %s", type(exc).__name__)
+        print(f"[customer-sync] persistence failed: {type(exc).__name__}", flush=True)
+        raise HTTPException(503, "客户同步保存失败，请刷新核对后重试；持续失败请联系管理员检查客户同步写入权限") from None
     return ok(result)
 
 

@@ -333,3 +333,4 @@ from app.color import swatch_library_models as _color_library_models  # noqa: F4
 from app.system.navigation_config_models import NavigationConfig, NavigationVersion, NavigationConfigAudit
 from app.client_desk import models as _client_desk_models  # noqa: F401
 from app.alibaba_feed import models as _alibaba_feed_models  # noqa: F401
+from app.invoice import customer_sync_models as _customer_sync_models  # noqa: F401
