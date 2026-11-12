@@ -35,6 +35,25 @@ def get_customers(
     return ok(service.customer_list(db, user, filter, keyword, page, page_size, reason))
 
 
+@router.get("/board")
+def get_board(
+    keyword: str = Query("", max_length=100),
+    db: Session = Depends(get_db),
+    user=Depends(require_permission("client_desk:read")),
+):
+    return ok(service.board(db, user, keyword))
+
+
+@router.put("/customers/{company_id}/tags")
+def put_tag(
+    company_id: int,
+    payload: schemas.TagPut,
+    db: Session = Depends(get_db),
+    user=Depends(require_permission("client_desk:write")),
+):
+    return ok(service.set_tag(db, user, company_id, payload))
+
+
 @router.get("/calendar/sample-followup")
 def sample_date(
     date: Date,

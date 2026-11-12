@@ -9,6 +9,7 @@ from app.client_desk.private_scope import user_id
 from app.client_desk.models import ClientDeskFollowup
 from app.client_desk.rules import R4, REASONS
 from app.client_desk.sources import build_customer_sources
+from app.client_desk.board import research_report
 from app.invoice.product_service import _schema
 from app.client_desk.read_scope import scope_request
 
@@ -141,9 +142,14 @@ def all_events(db, user, company_id):
                 }
             )
     for r in source["research"]:
+        report = research_report([r])
+        if report["status"] != "ready":
+            continue
         events.append(
             {
-                **r,
+                "id": r["id"],
+                "event_key": r["event_key"],
+                "report": report,
                 "source": "research",
                 "occurred_at": r["updated_at"],
                 "title": "已审核背调",

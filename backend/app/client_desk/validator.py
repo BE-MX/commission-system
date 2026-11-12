@@ -37,8 +37,32 @@ class Recheck(Strict):
     condition: Annotated[str, Field(min_length=2, max_length=160)]
 
 
+Cites = Annotated[list[Short], Field(max_length=12)]
+
+
+class Block(Strict):
+    text: Annotated[str, Field(min_length=1, max_length=200)]
+    cites: Cites
+
+
+class Profile(Strict):
+    identity: Block | None = None
+    needs: Block | None = None
+    decision: Block | None = None
+    relationship: Block | None = None
+    opportunity: Block | None = None
+
+
+class Tag(Strict):
+    code: Short
+    reason: Annotated[str, Field(min_length=1, max_length=40)]
+    cites: References
+
+
 class Result(Strict):
     brief_md: Annotated[str, Field(min_length=1, max_length=600)]
+    profile: Profile | None = None
+    tags: Annotated[list[Tag], Field(max_length=6)] = []
     suggestion: Suggestion
     grade_hint: Grade | None
     recheck: Recheck | None
@@ -82,7 +106,17 @@ def validate(raw, pack, day):
         raise ValueError("missing_recheck")
     if result.grade_hint and result.grade_hint.value not in pack.grades:
         raise ValueError("invalid_grade")
+    blocks = {
+        key: block
+        for key, block in (result.profile or Profile()).__dict__.items()
+        if block is not None
+    }
+    codes = [tag.code for tag in result.tags]
+    if len(set(codes)) != len(codes) or not set(codes) <= set(pack.tags):
+        raise ValueError("invalid_tags")
     keys = suggestion.cites + (result.grade_hint.cites if result.grade_hint else [])
+    keys += [k for tag in result.tags for k in tag.cites]
+    keys += [k for block in blocks.values() for k in block.cites]
     if not set(keys) <= pack.refs.keys():
         raise ValueError("invalid_cites")
     fields = [
@@ -97,26 +131,43 @@ def validate(raw, pack, day):
         fields.append(result.recheck.condition)
     if result.grade_hint:
         fields.append(result.grade_hint.reason)
+    profile_fields = [b.text for b in blocks.values()] + [t.reason for t in result.tags]
+    # Tool results are later user turns; contacts quoted there are equally trusted.
     trusted_contacts = {
-        m.group().casefold() for m in CONTACT.finditer(pack.messages[-1]["content"])
+        m.group().casefold()
+        for message in pack.messages
+        if message["role"] == "user"
+        for m in CONTACT.finditer(message["content"])
     }
-    for field in fields:
+    for field in fields + profile_fields:
         if UNSAFE.search(field) or any(
             m.group().casefold() not in trusted_contacts
             for m in CONTACT.finditer(field)
         ):
             raise ValueError("unsafe_output")
     out = result.model_dump()
+
+    def cite_objects(cites):
+        return [
+            {
+                "key": k,
+                "event_key": pack.refs[k]["event_key"],
+                "source": pack.refs[k]["source"],
+            }
+            for k in cites
+        ]
+
     for target in [out["suggestion"], out["grade_hint"]]:
         if target:
-            target["cites"] = [
-                {
-                    "key": k,
-                    "event_key": pack.refs[k]["event_key"],
-                    "source": pack.refs[k]["source"],
-                }
-                for k in target["cites"]
-            ]
+            target["cites"] = cite_objects(target["cites"])
+    out["profile"] = {
+        key: {"text": block.text, "cites": cite_objects(block.cites)}
+        for key, block in blocks.items()
+    }
+    out["tags"] = [
+        {"code": tag.code, "reason": tag.reason, "cites": cite_objects(tag.cites)}
+        for tag in result.tags
+    ]
     out["suggestion"]["needs_review"] = any(RISK.search(s) for s in fields[1:])
     if out["suggestion"]["needs_review"] and not suggestion.check_before_reply:
         out["suggestion"]["check_before_reply"] = ["回复前核对报价、库存及交期"]

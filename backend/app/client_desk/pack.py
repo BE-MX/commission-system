@@ -2,13 +2,14 @@
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+PROTOCOL_VERSION = "desk_v2"
 PROTOCOL = (
     Path(__file__)
     .with_name("protocol")
-    .joinpath("desk_v1.md")
+    .joinpath(PROTOCOL_VERSION + ".md")
     .read_text(encoding="utf8")
 )
 PROTOCOL_HASH = hashlib.sha256(PROTOCOL.encode()).hexdigest()
@@ -32,16 +33,22 @@ class Pack:
     dependencies: dict
     hash: str
     grades: list
+    tags: list = field(default_factory=list)
 
 
-def build_pack(source, state, codes, day, correction=False):
+def build_pack(source, state, codes, day, correction=False, tags=None):
     deps = source["source_dependencies"]
     if not deps:
         raise ValueError("source_dependencies_missing")
     grades = [g for g in source.get("grade_options", []) if g in tuple("SABCDE")]
+    tags = [t for t in tags or [] if t.get("code")]
     data = {
         "card": source["card"],
         "orders_summary": source.get("orders_summary"),
+        "orders": [
+            {k: o.get(k) for k in ("id", "order_no", "account_date", "amount_usd", "status_name")}
+            for o in (source.get("orders") or [])[-12:]
+        ],
         "grade": source.get("grade"),
         "personal": {
             "remark": state.get("remark"),
@@ -92,6 +99,10 @@ def build_pack(source, state, codes, day, correction=False):
             "biz_date": str(day),
             "priorities": ["high", "medium", "low", "skip"],
             "grades": grades,
+            "tags": [
+                {"code": t["code"], "label": t["label"], "kind": t["kind"]}
+                for t in tags
+            ],
         }
     )
     if correction:
@@ -121,4 +132,4 @@ def build_pack(source, state, codes, day, correction=False):
         {"role": "system", "content": PROTOCOL},
         {"role": "user", "content": user_text},
     ]
-    return Pack(prompts, refs, deps, digest(prompts), grades)
+    return Pack(prompts, refs, deps, digest(prompts), grades, [t["code"] for t in tags])

@@ -65,8 +65,10 @@ async def lifespan(app: FastAPI):
             if settings.CLIENT_DESK_ENABLED:
                 from app.core.database import SessionLocal
                 from app.client_desk.service import seed_grade_dictionary
+                from app.client_desk.board import seed_tag_dictionary
                 with SessionLocal() as desk_db:
                     seed_grade_dictionary(desk_db)
+                    seed_tag_dictionary(desk_db)
                     desk_db.commit()
             seed_asset_dimensions()
             seed_salary_rules()

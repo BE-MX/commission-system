@@ -1,0 +1,22 @@
+/* Shared private-sea board styles. Colors come only from tokens.css variables. */
+.tag { display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 7px; border: 1px solid var(--tag-neutral-border); border-radius: 6px; background: var(--tag-neutral-bg); color: var(--tag-neutral-text); font: 600 11px/1 var(--font-display); white-space: nowrap; }
+.tag.tone-gold { background: var(--tag-gold-bg); border-color: var(--tag-gold-border); color: var(--tag-gold-text); }
+.tag.tone-gold.solid { background: var(--tag-gold-solid); border-color: var(--tag-gold-solid); color: var(--tag-gold-ink); }
+.tag.tone-info { background: var(--tag-info-bg); border-color: var(--tag-info-border); color: var(--tag-info-text); }
+.tag.tone-success { background: var(--tag-success-bg); border-color: var(--tag-success-border); color: var(--tag-success-text); }
+.tag.tone-danger { background: var(--tag-danger-bg); border-color: var(--tag-danger-border); color: var(--tag-danger-text); }
+.tag.tone-warning { background: var(--tag-warning-bg); border-color: var(--tag-warning-border); color: var(--tag-warning-text); }
+.tag.tone-violet { background: var(--metric-violet-bg); border-color: var(--metric-violet-bg); color: var(--metric-violet-ink); }
+.tag.tone-neutral { background: var(--tag-neutral-bg); border-color: var(--tag-neutral-border); color: var(--tag-neutral-text); }
+.avatar { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--tag-gold-bg); color: var(--tag-gold-text); font: 700 12px var(--font-display); }
+.muted { color: var(--text-secondary); font-size: 12px; }
+.link-button { border: 0; background: transparent; padding: 2px 4px; color: var(--button-primary-text); font: 500 12px var(--font-body); cursor: pointer; }
+.link-button:hover { color: var(--button-primary-text-hover); }
+.link-button:disabled { color: var(--button-disabled-text); cursor: default; }
+.link-button:focus-visible, .board-focus:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 3px; }
+.panel { border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-bg); padding: 14px 16px; }
+.panel h4 { margin: 0 0 8px; font: 700 15px var(--font-display); }
+.panel + .panel { margin-top: 12px; }
+.empty-state { padding: 36px 20px; text-align: center; color: var(--text-secondary); border: 1px dashed var(--border-color); border-radius: 12px; }
+.empty-state h3 { margin: 0 0 6px; color: var(--text-primary); font: 700 17px var(--font-display); }
+.cites { display: inline-flex; flex-wrap: wrap; gap: 2px; }

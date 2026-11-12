@@ -16,6 +16,7 @@ from app.whatsapp.access import readable_accounts
 from app.whatsapp.models import WhatsAppAccount, WhatsAppConversation, WhatsAppMessage
 from app.core.time import beijing_now
 from app.invoice.product_service import _parse_ts
+from app.client_desk.board import model_research, research_report
 
 
 def digest(value):
@@ -422,9 +423,10 @@ def build_customer_sources(
             f'S-{r["id"]}': {
                 "source": "research",
                 "event_key": r["event_key"],
-                "datum": r["result"],
+                "datum": model_research(research_report([r])),
             }
             for r in research
+            if research_report([r])["status"] == "ready"
         }
     )
     refs.update(
@@ -478,7 +480,10 @@ def build_customer_sources(
             "unknown_amount_count": sum(o["amount_usd"] is None for o in orders),
         },
         "research": research,
-        "research_summary": research[0]["result"] if research else None,
+        "research_report": research_report(research),
+        # The model sees compact reviewed statements, never raw or gap documents.
+        "research_summary": model_research(research_report(research)),
+        "origin": raw.get("origin_name"),
         "conversations": conversations,
         "wa_targets": targets,
         "messages": messages,

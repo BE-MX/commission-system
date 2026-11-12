@@ -4,8 +4,8 @@ import { msgSuccessText } from '@/utils/feedback'
 import { currentBeijingDate, formatBeijingDateTime } from '@/utils/datetime'
 import { errorText, requestKey, latestRequestGate, normalizeDetail, suggestedPage } from './deskController'
 
-export function useClientDesk(route) {
-  const mode = ref('suggested'), filter = ref(''), keyword = ref(''), page = ref(1), pageSize = ref(20), total = ref(0)
+export function useClientDesk(route, { autoSelect = true, onRefresh = null, boardMode = false } = {}) {
+  const mode = ref(boardMode ? 'all' : 'suggested'), filter = ref(''), keyword = ref(''), page = ref(1), pageSize = ref(20), total = ref(0)
   const rows = ref([]), today = ref({}), selected = ref(null), detail = ref(null), reading = ref(false)
   const loading = ref(false), detailLoading = ref(false), error = ref(''), detailError = ref('')
   const source = ref('all'), events = ref([]), cursor = ref(null), timelineLoading = ref(false), timelineError = ref('')
@@ -16,7 +16,8 @@ export function useClientDesk(route) {
   let aborter, timer, poller, timelineRefreshToken
   const suggestion = computed(() => detail.value?.suggestion)
   const state = computed(() => detail.value?.personal_state || {})
-  const busyAnalysis = computed(() => ['queued', 'running'].includes(suggestion.value?.status))
+  const agentRun = computed(() => detail.value?.agent_run || null)
+  const busyAnalysis = computed(() => ['queued', 'running'].includes(suggestion.value?.status) || ['queued', 'running'].includes(agentRun.value?.status))
   const id = () => String(selected.value)
   let todayRequest, todayLoadedAt = null
   async function refreshToday(force = false) {
@@ -31,10 +32,13 @@ export function useClientDesk(route) {
   }
   async function refreshLists() {
     todayLoadedAt = null
+    // The board owns customer cards; only the unlinked-conversation list stays here.
+    if (boardMode) { await Promise.all([mode.value === 'unlinked' ? loadList(false) : null, onRefresh?.()]); return }
     if (mode.value === 'suggested') await loadList(true)
     else await Promise.all([refreshToday(true), loadList(false)])
   }
   async function loadList(forceToday = true) {
+    if (boardMode && mode.value !== 'unlinked') { listGate.invalidate(); loading.value = false; return }
     const token = listGate.next(); loading.value = true; error.value = ''; rows.value = []
     try {
       const params = { keyword: keyword.value, page: page.value, page_size: pageSize.value }
@@ -47,11 +51,11 @@ export function useClientDesk(route) {
       } else data = mode.value === 'unlinked' ? await api.conversations({ ...params, scope: scope.value || undefined }) : await api.customers({ ...params, filter: filter.value || 'all' })
       if (!listGate.current(token)) return
       rows.value = (data.items || []).map(row => mode.value === 'unlinked' ? { ...row, link_id: row.link?.id, phone_masked: row.phone_masked || row.phone, last_touch_at: row.last_at } : row); total.value = data.total || 0
-      if (mode.value !== 'unlinked' && !reading.value && rows.value.length && !selected.value) void select(rows.value[0], false)
+      if (autoSelect && mode.value !== 'unlinked' && !reading.value && rows.value.length && !selected.value) void select(rows.value[0], false)
     } catch (e) { if (listGate.current(token)) error.value = errorText(e) }
     finally { if (listGate.current(token)) loading.value = false }
   }
-  async function select(row, mobile = true) {
+  async function select(row, mobile = true, preserveSource = false) {
     aborter?.abort(); aborter = new AbortController(); const token = detailGate.next(); evidenceGate.invalidate(); eventGate.invalidate()
     clearTimeout(poller); timelineRefreshToken = null
     detail.value = null; events.value = []; cursor.value = null; evidence.value = null; evidenceOpen.value = false; detailError.value = ''; timelineError.value = ''; timelineLoading.value = false; selectedChat.value = null
@@ -59,7 +63,7 @@ export function useClientDesk(route) {
     if (mode.value === 'unlinked') { selectedChat.value = row; selected.value = null; return }
     selected.value = String(row.company_id); detailLoading.value = true
     // A reset triggers the source watcher; otherwise start the timeline now.
-    const resetSource = source.value !== 'all'; source.value = 'all'
+    const resetSource = !preserveSource && source.value !== 'all'; if (!preserveSource) source.value = 'all'
     if (!resetSource) void loadTimeline(false)
     await loadDetail(token, id())
   }
@@ -123,7 +127,7 @@ export function useClientDesk(route) {
       else if (kind === 'grade') await api.grade(customer, payload)
       else if (kind === 'snooze') await api.feedback(suggestion.value.id, payload)
       else await api.state(customer, payload)
-      dialog.value = ''; msgSuccessText('已保存'); if (customer && selected.value === customer) await select({ company_id: customer }, false)
+      dialog.value = ''; msgSuccessText('已保存'); if (customer && selected.value === customer) await select({ company_id: customer }, false, true)
       if (kind === 'link') { selectedChat.value = null; reading.value = false }
       await refreshLists()
     } catch (e) { saveError.value = errorText(e); if (e.response?.status === 409) conflict.value = e.response.data.detail?.latest || e.response.data.data || e.response.data.detail }
@@ -131,14 +135,28 @@ export function useClientDesk(route) {
   }
   async function feedback(value) {
     if (saving.value) return; saving.value = true; saveError.value = ''
-    try { await api.feedback(suggestion.value.id, { value }); await select({ company_id: selected.value }, false); await refreshLists() }
+    try { await api.feedback(suggestion.value.id, { value }); await select({ company_id: selected.value }, false, true); await refreshLists() }
     catch (e) { detailError.value = errorText(e) } finally { saving.value = false }
   }
   let analysisKey
   async function reanalyze() {
     if (saving.value || busyAnalysis.value) return; saving.value = true
-    try { analysisKey ||= requestKey(); await api.reanalyze(id(), { client_request_id: analysisKey }); analysisKey = null; await select({ company_id: selected.value }, false); msgSuccessText('已加入分析队列') }
+    try { analysisKey ||= requestKey(); await api.reanalyze(id(), { client_request_id: analysisKey }); analysisKey = null; await select({ company_id: selected.value }, false, true); msgSuccessText('已开始分析') }
     catch (e) { detailError.value = errorText(e) } finally { saving.value = false }
+  }
+  async function toggleTag(code, action) {
+    if (saving.value || !selected.value) return null
+    saving.value = true; detailError.value = ''; const customer = id()
+    try {
+      const data = await api.tag(customer, { code, action })
+      if (customer === id() && detail.value) detail.value = { ...detail.value, ai_tags: data.ai_tags, removed_tags: data.removed_tags }
+      return data
+    } catch (e) { detailError.value = errorText(e); return null } finally { saving.value = false }
+  }
+  function closeDetail() {
+    aborter?.abort(); detailGate.invalidate(); eventGate.invalidate(); evidenceGate.invalidate(); clearTimeout(poller)
+    timelineRefreshToken = null; selected.value = null; detail.value = null; selectedChat.value = null; reading.value = false
+    evidence.value = null; evidenceOpen.value = false; detailLoading.value = false; detailError.value = ''
   }
   async function ignoreChat() {
     if (saving.value) return; saving.value = true
@@ -159,5 +177,5 @@ export function useClientDesk(route) {
       await Promise.all([refreshToday(), loadList(false)])
     } catch (e) { error.value = errorText(e) }
   }
-  return { mode, filter, keyword, page, pageSize, total, rows, today, selected, detail, reading, loading, detailLoading, error, detailError, source, events, cursor, timelineLoading, timelineError, evidence, evidenceOpen, evidenceError, evidenceLoading, dialog, form, saving, saveError, conflict, linkOptions, linkKeyword, scope, selectedChat, suggestion, state, busyAnalysis, init, loadList, select, loadTimeline, openEvidence, open, save, feedback, reanalyze, ignoreChat, searchLinks }
+  return { mode, filter, keyword, page, pageSize, total, rows, today, selected, detail, reading, loading, detailLoading, error, detailError, source, events, cursor, timelineLoading, timelineError, evidence, evidenceOpen, evidenceError, evidenceLoading, dialog, form, saving, saveError, conflict, linkOptions, linkKeyword, scope, selectedChat, suggestion, state, busyAnalysis, agentRun, toggleTag, closeDetail, init, loadList, select, loadTimeline, openEvidence, open, save, feedback, reanalyze, ignoreChat, searchLinks }
 }

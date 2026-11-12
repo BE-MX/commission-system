@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.client_desk import access, calendar, pack, queue, reports, rules, runner, validator
 from app.client_desk.models import ClientDeskState as State, ClientDeskSuggestion as Row
 from app.auth.models import ArkPermission, ArkRole, ArkRolePermission, ArkUser, ArkUserRole
+from app.system.models import SysDict
 
 NOW = datetime(2026, 11, 4, 8, 40)
 DAY = NOW.date()
@@ -166,7 +167,7 @@ def test_pack_validation_injection_and_truncation():
 @pytest.fixture
 def db():
     engine = create_engine("sqlite://")
-    for model in [ArkUser, ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, State, Row]:
+    for model in [ArkUser, ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, State, Row, SysDict]:
         model.__table__.create(engine)
     with Session(engine) as session:
         session.add(ArkUser(id=1, username="pilot", real_name="Pilot", password_hash="unused"))

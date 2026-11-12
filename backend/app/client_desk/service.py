@@ -311,6 +311,37 @@ def feedback(db, user, suggestion_id, payload):
 
 
 @scope_request()
+def set_tag(db, user, company_id, payload):
+    """Remove or restore one AI tag; removal persists across future analyses."""
+    from app.client_desk import board as board_view
+
+    scoped(db, user, company_id, True)
+    vocabulary = board_view.tag_vocabulary(db)
+    if payload.code not in {i["code"] for items in vocabulary.values() for i in items}:
+        raise HTTPException(422, "标签未在系统字典启用")
+    # Not a manual_version change: an in-flight analysis re-reads removals when applying.
+    state = lock_state(db, user_id(user), company_id)
+    removed = [c for c in (state.tag_overrides or []) if c != payload.code]
+    if payload.action == "remove":
+        removed.append(payload.code)
+    state.tag_overrides = removed
+    state.updated_by = user_id(user)
+    db.commit()
+    valid = board_view.stored_linkage_valid(db, user, company_id, state)
+    return {
+        "ai_tags": board_view.effective_tags(state, vocabulary, valid),
+        "removed_tags": board_view.removed_tags(state, vocabulary),
+    }
+
+
+@scope_request(cache_companies=True)
+def board(db, user, keyword=""):
+    from app.client_desk import board as board_view
+
+    return board_view.board(db, user, keyword)
+
+
+@scope_request()
 def fresh_detail(db, user, company_id):
     """Copying a draft always starts with a fresh ownership check."""
     return detail(db, user, company_id)
@@ -350,6 +381,28 @@ def detail(db, user, company_id):
         else None
     )
     from app.client_desk.calendar import offset_workdays
+    from app.client_desk import board as board_view
+    from app.client_desk.agent_tools import run_view
+    vocabulary = board_view.tag_vocabulary(db)
+    stored_valid = board_view.stored_linkage_valid(db, user, company_id, state, source)
+    last_order = max(
+        (o["account_date"] for o in source["orders"] if o.get("account_date")),
+        default=None,
+    )
+    stage = board_view.compute_stage(
+        len(source["orders"]), last_order, source["last_touch_at"], source["created_at"]
+    )
+    latest_run = (
+        db.query(Suggestion)
+        .filter(
+            Suggestion.user_id == user_id(user),
+            Suggestion.company_id == int(company_id),
+            Suggestion.biz_date == beijing_today(),
+            Suggestion.run_seq > 0,
+        )
+        .order_by(Suggestion.run_seq.desc())
+        .first()
+    )
 
     return {
         **{
@@ -360,12 +413,20 @@ def detail(db, user, company_id):
                 "grade",
                 "grade_options",
                 "orders_summary",
-                "research_summary",
+                "research_report",
                 "sync_times",
                 "wa_targets",
                 "coverage_gaps",
             )
         },
+        "stage": {"code": stage, "label": board_view.STAGE_LABELS[stage]},
+        "fixed_tags": board_view.fixed_tags(source["grade"], stage, source.get("origin")),
+        "ai_tags": board_view.effective_tags(state, vocabulary, stored_valid),
+        "removed_tags": board_view.removed_tags(state, vocabulary),
+        "tag_vocabulary": vocabulary,
+        "profile": board_view.profile_view(state, stored_valid),
+        "agent_run": run_view(latest_run),
+        "last_order_date": last_order,
         "last_analyzed_at": state.last_analyzed_at if state else None,
         "remaining_reanalyses": max(
             0,

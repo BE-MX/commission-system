@@ -60,3 +60,8 @@ class WaOpenPost(Payload):
     account_uid: str = Field(max_length=80)
     conversation_uid: str = Field(max_length=120)
     suggestion_id: str | None = None
+
+
+class TagPut(Payload):
+    code: str = Field(min_length=1, max_length=64)
+    action: Literal["remove", "restore"]

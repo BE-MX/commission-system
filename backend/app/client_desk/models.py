@@ -69,6 +69,10 @@ class ClientDeskState(Audit, Base):
     rule_cooldowns = Column(JSON, nullable=False, default=dict, comment="逐规则冷却")
     last_touch_at = Column(DateTime, comment="最近可见接触")
     last_touch_channel = Column(String(24), comment="最近渠道")
+    ai_tags = Column(JSON, comment="AI与风险标签（自动生效）")
+    tag_overrides = Column(JSON, comment="人工移除的标签编码")
+    profile_json = Column(JSON, comment="结构化客户画像")
+    profile_dependencies = Column(JSON, comment="画像与标签授权依赖")
     __table_args__ = (
         UniqueConstraint("user_id", "company_id", name="uq_client_desk_state"),
         Index("ix_client_desk_due", "user_id", "next_followup_date"),
@@ -123,6 +127,7 @@ class ClientDeskSuggestion(Audit, Base):
     pack_hash = Column(String(64), comment="资料包哈希")
     source_dependencies = Column(JSON, comment="全部来源依赖")
     token_usage = Column(JSON, comment="token用量")
+    agent_trace = Column(JSON, comment="Agent只读工具步骤")
     error_code = Column(String(64), comment="无正文错误码")
     priority = Column(String(16), comment="优先级")
     reason = Column(Text, comment="原因")

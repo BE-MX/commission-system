@@ -42,8 +42,7 @@
     </template>
 
     <template v-else-if="event.source === 'research'">
-      <ResearchSummary v-if="event.result && typeof event.result === 'object'" :detail="{ result_json: event.result }" />
-      <p v-else>{{ event.result || '这条背调暂无可显示的内容。' }}</p>
+      <ResearchReport :report="event.report" />
     </template>
 
     <ul v-else-if="event.messages?.length" class="messages">
@@ -57,7 +56,7 @@
 </template>
 
 <script setup>
-import ResearchSummary from '@/views/customer_hub/ResearchSummary.vue'
+import ResearchReport from './ResearchReport.vue'
 import { formatBeijingDate, formatBeijingDateTime } from '@/utils/datetime'
 import { orderAmount, timelineTitle } from './deskController'
 

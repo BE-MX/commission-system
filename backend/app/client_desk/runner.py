@@ -1,8 +1,9 @@
-"""Lease-bound desk_v1 execution. No retry after an uncertain external call."""
+"""Lease-bound controlled agent loop. No retry after an uncertain external call."""
 
 import logging
 import secrets
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import date, timedelta
 from sqlalchemy import case
 from fastapi import HTTPException
@@ -14,14 +15,16 @@ from app.core.config import get_settings
 from app.core.time import beijing_now
 from .access import enrolled_user_ids
 from .models import ClientDeskSuggestion as Row, ClientDeskState as State
-from . import sources
-from .pack import build_pack, digest, PROTOCOL_HASH
+from . import agent_tools, sources
+from .board import tag_vocabulary
+from .pack import build_pack, digest, PROTOCOL_HASH, PROTOCOL_VERSION
 from .queue import active, auto_done, effective_snooze, state_data
 from .rules import R1, R3, R6, R7, evaluate
 from .validator import validate
 
 logger = logging.getLogger(__name__)
 LEASE = timedelta(minutes=4)
+CORRECTION = "上次结果未通过结构、证据或安全检查。请不要再调用工具，直接严格按协议输出最终结果 JSON。"
 
 
 def recover_expired(db, now):
@@ -97,7 +100,9 @@ def run_job(db, job):
     selection = None
     initial_dependencies = None
     try:
-        for attempt in range(2):
+        conversation, refs, steps_left, corrections, calls = None, None, 0, 0, 0
+        trace, result, work = [], None, None
+        while result is None:
             now = beijing_now()
             cfg = active(db, uid)
             row = guarded(db, job, now).populate_existing().first()
@@ -149,7 +154,20 @@ def run_job(db, job):
             ):
                 _stop(db, job, "rule_only", "feedback_recorded")
                 return
-            pack = build_pack(source, personal, codes, day, correction=bool(attempt))
+            if conversation is None:
+                removed = set(personal.get("tag_overrides") or [])
+                vocabulary = [
+                    {**item, "kind": kind}
+                    for kind, items in tag_vocabulary(db).items()
+                    for item in items
+                    if item["code"] not in removed
+                ]
+                base = build_pack(source, personal, codes, day, tags=vocabulary)
+                conversation, refs = list(base.messages), dict(base.refs)
+                steps_left = agent_tools.max_steps(cfg.CLIENT_DESK_RULES, row.run_seq)
+            work = replace(
+                base, messages=list(conversation), refs=dict(refs), hash=digest(conversation)
+            )
             snapshot = prepare_text_chat(db, cfg.CLIENT_DESK_PRESET_NAME, 1800)
             if (
                 snapshot.provider.id not in cfg.CLIENT_DESK_ALLOWED_PROVIDER_IDS
@@ -159,9 +177,10 @@ def run_job(db, job):
             intent = {
                 Row.call_started_at: beijing_now(),
                 Row.attempts: Row.attempts + 1,
-                Row.pack_hash: pack.hash,
-                Row.protocol_version: "desk_v1",
+                Row.pack_hash: work.hash,
+                Row.protocol_version: PROTOCOL_VERSION,
                 Row.protocol_hash: PROTOCOL_HASH,
+                Row.agent_trace: trace,
                 Row.lease_expires_at: beijing_now() + LEASE,
             }
             if not guarded(db, job, beijing_now()).update(
@@ -171,10 +190,11 @@ def run_job(db, job):
                 return
             db.commit()
             called, answered = True, False
+            calls += 1
             response = chat(
                 db,
                 preset_name=cfg.CLIENT_DESK_PRESET_NAME,
-                messages=pack.messages,
+                messages=work.messages,
                 caller_module="client_desk",
                 caller_user_id=uid,
                 snapshot_mode="metadata",
@@ -185,18 +205,55 @@ def run_job(db, job):
             answered = True
             usage["input"] += response.get("tokens_prompt") or 0
             usage["output"] += response.get("tokens_completion") or 0
+            content = response.get("content")
+            action = agent_tools.parse_action(content)
+            if action and steps_left > 0:
+                name, args = action
+                payload, new_refs, status = agent_tools.run_tool(
+                    db, source, refs, name, args
+                )
+                steps_left -= 1
+                reply = agent_tools.tool_message(name, payload, steps_left)
+                if (
+                    agent_tools.context_size(conversation)
+                    + len(content)
+                    + len(reply["content"])
+                    > agent_tools.CONTEXT_LIMIT
+                ):
+                    # Keep the bounded context; the next turn must conclude.
+                    status, steps_left, new_refs = "limit", 0, {}
+                    reply = agent_tools.tool_message(
+                        name, {"error": "资料已达上限，请据现有资料输出"}, 0
+                    )
+                refs.update(new_refs)
+                conversation += [{"role": "assistant", "content": content}, reply]
+                trace.append(
+                    agent_tools.trace_step(name, status, beijing_now(), args)
+                )
+                guarded(db, job, beijing_now()).update(
+                    {Row.token_usage: usage, Row.agent_trace: trace},
+                    synchronize_session=False,
+                )
+                db.commit()
+                continue
             try:
-                result = validate(response.get("content"), pack, day)
+                result = validate(content, work, day)
             except ValueError:
                 guarded(db, job, beijing_now()).update(
                     {Row.token_usage: usage}, synchronize_session=False
                 )
                 db.commit()
-                if attempt == 0:
+                if corrections == 0:
+                    corrections = 1
+                    conversation += [
+                        {"role": "assistant", "content": str(content or "")[:4000]},
+                        {"role": "user", "content": CORRECTION},
+                    ]
                     continue
                 _stop(db, job, "rule_only", "validation_failed")
                 return
-            break
+        pack = work
+        trace.append(agent_tools.trace_step("final", "ok", beijing_now()))
         db.rollback()
         active(db, uid)
         current_row = guarded(db, job, beijing_now()).populate_existing().first()
@@ -246,6 +303,7 @@ def run_job(db, job):
             None,
         )
         row.source_dependencies, row.token_usage = pack.dependencies, usage
+        row.agent_trace = trace
         row.grade_hint = result["grade_hint"]
         for key, value in result["suggestion"].items():
             setattr(row, key, value)
@@ -265,6 +323,25 @@ def run_job(db, job):
                 digest(pack.dependencies),
             )
             state.brief_at, state.last_applied_run = finished, version
+            # AI tags take effect immediately; codes the salesperson removed stay removed.
+            removed = set(state.tag_overrides or [])
+            state.ai_tags = [
+                tag | {"run": version, "applied_at": finished.isoformat()}
+                for tag in result["tags"]
+                if tag["code"] not in removed
+            ]
+            state.profile_json = {
+                "blocks": result["profile"],
+                "coverage": {
+                    "orders": len(source.get("orders") or []),
+                    "messages": sum(1 for k in pack.refs if k.startswith("M-")),
+                    "inquiries": sum(1 for k in pack.refs if k.startswith("AF-")),
+                    "research": (source.get("research_report") or {}).get("status") == "ready",
+                    "followups": sum(1 for k in pack.refs if k.startswith("F-")),
+                },
+                "generated_at": finished.isoformat(),
+            }
+            state.profile_dependencies = {"deps": pack.dependencies, "run": version}
             # Historical v1 output may update the manual profile only. It cannot
             # schedule rechecks, suppress future automatic analysis, or cool rules.
             if manual_only(pack.dependencies):
