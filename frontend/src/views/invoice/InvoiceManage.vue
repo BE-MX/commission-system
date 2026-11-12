@@ -114,7 +114,7 @@
             <div v-if="column.key === 'invoice_no'" class="invoice-pair">
               <div class="invoice-number-line">
                 <button type="button" class="invoice-number invoice-number-button" @click="invoiceDetailRef.open(row)">{{ row.invoice_no }}</button>
-                <button type="button" class="invoice-copy-button" :aria-label="`复制发票号 ${row.invoice_no}`" title="复制发票号" @click.stop="copyInvoiceNo(row.invoice_no)"><el-icon><CopyDocument /></el-icon></button>
+                <button type="button" class="invoice-copy-button" :aria-label="`复制发票号 ${row.invoice_no}`" :aria-disabled="copyingInvoiceNos.has(row.invoice_no)" title="复制发票号" @click.stop="copyInvoiceNo(row.invoice_no)"><el-icon :class="{ 'is-copying': copyingInvoiceNos.has(row.invoice_no) }"><CopyDocument /></el-icon></button>
               </div>
               <div class="invoice-meta-line"><StatusBadge size="small" :type="orderTypeTone(row.order_type)" effect="plain">{{ orderTypeLabel(row.order_type) }}</StatusBadge><span class="invoice-secondary">（{{ row.invoice_date }}）</span></div>
               <InvoiceAnomalyBadge :anomalies="row.anomalies || []" />
@@ -472,7 +472,7 @@ import InvoiceAnomalyBadge from './components/InvoiceAnomalyBadge.vue'
 import { useInvoiceShipments, orderTypeLabel } from './composables/useInvoiceShipments'
 import { useInvoiceImportDialogs } from './composables/useInvoiceImportDialogs'
 import InvoiceLifecycle from './components/InvoiceLifecycle.vue'
-import { computed, nextTick, onDeactivated, ref, watch } from 'vue'
+import { computed, nextTick, onDeactivated, onUnmounted, ref, watch } from 'vue'
 import { ArrowDown, Box, Calendar, CopyDocument, DArrowLeft, DArrowRight, Delete, Document, Download, Edit, Refresh, RefreshLeft, Search, Tools } from '@element-plus/icons-vue'
 import { copyText } from '@/utils/clipboard'
 import { notifyFeedback } from '@/utils/feedback'
@@ -530,9 +530,29 @@ const actionColumnWidth = 220
 const tableWidth = computed(() => visibleColumns.value.reduce((sum, column) =>
   sum + (columnWidths.value[column.key] ?? column.minWidth), actionColumnWidth))
 const router = useRouter(), route = useRoute()
+const copyingInvoiceNos = ref(new Set())
+const invoiceCopyTasks = new Map()
+function resetInvoiceCopyFeedback() {
+  for (const task of invoiceCopyTasks.values()) clearTimeout(task.timer)
+  invoiceCopyTasks.clear()
+  copyingInvoiceNos.value.clear()
+}
+onDeactivated(resetInvoiceCopyFeedback)
+onUnmounted(resetInvoiceCopyFeedback)
 async function copyInvoiceNo(invoiceNo) {
+  if (copyingInvoiceNos.value.has(invoiceNo)) return
+  const task = {}
+  invoiceCopyTasks.set(invoiceNo, task)
+  copyingInvoiceNos.value.add(invoiceNo)
   const copied = await copyText(invoiceNo)
-  notifyFeedback(copied ? 'success' : 'error', copied ? '发票号已复制' : '复制失败，请重试')
+  if (invoiceCopyTasks.get(invoiceNo) !== task) return
+  const restore = () => {
+    copyingInvoiceNos.value.delete(invoiceNo)
+    invoiceCopyTasks.delete(invoiceNo)
+  }
+  if (copied) task.timer = setTimeout(restore, 800)
+  else restore()
+  notifyFeedback(copied ? 'success' : 'error', copied ? '复制成功' : '复制失败，请重试')
 }
 const editor = useInvoiceEditor({ onSaved: handleSaved })
 const {

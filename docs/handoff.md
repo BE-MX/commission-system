@@ -7,6 +7,15 @@
 - 实现分支 `codex/receipt-sync-guidance`。亮哥已授权合并并推送，本次交付至 `origin/main`，不部署。验收入口为 `frontend/tests/invoiceReceiptSyncGuidanceHarness.html`，其中回款请求全部由隔离适配器模拟。
 - 扩大验证发现 `invoiceRead.test.mjs` 的 16 项旧用例在测试模块链接阶段失败（缺失 `useTableView` 等依赖替身）；在未修改的主工作区复现完全相同的 16 项失败，属基线测试夹具问题。本次未修改该测试或其目标 `useInvoiceManagePage.js`。构建日志和基线复现记录位于 `tmp/receipt-sync-guidance/`。Git 巡检按 `--no-fetch` 执行，仅反映本地快照。
 
+## 2026-11-12 发票号复制反馈（Codex，Git 交付，未发布）
+
+- 实现分支 `codex/invoice-copy-feedback`。订单发票列表点击复制后仅隐藏该发票号的复制图标，保留按钮占位和键盘焦点；复制成功提示「复制成功」，800ms 后恢复图标，失败立即恢复并提示重试。
+- 同一发票在反馈期间防止重复触发，不同发票独立处理；页面停用或卸载时清理定时器并忽略已离开页面的异步回调。
+- 已验证：前端 `npm run build`、`npm run test:invoice-layout`（10/10）、`python scripts/check_conventions.py` 和 `git diff --check` 通过。构建仍有既有混用动态/静态导入与大包提示。`python scripts/git_sweep.py --no-fetch` 已执行，结果为本地快照，未处理其他工作区的历史欠账。
+- 浏览器模拟数据验收通过：剪贴板参数、两行独立反馈、重复点击防重、失败恢复、Enter/Space、焦点保留、布局稳定及不打开详情；未发起业务写入，独立审查无阻断问题。证据位于 `tmp/invoice-copy-feedback/results.json` 和 `two-rows-pending.png`；既有列表浏览器脚本已同步新文案与恢复时机。
+- 同步后的 `frontend/tests/invoiceListDensity.browser.py` 完整回归通过（1920、1366、1440、390 像素宽度，复制成功/失败、排序及旧偏好）；证据位于 `tmp/invoice-copy-feedback/list-regression/`。本次启动的本地预览服务已停止。
+- 亮哥授权合并并推送 `main`；本次交付不包含部署，生产界面仍待后续发布。验证证据随交付保存在主目录 `tmp/invoice-copy-feedback/`。
+
 ## 2026-11-11 预售出库自动核算与业务指纹（Codex，Git 交付，未发布）
 
 - 已补齐请求内去重、指纹精简、自动核算、单按钮提交和具体失败提示，并包含此前「待提交检验」显示修复。工作区 `D:/MyProgram/commission-system-codex-outbound-proof-release`。亮哥最新指令为「先合并推送不部署」：本次仅向 `main` 合并并推送 `origin`，不执行生产发布、迁移或 Stephanie 新提交；生产耗时验收留待后续发布。
