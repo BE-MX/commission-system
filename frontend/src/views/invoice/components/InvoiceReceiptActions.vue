@@ -2,6 +2,15 @@
   <section v-if="canRead" class="invoice-funds" v-loading="loading">
     <div class="funds-title">实际回款与待收 <StatusBadge v-if="receipt" size="small" effect="plain">{{ action.label }}</StatusBadge></div>
     <p class="funds-note">预付款与尾款是订单结算信息；实际回款按回款单核验。修改明细不会改写原收款。</p>
+    <div v-if="syncGuidance" class="receipt-sync-guidance" role="status">
+      <p class="funds-warning">{{ locked ? '订单正在保存或同步，请等待处理完成后再补登记回款。' : syncGuidance.message }}</p>
+      <template v-if="syncGuidance.canSync">
+        <span v-permission="'invoice:write'">
+          <GlassButton v-permission="'invoice:sync'" left-icon="Refresh" :disabled="syncEntryBlocked" :loading="locked" @click="syncToRegister">保存并同步</GlassButton>
+        </span>
+        <p v-if="!canSyncOrder" class="funds-note">请有订单编辑及同步权限的同事完成同步，再补登记回款。</p>
+      </template>
+    </div>
     <template v-if="summary">
       <dl v-if="form.order_type === 'presale' && summary.balance" class="funds-grid">
         <div><dt>已生效留存余额（含定金及费用）</dt><dd>{{ form.currency }} {{ formatMoney(summary.balance.pool_available_amount) }}</dd></div>
@@ -17,7 +26,7 @@
       <p v-if="form.order_type !== 'presale' && projected?.overpaid > 0" class="funds-warning">已生效回款超过当前应收，请核实退款安排；原回款保留。</p>
       <p v-if="form.order_type !== 'presale' && projected?.pendingExcess > 0" class="funds-warning">另有待处理金额超出应收 {{ formatMoney(projected.pendingExcess) }}，请核对原回款；这部分不表示已实际超收。</p>
       <p v-if="receipt" class="funds-note">原回款：{{ formatMoney(receipt.amount) }} {{ receipt.currency }} · {{ action.hint }}</p>
-      <p v-if="blockedReason" class="funds-warning" role="status">{{ blockedReason }}</p>
+      <p v-if="blockedReason && (!syncGuidance || !['请先将订单完整同步小满，再登记回款', '订单有未保存修改，请先保存并完成关联同步，再处理回款。'].includes(blockedReason))" class="funds-warning" role="status">{{ blockedReason }}</p>
       <p v-if="form.order_type === 'presale'" class="funds-note">预售定金与分批回款请在发货结算或整笔回款中处理。</p>
       <div class="funds-actions">
         <GlassButton v-if="action.editable" v-permission="'receipt:write'" left-icon="Edit" :disabled="writeBlocked" @click="mode = 'edit'">修正回款</GlassButton>
@@ -51,10 +60,13 @@ import ReceiptDelete from '@/views/receipt/ReceiptDelete.vue'
 import ReceiptPurposeCorrection from '@/views/receipt/ReceiptPurposeCorrection.vue'
 import { purposeLabel } from './invoiceDetailLabels'
 import InvoiceReceiptPaymentDialog from './InvoiceReceiptPaymentDialog.vue'
-import { applySubmittedReceipt, projectReceiptBalance, receiptActionState } from '../composables/invoiceReceiptState'
+import { applySubmittedReceipt, projectReceiptBalance, receiptActionState, invoiceReceiptSyncGuidance } from '../composables/invoiceReceiptState'
 
-const props = defineProps({ form: { type: Object, required: true }, total: { type: Number, required: true } })
+const props = defineProps({ form: { type: Object, required: true }, total: { type: Number, required: true }, locked: Boolean })
+const emit = defineEmits(['sync'])
 const auth = useAuthStore()
+const canSyncOrder = computed(() => auth.hasPermission('invoice:write') && auth.hasPermission('invoice:sync'))
+const syncGuidance = computed(() => invoiceReceiptSyncGuidance(props.form))
 const canRead = computed(() => auth.hasAnyPermission(['receipt:read', 'receipt:write', 'receipt:admin']))
 const loading = ref(false), busy = ref(false), dialogBusy = ref(false), remoteBusy = ref(false)
 const remoteOpen = ref(false)
@@ -68,8 +80,13 @@ const blockedReason = computed(() => props.form.receipt_order_dirty
     ? '主单有未保存修改，当前批次未完成，暂不能保存。请关闭并重新打开订单，恢复已保存内容后，再按页脚指引处理回款。'
     : '订单有未保存修改，请先保存并完成关联同步，再处理回款。'
   : summary.value?.action_blocked_reason)
-const localBlocked = computed(() => loading.value || busy.value || dialogBusy.value || Boolean(props.form.receipt_order_dirty || props.form.receipt_uploading || props.form.receipt_proof_dirty || props.form.receipt_remark_editing || props.form.receipt_remark_saving))
+const localBlocked = computed(() => props.locked || props.form.receipt_sync_refresh_required || loading.value || busy.value || dialogBusy.value || Boolean(props.form.receipt_order_dirty || props.form.receipt_uploading || props.form.receipt_proof_dirty || props.form.receipt_remark_editing || props.form.receipt_remark_saving))
 const writeBlocked = computed(() => localBlocked.value || remoteBusy.value || deletionBusy.value || deletionOpen.value || Boolean(blockedReason.value) || !summary.value?.balance)
+const syncEntryBlocked = computed(() => props.locked || busy.value || dialogBusy.value || remoteBusy.value || remoteOpen.value || deletionBusy.value || deletionOpen.value || Boolean(mode.value)
+  || props.form.receipt_uploading || props.form.receipt_proof_dirty || props.form.receipt_remark_editing || props.form.receipt_remark_saving)
+function syncToRegister() {
+  if (syncGuidance.value?.canSync && canSyncOrder.value && !syncEntryBlocked.value) emit('sync')
+}
 const managementUrl = computed(() => props.form.xiaoman_order_id
   ? `/invoice/receipts?order_id=${encodeURIComponent(props.form.xiaoman_order_id)}`
   : `/invoice/receipts?keyword=${encodeURIComponent(props.form.invoice_no || '')}`)

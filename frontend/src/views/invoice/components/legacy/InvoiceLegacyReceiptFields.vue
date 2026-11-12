@@ -13,8 +13,8 @@
       @uploading="value => form.receipt_uploading = value"
       @dirty="value => form.receipt_proof_dirty = value" />
     <p v-if="form.receipt_draft?.last_error" role="alert">{{ form.receipt_draft.last_error }}</p>
-    <p v-if="form.receipt_draft?.eligible === false">本单不再自动生成首次回款；有实际到账后，请使用下方“补登记回款”。</p>
-    <InvoiceReceiptActions v-if="form.id" :form="form" :total="total" />
+    <p v-if="noAutoReceipt">本单已跳过首次回款；后续实际到账请在下方补登记，订单须先完成同步。</p>
+    <InvoiceReceiptActions v-if="form.id" :form="form" :total="total" :locked="locked" @sync="$emit('sync')" />
   </section>
 </template>
 <script setup>
@@ -28,6 +28,7 @@ import { currentBeijingDate } from '@/utils/datetime'
 
 // 旧版下单抽屉的回款区（HEAD 版原样保留，过渡期使用）：回款方式独立下拉小满回款方式
 const props = defineProps({ form: { type: Object, required: true }, total: Number, locked: Boolean })
+defineEmits(['sync'])
 const noAutoReceipt = computed(() => props.form.receipt_draft?.eligible === false && !Number(props.form.receipt_draft?.amount || 0))
 const frozen = computed(() => noAutoReceipt.value || (props.form.receipt_draft?.status && props.form.receipt_draft.status !== 'draft'))
 const auth = useAuthStore()

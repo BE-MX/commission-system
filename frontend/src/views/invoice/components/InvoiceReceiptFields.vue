@@ -23,9 +23,8 @@
       @uploading="value => form.receipt_uploading = value"
       @dirty="value => form.receipt_proof_dirty = value" />
     <p v-if="form.receipt_draft?.last_error" class="receipt-error" role="alert">{{ form.receipt_draft.last_error }}</p>
-    <p v-if="form.receipt_draft?.eligible === false" class="receipt-hint">本单不再自动生成首次回款；有实际到账后，请使用下方“补登记回款”。</p>
     </template>
-    <InvoiceReceiptActions v-if="form.id" :form="form" :total="total" />
+    <InvoiceReceiptActions v-if="form.id" :form="form" :total="total" :locked="locked" @sync="$emit('sync')" />
   </section>
 </template>
 <script setup>
@@ -37,10 +36,11 @@ import { applySubmittedReceipt } from '../composables/invoiceReceiptState'
 import { useAuthStore } from '@/stores/auth'
 import { currentBeijingDate } from '@/utils/datetime'
 const props = defineProps({ form: { type: Object, required: true }, total: { type: Number, required: true }, locked: Boolean })
+defineEmits(['sync'])
 const noAutoReceipt = computed(() => props.form.receipt_draft?.eligible === false && !Number(props.form.receipt_draft?.amount || 0))
 const frozen = computed(() => noAutoReceipt.value || (props.form.receipt_draft?.status && props.form.receipt_draft.status !== 'draft'))
 const intentLabel = computed(() => ({ armed: '订单同步中', ready: '等待生成回款', converted: '原回款已生成' })[props.form.receipt_draft?.status] || '选填')
-const intentHint = computed(() => noAutoReceipt.value ? '本单已跳过首次回款，有实际到账后可补登记回款。' : ({
+const intentHint = computed(() => noAutoReceipt.value ? '本单已跳过首次回款；后续实际到账请在下方补登记，订单须先完成同步。' : ({
   armed: '订单同步正在处理或等待恢复，暂不能修改首次回款，请先查看订单同步结果。',
   ready: '首次回款正在等待生成，请稍后刷新；生成后按回款单状态修正或核对。',
   converted: '本次回款已生成，金额显示原回款的当前记录；订单重新同步不会重复建款。',

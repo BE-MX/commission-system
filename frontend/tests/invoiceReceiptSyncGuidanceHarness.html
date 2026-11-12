@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>回款同步提示验收</title><div id="app"></div>
+<script type="module">
+import { createApp, h, reactive, ref } from 'vue'
+import { createPinia } from 'pinia'
+import ElementPlus from 'element-plus'
+import * as icons from '@element-plus/icons-vue'
+import 'element-plus/dist/index.css'
+import '../src/styles/tokens.css'
+import { useAuthStore } from '../src/stores/auth'
+import { receiptClient } from '../src/api/clients'
+import { registerPermissionDirectives } from '../src/directives/permission'
+import StatusBadge from '../src/components/StatusBadge.vue'
+import InvoiceReceiptFields from '../src/views/invoice/components/InvoiceReceiptFields.vue'
+import InvoiceLegacyReceiptFields from '../src/views/invoice/components/legacy/InvoiceLegacyReceiptFields.vue'
+
+const form = reactive({ id: 1916, invoice_no: '测试订单', order_type: 'stock', currency: 'USD', total_amount: 100,
+  sync_status: 'not_synced', xiaoman_order_id: 'synthetic-order',
+  receipt_draft: { eligible: false, status: 'draft', amount: 0, attachment_ids: [], payment_type: 'Other' } })
+const locked = ref(false), count = ref(0), legacy = ref(false)
+// Every receipt call stays inside this fixture; no server or production writes.
+receiptClient.defaults.adapter = async config => {
+  let data
+  if (config.method !== 'get') throw new Error('Fixture forbids writes')
+  if (config.url.startsWith('/invoice-summary/')) data = {
+    initial_receipt: null, balance: { remaining_amount: '100', effective_amount: '0', pending_amount: '0', registered_amount: '0', version: 'test' },
+    action_blocked_reason: form.sync_status === 'synced' ? null : '请先将订单完整同步小满，再登记回款' }
+  else if (config.url === '/types') data = ['Other']
+  else throw new Error('Unexpected fixture request: ' + config.url)
+  return { data: { code: 200, data }, status: 200, statusText: 'OK', headers: {}, config }
+}
+const permissions = ['receipt:read', 'receipt:write', 'invoice:write', 'invoice:sync']
+const app = createApp({ setup() {
+  const auth = useAuthStore()
+  auth.user = { id: 1, roles: [], permissions: [...permissions] }
+  const scenario = value => {
+    locked.value = false
+    form.linked_sync_id = null
+    form.sync_status = value === 'synced' ? 'synced' : value === 'uncertain' ? 'sync_uncertain' : 'not_synced'
+    if (value === 'linked') form.linked_sync_id = 'existing-task'
+    auth.user.permissions = value === 'no-permission' ? ['receipt:read', 'receipt:write'] : [...permissions]
+  }
+  return () => h('main', {}, [
+    h('h1', '回款同步提示（隔离验收）'),
+    h('nav', {}, [
+      ...[['unsynced', '未同步'], ['synced', '模拟同步完成'], ['linked', '关联同步处理中'], ['uncertain', '结果待核对'], ['no-permission', '无同步权限']].map(([value, label]) =>
+        h('button', { onClick: () => scenario(value) }, label)),
+      h('button', { onClick: () => { legacy.value = !legacy.value } }, legacy.value ? '切换新版' : '切换旧版'),
+    ]),
+    h('p', { id: 'sync-count' }, `同步事件：${count.value}`),
+    h(legacy.value ? InvoiceLegacyReceiptFields : InvoiceReceiptFields, { form, total: 100, locked: locked.value,
+      onSync: () => { count.value++; locked.value = true } }),
+  ])
+} })
+app.use(createPinia()); app.use(ElementPlus); app.component('StatusBadge', StatusBadge)
+for (const [name, icon] of Object.entries(icons)) app.component(name, icon)
+registerPermissionDirectives(app); app.mount('#app')
+</script>
+<style>body{max-width:720px;margin:24px auto;padding:16px}nav{display:flex;flex-wrap:wrap;gap:8px}h1{font-size:20px}</style>
+</html>
