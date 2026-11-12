@@ -15,7 +15,7 @@
     <div class="wb-panel lg-card is-static">
       <div class="action-bar">
         <div class="wb-actions">
-          <el-checkbox v-if="tab !== 'customers'" v-model="potentialOnly">仅显示潜在客户</el-checkbox>
+          <el-checkbox v-if="!['customers', 'stats'].includes(tab)" v-model="potentialOnly">仅显示潜在客户</el-checkbox>
           <GlassButton v-permission="'domestic_followup:write'" variant="primary" left-icon="EditPen" @click="composer.open()">记一条跟进</GlassButton>
           <GlassButton v-permission="'domestic_followup:write'" variant="outline" left-icon="Plus" @click="prospectRef.open()">快速建客户</GlassButton>
           <GlassButton v-permission="'domestic_followup:admin'" variant="outline" left-icon="Setting" @click="configRef.open()">跟进设置</GlassButton>
@@ -92,6 +92,11 @@
             />
           </div>
         </el-tab-pane>
+        <el-tab-pane label="统计看板" name="stats" lazy>
+          <StatsBoard ref="statsRef" :api="followupApi" :can-read-all="canStatsReadAll"
+                      @timeline="id => timelineRef.open(id)" @record="recordFromStats" @record-detail="record => myRecordDetail = record"
+                      @go-tab="value => tab = value" @collaboration="collaborationSettingsRef.open('queue')" />
+        </el-tab-pane>
       </el-tabs>
     </div>
 
@@ -120,8 +125,9 @@ import GlassButton from '@/components/GlassButton.vue'
 import OverviewMetricCard from '@/components/OverviewMetricCard.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
-import { apiError } from '@/api/domesticFollowup'
+import { apiError, followupApi } from '@/api/domesticFollowup'
 import { msgError } from '@/utils/feedback'
+import StatsBoard from './components/stats/StatsBoard.vue'
 import CustomerTimelineDrawer from './components/CustomerTimelineDrawer.vue'
 import FollowupConfigDialog from './components/FollowupConfigDialog.vue'
 import FollowupComposer from './components/FollowupComposer.vue'
@@ -153,13 +159,15 @@ const { density: recordDensity, densityClass: recordDensityClass, visibleKeys: v
   panelRef: recordsPanel, isFullscreen: recordsFullscreen, toggleFullscreen: toggleRecordsFullscreen } = useTableView('domestic-followup-records', recordColumns)
 const auth = useAuthStore()
 const canReadAll = computed(() => auth.hasAnyPermission(['domestic_followup:read_all', 'domestic_followup:admin', 'domestic_followup:coordinate']))
-const tabs = ['customers', 'tasks', 'overview', 'items', 'records']
+const canStatsReadAll = computed(() => auth.hasPermission('domestic_followup:read_all'))
+const tabs = ['customers', 'tasks', 'overview', 'items', 'records', 'stats']
 const tab = ref(tabs.includes(route.query.tab) ? route.query.tab : 'customers')
 const customersRef = ref(null), prospectRef = ref(null)
 const overviewRef = ref(null)
 const timelineRef = ref(null)
 const configRef = ref(null)
 const collaborationSettingsRef = ref(null)
+const statsRef = ref(null)
 const editorRef = ref(null), historyRef = ref(null), issuesRef = ref(null), myRecordDetail = ref(null)
 const potentialOnly = ref(false)
 const upcomingOpen = ref([])  // 「即将到期」默认折叠；点计数卡展开/收起
@@ -169,6 +177,7 @@ const composer = useFollowupComposer({
     if (tab.value === 'records') w.loadRecords(1)
     overviewRef.value?.refresh()
     customersRef.value?.refresh()
+    statsRef.value?.reload()
   },
   onClosed: () => w.loadTasks(),
 })
@@ -186,6 +195,10 @@ const isStatActive = key => (key === 'upcoming' ? upcomingOpen.value.includes('u
 
 function recordFromTask(task) {
   composer.open({ customer: { id: task.customer_id, shop_name: task.shop_name, writable: true }, source_task_id: task.id })
+}
+
+function recordFromStats(row) {
+  composer.open(row ? { customer: { id: row.customer_id, shop_name: row.shop_name } } : {})
 }
 
 async function resumeDraft(draft) {
@@ -221,6 +234,7 @@ function afterEdit() {
   overviewRef.value?.refresh()
   customersRef.value?.refresh()
   issuesRef.value?.refresh()
+  statsRef.value?.reload()
 }
 function afterProspect(customer) {
   customersRef.value?.refresh()

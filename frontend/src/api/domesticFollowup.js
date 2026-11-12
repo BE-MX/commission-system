@@ -60,6 +60,17 @@ export const followupApi = {
   items: params => get('/items', params),
   resolveItem: (id, body) => post(`/items/${id}/resolve`, body),
   transferItem: (id, body) => post(`/items/${id}/transfer`, body),
+  personalStats: params => get('/stats/personal', params),
+  teamStats: params => get('/stats/team', params),
+  statsRhythm: params => get('/stats/rhythm', params),
+  missingToday: () => get('/stats/missing-today'),
+  statsDrilldown: params => get('/stats/drilldown', params),
+  insights: params => get('/insights', params),
+  refreshInsights: body => post('/insights/refresh', body),
+  insightRefreshStatus: id => get(`/insights/jobs/${id}`),
+  insightFeedback: (id, feedback) => post(`/insights/${id}/feedback`, { feedback }),
+  adoptInsight: (id, note) => post(`/insights/${id}/adopt`, { note }),
+  insightToTask: (id, body) => post(`/insights/${id}/to-task`, body),
 }
 
 // request.js 的响应拦截器已经把 axios 响应换成 {code,message,data} 信封，这里再取一层 .data，

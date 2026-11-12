@@ -13,6 +13,8 @@
 
 ## 近期专题入口
 
+内贸客户跟进统计看板：[需求与原型](requirements/2026-11-12-followup-stats-board/README.md)、[P1/P2 实施与验收](requirements/2026-11-12-followup-stats-board/implementation.md)（Git 交付，未部署）。
+
 内贸客户跟进协作：[客户总览与接力协作定稿](requirements/2026-11-09-domestic-followup-collaboration.md)，含 10 项业务口径、权限矩阵和 28 项验收场景。
 
 阿里 TM P2：[人工资料闭环、v1.1与规则闸门](requirements/2026-11-05-alibaba-feed-integration/p2-implementation.md)（本地实现，自动能力和私海助理保持关闭）。

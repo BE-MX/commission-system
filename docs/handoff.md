@@ -1,3 +1,13 @@
+## 2026-11-12 客户跟进统计看板 P1/P2 接续完成（Codex，Git 交付未部署）
+
+- 接续 Kimi 未完成分支，在 `D:/MyProgram/commission-system-codex-followup-stats`、`codex/domestic-followup-stats-complete` 独立完成；原 Kimi 工作区保留。亮哥已授权提交、合并 main 并推送 origin；本次不部署、未访问生产。
+- 个人/团队统计、筛选与下钻、当前责任覆盖、质量口径、统计名单/非工作日设置、AI 八类建议、独立脱敏生成、证据重验、按人反馈、幂等转待办和调度恢复已实现；P3 钉钉推送与反馈回灌不在本次范围。
+- 验证：客户跟进后端 246 项通过，最终两项补丁再跑相关 27 项通过；前端 39 项、隔离 MySQL 迁移及并发 4 项、前端构建与约定检查通过。浏览器在模拟环境完成管理者、业务员、桌面与窄屏主要操作。未调用真实 AI。
+- 集成 `origin/main@45f8718a` 后复验：后端 248 项、前端 39 项、MySQL 4 项与构建均通过；唯一 Alembic head 为 261。
+- 新迁移 `261_followup_insights` 接 `260_client_desk_board`；合并/发布前需再次核对编号、目标 schema、AI preset 与统计配置。生产结果字段填充率、实际性能和真实 AI 文案质量尚未验收。
+- 详细交付与证据：[实施记录](requirements/2026-11-12-followup-stats-board/implementation.md)。
+- Git 巡检已按 `--no-fetch` 完成（本地快照），临时预览已停止；测试 MySQL 目录清理遭工具策略拦截，暂留 `tmp/mysql-stats-*`，不影响本地代码交付。
+
 ## 2026-11-12 库存图文字白底纠正（Git 交付，未部署）
 
 在同一 `codex/colorwork-label-redraw` 分支继续修正色号／尺寸白板：四套已核对源文件通过封存 SHA 与完整底图绑定，绘字透出真实背景；未知／新设计保留原流程，避免错用旧背景或阻断导出。已补回归及独立审查。亮哥已授权合并并推送 main；本次 Git 交付不包含部署。见 [修复与验证记录](reports/2026-11-12-colorwork-missing-label-redraw.md)。

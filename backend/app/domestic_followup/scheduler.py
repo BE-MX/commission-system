@@ -7,7 +7,7 @@ import logging
 
 from app.core.database import SessionLocal
 from app.core.time import beijing_today
-from app.domestic_followup import digest_service, receipt_service
+from app.domestic_followup import digest_service, insight_generation, receipt_service
 
 logger = logging.getLogger("commission")
 
@@ -78,3 +78,27 @@ async def maintenance_job():
         logger.warning("followup maintenance failed: %s", type(exc).__name__)
         print(f"[domestic_followup] maintenance failed: {type(exc).__name__}: {exc}", flush=True)
         raise
+
+
+async def _generate_insights(weekly: bool):
+    try:
+        result = await asyncio.to_thread(insight_generation.generate_scheduled, weekly)
+        print(f"[domestic_followup] insight generation {result}", flush=True)
+    except Exception as exc:
+        logger.warning("followup insight generation failed: %s", type(exc).__name__)
+        print(f"[domestic_followup] insight generation failed: {type(exc).__name__}: {exc}", flush=True)
+        raise
+
+
+async def generate_daily_insights_job():
+    await _generate_insights(False)
+
+
+async def generate_weekly_insights_job():
+    await _generate_insights(True)
+
+
+async def resume_insights_job():
+    from app.domestic_followup import insight_jobs
+    ids = await asyncio.to_thread(insight_generation.pending_snapshots)
+    insight_jobs.submit_snapshots(ids)

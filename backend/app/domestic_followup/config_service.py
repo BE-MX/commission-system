@@ -2,6 +2,7 @@
 import copy
 from datetime import date
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
@@ -65,6 +66,31 @@ def _validate(db: Session, key: str, value):
                 date.fromisoformat(value)
             except (TypeError, ValueError) as exc:
                 raise ValueError("上线日需为 YYYY-MM-DD") from exc
+    elif key == "stats_user_ids":
+        if not isinstance(value, list) or not all(_is_int(v) and v > 0 for v in value):
+            raise ValueError("跟进统计名单需为用户ID列表")
+        if len(set(value)) != len(value):
+            raise ValueError("跟进统计名单不能重复")
+        if value:
+            active = set(db.scalars(select(ArkUser.id).where(
+                ArkUser.id.in_(value), ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None))))
+            if active != set(value):
+                raise ValueError("跟进统计名单包含不存在或已停用的用户")
+    elif key == "stats_non_workdays":
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            raise ValueError("非工作日需为日期字符串列表")
+        if len(set(value)) != len(value):
+            raise ValueError("非工作日需为不重复的日期列表")
+        try:
+            parsed = [date.fromisoformat(v) for v in value]
+        except (TypeError, ValueError) as exc:
+            raise ValueError("非工作日需为 YYYY-MM-DD 列表") from exc
+        if any(day.isoformat() != raw for day, raw in zip(parsed, value)):
+            raise ValueError("非工作日需为 YYYY-MM-DD 列表")
+        if len(parsed) > 366:
+            raise ValueError("非工作日最多维护 366 天")
+    elif key == "insight_generation_enabled" and not isinstance(value, bool):
+        raise ValueError("AI 生成开关需为布尔值")
 
 
 def update_config(db: Session, changes: dict, user_id: int | None, *, commit: bool = True) -> dict:

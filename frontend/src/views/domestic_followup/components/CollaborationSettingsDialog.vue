@@ -88,9 +88,9 @@ const issues = { ...COORDINATION_REASON, missing_region: '地区未补齐', miss
 const reasonText = reasons => reasons?.map(reason => labelFor(issues, reason)).join('、') || '待分配'
 let readSequence = 0
 let userSequence = 0
-function open() {
+function open(target = '') {
   visible.value = true
-  tab.value = canConfigure.value ? 'scopes' : 'queue'
+  tab.value = target === 'queue' ? 'queue' : canConfigure.value ? 'scopes' : 'queue'
   switchTab()
   if (canConfigure.value) {
     searchUsers('')

@@ -52,6 +52,7 @@ RECEIPT_OK_TEXT = "已回访，客户无问题反馈"
 PROSPECT_LIFECYCLE = "潜在"
 HINT_MIN_CONFIDENCE = 0.7
 INQUIRY_FOLLOWUP_DAYS = 1  # 询单次日跟进；作为 rules.inquiry_days 注入 AI，不写死在 prompt 里
+NEGATIVE_RESULT_CODES = ("未接通", "未回复", "客户拒绝")
 
 CONFIG_DEFAULTS = {
     "receipt_delay_days": 3,
@@ -59,6 +60,9 @@ CONFIG_DEFAULTS = {
     "urgent_receiver_user_ids": [],
     "fallback_assignee_user_id": None,
     "frequency_days": {"S级": 7, "A级": 14, "B级": 30, "C级": 60},  # 键 = sys_dict domestic_customer_level 的值（迁移 133）
+    "stats_user_ids": [],
+    "stats_non_workdays": [],
+    "insight_generation_enabled": True,
 }
 
 WEEKDAY_LABELS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")

@@ -3131,3 +3131,24 @@ stock条目含external_id、mode、warehouse_id、local_sku_id、quality、整�
 `POST /api/ai/providers`、`PUT /api/ai/providers/{id}` 接收 `runtime_config` JSON，列表返回该字段；需 `ai:admin`。字段定义以 `app/ai/provider_config.py` 为准：分操作相对路径、认证头/前缀、Anthropic 版本、Token 字段映射、请求超时、图片重试/代理及连通性探测选项。未知字段或非法类型拒绝保存。`extra_headers` 可维护普通头和 `{api_key}` 占位符；已存认证值返回 `__KEEP_EXISTING_SECRET__`，更新时代表保留，不得新建此标记。管理员配置的自定义认证头同样受保护。
 
 预设 `parameters.transport` 覆盖当前提供商的传输默认，`parameters.workflow` 调整展会/培训已有重试及展会尺寸。`test_mode=text|image` 与 Studio 上架开关分离。内部配置不透传上游；普通请求不能覆盖模型、消息、工具等调用身份。字段、优先级、业务上限及迁移条件见 [交付报告](reports/2026-11-09-ai-admin-settings.md)。
+
+
+## 客户跟进统计看板与 AI 建议（2026-11-12，本地实现未部署）
+
+统一前缀 `/api/domestic-followup`，返回标准 `ok()` 信封。详见[实施与验收](requirements/2026-11-12-followup-stats-board/implementation.md)。
+
+| 方法 | 路径 | 契约 |
+|---|---|---|
+| GET | `/stats/personal` | `range=w/30/q/custom`，自定义传 `date_from/date_to`，可选 `user_id`；业务员仅本人，管理者可查统计名单全部或单人。返回个人指标、前期对比、节奏、覆盖、质量、今日未提交与匿名团队均值；均值仅名单满四人返回。 |
+| GET | `/stats/team` | 同时间参数；需 `domestic_followup:read_all`，返回团队去重指标、人员对比、信号、异常及协调入口计数。 |
+| GET | `/stats/rhythm` | `scope=personal/team` 和时间参数，可选 `user_id`；team 同样验证 read_all。 |
+| GET | `/stats/missing-today` | 北京时间今日提交情况；业务员仅自己，周日/配置非工作日不提示。 |
+| GET | `/stats/drilldown` | `kind=records/overdue/signal/plans`；支持 user_id、日期、followup_date、result_code、obstacle、state_change、quality，page/page_size（最多 100）；复用当前身份及统计名单范围。 |
+| GET | `/insights` | 可选 user_id；返回 personal/company 完成快照和 refresh 状态/配额。证据及责任范围实时复核，公司普通业务员只读脱敏聚合。 |
+| POST | `/insights/refresh` | JSON `{user_id?}`；每人北京时间每日两次。返回 snapshot_ids、status、started；相同目标复用活跃任务。个人与公司任务独立完成，失败保留旧快照。 |
+| GET | `/insights/jobs/{snapshot_id}` | 返回 id/status；管理者、目标业务员或发起人可查看，供前端跟踪本次任务。 |
+| POST | `/insights/{id}/feedback` | `{feedback: up/down/null}`；按当前反馈人保存，null 撤销本人反馈；沿用评语共享原始反馈标识。 |
+| POST | `/insights/{id}/adopt` | `{note}`；公司建议需 read_all，标记已采纳，不自动建任务。 |
+| POST | `/insights/{id}/to-task` | `{due_date,content}`；个人 deal/cold 建约定待办，需 write、建议可见、客户可写；重放返回原 task_id，越权重放仍拒绝。 |
+
+上述读取默认需 `domestic_followup:read`。`PUT /config` 增加 `stats_user_ids`、`stats_non_workdays`、`insight_generation_enabled`，仍需 admin；名单必须是可写跟进的在职用户，日期用规范 `YYYY-MM-DD` 且不能重复。AI 统一使用后台可配 preset `domestic_followup_insights`；独立生成线程池和一分钟队列恢复任务不占录入 AI 池。

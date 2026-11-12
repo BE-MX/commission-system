@@ -23,6 +23,18 @@
           </label>
         </div>
       </el-form-item>
+      <el-form-item label="跟进统计名单">
+        <el-select v-model="form.stats_user_ids" multiple filterable remote :remote-method="searchUsers" class="cfg-full"
+                   placeholder="留空则自动取有写权限且名下有负责客户的在职用户">
+          <el-option v-for="u in userOptions" :key="u.id" :value="u.id" :label="u.real_name" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="非工作日（周日自动排除，无需重复选择）">
+        <el-date-picker v-model="form.stats_non_workdays" type="dates" value-format="YYYY-MM-DD" class="cfg-full" placeholder="选择法定节假日或其他非工作日" />
+      </el-form-item>
+      <el-form-item label="AI 建议定时生成与手动刷新">
+        <el-switch v-model="form.insight_generation_enabled" active-text="开启" inactive-text="关闭" />
+      </el-form-item>
     </el-form>
     <template #footer>
       <GlassButton @click="visible = false">取消</GlassButton>
@@ -58,7 +70,7 @@ async function open() {
     await searchUsers('')
     // 已配置但不在首屏搜索结果里的接收人，先用编号占位，避免下拉显示成裸数字
     const ids = new Set(userOptions.value.map(u => u.id))
-    const configured = [...form.value.urgent_receiver_user_ids, form.value.fallback_assignee_user_id]
+    const configured = [...form.value.urgent_receiver_user_ids, ...form.value.stats_user_ids, form.value.fallback_assignee_user_id]
     new Set(configured.filter(id => id && !ids.has(id)))
       .forEach(id => userOptions.value.push({ id, real_name: `用户 ${id}` }))
   } catch (e) {
@@ -70,9 +82,11 @@ async function open() {
 async function save() {
   saving.value = true
   try {
-    const { receipt_delay_days, urgent_receiver_user_ids, frequency_days, fallback_assignee_user_id } = form.value
+    const { receipt_delay_days, urgent_receiver_user_ids, frequency_days, fallback_assignee_user_id,
+      stats_user_ids, stats_non_workdays, insight_generation_enabled } = form.value
     await followupApi.saveConfig({
-      receipt_delay_days, urgent_receiver_user_ids, frequency_days,
+      receipt_delay_days, urgent_receiver_user_ids, frequency_days, stats_user_ids, stats_non_workdays,
+      insight_generation_enabled,
       fallback_assignee_user_id: fallback_assignee_user_id || null,  // 清空时 el-select 给的是空串
     })
     msgSuccessText('跟进设置已保存')

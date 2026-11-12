@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.domestic_followup import (
     ai_parse_service, attachment_service, collaboration_router, config_service, customer_overview_router,
-    dict_service, edit_service, followup_service, jobs, task_service, visibility,
+    dict_service, edit_service, followup_service, insight_router, jobs, stats_router, task_service, visibility,
 )
 from app.domestic_followup.schemas import (
     ConfirmIn, DirectSaveIn, DraftCreateIn, EditFollowupIn, ItemResolveIn, ProspectIn, ReceiptOkIn, SnoozeIn, TransferIn,
@@ -20,6 +20,8 @@ from app.domestic_followup.schemas import (
 router = APIRouter()
 router.include_router(customer_overview_router.router)
 router.include_router(collaboration_router.router)
+router.include_router(stats_router.router)
+router.include_router(insight_router.router)
 _require_read = require_permission("domestic_followup:read")
 _require_write = require_permission("domestic_followup:write")
 _require_admin = require_permission("domestic_followup:admin")

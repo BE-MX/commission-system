@@ -14,7 +14,8 @@ from app.core.time import beijing_now, beijing_today
 from app.domestic.models import DomesticCustomer
 from app.domestic_followup import attachment_service, config_service, dict_service, task_service, visibility
 from app.domestic_followup.constants import (
-    DICT_CATEGORY, DICT_CHANNEL, DICT_OBSTACLE, DICT_RESULT, DICT_STATE_CHANGE, RECEIPT_OK_TEXT, TRACKED_KINDS, URGENT,
+    DICT_CATEGORY, DICT_CHANNEL, DICT_OBSTACLE, DICT_RESULT, DICT_STATE_CHANGE, NEGATIVE_RESULT_CODES,
+    RECEIPT_OK_TEXT, TRACKED_KINDS, URGENT,
 )
 from app.domestic_followup.models import DomesticFollowup, DomesticFollowupItem, DomesticFollowupTask
 from app.domestic_followup.schemas import ConfirmIn, DirectSaveIn, DraftCreateIn, FollowupFields
@@ -67,7 +68,7 @@ def validate_outcome(values, result, obstacles, effective, *, previous=None):
         raise ValueError("本次沟通结果不在当前字典中")
     if set(obstacles) - set(prior_obstacles) - set(values[DICT_OBSTACLE]):
         raise ValueError("推进障碍不在当前字典中")
-    if effective and (not result or result in ("未接通", "未回复", "客户拒绝")):
+    if effective and (not result or result in NEGATIVE_RESULT_CODES):
         raise ValueError("标记有效推进前，请选择有实际进展的沟通结果")
 
 

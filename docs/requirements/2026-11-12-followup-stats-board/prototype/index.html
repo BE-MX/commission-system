@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>客户跟进 · 统计看板原型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap">
+<style>
+/* 令牌摘自 frontend/src/styles/tokens.css（原型内联一份，不引用主站文件）。单一浅色主题，与方舟主站一致。 */
+:root {
+  --page-bg: #f0f2f7; --text: #1a1a2e; --text2: #4a5568; --muted: #5B6678; --border: #e2e5ef; --border-h: #c5cce0;
+  --gold: #D4941C; --gold-text: #895B0C; --gold-accent: #F5CB5C; --gold-soft: #FDF4DC;
+  --btn: #E0A50B; --btn-h: #C9930A; --btn-ink: #211903; --btn-border: #DFE2E7;
+  --ok: #0B6E63; --ok-bg: #E4F7F3; --ok-border: #A8E3D6;
+  --warn: #9A4E08; --warn-bg: #FEF0DE; --warn-border: #F4CCA0;
+  --bad: #C62A30; --bad-bg: #FDEBEC; --bad-border: #F6C6CA;
+  --info: #1D4ED8; --info-bg: #EBF1FE; --info-border: #BFD4FB;
+  --violet: #7048a8; --violet-bg: #F1EDF7;
+  --neutral-bg: #F6F7F9; --neutral-border: #E2E5EA;
+  --wash-from: #fdf8ec; --wash-mid: #f8f3ea; --wash-to: #f9efe7;
+  --glass: linear-gradient(160deg, rgba(255,255,255,.78), rgba(255,255,255,.5));
+  --glass-border: rgba(255,255,255,.85);
+  --glass-shadow: 0 10px 30px rgba(146,103,24,.14), inset 0 1px 0 rgba(255,255,255,.9);
+  --glass-shadow-h: 0 14px 36px rgba(146,103,24,.18), inset 0 1px 0 rgba(255,255,255,.9);
+  /* 热力图：单一金色由浅到深（顺序色） */
+  --h0: rgba(91,102,120,.09); --h1: #FBEBC0; --h2: #F5CB5C; --h3: #E0A50B; --h4: #A87C08;
+  --series: #C98A12; --series-soft: #F0D889; --line: #2563EB; --track: rgba(91,102,120,.12);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --f-display: 'Outfit', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --f-body: 'DM Sans', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page-bg); color: var(--text); font: 400 14px/1.55 var(--f-body); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; cursor: pointer; }
+h2, h3, h4, p { margin: 0; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.num { font-family: var(--f-display); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); } .small { font-size: 12px; }
+svg.ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── 原型专用：视角切换（真实页面没有） ── */
+.proto { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 20px; background: #1e2129; color: rgba(255,255,255,.6); font-size: 12px; }
+.proto b { font: 700 10px var(--f-display); letter-spacing: .12em; padding: 2px 6px; border-radius: 4px; background: var(--gold-accent); color: var(--btn-ink); }
+.proto .seg { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: rgba(255,255,255,.08); }
+.proto .seg button { border: 0; background: transparent; color: rgba(255,255,255,.72); padding: 4px 12px; border-radius: 7px; font-size: 12px; transition: background-color 160ms ease, color 160ms ease; }
+.proto .seg button[aria-pressed="true"] { background: #fff; color: var(--text); font-weight: 600; }
+.proto .note { margin-left: auto; }
+
+/* ── 主站外壳（示意） ── */
+.stage { position: relative; min-height: 100vh; padding: 0 24px 120px; overflow: hidden; }
+.aurora { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(155deg, var(--wash-from), var(--wash-mid) 52%, var(--wash-to)); }
+.aurora::before, .aurora::after { content: ""; position: absolute; border-radius: 50%; }
+.aurora::before { width: 640px; height: 640px; top: -180px; right: -120px; background: radial-gradient(circle, rgba(245,203,92,.55), rgba(245,203,92,0) 68%); }
+.aurora::after { width: 560px; height: 560px; top: 520px; left: -200px; background: radial-gradient(circle, rgba(230,160,60,.4), rgba(224,158,44,0) 68%); }
+.pagetabs { position: relative; display: flex; gap: 2px; padding-top: 8px; font-size: 13px; color: var(--muted); overflow-x: auto; }
+.pagetabs span { padding: 8px 18px; border-radius: 8px 8px 0 0; white-space: nowrap; }
+.pagetabs span::before { content: "•"; margin-right: 8px; opacity: .5; }
+.pagetabs .on { background: rgba(255,255,255,.75); color: var(--gold-text); font-weight: 600; box-shadow: inset 0 2px 0 var(--gold); }
+.panel { position: relative; margin-top: 18px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--btn-border); background: #fff; font: 600 13px var(--f-display); white-space: nowrap;
+  transition: transform 140ms var(--ease-out), background-color 160ms ease, border-color 160ms ease; }
+.btn:active { transform: scale(.97); }
+.btn.primary { background: var(--btn); border-color: var(--btn); color: var(--btn-ink); }
+.btn.sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+.btn.link { border-color: transparent; background: transparent; color: var(--gold-text); padding: 0 6px; }
+.btn[disabled] { background: var(--ok-bg); border-color: var(--ok-border); color: var(--ok); cursor: default; }
+@media (hover: hover) and (pointer: fine) { .btn:hover { border-color: var(--border-h); } .btn.primary:hover { background: var(--btn-h); border-color: var(--btn-h); } .btn.link:hover { background: var(--gold-soft); border-color: transparent; } }
+.maintabs { display: flex; gap: 28px; padding: 0 20px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.maintabs span { padding: 14px 0 12px; white-space: nowrap; color: var(--text2); font-size: 14px; border-bottom: 2px solid transparent; }
+.maintabs .on { color: var(--gold-text); font-weight: 700; border-bottom-color: var(--gold); }
+.board { padding: 20px; }
+
+/* ── 看板头 ── */
+.bhead { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-bottom: 16px; }
+.bhead h2 { font: 700 20px var(--f-display); }
+.bhead .sub { color: var(--muted); font-size: 13px; }
+.bhead .sp { flex: 1; }
+.seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: rgba(91,102,120,.1); }
+.seg button { border: 0; background: transparent; padding: 5px 12px; border-radius: 8px; font: 600 12px var(--f-display); color: var(--text2); white-space: nowrap; transition: background-color 160ms ease, color 160ms ease, transform 140ms var(--ease-out); }
+.seg button:active { transform: scale(.97); }
+.seg button[aria-pressed="true"] { background: #fff; color: var(--text); box-shadow: 0 1px 3px rgba(26,24,22,.1); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 4px; border-radius: 999px; border: 1px solid var(--btn-border); background: rgba(255,255,255,.7); font-size: 13px; transition: transform 140ms var(--ease-out), background-color 160ms ease, border-color 160ms ease; }
+.chip.all { padding-left: 12px; }
+.chip:active { transform: scale(.97); }
+.chip[aria-pressed="true"] { background: var(--gold-soft); border-color: var(--gold); color: var(--gold-text); font-weight: 600; }
+.av { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, var(--gold-accent), var(--gold)); color: var(--btn-ink); font: 700 11px var(--f-display); flex: none; }
+.av.lg { width: 36px; height: 36px; font-size: 15px; }
+
+/* ── 卡片 ── */
+.card { position: relative; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); padding: 18px 20px; min-width: 0; }
+.card h3 { font: 700 15px var(--f-display); }
+.chead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 14px; }
+.chead .sp { flex: 1; }
+.chead .hint { color: var(--muted); font-size: 12px; }
+.grid { display: grid; gap: 16px; margin-bottom: 16px; }
+.g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } .g5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.gauto { grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr)); }
+/* 视图进入：只在切换视图时播放一次的短交错（看板一天看几次，不是高频操作） */
+.enter .card, .enter .kpi { animation: rise 260ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 40ms); }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+.enter .reveal { animation: wipe 300ms var(--ease-out) 120ms both; }
+@keyframes wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+.swap { animation: fade 160ms ease both; }
+@keyframes fade { from { opacity: 0; } }
+
+/* ── 关键数字 ── */
+.kpi { position: relative; overflow: hidden; border-radius: 16px; padding: 16px 18px; border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); background: linear-gradient(150deg, rgba(255,255,255,.9), var(--tone-bg, rgba(255,255,255,.5))); text-align: left; min-width: 0; }
+button.kpi { transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out); }
+button.kpi:active { transform: scale(.98); }
+@media (hover: hover) and (pointer: fine) { button.kpi:hover { transform: translateY(-2px); box-shadow: var(--glass-shadow-h); } }
+.kpi .ico { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--tone-bg); color: var(--tone); margin-bottom: 10px; }
+.kpi .lab { color: var(--text2); font-size: 13px; }
+.kpi .val { font: 700 30px/1.15 var(--f-display); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.kpi .val small { font-size: 15px; font-weight: 600; color: var(--text2); margin-left: 2px; }
+.kpi .foot { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.kpi .wm { position: absolute; right: -14px; bottom: -18px; width: 96px; height: 96px; color: var(--tone); opacity: .08; stroke-width: 1.4; }
+.t-gold { --tone: var(--gold-text); --tone-bg: #FDF6DD; } .t-info { --tone: var(--info); --tone-bg: var(--info-bg); }
+.t-ok { --tone: var(--ok); --tone-bg: var(--ok-bg); } .t-warn { --tone: var(--warn); --tone-bg: var(--warn-bg); } .t-violet { --tone: var(--violet); --tone-bg: var(--violet-bg); }
+.delta { display: inline-flex; align-items: center; gap: 2px; font-weight: 600; }
+.delta.up { color: var(--ok); } .delta.down { color: var(--bad); }
+
+/* ── 热力图 ── */
+.rhythm { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 24px; align-items: start; }
+.cal { display: grid; grid-template-columns: 44px repeat(7, minmax(0, 1fr)); gap: 5px; align-items: center; }
+.cal .wd, .cal .wk { font-size: 11px; color: var(--muted); text-align: center; }
+.cal .wk { text-align: left; font-variant-numeric: tabular-nums; }
+.hc { height: 34px; border-radius: 8px; border: 0; padding: 0; background: var(--h0); font: 600 12px var(--f-display); color: transparent; transition: transform 120ms var(--ease-out), box-shadow 120ms ease; }
+.cal.compact .hc { height: 22px; border-radius: 6px; }
+.hc[data-l="1"] { background: var(--h1); } .hc[data-l="2"] { background: var(--h2); } .hc[data-l="3"] { background: var(--h3); } .hc[data-l="4"] { background: var(--h4); }
+.cal:not(.compact) .hc[data-l="1"], .cal:not(.compact) .hc[data-l="2"] { color: #6b4a06; } .cal:not(.compact) .hc[data-l="3"], .cal:not(.compact) .hc[data-l="4"] { color: #fff; }
+.hc.off { background: repeating-linear-gradient(135deg, transparent 0 4px, rgba(91,102,120,.13) 4px 5px); cursor: default; }
+.hc.dim { opacity: .32; }
+.hc.today { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--text); }
+@media (hover: hover) and (pointer: fine) { .hc:not(.off):hover { transform: scale(1.08); box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--gold-text); } }
+.legend { display: flex; align-items: center; gap: 5px; margin-top: 12px; font-size: 11px; color: var(--muted); }
+.legend i { width: 14px; height: 14px; border-radius: 4px; }
+.legend .gap { width: 12px; }
+.facts { display: grid; gap: 10px; }
+.fact { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 10px; border-bottom: 1px dashed var(--border); font-size: 13px; color: var(--text2); }
+.fact:last-child { border: 0; } .fact b { font: 700 18px var(--f-display); color: var(--text); font-variant-numeric: tabular-nums; }
+.mx { display: grid; gap: 3px 3px; align-items: center; }
+.mx .nm { font-size: 13px; white-space: nowrap; padding-right: 8px; }
+.mx .tot { font: 600 13px var(--f-display); text-align: right; font-variant-numeric: tabular-nums; }
+.mx .dh { font-size: 10px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+.mx .hc { height: 24px; border-radius: 5px; }
+
+/* ── SVG 图表 ── */
+.chart { width: 100%; height: auto; display: block; overflow: visible; }
+.chart text { font: 500 10px var(--f-body); fill: var(--muted); font-variant-numeric: tabular-nums; }
+.chart .gl { stroke: var(--border); stroke-width: 1; }
+.chart .bar { fill: var(--series); transition: fill 120ms ease; }
+.chart .bar.dim { fill: var(--series-soft); }
+.chart .col:hover .bar { fill: var(--gold-text); }
+.chart .col:hover .hit { fill: rgba(212,148,28,.07); }
+.chart .hit { fill: transparent; }
+.chart .ma { fill: none; stroke: var(--line); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .avg { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
+.keys { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 12px; color: var(--text2); }
+.keys span { display: inline-flex; align-items: center; gap: 6px; }
+.keys i { width: 12px; height: 10px; border-radius: 3px; background: var(--series); }
+.keys i.l { height: 2px; background: var(--line); border-radius: 1px; } .keys i.d { height: 0; border-top: 1px dashed var(--muted); background: none; }
+
+/* ── 今日未提交 ── */
+.missing { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn); font-size: 13px; }
+.missing.ok { background: var(--ok-bg); border-color: var(--ok-border); color: var(--ok); }
+.missing strong { font-weight: 700; }
+.missing .who { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 3px; border-radius: 999px; background: rgba(255,255,255,.75); color: var(--text); }
+.missing .who small { color: var(--muted); }
+.missing .sp { flex: 1; }
+
+/* ── 条形 ── */
+.hb { display: grid; grid-template-columns: 76px minmax(0, 1fr) 44px; gap: 10px; align-items: center; padding: 5px 0; font-size: 13px; }
+.hb .tr { position: relative; height: 10px; border-radius: 5px; background: var(--track); }
+.hb .fl { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: var(--series); transform-origin: left; }
+.hb .fl.good { background: var(--ok); } .hb .fl.soft { background: var(--series-soft); }
+.hb .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; border-radius: 1px; background: var(--text); }
+.hb .v { text-align: right; font: 600 13px var(--f-display); font-variant-numeric: tabular-nums; }
+button.hb { width: 100%; border: 0; background: transparent; text-align: left; border-radius: 8px; transition: background-color 160ms ease; }
+@media (hover: hover) and (pointer: fine) { button.hb:hover { background: rgba(212,148,28,.07); } }
+.enter .fl { animation: wipe 300ms var(--ease-out) 140ms both; }
+.rows { display: grid; }
+.row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.row:last-child { border: 0; } .row .sp { flex: 1; }
+.tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 500; border: 1px solid var(--neutral-border); background: var(--neutral-bg); color: var(--text2); white-space: nowrap; }
+.tag.warn { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn); } .tag.ok { background: var(--ok-bg); border-color: var(--ok-border); color: var(--ok); }
+.tag.bad { background: var(--bad-bg); border-color: var(--bad-border); color: var(--bad); } .tag.gold { background: #FDF6DD; border-color: #F0D889; color: #8F6508; }
+.tag.ai { background: var(--violet-bg); border-color: #dcd0ee; color: var(--violet); }
+.mini { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0 14px; }
+.mini div { font-size: 12px; color: var(--muted); } .mini b { display: block; font: 700 19px/1.2 var(--f-display); color: var(--text); font-variant-numeric: tabular-nums; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tbl th { text-align: left; font-weight: 600; color: var(--text2); padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.tbl th button { border: 0; background: transparent; font: inherit; color: inherit; padding: 2px 4px; border-radius: 6px; }
+.tbl th button[aria-pressed="true"] { color: var(--gold-text); }
+.tbl td { padding: 10px; border-bottom: 1px solid var(--border); }
+.tbl tr:last-child td { border: 0; }
+.cellbar { display: grid; grid-template-columns: minmax(40px, 1fr) 40px; gap: 8px; align-items: center; }
+.cellbar .tr { height: 8px; border-radius: 4px; background: var(--track); position: relative; } .cellbar .fl { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--series); transform-origin: left; }
+.cellbar .fl.w { background: var(--warn); }
+.cellbar b { font: 600 13px var(--f-display); text-align: right; font-variant-numeric: tabular-nums; }
+.scroll-x { overflow-x: auto; }
+
+/* ── AI 建议 ── */
+.aihead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 14px; color: var(--muted); font-size: 12px; }
+.hl { position: relative; overflow: hidden; }
+.hl::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: linear-gradient(180deg, var(--gold-accent), var(--gold)); }
+.hl .n { font: 800 13px var(--f-display); color: var(--gold-text); letter-spacing: .06em; }
+.hl h4 { font: 700 16px/1.35 var(--f-display); margin: 4px 0 6px; }
+.hl p { color: var(--text2); font-size: 13px; }
+.sec { display: flex; align-items: baseline; gap: 10px; margin: 22px 0 12px; }
+.sec h3 { font: 700 16px var(--f-display); } .sec span { color: var(--muted); font-size: 12px; }
+.ins h4 { font: 700 15px var(--f-display); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ins .why { margin: 8px 0 0; color: var(--text2); font-size: 13px; }
+.ins .do { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(253,244,220,.7); border: 1px solid #F0D889; font-size: 13px; }
+.ins .do b { color: var(--gold-text); }
+.ins .ops { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.ins .ops .sp { flex: 1; }
+.fb { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--muted); transition: transform 140ms var(--ease-out), background-color 160ms ease, color 160ms ease; }
+.fb:active { transform: scale(.94); }
+.fb[aria-pressed="true"] { background: var(--gold-soft); color: var(--gold-text); border-color: #F0D889; }
+.ev { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 240ms var(--ease-out); }
+.ev > div { overflow: hidden; }
+.ev.open { grid-template-rows: 1fr; }
+.quote { margin-top: 10px; padding: 8px 12px; border-left: 2px solid var(--border-h); font-size: 13px; color: var(--text2); opacity: 0; transition: opacity 200ms ease; }
+.ev.open .quote { opacity: 1; }
+.quote small { display: block; color: var(--muted); }
+.empty { padding: 28px; text-align: center; color: var(--muted); font-size: 13px; }
+
+/* ── 悬浮切换条（真实设计的一部分） ── */
+.dock { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 40; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 5px; border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,255,255,.5)); border: 1px solid rgba(255,255,255,.9);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5); backdrop-filter: blur(16px) saturate(1.5);
+  box-shadow: 0 12px 36px rgba(146,103,24,.22), 0 2px 6px rgba(26,24,22,.08), inset 0 1px 0 rgba(255,255,255,.95); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .dock { background: #fffdf8; } }
+.dock .thumb { position: absolute; top: 5px; left: 0; height: calc(100% - 10px); border-radius: 999px; background: linear-gradient(135deg, var(--gold-accent), var(--btn)); box-shadow: 0 4px 12px rgba(212,148,28,.35), inset 0 1px 0 rgba(255,255,255,.5);
+  transition: transform 240ms var(--ease-out); }
+.dock.noanim .thumb { transition: none; }
+.dock button { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; background: transparent; height: 38px; padding: 0 18px; border-radius: 999px; font: 600 14px var(--f-display); color: var(--text2); white-space: nowrap;
+  transition: color 200ms ease, transform 140ms var(--ease-out); }
+.dock button:active { transform: scale(.97); }
+.dock button[aria-selected="true"] { color: var(--btn-ink); }
+
+.tip { position: fixed; z-index: 60; pointer-events: none; padding: 8px 10px; border-radius: 10px; background: #1e2129; color: #fff; font-size: 12px; line-height: 1.5; box-shadow: 0 8px 24px rgba(0,0,0,.2); opacity: 0; transform: translateY(2px); transition: opacity 120ms ease, transform 120ms var(--ease-out); white-space: nowrap; }
+.tip.on { opacity: 1; transform: none; } .tip b { font-family: var(--f-display); } .tip span { color: rgba(255,255,255,.65); }
+.toast { position: fixed; left: 50%; bottom: 86px; z-index: 50; transform: translate(-50%, 8px); padding: 9px 16px; border-radius: 10px; background: #1e2129; color: #fff; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 180ms ease, transform 180ms var(--ease-out); max-width: calc(100vw - 32px); }
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+@media (max-width: 1100px) { .g4, .g5 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g3 { grid-template-columns: 1fr; } .rhythm { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {
+  .stage { padding: 0 12px 110px; } .board { padding: 14px 12px; } .g2 { grid-template-columns: 1fr; } .card { padding: 14px; }
+  .dock button { padding: 0 13px; font-size: 13px; } .dock button svg { display: none; } .proto .note { display: none; }
+  .cal { grid-template-columns: 36px repeat(7, minmax(0, 1fr)); gap: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .enter .card, .enter .kpi, .enter .reveal, .enter .fl { animation: fade 160ms ease both; }
+  .dock .thumb, .ev { transition: none; } .btn:active, .chip:active, button.kpi:hover, .hc:hover { transform: none; }
+}
+</style>
+</head>
+<body>
+<div class="proto"><b>原型</b><span>视角</span>
+  <div class="seg" id="roleSeg"></div>
+  <span class="note">演示数据 · 今天按 2026-11-12（周四）· 这条深色栏仅原型使用</span>
+</div>
+<div class="stage">
+  <div class="aurora" aria-hidden="true"></div>
+  <div class="pagetabs" aria-hidden="true"><span>工作台</span><span>订单发票管理</span><span>内贸订单</span><span class="on">客户跟进</span></div>
+  <div class="panel">
+    <div class="actions">
+      <button class="btn primary" data-act="toast:打开「记一条跟进」抽屉（现有功能）">记一条跟进</button>
+      <button class="btn">＋ 快速建客户</button><button class="btn" id="btnCfg">跟进设置</button><button class="btn" id="btnCo">协作管理</button>
+    </div>
+    <div class="maintabs" aria-hidden="true"><span>客户总览</span><span>待办</span><span>跟进明细</span><span>异常意见</span><span>我的记录</span><span class="on">统计看板</span></div>
+    <div class="board" id="board" role="tabpanel" aria-label="统计看板内容"></div>
+  </div>
+</div>
+<div class="dock" id="dock" role="tablist" aria-label="统计看板视图"></div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+/* ============ 图标 ============ */
+const P = {
+  user: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.6 3.5-5.5 7-5.5s6.2 1.9 7 5.5"/>',
+  team: '<circle cx="9" cy="9" r="3"/><path d="M3.5 19c.6-3 2.7-4.5 5.5-4.5s4.9 1.5 5.5 4.5"/><circle cx="17" cy="8" r="2.4"/><path d="M16.5 13.6c2.3.2 3.7 1.6 4.2 4"/>',
+  spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z"/>',
+  chat: '<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 3.5V16A2.5 2.5 0 0 1 4 13.5z"/>',
+  check: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.2l2.4 2.4 4.6-5"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  alert: '<path d="M12 4l8.5 15h-17z"/><path d="M12 10v4.2M12 16.8v.2"/>',
+  up: '<path d="M7 11v8H4.5v-8zM7 11l3.5-6.5c1.4 0 2.3 1 2.1 2.4L12 10h5.3c1.2 0 2 1 1.8 2.2l-1 5.3c-.2 1-1 1.5-1.9 1.5H7"/>',
+  down: '<path d="M7 13V5H4.5v8zM7 13l3.5 6.5c1.4 0 2.3-1 2.1-2.4L12 14h5.3c1.2 0 2-1 1.8-2.2l-1-5.3c-.2-1-1-1.5-1.9-1.5H7"/>',
+  arrU: '<path d="M12 18V6M7 11l5-5 5 5"/>', arrD: '<path d="M12 6v12M7 13l5 5 5-5"/>',
+}
+const ic = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`
+
+/* ============ 演示数据 ============ */
+const PEOPLE = [
+  { id: 'zxy', name: '周笑雨', base: 5.2, eff: .64, overdue: 3, cust: 128, d: [8, 5, 3], q: [.82, .88, .41, .93], cov: { S: [6, 6], A: [22, 20], B: [48, 47], C: [52, 52] }, reGap: 4, snooze: .4, receipt: .91, openIssue: [1, 3] },
+  { id: 'qll', name: '乔兰兰', base: 4.4, eff: .58, overdue: 6, cust: 141, d: [3, 6, -2], q: [.74, .79, .36, .85], cov: { S: [5, 5], A: [26, 23], B: [55, 52], C: [55, 55] }, reGap: 6, snooze: .7, receipt: .84, openIssue: [2, 6] },
+  { id: 'sy',  name: '宋洋',   base: 3.8, eff: .69, overdue: 4, cust: 96,  d: [12, 9, 6], q: [.62, .71, .44, .90], cov: { S: [3, 3], A: [18, 14], B: [39, 39], C: [36, 36] }, reGap: 9, snooze: .9, receipt: .88, openIssue: [1, 2] },
+  { id: 'ch',  name: '常华',   base: 3.2, eff: .47, overdue: 14, cust: 117, d: [-31, -24, -8], q: [.55, .60, .28, .58], cov: { S: [4, 3], A: [20, 14], B: [45, 38], C: [48, 48] }, reGap: 12, snooze: 1.8, receipt: .67, openIssue: [4, 11], decline: true },
+  { id: 'wyh', name: '王语涵', base: 3.4, eff: .52, overdue: 9, cust: 173, d: [-4, 2, -5], q: [.80, .66, .31, .72], cov: { S: [5, 5], A: [24, 19], B: [62, 58], C: [82, 82] }, reGap: 7, snooze: 1.1, receipt: .79, openIssue: [2, 5] },
+]
+const SHOPS = ['新理想', '德师傅假发', '尚新假发', '杨师傅假发', '发小同', '爱黛儿假发', '发丝特均哥', '丽人坊', '美丝源', '秀发阁', '金丝雀假发', '依然美发', '青丝坊', '梦丝雅', '华美发艺', '靓发屋', '芳华假发', '悦己发饰', '顺发假发', '丝语坊']
+const DAY = 864e5, TODAY = Date.UTC(2026, 10, 12), START = Date.UTC(2026, 9, 1)
+const N = (TODAY - START) / DAY + 1
+const dow = t => (new Date(t).getUTCDay() + 6) % 7            // 0=周一 … 6=周日
+const md = t => { const d = new Date(t); return `${d.getUTCMonth() + 1}/${d.getUTCDate()}` }
+const WD = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 } }
+PEOPLE.forEach((p, pi) => {
+  const r = rng(pi * 97 + 11)
+  p.days = Array.from({ length: N }, (_, i) => {
+    const t = START + i * DAY, w = dow(t)
+    if (w === 6) return 0
+    let v = p.base * (w === 5 ? .55 : 1) * (.45 + r() * 1.15)
+    if (p.decline) v *= 1.25 - .95 * (i / N)
+    if (r() < .07) v = 0
+    return Math.round(v)
+  })
+})
+const byId = id => PEOPLE.find(p => p.id === id)
+byId('sy').days[N - 1] = 2; byId('zxy').days[N - 1] = 4; byId('qll').days[N - 1] = 3
+byId('wyh').days[N - 1] = 0; byId('ch').days.splice(N - 3, 3, 0, 0, 0)
+
+/* ============ 状态 ============ */
+const S = { role: 'mgr', view: 'personal', range: '30', person: 'all', chart: 'heat', aitab: 'me', aiPerson: 'sy', sort: null, ai: { ev: {}, fb: {}, task: {} } }
+const ME = 'sy'
+const RANGE = { w: { label: '本周', n: 4 }, '30': { label: '近 30 天', n: 30 }, q: { label: '本季度', n: N } }
+const isMgr = () => S.role === 'mgr'
+const sum = a => a.reduce((x, y) => x + y, 0)
+const pct = v => Math.round(v * 100) + '%'
+const slice = p => p.days.slice(N - RANGE[S.range].n)
+const lv = v => v === 0 ? 0 : v <= 2 ? 1 : v <= 4 ? 2 : v <= 6 ? 3 : 4
+const teamDays = () => Array.from({ length: N }, (_, i) => sum(PEOPLE.map(p => p.days[i])))
+function stat(p) {
+  const d = slice(p), count = sum(d), ri = S.range === 'w' ? 0 : S.range === '30' ? 1 : 2
+  const work = d.filter((_, i) => dow(TODAY - (d.length - 1 - i) * DAY) !== 6)
+  let streak = 0; for (let i = p.days.length - 1; i >= 0 && p.days[i] === 0; i--) if (dow(START + i * DAY) !== 6) streak++
+  const last = p.days.map((v, i) => v ? i : -1).filter(i => i >= 0).pop()
+  return { count, reach: Math.round(count * .62), eff: p.eff, overdue: p.overdue, delta: p.d[ri], gaps: work.slice(0, -1).filter(v => !v).length,
+    avg: work.length ? count / work.length : 0, best: Math.max(...d), today: p.days[N - 1], streak, lastDay: START + last * DAY }
+}
+const teamAvg = k => { const a = PEOPLE.map(p => typeof k === 'function' ? k(p) : stat(p)[k]); return sum(a) / a.length }
+
+/* ============ 小部件 ============ */
+const delta = v => `<span class="delta ${v >= 0 ? 'up' : 'down'}">${ic(v >= 0 ? 'arrU' : 'arrD')}${Math.abs(v)}%</span> 较上期`
+const kpi = (i, tone, icon, label, val, foot, act) => `<${act ? 'button' : 'div'} class="kpi t-${tone}" style="--i:${i}" ${act ? `data-act="${act}"` : ''}>
+  <div class="ico">${ic(icon)}</div><div class="lab">${label}</div><div class="val">${val}</div><div class="foot">${foot}</div>${ic(icon, 'wm')}</${act ? 'button' : 'div'}>`
+const hbar = (label, v, max, text, o = {}) => `<${o.act ? 'button' : 'div'} class="hb" ${o.act ? `data-act="${o.act}"` : ''} ${o.tip ? `data-tip="${o.tip}"` : ''}>
+  <span>${label}</span><span class="tr"><span class="fl ${o.cls || ''}" style="width:${Math.max(2, v / max * 100)}%"></span>${o.tick != null ? `<span class="tick" style="left:${o.tick / max * 100}%"></span>` : ''}</span><span class="v">${text}</span></${o.act ? 'button' : 'div'}>`
+const chartSeg = () => `<div class="seg" role="group" aria-label="图表类型">
+  <button data-act="chart:heat" aria-pressed="${S.chart === 'heat'}">日历热力</button><button data-act="chart:bar" aria-pressed="${S.chart === 'bar'}">曲线柱状</button></div>`
+const dayTip = (t, v, who) => `<b>${md(t)} ${WD[dow(t)]}</b>${who ? ' · ' + who : ''}<br>${v ? `跟进 ${v} 次 <span>· 触达 ${Math.max(1, Math.round(v * .7))} 家 · 有效沟通 ${Math.round(v * .55)}</span>` : '<span>当天没有跟进记录</span>'}`
+const heatLegend = () => `<div class="legend">少<i style="background:var(--h0)"></i><i style="background:var(--h1)"></i><i style="background:var(--h2)"></i><i style="background:var(--h3)"></i><i style="background:var(--h4)"></i>多
+  <span class="gap"></span><i class="hc off" style="height:14px"></i>周日 / 未到</div>`
+
+function calendar(p, compact) {
+  const n = RANGE[S.range].n, rs = TODAY - (n - 1) * DAY
+  let first = Math.min(rs, TODAY - 28 * DAY); first -= dow(first) * DAY
+  const weeks = Math.ceil((TODAY - first + DAY) / DAY / 7)
+  let h = `<div class="cal ${compact ? 'compact' : ''} swap"><span></span>${WD.map(w => `<span class="wd">${w.slice(1)}</span>`).join('')}`
+  for (let w = 0; w < weeks; w++) {
+    h += `<span class="wk">${md(first + w * 7 * DAY)}</span>`
+    for (let d = 0; d < 7; d++) {
+      const t = first + (w * 7 + d) * DAY, i = (t - START) / DAY
+      if (t > TODAY || d === 6 || i < 0) { h += `<span class="hc off" ${d === 6 && t <= TODAY && i >= 0 ? `data-tip="<b>${md(t)} 周日</b><br><span>不计入统计</span>"` : ''}></span>`; continue }
+      const v = p.days[i]
+      h += `<button class="hc ${t < rs ? 'dim' : ''} ${t === TODAY ? 'today' : ''}" data-l="${lv(v)}" data-tip="${dayTip(t, v)}" data-act="toast:打开 ${md(t)} 的 ${v} 条记录（实现时为记录抽屉）" aria-label="${md(t)} ${v} 次">${v || ''}</button>`
+    }
+  }
+  return h + '</div>'
+}
+function barLine(vals, t0, W, H, avg, avgLabel) {
+  const n = vals.length, l = 26, r = 8, top = 14, b = 20, iw = W - l - r, ih = H - top - b
+  const ma = vals.map((_, i) => { const a = []; for (let j = Math.max(0, i - 6); j <= i; j++) if (dow(t0 + j * DAY) !== 6) a.push(vals[j]); return a.length ? sum(a) / a.length : 0 })
+  const max = Math.max(4, Math.ceil(Math.max(...vals, avg || 0) / 4) * 4), y = v => top + ih - v / max * ih, cw = iw / n, bw = Math.max(3, Math.min(22, cw * .62))
+  let g = '', cols = '', xs = ''
+  for (let i = 0; i <= 4; i++) { const v = max / 4 * i; g += `<line class="gl" x1="${l}" x2="${W - r}" y1="${y(v)}" y2="${y(v)}"/><text x="${l - 6}" y="${y(v) + 3}" text-anchor="end">${v}</text>` }
+  const step = n > 35 ? 7 : n > 12 ? 5 : 1
+  vals.forEach((v, i) => {
+    const t = t0 + i * DAY, x = l + i * cw + (cw - bw) / 2, yy = y(v), rr = Math.min(4, bw / 2, (top + ih - yy))
+    const bar = v ? `<path class="bar ${dow(t) === 5 ? 'dim' : ''}" d="M${x},${top + ih}V${yy + rr}Q${x},${yy} ${x + rr},${yy}H${x + bw - rr}Q${x + bw},${yy} ${x + bw},${yy + rr}V${top + ih}Z"/>` : ''
+    cols += `<g class="col" data-tip="${dayTip(t, v)}<br><span>7 日均 ${ma[i].toFixed(1)}</span>"><rect class="hit" x="${l + i * cw}" y="${top}" width="${cw}" height="${ih}"/>${bar}</g>`
+    if ((n - 1 - i) % step === 0) xs += `<text x="${l + i * cw + cw / 2}" y="${H - 5}" text-anchor="middle">${md(t)}</text>`
+  })
+  const path = ma.map((v, i) => `${i ? 'L' : 'M'}${(l + i * cw + cw / 2).toFixed(1)},${y(v).toFixed(1)}`).join('')
+  const av = avg ? `<line class="avg" x1="${l}" x2="${W - r}" y1="${y(avg)}" y2="${y(avg)}"/><text x="${W - r}" y="${y(avg) - 4}" text-anchor="end">${avgLabel} ${avg.toFixed(1)}</text>` : ''
+  return `<div class="swap"><svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="每日跟进次数与 7 日移动平均">${g}${xs}${av}${cols}<g class="reveal"><path class="ma" d="${path}"/></g></svg>
+    <div class="keys"><span><i></i>每日跟进次数</span><span><i class="l"></i>7 日移动平均（不含周日）</span>${avg ? `<span><i class="d"></i>${avgLabel}</span>` : ''}</div></div>`
+}
+function missingStrip(scope) {
+  if (scope === 'self') {
+    const s = stat(byId(ME))
+    return s.today ? `<div class="missing ok">${ic('check')}<span>今天已记录 <strong>${s.today}</strong> 条跟进</span></div>`
+      : `<div class="missing">${ic('alert')}<span>你今天还没有记录跟进</span><span class="sp"></span><button class="btn sm primary" data-act="toast:打开「记一条跟进」抽屉">记一条跟进</button></div>`
+  }
+  const list = PEOPLE.filter(p => scope === 'all' || p.id === scope).map(p => ({ p, s: stat(p) })).filter(x => !x.s.today)
+  if (!list.length) return `<div class="missing ok">${ic('check')}<span>${scope === 'all' ? '今天全员已提交跟进记录' : '今天已提交跟进记录'}</span></div>`
+  return `<div class="missing">${ic('alert')}<span><strong>今日未提交 ${list.length} 人</strong> · 截至 15:40</span>
+    ${list.map(({ p, s }) => `<span class="who"><span class="av">${p.name.slice(-1)}</span>${p.name}<small>${s.streak > 1 ? `连续 ${s.streak} 个工作日` : '今天'} · 上次 ${md(s.lastDay)}</small></span>`).join('')}
+    <span class="sp"></span><span class="small">周日不计 · 名单在「跟进设置」维护</span></div>`
+}
+const FREQ = { S: 7, A: 14, B: 30, C: 60 }
+const worst = p => Object.entries(p.cov).map(([L, [all, ok]]) => ({ L, miss: all - ok, r: (all - ok) / all })).sort((a, b) => b.r - a.r)[0]
+const overdueList = p => { const k = PEOPLE.indexOf(p) * 3, out = []
+  Object.entries(p.cov).forEach(([L, [all, ok]]) => { for (let i = 0; i < all - ok; i++) out.push(L) })
+  return out.slice(0, 5).map((L, i) => ({ shop: SHOPS[(k + i * 2) % SHOPS.length], level: L + '级', days: Math.max(2, Math.round(FREQ[L] * (1.3 - i * .2))) })) }
+function results(p, count) {
+  const e = p.eff, n = 1 - e
+  return [['有效沟通', e * .6, 1], ['已报价', e * .27, 1], ['已寄样', e * .13, 1], ['未回复', n * .55, 0], ['未接通', n * .25, 0], ['客户拒绝', n * .12, 0], ['其他', n * .08, 0]].map(([k, f, good]) => [k, Math.round(f * count), good])
+}
+const OBS = [['价格', .34], ['已有供应商', .22], ['采购时机', .17], ['产品适配', .12], ['决策人', .09], ['信任不足', .06]]
+const Q = [['留下一步', '有效沟通的记录中，填了下次跟进日期的占比'], ['约定兑现', '已到期的约定跟进中，未顺延且按时完成的占比'], ['有效推进', '填了沟通结果的记录中，标记为「有效推进」的占比']]
+const qAvg = i => teamAvg(p => p.q[i])
+
+/* ============ 个人数据 ============ */
+function personFull(p, self) {
+  const s = stat(p), ta = isMgr() ? '' : ''
+  const d = slice(p), t0 = TODAY - (d.length - 1) * DAY, res = results(p, s.count), rmax = Math.max(...res.map(r => r[1]))
+  const cmp = (v, avg, unit = '') => `<span>团队均值 ${avg}${unit}</span>`
+  return `
+  <div class="grid g4">
+    ${kpi(0, 'gold', 'chat', '跟进次数', s.count, `<span>${delta(s.delta)}</span>${cmp(0, Math.round(teamAvg('count')))}`)}
+    ${kpi(1, 'info', 'user', '触达客户数', s.reach, `<span>占负责客户 ${pct(s.reach / p.cust)}</span>${cmp(0, Math.round(teamAvg('reach')))}`)}
+    ${kpi(2, 'ok', 'check', '有效沟通率', `${Math.round(s.eff * 100)}<small>%</small>`, `<span>有效沟通 / 已报价 / 已寄样</span>${cmp(0, Math.round(teamAvg('eff') * 100), '%')}`)}
+    ${kpi(3, 'warn', 'clock', '应跟未跟', `${s.overdue}<small>家</small>`, `<span>超过等级跟进频率</span><span style="color:var(--gold-text);font-weight:600">查看名单 →</span>`, 'scroll:overdue')}
+  </div>
+  <div class="card" style="--i:4;margin-bottom:16px">
+    <div class="chead"><h3>跟进节奏</h3><span class="hint">${md(t0)} – ${md(TODAY)} · 按跟进日期</span><span class="sp"></span>${chartSeg()}</div>
+    <div class="rhythm">
+      <div>${S.chart === 'heat' ? calendar(p) + heatLegend() : barLine(d, t0, 720, 230, teamAvg('avg'), '团队人均')}</div>
+      <div class="facts">
+        <div class="fact"><span>工作日日均</span><b>${s.avg.toFixed(1)}</b></div>
+        <div class="fact"><span>单日最多</span><b>${s.best}</b></div>
+        <div class="fact"><span>断档工作日</span><b>${s.gaps}<small class="muted" style="font-size:12px;font-weight:500"> 天</small></b></div>
+        <div class="fact"><span>未回复后再跟间隔</span><b>${p.reGap}<small class="muted" style="font-size:12px;font-weight:500"> 天</small></b></div>
+      </div>
+    </div>
+    ${missingStrip(self ? 'self' : p.id)}
+  </div>
+  <div class="grid g2">
+    <div class="card" style="--i:5"><div class="chead"><h3>客户覆盖</h3><span class="hint">按等级频率跟上的客户 / 负责客户</span></div>
+      ${Object.entries(p.cov).map(([k, [all, ok]]) => hbar(`${k} 级 · ${{ S: 7, A: 14, B: 30, C: 60 }[k]} 天`, ok, all, `${ok}/${all}`, { cls: ok === all ? 'good' : '', tip: `<b>${k} 级客户</b><br>${all - ok ? `${all - ok} 家超过 ${{ S: 7, A: 14, B: 30, C: 60 }[k]} 天未跟` : '全部按频率跟上'}` })).join('')}
+      <p class="small muted" style="margin-top:10px">频率取自「跟进设置」，可由管理员调整。</p></div>
+    <div class="card" id="overdue" style="--i:6"><div class="chead"><h3>应跟未跟</h3><span class="tag warn">${s.overdue} 家</span><span class="sp"></span><button class="btn link sm" data-act="toast:跳到「客户总览」并带上超期筛选">全部 →</button></div>
+      <div class="rows">${overdueList(p).map(o => `<div class="row"><span>${o.shop}</span><span class="tag gold">${o.level}</span><span class="sp"></span><span class="muted small">已超期 <b class="num" style="color:var(--warn)">${o.days}</b> 天</span>
+        <button class="btn sm" data-act="toast:带着「${o.shop}」打开记跟进抽屉">记跟进</button></div>`).join('')}</div></div>
+  </div>
+  <div class="grid g2">
+    <div class="card" style="--i:7"><div class="chead"><h3>跟进结果</h3><span class="hint">点击任一项查看对应记录</span></div>
+      ${res.map(([k, v, good]) => hbar(k, v, rmax, v, { cls: good ? '' : 'soft', act: `toast:筛出「${k}」的 ${v} 条记录` })).join('')}
+      <div class="keys"><span><i></i>计入有效沟通</span><span><i style="background:var(--series-soft)"></i>未形成有效沟通</span></div></div>
+    <div class="card" style="--i:8"><div class="chead"><h3>推进障碍</h3><span class="hint">一条记录可多选</span></div>
+      ${OBS.map(([k, f], i) => { const v = Math.max(1, Math.round(f * s.count * .42 * (1 + ((PEOPLE.indexOf(p) + i) % 3 - 1) * .2))); return [k, v] }).sort((a, b) => b[1] - a[1]).map(([k, v], _, a) => hbar(k, v, a[0][1], v, { act: `toast:筛出障碍为「${k}」的 ${v} 条记录` })).join('')}</div>
+  </div>
+  <div class="grid g2">
+    <div class="card" style="--i:9"><div class="chead"><h3>跟进质量</h3><span class="hint">黑色刻度 = 团队均值 · 不合成总分</span></div>
+      ${Q.map(([k, tip], i) => hbar(k, p.q[i], 1, pct(p.q[i]), { tick: qAvg(i), cls: p.q[i] >= qAvg(i) ? 'good' : '', tip: `<b>${k}</b> ${pct(p.q[i])} <span>· 团队均值 ${pct(qAvg(i))}</span><br><span>${tip}</span>` })).join('')}</div>
+    <div class="card" style="--i:10"><div class="chead"><h3>待办纪律</h3></div>
+      ${hbar('回访闭环率', p.receipt, 1, pct(p.receipt), { cls: p.receipt >= .85 ? 'good' : '', tip: '<b>收货回访闭环率</b><br><span>已回访 ÷（已回访 + 超时过期）</span>' })}
+      <div class="mini" style="grid-template-columns:repeat(3,minmax(0,1fr))"><div><b>${p.snooze.toFixed(1)}</b>平均顺延次数</div><div><b>${p.openIssue[0]}</b>未处理异常/意见</div><div><b>${p.openIssue[1]}<small style="font-size:12px"> 天</small></b>最长挂起</div></div>
+      <button class="btn link sm" data-act="toast:跳到「待办」页签">去待办处理 →</button></div>
+  </div>`
+}
+function personCompact(p, i) {
+  const s = stat(p), d = slice(p)
+  return `<div class="card" style="--i:${i}">
+    <div class="chead"><span class="av lg">${p.name.slice(-1)}</span><div><h3>${p.name}</h3><span class="hint">负责客户 ${p.cust} 家</span></div><span class="sp"></span>
+      ${s.today ? `<span class="tag ok">今日 ${s.today} 条</span>` : `<span class="tag warn">${ic('alert')}今日未提交</span>`}</div>
+    <div class="mini"><div><b>${s.count}</b>跟进次数</div><div><b>${s.reach}</b>触达客户</div><div><b>${pct(s.eff)}</b>有效沟通</div><div><b style="color:${s.overdue > 8 ? 'var(--bad)' : 'inherit'}">${s.overdue}</b>应跟未跟</div></div>
+    ${S.chart === 'heat' ? calendar(p, true) : barLine(d, TODAY - (d.length - 1) * DAY, 400, 150, 0)}
+    <div style="margin-top:12px">${[0, 1].map(k => hbar(Q[k][0], p.q[k], 1, pct(p.q[k]), { tick: qAvg(k), cls: p.q[k] >= qAvg(k) ? 'good' : '' })).join('')}</div>
+    <div class="ins"><div class="ops"><span class="small muted">${delta(s.delta)}</span><span class="sp"></span><button class="btn link sm" data-act="person:${p.id}">查看详情 →</button></div></div>
+  </div>`
+}
+function viewPersonal() {
+  if (!isMgr()) return head('我的数据', '只统计你自己的跟进记录与负责客户') + personFull(byId(ME), true)
+  const chips = `<div class="chips"><button class="chip all" data-act="person:all" aria-pressed="${S.person === 'all'}">全部并排</button>
+    ${PEOPLE.map(p => `<button class="chip" data-act="person:${p.id}" aria-pressed="${S.person === p.id}"><span class="av">${p.name.slice(-1)}</span>${p.name}</button>`).join('')}</div>`
+  if (S.person !== 'all') return head('个人数据', `${byId(S.person).name} · 每个指标单独展示`) + chips + personFull(byId(S.person))
+  return head('个人数据', '每位业务员一块，指标相同，便于逐个看', chartSeg()) + chips +
+    `<div class="grid gauto">${PEOPLE.map(personCompact).join('')}</div>${heatLegendIf()}${missingStrip('all')}`
+}
+const heatLegendIf = () => S.chart === 'heat' ? `<div style="margin:-6px 0 4px">${heatLegend()}</div>` : ''
+const head = (title, sub, extra = '', range = true) => `<div class="bhead"><div><h2>${title}</h2><div class="sub">${sub}</div></div><span class="sp"></span>${extra}
+  ${range ? `<div class="seg" role="group" aria-label="时间范围">${Object.entries(RANGE).map(([k, v]) => `<button data-act="range:${k}" aria-pressed="${S.range === k}">${v.label}</button>`).join('')}</div>` : ''}</div>`
+
+/* ============ 团队数据 ============ */
+const SIGNALS = [['竞争品牌增加', 12, 4], ['店里增加直播', 9, 5], ['开始买低价款', 8, 3], ['补货周期变长', 6, 2], ['订单减少', 7, 6], ['订单增长', 5, 7]]
+const ISSUES = [['售后退换', 9, 4.2, 3], ['价格', 7, 2.1, 1], ['色差', 5, 5.6, 2], ['发货物流', 4, 1.8, 0], ['质量', 3, 6.3, 2], ['产品需求', 3, 3.0, 1]]
+function matrix() {
+  const n = RANGE[S.range].n, t0 = TODAY - (n - 1) * DAY
+  let h = `<div class="scroll-x swap"><div class="mx" style="grid-template-columns:auto repeat(${n}, minmax(${n > 30 ? 12 : 16}px, 1fr)) 44px;min-width:${n > 30 ? 760 : 0}px"><span></span>`
+  for (let i = 0; i < n; i++) { const t = t0 + i * DAY; h += `<span class="dh">${dow(t) === 0 || n <= 7 ? md(t) : ''}</span>` }
+  h += '<span class="dh">合计</span>'
+  PEOPLE.forEach(p => {
+    const d = slice(p); h += `<span class="nm">${p.name}</span>`
+    d.forEach((v, i) => { const t = t0 + i * DAY
+      h += dow(t) === 6 ? '<span class="hc off"></span>' : `<button class="hc ${t === TODAY ? 'today' : ''}" data-l="${lv(v)}" data-tip="${dayTip(t, v, p.name)}" data-act="toast:打开 ${p.name} ${md(t)} 的记录" aria-label="${p.name} ${md(t)} ${v} 次"></button>` })
+    h += `<span class="tot">${sum(d)}</span>`
+  })
+  return h + '</div></div>' + heatLegend()
+}
+function viewTeam() {
+  const st = PEOPLE.map(p => ({ p, s: stat(p) })), n = RANGE[S.range].n, td = teamDays().slice(N - n)
+  const total = sum(st.map(x => x.s.count)), submitted = st.filter(x => x.s.today).length
+  const cols = [['count', '跟进次数'], ['reach', '触达客户'], ['eff', '有效沟通率'], ['overdue', '应跟未跟']]
+  const rows = S.sort ? [...st].sort((a, b) => b.s[S.sort] - a.s[S.sort]) : st
+  const mx = k => Math.max(...st.map(x => x.s[k]))
+  return head('团队数据', `${PEOPLE.length} 位业务员合并展示`) + `
+  <div class="grid g5">
+    ${kpi(0, 'gold', 'chat', '跟进总次数', total, `<span>${delta(4)}</span>`)}
+    ${kpi(1, 'info', 'user', '触达客户数', Math.round(sum(st.map(x => x.s.reach)) * .94), `<span>${delta(7)}</span><span>按客户去重</span>`)}
+    ${kpi(2, 'ok', 'check', '有效沟通率', `${Math.round(sum(st.map(x => x.s.count * x.s.eff)) / total * 100)}<small>%</small>`, `<span>${delta(2)}</span><span>按记录合计</span>`)}
+    ${kpi(3, 'warn', 'clock', '应跟未跟', `${sum(st.map(x => x.s.overdue))}<small>家</small>`, '<span>超过等级跟进频率</span>')}
+    ${kpi(4, 'violet', 'team', '今日已提交', `${submitted}<small>/ ${PEOPLE.length} 人</small>`, '<span>截至 15:40</span>')}
+  </div>
+  <div class="card" style="--i:5;margin-bottom:16px">
+    <div class="chead"><h3>团队跟进节奏</h3><span class="hint">${S.chart === 'heat' ? '一行一位业务员，一格一天' : '团队每日合计'}</span><span class="sp"></span>${chartSeg()}</div>
+    ${S.chart === 'heat' ? matrix() : barLine(td, TODAY - (n - 1) * DAY, 1080, 260, 0)}
+    ${missingStrip('all')}
+  </div>
+  <div class="card" style="--i:6;margin-bottom:16px">
+    <div class="chead"><h3>人员对比</h3><span class="hint">默认按姓名，不做排名；点列头可排序</span></div>
+    <div class="scroll-x"><table class="tbl" style="min-width:640px"><thead><tr><th><button data-act="sort:" aria-pressed="${!S.sort}">业务员</button></th>
+      ${cols.map(([k, l]) => `<th><button data-act="sort:${k}" aria-pressed="${S.sort === k}">${l}${S.sort === k ? ' ↓' : ''}</button></th>`).join('')}<th>留下一步</th></tr></thead><tbody>
+      ${rows.map(({ p, s }) => `<tr><td><span style="display:inline-flex;align-items:center;gap:8px"><span class="av">${p.name.slice(-1)}</span>${p.name}</span></td>
+        ${cols.map(([k]) => `<td><div class="cellbar"><span class="tr"><span class="fl ${k === 'overdue' ? 'w' : ''}" style="width:${s[k] / mx(k) * 100}%"></span></span><b>${k === 'eff' ? pct(s[k]) : s[k]}</b></div></td>`).join('')}
+        <td><div class="cellbar"><span class="tr"><span class="fl" style="width:${p.q[0] * 100}%"></span></span><b>${pct(p.q[0])}</b></div></td></tr>`).join('')}
+    </tbody></table></div>
+  </div>
+  <div class="grid g2">
+    <div class="card" style="--i:7"><div class="chead"><h3>市场信号</h3><span class="hint">客户状态变化 · 出现家数 · 与上期对比</span></div>
+      <div class="rows">${SIGNALS.map(([k, now, prev]) => `<div class="row"><span>${k}</span><span class="sp"></span><b class="num">${now} 家</b>
+        <span class="tag ${now > prev ? 'warn' : ''}" style="min-width:76px;justify-content:center">${now > prev ? '↑' : now < prev ? '↓' : '–'} 上期 ${prev}</span>
+        <button class="btn link sm" data-act="toast:列出「${k}」的 ${now} 家客户">名单</button></div>`).join('')}</div></div>
+    <div class="card" style="--i:8"><div class="chead"><h3>团队推进障碍</h3><span class="hint">一条记录可多选</span></div>
+      ${OBS.map(([k, f]) => [k, Math.round(f * total * .4)]).map(([k, v], _, a) => hbar(k, v, a[0][1], v, { act: `toast:筛出障碍为「${k}」的 ${v} 条记录` })).join('')}</div>
+  </div>
+  <div class="grid g2">
+    <div class="card" style="--i:9"><div class="chead"><h3>异常与意见</h3><span class="hint">按分类</span></div>
+      <table class="tbl"><thead><tr><th>分类</th><th>条数</th><th>平均解决</th><th>未解决</th></tr></thead><tbody>
+      ${ISSUES.map(([k, n, d, o]) => `<tr><td>${k}</td><td class="num">${n}</td><td class="num">${d.toFixed(1)} 天</td><td>${o ? `<span class="tag ${o > 2 ? 'bad' : 'warn'}">${o} 条</span>` : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody></table></div>
+    <div class="card" style="--i:10"><div class="chead"><h3>需协调</h3><span class="hint">沿用协作管理的既有口径</span></div>
+      <div class="rows">
+        <div class="row"><span>30 天无有效推进的客户</span><span class="sp"></span><b class="num">11</b><button class="btn link sm" data-act="toast:跳到「协作管理」">处理</button></div>
+        <div class="row"><span>开发待办逾期满 30 天</span><span class="sp"></span><b class="num">4</b><button class="btn link sm" data-act="toast:跳到「协作管理」">处理</button></div>
+        <div class="row"><span>交接待接收满 3 天</span><span class="sp"></span><b class="num">1</b><button class="btn link sm" data-act="toast:跳到「协作管理」">处理</button></div>
+      </div></div>
+  </div>`
+}
+
+/* ============ AI 建议 ============ */
+const DEALS = [
+  { shop: '新理想', level: 'A级', sig: ['两次问交期', '样品反馈好'], why: '近 14 天两次问到 35cm 头套的交期，上次寄样后说质量可以，还没有收到批量报价。', act: '报批量价并确认首单数量', when: '11/13 周五', ev: [['11/10 微信', '客户原话：「35 的头套多久能出？我这边月底要上新。」'], ['11/05 微信', '收到样品，说「质量可以，比现在用的顺」。']] },
+  { shop: '发丝特均哥', level: 'C级', sig: ['主动问价', '三家店'], why: '主动询问分界与递针顶两个规格的价差，名下有三家店，之前的障碍是价格。', act: '给三家店合并拿货的阶梯价', when: '11/16 周一', ev: [['11/09 微信', '客户原话：「分界 2298、递针顶 2650，差在哪？三家店一起拿能不能少点。」']] },
+  { shop: '尚新假发', level: 'B级', sig: ['开始买高端款'], why: '最近两次跟进都标了「开始买高端款」，系统里近 30 天高端款下单金额同步上升。', act: '推荐同系列新色并约到店看样', when: '11/14 周六', ev: [['11/08 电话', '说店里高端款走得比上半年快，想再多备两个色。'], ['10/29 微信', '问有没有同款的浅棕色。']] },
+  { shop: '丽人坊', level: 'B级', sig: ['问起订量'], why: '首次沟通就问了起订量和代发，说明已经在比较供应商。', act: '发代发政策并约电话细聊', when: '11/13 周五', ev: [['11/11 微信', '客户原话：「你们最少多少起？能一件代发吗？」']] },
+]
+const COLDS = [
+  { shop: '德师傅假发', level: 'A级', sig: ['连续 2 次未回复', '订单下降'], why: '10/27 和 11/06 两次微信都没有回复；系统订单近 3 个月金额逐月下降，与跟进记录一致。', act: '换电话联系，带一款新品做话题', when: '11/13 周五', ev: [['11/06 微信', '发了新品图，未回复。'], ['10/27 微信', '问收货反馈，未回复。']] },
+  { shop: '美丝源', level: 'B级', sig: ['竞争品牌增加'], why: '跟进里提到店里新上了另一个品牌的小发片，补货周期从 20 天拉到 35 天。', act: '了解对方价格和卖点，回去对比', when: '11/17 周二', ev: [['11/03 到店', '货架上多了一个品牌的小发片，老板说「先试试看」。']] },
+  { shop: '秀发阁', level: 'A级', sig: ['超期 26 天'], why: 'A 级客户应 14 天跟一次，上次跟进是 10/17，之后没有任何记录和待办。', act: '先做一次常规回访，补上下一步', when: '11/13 周五', ev: [['10/17 微信', '说双十一后再看要不要补货。之后无记录。']] },
+]
+const COMMON = [
+  { title: '直播渠道退货率高', n: 7, why: '7 家客户在跟进里提到直播退货多，集中在小发片品类，其中 3 家因此减少了拿货。', act: '整理一份直播选品和话术建议，由业务员带给有直播的客户', q: [['爱黛儿假发 · 11/04', '「退货率很高，50% 左右，都不敢多拿。」'], ['金丝雀假发 · 10/30', '「直播间退得多，主要说颜色和图不一样。」']] },
+  { title: '价格是最主要的推进障碍', n: 12, why: '近 30 天标了「价格」障碍的客户 12 家，其中 8 家是未成交的新开发客户，多数停在首次报价之后。', act: '给新客户首单准备一档试单价，并约定报价后 3 天内必须有第二次跟进', q: [['依然美发 · 11/07', '「报价比我现在拿的高一截，成交难。」'], ['青丝坊 · 11/02', '「东西是好，就是贵。」']] },
+  { title: '色差投诉集中在浅色系', n: 5, why: '5 条色差类异常里有 4 条是浅棕和亚麻色，平均解决时长 5.6 天，是各分类里最长的。', act: '浅色系发货前补拍实物图给客户确认', q: [['梦丝雅 · 10/28', '「浅棕和上次那批不是一个色。」']] },
+]
+const SINGLE = [
+  { shop: '爱黛儿假发', level: 'S级', why: '客户反映二店员工冒充亲戚到别处拿货，涉及授权拿货人。属于单个客户的特殊情况，但客户等级高。', act: '和客户核对授权拿货人名单，并在客户档案里备注' },
+  { shop: '华美发艺', level: 'A级', why: '老板换人，新负责人还没有建立联系，原来的采购习惯可能变化。', act: '安排一次到店拜访，重新确认对接人' },
+]
+const PRACTICE = [
+  { title: '首次报价后 3 天内再跟一次', why: '近 90 天成交的 11 家客户里，9 家在首次报价后 3 天内有第二次跟进；未成交且停在报价阶段的 14 家里只有 3 家做到。', src: '依据 11 家成交客户的 63 条记录' },
+  { title: '寄样后先问使用感受，再谈价格', why: '成交客户的寄样回访里，先问顾客试戴反馈的占多数；直接追问「要不要订」的多停在未回复。', src: '依据 18 条寄样后回访记录' },
+]
+const insCard = (id, i, title, tags, why, act, when, ev, deident) => `<div class="card ins" style="--i:${i}">
+  <h4>${title}${tags}</h4><p class="why">${why}</p>
+  ${act ? `<div class="do"><b>建议：</b>${act}${when ? ` <span class="muted">· ${when}</span>` : ''}</div>` : ''}
+  <div class="ev ${S.ai.ev[id] ? 'open' : ''}" id="ev-${id}"><div>${(ev || []).map(([a, b]) => `<div class="quote"><small>${a}</small>${b}</div>`).join('')}</div></div>
+  <div class="ops">
+    ${when ? `<button class="btn sm ${S.ai.task[id] ? '' : 'primary'}" data-act="task:${id}:${when}" ${S.ai.task[id] ? 'disabled' : ''}>${S.ai.task[id] ? `已生成待办 · ${when}` : '生成待办'}</button><button class="btn sm" data-act="toast:带着客户打开记跟进抽屉">记一条跟进</button>` : ''}
+    ${ev && ev.length && !deident ? `<button class="btn sm link" data-act="ev:${id}">看证据（${ev.length}）</button>` : ''}
+    ${deident ? '<span class="tag">已脱敏 · 不显示他人客户</span>' : ''}
+    <span class="sp"></span>
+    <button class="fb" data-act="fb:${id}:up" aria-pressed="${S.ai.fb[id] === 'up'}" aria-label="有用" data-tip="有用">${ic('up')}</button>
+    <button class="fb" data-act="fb:${id}:down" aria-pressed="${S.ai.fb[id] === 'down'}" aria-label="不准" data-tip="不准，下次别这样">${ic('down')}</button>
+  </div></div>`
+const sigTags = (level, sig) => `<span class="tag gold">${level}</span>${sig.map(x => `<span class="tag">${x}</span>`).join('')}`
+function viewAI() {
+  const mgr = isMgr(), pid = mgr ? S.aiPerson : ME, p = byId(pid), k = PEOPLE.indexOf(p), w = worst(p), avgGap = Math.round(FREQ[w.L] * 1.5)
+  const deals = [0, 1, 2].map(i => DEALS[(k + i) % DEALS.length]).slice(0, k % 2 ? 2 : 3), colds = [0, 1].map(i => COLDS[(k + i) % COLDS.length])
+  const hl = mgr ? [
+    ['成交机会', `团队有 ${DEALS.length} 家客户出现成交信号`, `新理想、发丝特均哥、尚新假发、丽人坊。都还没有对应的待办，建议本周内跟上。`],
+    ['客户覆盖', `团队有 ${sum(PEOPLE.map(x => x.cov.A[0] - x.cov.A[1]))} 家 A 级客户超期未跟`, 'A 级客户应 14 天跟一次。超期名单在「团队数据 → 应跟未跟」，其中 3 家同时出现了变冷信号。'],
+    ['共性问题', '7 家客户提到直播退货率高', '集中在小发片品类，3 家已经因此减少拿货。值得出一份统一的应对建议。'],
+  ] : [
+    ['成交机会', `你有 ${deals.length} 家客户出现成交信号`, `${deals.map(d => d.shop).join('、')}。都还没有对应的待办。`],
+    ['节奏提醒', `${w.miss} 家 ${w.L} 级客户超过 ${FREQ[w.L]} 天没跟`, `${w.L} 级客户应 ${FREQ[w.L]} 天跟一次，你目前平均 ${avgGap} 天。下面有具体建议。`],
+    ['跟进方式', `未回复之后你平均隔 ${p.reGap} 天再跟`, '团队里 3 天内再跟的，下一次得到回复的比例明显更高。'],
+  ]
+  const chips = mgr ? `<div class="chips">${PEOPLE.map(x => `<button class="chip" data-act="aiperson:${x.id}" aria-pressed="${pid === x.id}"><span class="av">${x.name.slice(-1)}</span>${x.name}</button>`).join('')}</div>` : ''
+  const me = `${chips}
+    <div class="sec"><h3>可能成交</h3><span>近 30 天记录里出现问价、要样、问交期等积极信号</span></div>
+    <div class="grid g3">${deals.map((d, i) => insCard(`deal-${pid}-${i}`, i + 3, d.shop, sigTags(d.level, d.sig), d.why, d.act, d.when, d.ev)).join('')}</div>
+    <div class="sec"><h3>正在变冷</h3><span>未回复、间隔拉长或出现负面信号，并对照了系统订单</span></div>
+    <div class="grid g2">${colds.map((d, i) => insCard(`cold-${pid}-${i}`, i + 6, d.shop, sigTags(d.level, d.sig), d.why, d.act, d.when, d.ev)).join('')}</div>
+    <div class="sec"><h3>节奏与方式</h3><span>${mgr ? `针对${p.name}本人的记录 · ${p.name}看到的是同一份` : '针对你自己的记录 · 管理者也能看到这一份'}</span></div>
+    ${`<div class="grid g2">
+      ${insCard(`rh-${pid}`, 8, `${w.L} 级客户跟得偏稀`, '', `${w.L} 级客户应 ${FREQ[w.L]} 天跟一次，${mgr ? p.name : '你'}目前平均 ${avgGap} 天，${w.miss} 家已经超期。`, `把超期的 ${w.L} 级客户排进本周，每天处理 1~2 家`, '', [])}
+      ${insCard(`mt-${pid}`, 9, `有效沟通后 ${pct(1 - p.q[0])} 的记录没有留下一步`, '', `沟通有效但没约下次时间，这些客户后面平均隔了 ${p.reGap + 9} 天才再被跟进。团队里 ${pct(qAvg(0))} 的有效沟通留了下一步。`, '有效沟通结束前问一句「我周几再找您合适」，直接记进下次跟进', '', [])}
+    </div>`}`
+  const co = `
+    <div class="sec"><h3>共性问题</h3><span>多家客户提到同一件事</span></div>
+    <div class="grid g3">${COMMON.map((c, i) => insCard(`cm-${i}`, i + 3, c.title, `<span class="tag warn">${c.n} 家</span>`, c.why, c.act, '', c.q, !mgr)).join('')}</div>
+    ${mgr ? `<div class="sec"><h3>个别问题</h3><span>不成规律，但客户等级高或影响大</span></div>
+    <div class="grid g2">${SINGLE.map((c, i) => insCard(`sg-${i}`, i + 6, c.shop, `<span class="tag gold">${c.level}</span>`, c.why, c.act, '', [])).join('')}</div>` : ''}
+    <div class="sec"><h3>有效做法</h3><span>从已成交客户的跟进过程里复盘</span></div>
+    <div class="grid g2">${PRACTICE.map((c, i) => insCard(`pr-${i}`, i + 8, c.title, '', c.why, '', '', [['来源', c.src]], !mgr)).join('')}</div>
+    ${mgr ? `<div class="sec"><h3>节奏建议</h3><span>给管理者的配置建议，不会自动生效</span></div>
+    <div class="grid g2">${insCard('cfg-0', 10, 'B 级客户的跟进频率可以考虑从 30 天调到 21 天', '', '近 90 天从沉默恢复下单的 B 级客户里，多数是在上次跟进后第 20~25 天被再次联系的；等到 30 天再跟的恢复比例低。样本 23 家，结论供参考。', '在「跟进设置」里把 B 级频率改为 21 天试行一个月', '', [])}</div>` : ''}`
+  return head('AI 建议', mgr ? '基于已确认的跟进记录分析，每条结论都能看到依据' : '基于你自己的跟进记录分析', '', false) + `
+    <div class="aihead"><span class="tag ai">${ic('spark')}AI 分析</span><span>生成于 11/12 07:30 · 依据近 60 天 ${mgr ? 412 : 86} 条已确认记录</span><span class="sp" style="flex:1"></span>
+      <button class="btn sm" data-act="toast:已开始重新生成，完成后自动刷新（每人每天 2 次）">重新生成</button></div>
+    <div class="grid g3">${hl.map(([n, t, d], i) => `<div class="card hl" style="--i:${i}"><div class="n">${n}</div><h4>${t}</h4><p>${d}</p></div>`).join('')}</div>
+    <div class="seg" role="group" aria-label="建议范围" style="margin-top:6px"><button data-act="aitab:me" aria-pressed="${S.aitab === 'me'}">${mgr ? '个人层面' : '我的客户'}</button><button data-act="aitab:co" aria-pressed="${S.aitab === 'co'}">公司层面</button></div>
+    <div class="swap">${S.aitab === 'me' ? me : co}</div>`
+}
+
+/* ============ 渲染与交互 ============ */
+const $ = s => document.querySelector(s)
+const VIEWS = { personal: ['user', () => isMgr() ? '个人数据' : '我的数据', viewPersonal], team: ['team', () => '团队数据', viewTeam], ai: ['spark', () => 'AI 建议', viewAI] }
+const viewKeys = () => isMgr() ? ['personal', 'team', 'ai'] : ['personal', 'ai']
+function render(enter) {
+  const b = $('#board'), fa = b.contains(document.activeElement) ? document.activeElement.dataset.act : null; b.innerHTML = VIEWS[S.view][2]()
+  if (fa) [...b.querySelectorAll('[data-act]')].find(x => x.dataset.act === fa)?.focus({ preventScroll: true })
+  if (enter) { b.classList.remove('enter'); void b.offsetWidth; b.classList.add('enter'); clearTimeout(render.t); render.t = setTimeout(() => b.classList.remove('enter'), 1100) }
+}
+function renderDock() {
+  $('#dock').innerHTML = '<span class="thumb"></span>' + viewKeys().map(k => `<button role="tab" data-act="view:${k}" aria-selected="${S.view === k}" tabindex="${S.view === k ? 0 : -1}">${ic(VIEWS[k][0])}${VIEWS[k][1]()}</button>`).join('')
+  moveThumb(true)
+}
+function moveThumb(instant) {
+  const dock = $('#dock'), btn = dock.querySelector('[aria-selected="true"]'), th = dock.querySelector('.thumb')
+  dock.classList.toggle('noanim', !!instant)
+  th.style.width = btn.offsetWidth + 'px'; th.style.transform = `translateX(${btn.offsetLeft}px)`
+  if (instant) requestAnimationFrame(() => requestAnimationFrame(() => dock.classList.remove('noanim')))
+}
+function setView(k, viaKeyboard) {
+  if (S.view === k) return
+  S.view = k
+  document.querySelectorAll('#dock [role=tab]').forEach(b => { const on = b.dataset.act === 'view:' + k; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; if (on && viaKeyboard) b.focus() })
+  moveThumb(viaKeyboard)                     // 键盘切换不播放滑动动画
+  render(!viaKeyboard); window.scrollTo({ top: 0 })
+}
+function renderRole() {
+  $('#roleSeg').innerHTML = `<button data-act="role:mgr" aria-pressed="${isMgr()}">管理者（看全部）</button><button data-act="role:sales" aria-pressed="${!isMgr()}">业务员 · 宋洋（只看自己）</button>`
+  $('#btnCfg').hidden = $('#btnCo').hidden = !isMgr()
+}
+let toastT
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2200) }
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el || el.disabled) return
+  const [act, a, ...rest] = el.dataset.act.split(':'), b = rest.join(':')
+  if (act === 'view') return setView(a)
+  if (act === 'role') { S.role = a === 'mgr' ? 'mgr' : 'sales'; S.person = 'all'; if (!viewKeys().includes(S.view)) S.view = 'personal'; renderRole(); renderDock(); return render(true) }
+  if (act === 'range') { S.range = a; return render() }
+  if (act === 'person') { S.person = a; return render() }
+  if (act === 'aiperson') { S.aiPerson = a; return render() }
+  if (act === 'chart') { S.chart = a; return render() }
+  if (act === 'aitab') { S.aitab = a; return render() }
+  if (act === 'sort') { S.sort = a || null; return render() }
+  if (act === 'toast') return toast(a + (b ? ':' + b : ''))
+  if (act === 'scroll') return document.getElementById(a)?.scrollIntoView({ block: 'center' })
+  if (act === 'ev') { S.ai.ev[a] = !S.ai.ev[a]; document.getElementById('ev-' + a).classList.toggle('open', S.ai.ev[a]); el.textContent = S.ai.ev[a] ? '收起证据' : el.textContent.replace('收起证据', '看证据'); if (!S.ai.ev[a]) render(); return }
+  if (act === 'fb') { S.ai.fb[a] = S.ai.fb[a] === b ? null : b; el.parentElement.querySelectorAll('.fb').forEach(x => x.setAttribute('aria-pressed', x === el && !!S.ai.fb[a])); return toast(S.ai.fb[a] === 'up' ? '已记录：有用' : S.ai.fb[a] === 'down' ? '已记录：不准，下次生成会参考' : '已取消反馈') }
+  if (act === 'task') { S.ai.task[a] = true; el.disabled = true; el.classList.remove('primary'); el.textContent = `已生成待办 · ${b}`; return toast(`已生成约定跟进，到期日 ${b}（实现时可先改日期和内容）`) }
+})
+$('#dock').addEventListener('keydown', e => {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+  const ks = viewKeys(), i = ks.indexOf(S.view); e.preventDefault()
+  setView(ks[(i + (e.key === 'ArrowRight' ? 1 : ks.length - 1)) % ks.length], true)
+})
+const tip = $('#tip')
+document.addEventListener('mouseover', e => { const el = e.target.closest('[data-tip]'); if (!el) return tip.classList.remove('on'); tip.innerHTML = el.dataset.tip; tip.classList.add('on') })
+document.addEventListener('mousemove', e => {
+  if (!tip.classList.contains('on')) return
+  const w = tip.offsetWidth, h = tip.offsetHeight
+  tip.style.left = Math.max(8, Math.min(innerWidth - w - 8, e.clientX + 14)) + 'px'
+  tip.style.top = (e.clientY + h + 24 > innerHeight ? e.clientY - h - 12 : e.clientY + 18) + 'px'
+})
+document.addEventListener('focusin', e => { const el = e.target.closest?.('[data-tip]'); if (!el || !el.matches(':focus-visible')) return
+  tip.innerHTML = el.dataset.tip; tip.classList.add('on'); const r = el.getBoundingClientRect()
+  tip.style.left = Math.max(8, Math.min(innerWidth - tip.offsetWidth - 8, r.left)) + 'px'; tip.style.top = Math.max(8, r.top - tip.offsetHeight - 8) + 'px' })
+document.addEventListener('focusout', () => tip.classList.remove('on'))
+addEventListener('resize', () => moveThumb(true))
+renderRole(); renderDock(); render(true)
+document.fonts?.ready.then(() => moveThumb(true))
+</script>
+</body>
+</html>

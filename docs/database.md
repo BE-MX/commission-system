@@ -1113,3 +1113,17 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 银行身份按主体/真实账户域/渠道/原流水唯一，payment_ref还有独立唯一约束，同一原付款不能再绑定第二个身份。源ReceiptBatch/Receipt、金额、原手续费和历史缩放汇率不重新生成；承接更新原身份的归属并追加依据。发送claim与原动作同事务提交，HTTP在提交后执行；unknown不因租约到期解除。所有并发协调以持久policy单例及当前读为起点，避免RR旧快照覆盖新办理权。
 
 完整空库链及原数据保留已在自有回环MySQL8.4验证；具体结果见[开发验收报告](reports/2026-10-28-commerce-dual-route-implementation.md)，不代表生产数据库已升级。
+
+
+## 客户跟进 AI 洞见（261_followup_insights，本地实现未部署）
+
+接 `260_client_desk_board`，只新增两张 InnoDB 表，不改历史跟进字段。迁移已在隔离 MySQL 8.0.46 执行验证；正式库只能由部署入口升级。
+
+| 表 | 关键结构与约束 |
+|---|---|
+| `ark_dom_followup_insight_snapshots` | BIGINT id；scope、目标 user_id（INT UNSIGNED FK ark_users）；status=queued/running/done/failed；trigger、period_start/end、record_count、payload JSON、错误类型、run_token；请求人/request_day 用于每日配额；generated_at/created_at/updated_at 为北京时间；读取及配额索引。 |
+| `ark_dom_followup_insights` | BIGINT id / snapshot_id FK；category、可空 customer_id、theme_key；title/body/suggested_action/date/signals；evidence_followup_ids 和 evidence_versions JSON 只记录 ID/版本，不拷贝原文；public_summary 为独立匿名聚合生成内容；sample_customer_ids/sample_size/numeric_values 用于复核；source_insight_id 自引用绑定沿用评语；feedbacks JSON 按反馈人保存；task_id FK 且唯一；采纳人/时间/说明。 |
+
+队列入场由既有配置表 `_insight_queue_lock` 行锁序列化；AI 网络调用不持有入场锁。执行令牌配合条件 UPDATE 阻止超时执行器覆盖结果。证据版本、当前责任人、有效成交样本均在读取时复核；task_service 的 `source_key=insight:<id>` 与建议行锁共同保证待办幂等。配置新增统计名单、非工作日、AI 生成开关，使用既有配置表；无统计汇总表。
+
+实施证据与操作限制见[实施记录](requirements/2026-11-12-followup-stats-board/implementation.md)。
