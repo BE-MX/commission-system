@@ -2851,7 +2851,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | GET | `/customers/{customer_id}/timeline` | 客户时间线：跟进记录 + 任务 + 发货/AI 背景；可读/可写分开判定，不可读时隐藏发货和 AI 背景（见模块说明）。 |
 | POST | `/attachments` | 上传跟进截图，≤10MB；先上传拿到附件 ID，建草稿或直接保存时再绑定。 |
 | GET | `/attachments/{attachment_id}/file` | 读取截图原图，鉴权后返回文件，不走静态目录直连。 |
-| POST | `/followups` | 直接保存一条跟进（不经 AI 草稿），`result_code` 本次结果必填且需符合当前字典；缺失或空白返回 400。已绑定未 OCR 的附件在后台线程补跑 OCR。 |
+| POST | `/followups` | 直接保存一条跟进（不经 AI 草稿），`result_code` 本次结果必填且需符合当前字典；缺失或空白返回 400。`followup_date` 可为今天或过去日期；协作客户带下一步计划或显式更新当前进度时不再限制为今天，仍校验责任版本与权限。已绑定未 OCR 的附件在后台线程补跑 OCR。 |
 | GET | `/followups` | 已确认记录列表，支持 `customer_id`、`mine`、`author_user_id`、`keyword`、`date_from` / `date_to`（跟进日期，含首尾）和分页；筛选始终与当前用户可见范围取交集。关键字按字面匹配客户名/编码/联系人及原文/摘要/条目，反向日期范围返回 400。 |
 | GET | `/followups/authors` | 查看权限即可读取；返回当前可见已确认记录的录入人 `{id, real_name}`，含历史停用/离职录入人；不返回仅有草稿或范围外记录的录入人。 |
 | GET | `/followups/{id}` | 单条已确认记录，沿用原查看范围，返回 `can_edit`。 |
@@ -2860,7 +2860,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | POST | `/drafts` | 建 AI 草稿；创建成功后在后台线程跑 `ai_parse_service.run_parse`，前端轮询状态。 |
 | GET | `/drafts` | 当前用户未处理的草稿列表。 |
 | GET | `/drafts/{followup_id}` | 草稿详情（含 AI 原始结果，供表单回填）。 |
-| POST | `/drafts/{followup_id}/confirm` | 确认草稿，`result_code` 本次结果必填（创建草稿仍允许空），缺失或空白返回 400 且保留草稿；按确认内容生成跟进任务。 |
+| POST | `/drafts/{followup_id}/confirm` | 确认草稿，`result_code` 本次结果必填（创建草稿仍允许空），缺失或空白返回 400 且保留草稿；实际跟进日期允许过去日期，计划和当前进度仍按当前权限与责任版本校验；按确认内容生成跟进任务。 |
 | DELETE | `/drafts/{followup_id}` | 作废草稿。 |
 | GET | `/tasks` | 跟进任务列表：`scope=mine/visible`、`status`、`task_type`、`customer_id`、`due=today/upcoming/all`，分页。 |
 | GET | `/tasks/summary` | 任务计数卡（按类型），工作台首屏用。 |

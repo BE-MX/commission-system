@@ -91,8 +91,6 @@ def confirm_access(db, user, followup, fields):
     if responsibility and (fields.next_date or fields.development_stage):
         if fields.responsibility_version != responsibility.version:
             raise ConflictError("跟进责任或下一步安排已变更，请刷新后重试")
-        if followup.followup_date != beijing_today():
-            raise ValueError("历史沟通可单独补录，当前进度和计划请用今天的记录更新")
         if fields.next_date and not fields.plan_purpose:
             raise ValueError("请选择计划用途")
         if fields.development_stage == "paused":
