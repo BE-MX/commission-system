@@ -1,10 +1,14 @@
-## 2026-11-13 小满旧出库删除后自动重建（Codex，已授权合并推送及全局部署）
+## 2026-11-13 小满旧出库删除后自动重建（Codex，已合并推送并全局发布）
 
-- 工作区 `D:/MyProgram/commission-system-codex-deleted-outbound-auto-recovery`，分支 `codex/deleted-outbound-auto-recovery`，基于 `c4e89879`；实现已落地，亮哥后续明确授权合并推送、拉取最新 Git 并全局部署。实际 Git 和发布结果以随后核验记录为准；实现阶段未新增生产业务写入。
+- 工作区 `D:/MyProgram/commission-system-codex-deleted-outbound-auto-recovery`，分支 `codex/deleted-outbound-auto-recovery`，基于 `c4e89879`；实现 `c090e6d2` 已合并推送并发布，受控恢复工具提交 `514a5193`；后续文档提交不触发重新部署。
 - 发票「同步」「保存并同步」先核对唯一待出库旧镜像在小满确已删除且无其他有效出库；安全结束已有明确接受、租约结束的明细更新链，保留发送回执、回款和验货照片，同事务隐藏旧镜像并等待新版发票成功推送后由原任务核库存、查重重建。缺证、未知结果或并发变化不重建；分批、预售及旧删除失败候选沿用原流程。
 - 衔接修复包含本地镜像 ID 与小满 ID 区分、同秒推单代次，以及 Python/Node 仅使用成功 create/update 日志决定重建版本。无新迁移或前端修改；发布需同时包含后端与 Node 自动出库文件。
 - SQLite 相关回归 273 项通过，最终专项 30 项通过（274 个不同用例）；Node 157 项、严格约定检查及差异检查通过，独立审查无剩余阻断。MySQL 独占实例验证被旧夹具缺少发送账本表阻断，在未修改基线复现，不能报集成通过。临时进程已关闭。
 - 详细范围、验证及限制见[实现记录](reports/2026-11-13-deleted-outbound-auto-recovery.md)。Git 巡检为 `--no-fetch` 本地快照；未处理其他工作区改动。
+
+- 发布 ID `2214cf999d394ecf85506c62aad1be20`；两地实际 HEAD `c090e6d2`、schema262，后端/色块/五静态目标完成，出库 verified 且 timer active/enabled，邮件沿用停用；共享迁移 writer 已恢复并 completed，AI 入口恢复。首次新加坡路由健康探测失败后，经固定回执恢复入口接续，未重复迁移或应用重启；102 项部署回归及独立审查通过。
+- 26/26 必需部署检查通过；三处正确目标前端入口同为 `/assets/main-Cp9FhEou.js`。后续未固定地址的 .work 首页探测失败。
+- 公网 `leshine.work` DNS 同时返回新加坡和北京；正确目标 HTTPS 健康，误选北京时 TLS 失败。未改 DNS，仍需独立处理该域名访问异常。真实删单→自动重建生产写入验收未做；清理按约定 deferred，测试数据清理审批拒绝后工作区暂留。证据在 `.deploy_state/deleted-outbound-release-20261113/`。
 
 ## 2026-11-13 Ginny / Tilly Gay 预约客户范围（Codex，Git 交付，未部署）
 
