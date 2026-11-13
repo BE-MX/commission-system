@@ -1,3 +1,10 @@
+## 2026-11-13 跟进统计日历左侧标签裁切（Codex，Git 交付，未部署）
+
+- 分支 `codex/followup-calendar-labels`，基于 `main@6f4273fd`；亮哥已授权提交、合并并推送 main，本次不部署。验收证据交付时保留至主目录 `tmp/calendar-label-check/`。
+- `StatsRhythmChart.vue` 的日历网格原本只留 12px 左边距，绘制在网格外的星期标签超出 canvas 后被裁切。左边距改为 36px，标签间距显式设为 8px，兼顾紧凑卡片与普通图表；不改变统计数据、日期或点击事件。
+- 验证：统计看板 Node 测试 9/9、前端生产构建（32.27 秒，保留既有大包提示）、增量约定检查和 `git diff --check` 通过。`git_sweep --no-fetch` 已执行，仅为本地快照，未处理其他工作区欠账。构建日志位于 `tmp/calendar-label-check/build.log`。
+- 浏览器隔离模拟验收通过：280/360px 紧凑图、280/720px 普通图的七个星期标签与跨月标签完整可见，日期格点击仍返回对应日期，每日数据表可展开；截图及夹具保留在 `tmp/calendar-label-check/`，未连接生产或写入业务数据。
+
 ## 2026-11-13 发票客户手动同步修复原表负责人（Codex，已授权全局发布）
 
 - 用户指出选择客户的手动同步仅更新 Ark overlay，`customer_info.owner_user_ids` 未填充，直接读取原表的选择器仍不可见。截图客户 Hallie Ducharme 原表当前值由用户手工补入，不能当作旧代码同步成功证据。

@@ -58,9 +58,10 @@ function heatOption() {
       animation: !motion.matches, animationDuration: 160, aria: { enabled: true, label: { description: `${ariaLabel.value}。逐日数值可展开查看每日数据。` } },
       tooltip: { confine: true, formatter: params => tooltipDay(params.value) },
       visualMap, calendar: {
-        left: 12, right: 12, top: 34, bottom: 12, range: [props.days[0]?.date, props.days.at(-1)?.date],
+        // Calendar labels sit outside the grid; reserve room inside the canvas.
+        left: 36, right: 12, top: 34, bottom: 12, range: [props.days[0]?.date, props.days.at(-1)?.date],
         cellSize: ['auto', props.compact ? 22 : 34], firstDay: 1,
-        dayLabel: { nameMap: ['日', '一', '二', '三', '四', '五', '六'], color: token('--text-muted'), fontSize: 11 },
+        dayLabel: { nameMap: ['日', '一', '二', '三', '四', '五', '六'], color: token('--text-muted'), fontSize: 11, margin: 8 },
         monthLabel: { color: token('--text-muted'), fontSize: 11 }, yearLabel: { show: false }, splitLine: { show: false },
       },
       series: [{ type: 'heatmap', coordinateSystem: 'calendar', data: props.days.map(day => ({
