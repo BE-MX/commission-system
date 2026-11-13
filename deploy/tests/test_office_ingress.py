@@ -113,6 +113,35 @@ def test_public_listener_rejected(monkeypatch):
         m.verify_tunnel()
 
 
+@pytest.mark.parametrize('drift', ['', '# unrelated change\n'])
+def test_rollback_after_colorwork_publisher_reorders_blocks(local_routes, drift):
+    root, nginx = local_routes
+    colorwork = ('# BEGIN ARK COLORWORK ROUTING\n'
+                 'location ^~ /api/colorwork/ { proxy_pass http://127.0.0.1:8787; }\n'
+                 '# END ARK COLORWORK ROUTING\n')
+    before = original().replace('location /api/ {', colorwork + 'location /api/ {')
+    nginx.write_text(before)
+    m.routes('routes-activate', m.routes('routes-prepare', {}))
+    reordered = nginx.read_text().replace(colorwork + m.MCP, m.MCP + colorwork)
+    nginx.write_text(reordered + drift)
+    if drift:
+        with pytest.raises(RuntimeError, match='drift'):
+            m.routes('rollback', {})
+        assert nginx.read_text() == reordered + drift
+    else:
+        assert m.routes('rollback', {})['status'] == 'rolled-back'
+        assert nginx.read_text() == before
+
+
+def test_reordered_candidate_requires_untampered_snapshot(local_routes):
+    root, nginx = local_routes
+    m.routes('routes-activate', m.routes('routes-prepare', {}))
+    current = nginx.read_text() + '# drift\n'
+    (root / 'nginx-candidate.conf').write_text(current)
+    record = json.loads((root / 'routes.json').read_text())
+    assert not m.matches_active_candidate(current, record)
+
+
 def test_effective_ssh_rejects_wider_forwarding(monkeypatch):
     monkeypatch.setattr(m, 'effective', lambda _: {'allowtcpforwarding': 'yes'})
     with pytest.raises(RuntimeError, match='restrictions'):

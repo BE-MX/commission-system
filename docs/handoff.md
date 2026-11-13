@@ -1,3 +1,13 @@
+## 2026-11-13 办公室公网入口迁北京（Codex，生产已切换，本地分支未合入main）
+
+- 用户授权迁移主入口/隧道并处理客户端。任务worktree `D:/MyProgram/commission-system-codex-beijing-office-ingress`、分支 `codex/beijing-office-ingress`、基点 `db8328aa`；本任务未执行GitHub push或main合并，勿将旧任务授权外推。
+- 两地应用已发布 `e868f077039add1611ef564e90fc5e0d4538cd87`，release_id `ede451dd85534d59b43d9dc584e3d7cc`，status=succeeded；schema262不变，五静态目标完成，出库verified/timer启用，邮件Worker保持停用，清理deferred。
+- `.cloud`办公室专属API经北京回环8002 SSH隧道直达办公室8001；`ArkOfficeBeijingTunnel`专用账号/key、限权和真实自动重连已验证。原新加坡FRP及`.work`保留，独立PM/hair/video/outreach不迁移。DNSPod误指北京的work根A已暂停，权威与公共DNS只返新加坡，取代上一条的DNS待修状态。
+- 28/28必需部署检查通过；部署/路由65项、前端地址15项、集成说明23项、发票创建隔离1项通过，前端构建通过。历史回款完整小文件校验及3种图片64KB样本对照、登录态只读接口/MCP初始化成功，未代做业务写入或发货。
+- 小程序cloud源码preview成功（442694字节），用户确认合法域名已添加；二维码 `tmp/wechat-preview/preview.png`。手机登录/接口、审核/正式发布未完成。PDA1.0.6 APK已构建（31测试通过/1网络测试跳过），实体安装及扫码未完成；保留旧保存地址与待确认报工。
+- 正常色块发布导致两处MCP/COLORWORK块换序，收尾控制器严格验证此唯一重排后允许回退，其他漂移仍阻断；16项测试与独立审查通过，现场只读验证匹配。回退从任务最新提交执行，生产e868旧控制器不识别换序。未实际切回演练。
+- [实施报告](reports/2026-11-13-beijing-office-ingress.md)、[部署与回退](../deploy/office-beijing-ingress.md)、工作区 `.deploy_state/office-beijing-ingress/` 保留证据。未触碰主目录其他改动。
+
 ## 2026-11-13 小满旧出库删除后自动重建（Codex，已合并推送并全局发布）
 
 - 工作区 `D:/MyProgram/commission-system-codex-deleted-outbound-auto-recovery`，分支 `codex/deleted-outbound-auto-recovery`，基于 `c4e89879`；实现 `c090e6d2` 已合并推送并发布，受控恢复工具提交 `514a5193`；后续文档提交不触发重新部署。

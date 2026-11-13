@@ -38,24 +38,24 @@
 
 ### 部署架构
 
-以下是 2026-09-05 已验证现状；办公室直连北京隧道、内网 DNS 和 PM `.cloud` 入口尚待完成，不能按目标方案当作已经上线。
+2026-11-13 办公室公网主入口已切到北京；原新加坡 FRP 通道保留供旧客户端与人工回退。PM/hair/video/outreach 的独立站点归属不随本次主站入口迁移改变。
 
 ```text
-公司内网 → 办公室 Windows / CommissionSystem :8002
-leshine.work / pm.leshine.work → 新加坡 Nginx 静态 + frps → 办公室 :8002
-leshine.cloud / www → 北京 Nginx 静态 + ark-backend :8001
-media.leshine.cloud → 北京客户素材门户 + /data/customer-media
-leshine.work/api/customer-media/ → 经过证书验证的 HTTPS → 北京素材服务
-hair.leshine.cloud → 北京发型静态站
-hair.leshine.work / video.leshine.work → 新加坡现有静态站
-所有方舟后端 → 同一北京 RDS commission_db / lsordertest
+公司内网 / lan.leshine.cloud → 办公室 Windows / CommissionSystem :8001
+leshine.cloud / www → 北京 Nginx → 普通 API / 平台 MCP：北京 ark-backend :8001
+                               → 回款 / 验货 / WhatsApp / 设计图片：127.0.0.1:8002 → SSH 反向隧道 → 办公室 :8001
+leshine.work / pm.leshine.work → 新加坡 Nginx + frps :8002 → 办公室 :8001（保留）
+media.leshine.cloud / hair.leshine.cloud → 北京既有站点
+hair.leshine.work / video.leshine.work / outreach.leshine.work → 新加坡既有独立站点
 ```
 
-- 北京后端、主站和素材门户已通过统一入口更新；新加坡 PM 页面与制品一致，已接入受管静态目录。新加坡主站新版前端等待办公室后端一起发布。
+办公室 `ArkOfficeBeijingTunnel` 由 NSSM 管理、自动重连；独立密钥只保存在办公室。北京专用 SSH 账号只允许上述回环远端转发，禁止 shell/PTY/本地转发/agent 转发。路由保留原鉴权、上传大小、禁缓存和禁止自动重试写请求；验货出库列表/打印资料继续交北京8001。数据库和业务文件不搬迁，Scheduler 单活位置不变。配置与回退见[办公室公网入口](../deploy/office-beijing-ingress.md)。
+
+- 北京与办公室应用、主站和 PM 等受管静态制品均通过统一发布入口；当前固定版本及终端未发布项以 handoff 最新记录为准。
 - 代码发布入口为 `deploy/deploy.bat`，先在候选 worktree 构建，再按 SHA-256 只传变化文件。共享数据库每轮核对一次目标版本，云节点不单独重复迁移。运行细节见 [部署说明](../deploy/README.md)。
 - Windows 桌面更新中心通过现有 SSH 连接办公室，辅助 worker 在 `.deploy_state/desktop/` 持久化逐次任务，并调用同一 `deploy.bat`。桌面仅承担自检、候选确认、进度和诊断，不持有生产数据库凭据、不创建远程 HTTP 管理服务。组件成功由运行中的部署器关联 run id 事件与退出码证明；客户端断线后重新读取原任务。构建及接入条件见 [桌面程序说明](../deploy/desktop/README.md)，实际接入状态以 handoff 为准。
 - COS 文件已按领域纳管；本机原件目录和缓存目录不能代表最终存储归属。在历史对象、登录/签名、后台处理及出货异步转存依赖验证前，不能把全部业务 API 无差别切到北京。
-- 办公室 NSSM 管理 `CommissionSystem`、`WhatsAppConnector`；新加坡保留 frps、中继、MCP、同步器等既有独立服务。完整登记与未纳管项见 [platforms.json](../deploy/platforms.json)。
+- 办公室 NSSM 管理 `CommissionSystem`、`WhatsAppConnector`、`ArkOfficeBeijingTunnel`；新加坡保留 frps 和独立站点，已迁北京的 Agent/MCP/同步器不在新加坡重启。完整登记与未纳管项见 [platforms.json](../deploy/platforms.json)。
 - 已有主域、发型 `.cloud`、素材 `.cloud`、中继 `.work` 的证书已修复并接入自动续期；新加坡 PM/hair/video 沿用既有自动续期。
 - hair 的历史源码位置是亮哥 Downloads 下「莱莎16款明星发型静态网页」，本机两个历史路径均未找到。两机已上线副本仍保留，内容变更前需找回并确认权威源码。video 同样尚未纳入本仓库源码发布；不以任一临时副本冒充权威源。
 
@@ -426,7 +426,7 @@ Phase 0 已验证当前 TeamRouter 的 `gpt-image-2` generation、两图 edit、
 
 ## WhatsApp 实时翻译（2026-09-03）
 
-WhatsApp Web → Chrome/Edge MV3 extension（1.2.6 起）→ `leshine.cloud` API → 北京 Nginx → FastAPI → `app.ai.service.chat`。配对确认页仍使用 `leshine.work/whatsapp-translation/authorize`，与北京后端的 `SHORT_LINK_BASE_URL` 一致；旧版扩展仍走 work 的新加坡／办公室路径，升级不要求重建设备身份。扩展只访问当前 WhatsApp Web 页面 DOM，收译结果用 closed Shadow DOM 展示；发译先显示预览，由员工执行 WhatsApp 原生发送动作。
+WhatsApp Web → Chrome/Edge MV3 extension（1.2.6 起）→ `leshine.cloud` API → 北京 Nginx → FastAPI → `app.ai.service.chat`。配对确认页使用当前北京后端 `SHORT_LINK_BASE_URL=https://leshine.cloud` 生成；旧版扩展仍走 work 的新加坡／办公室路径，升级不要求重建设备身份。扩展只访问当前 WhatsApp Web 页面 DOM，收译结果用 closed Shadow DOM 展示；发译先显示预览，由员工执行 WhatsApp 原生发送动作。
 
 `backend/app/whatsapp_translation` 是独立域，不复用、不导入、不连接 `backend/app/whatsapp` 和 `services/whatsapp-connector`。它只拥有设备配对、授权、用量、配额、管理和 AI metadata 调用；数据库不保存聊天文本、译文、联系人、电话、消息/聊天 ID 或页面 HTML。
 

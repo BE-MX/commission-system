@@ -90,7 +90,7 @@ def main():
             page.get_by_role('button', name='确定重置密钥', exact=True).click()
             key_dialog = page.get_by_role('dialog', name='保存站点密钥')
             config = key_dialog.get_by_role('textbox', name='站点服务端配置')
-            expected_config = 'ARK_AI_BASE_URL=https://leshine.work/api/ai-gateway\nARK_AI_KEY=ark_site_UI_TEST_ONLY\nARK_AI_PRESET=sales_copy'
+            expected_config = 'ARK_AI_BASE_URL=https://leshine.cloud/api/ai-gateway\nARK_AI_KEY=ark_site_UI_TEST_ONLY\nARK_AI_PRESET=sales_copy'
             expect(config).to_have_value(expected_config)
             # Modern Clipboard API remains the preferred path when available.
             page.evaluate("""() => {

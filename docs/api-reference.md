@@ -1127,7 +1127,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `get_knowledge_document(document_id)` — 读取单篇有权访问的已发布文档纯文本，不返回附件、编辑器 JSON 或原文件下载地址
   - `find_product(model, color, size, unit)` — 按四个精确维度匹配结构化产品目录（需 `invoice_price:read`；不提供整目录导出）
   - `get_standard_price(product_display, length, unit, color)` — 查询一个标准价格矩阵格（需 `invoice_price:read`；只返回标准参考价，不接受 `customer_id`，不返回客户价或调价规则；正式报价仍需人工确认）
-- `https://leshine.work/mcp/social-customer/` — **独立云端社媒客户查询 MCP**（Streamable HTTP、stateless JSON、Bearer token、systemd `social-customer-mcp`、不经过 frp）。唯一工具 `social_customer_search(params)`：`email`/`social_account`/`contact_phone` 三选一精确查询，返回公司、客户简称、联系人、双方邮箱、电话、社交平台/账号、负责人；负责人为空固定返回“未进入私海”；limit 默认 20、最大 50。完整说明见 `docs/social-customer-mcp.md`。
+- `https://leshine.cloud/mcp/social-customer/` — **独立云端社媒客户查询 MCP**（Streamable HTTP、stateless JSON、Bearer token、systemd `social-customer-mcp`、不经过 frp）。唯一工具 `social_customer_search(params)`：`email`/`social_account`/`contact_phone` 三选一精确查询，返回公司、客户简称、联系人、双方邮箱、电话、社交平台/账号、负责人；负责人为空固定返回“未进入私海”；limit 默认 20、最大 50。完整说明见 `docs/social-customer-mcp.md`。
 
 ## 客户售后管理（`/api/aftersales`）
 

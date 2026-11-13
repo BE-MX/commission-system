@@ -176,6 +176,21 @@ def install_server(key):
     return {'status': 'installed', 'restrictions': restrictions}
 
 
+def matches_active_candidate(current, record):
+    if digest(current) == record['candidate']:
+        return True
+    # The normal colorwork publisher moves its unchanged block immediately
+    # before /api/. Accept only that exact, observed two-server permutation.
+    prepared = (ROOT / 'nginx-candidate.conf').read_text()
+    if digest(prepared) != record['candidate']:
+        return False
+    pattern = (r'(# BEGIN ARK COLORWORK ROUTING\n.*?'
+               r'# END ARK COLORWORK ROUTING\n)' + re.escape(MCP))
+    reordered, count = re.subn(pattern, lambda match: MCP + match.group(1),
+                               prepared, flags=re.S)
+    return count == 2 and current == reordered
+
+
 def routes(action, request):
     state = ROOT / 'routes.json'
     path = NGINX.resolve()
@@ -184,7 +199,7 @@ def routes(action, request):
     original = path.read_text()
     if action == 'rollback':
         record = json.loads(state.read_text())
-        if record['status'] not in {'activated', 'activating'} or digest(original) != record['candidate']:
+        if record['status'] not in {'activated', 'activating'} or not matches_active_candidate(original, record):
             raise RuntimeError('Routing rollback blocked by status/config drift')
         candidate = (ROOT / 'nginx-before.conf').read_text()
         if digest(candidate) != record['baseline']:

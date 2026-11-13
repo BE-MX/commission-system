@@ -12,7 +12,7 @@ OpenClaw Agent
   ├─ ark-company-research Skill
   ├─ ark-public-pool-research Skill（T1/T2/T3 背调与成交研判）
   └─ ark-sales MCP 侧车
-       └─ HTTPS + Bearer → https://leshine.work/api/sales-automation/agent/*
+       └─ HTTPS + Bearer → https://leshine.cloud/api/sales-automation/agent/*
 ```
 
 独立的 `email-outreach` Agent 在同一 profile 内使用单独工作区。它只能按 `customer_id` 读取方舟统一客户档案、生成按收件人国家/语言习惯本地化的开发信，并把人工确认后的邮件排入收件人当地工作日上班后的首个窗口；它不能重新搜索网页、修改方舟研究、读取收件箱或直接执行 Agent Mail CLI。
@@ -86,7 +86,7 @@ $HOME/.openclaw-ark-sales/bin/outreach-queue list
 
 当前实现只在 macOS 安装本地 dispatcher；Linux/Windows 部署需分别增加 systemd/Task Scheduler 单元后再启用真实排程。公共假日日历是发送时机保护，不替代当地劳动或营销合规审查；特殊调休、公司休息日或不确定的办公时间必须人工补充。
 
-`bootstrap.mjs` 会从 profile 私有 `.env` 读取 `ARK_BASE_URL`、`ARK_ALLOWED_ORIGIN`、`ARK_AGENT_ID` 与超时值，再把校验后的固定值写入 MCP 定义；网页和 Agent 提示无法覆盖这些值。若 API 尚未部署到默认的 `https://leshine.work`，先在该 `.env` 中把前两项同时改为实际的 Ark API origin，再重跑 bootstrap。
+`bootstrap.mjs` 会从 profile 私有 `.env` 读取 `ARK_BASE_URL`、`ARK_ALLOWED_ORIGIN`、`ARK_AGENT_ID` 与超时值，再把校验后的固定值写入 MCP 定义；网页和 Agent 提示无法覆盖这些值。若 API 尚未部署到默认的 `https://leshine.cloud`，先在该 `.env` 中把前两项同时改为实际的 Ark API origin，再重跑 bootstrap。
 
 Agent 只开放工作区内的 `read`，用于按需加载已安装的 `SKILL.md`；`write`、`edit`、`apply_patch`、shell 和工作区外读取继续禁用，因此位于工作区外的 Ark token 仍不可见。`HEARTBEAT.md` 是 bootstrap 管理的自动化策略，每次 bootstrap 都会更新：仅 main 获客代理启用 5 分钟 heartbeat，每轮优先处理最早一条 `target_count <= 20` 的搜索任务，较大任务留待人工显式执行；搜索队列没有合格任务时才处理一条公海背调任务，两个队列都无任务时静默返回。Heartbeat 使用 30 分钟上限的轻量隔离会话，每轮只加载当前策略，不继承主会话的历史行为；任务执行要求最迟每 10 分钟续租、25 分钟前可控收尾，避免在有效租约中硬终止。
 

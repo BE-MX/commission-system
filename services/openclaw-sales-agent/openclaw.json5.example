@@ -126,8 +126,8 @@
         args: ["/ABSOLUTE/PATH/services/openclaw-sales-agent/src/server.mjs"],
         cwd: "/ABSOLUTE/PATH/services/openclaw-sales-agent",
         env: {
-          ARK_BASE_URL: "https://leshine.work",
-          ARK_ALLOWED_ORIGIN: "https://leshine.work",
+          ARK_BASE_URL: "https://leshine.cloud",
+          ARK_ALLOWED_ORIGIN: "https://leshine.cloud",
           ARK_AGENT_ID: "openclaw-sales-01",
           ARK_AGENT_TOKEN_FILE: "~/.openclaw-ark-sales/secrets/ark-agent-token",
           ARK_API_TIMEOUT_MS: "30000",

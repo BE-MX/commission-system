@@ -490,7 +490,7 @@ class MainActivity : Activity() {
         val wrapper = Ui.vertical(this, 20)
         val server = EditText(this).apply {
             setText(api.baseUrl)
-            hint = "https://leshine.work"
+            hint = "https://leshine.cloud"
             isSingleLine = true
         }
         wrapper.addView(Ui.text(this, "服务器地址", 13f, Ui.secondary, true))

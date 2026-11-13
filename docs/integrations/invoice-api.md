@@ -7,7 +7,7 @@
 Base URL：
 
 ```text
-https://leshine.work/api/integrations/v1
+https://leshine.cloud/api/integrations/v1
 ```
 
 认证头：
@@ -240,7 +240,7 @@ POST `/invoices`
     "product_amount": "98.35",
     "total_amount": "156.35"
   },
-  "review_url": "https://leshine.work/invoice/manage"
+  "review_url": "https://leshine.cloud/invoice/manage"
 }
 ```
 

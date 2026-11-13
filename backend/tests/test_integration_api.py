@@ -1205,7 +1205,7 @@ def test_create_invoice_is_atomic_external_provenance_and_never_pushes_okki(api,
             "status": "ready",
             "sync_status": "not_synced",
             "totals": {"product_amount": "20.00", "total_amount": "20.00"},
-            "review_url": "https://leshine.work/invoice/manage",
+            "review_url": "https://leshine.cloud/invoice/manage",
         },
     }
     request_row = db.query(InvoiceIngestRequest).one()

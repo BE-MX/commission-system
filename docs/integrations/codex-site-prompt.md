@@ -28,7 +28,7 @@ Excel 只保留为人工下载。系统间传输不上传 Excel，不从 Excel �
 在部署平台配置以下服务端环境变量：
 
 ```dotenv
-ARK_INVOICE_API_BASE_URL=https://leshine.work/api/integrations/v1
+ARK_INVOICE_API_BASE_URL=https://leshine.cloud/api/integrations/v1
 ARK_INVOICE_API_TOKEN=<管理员发放的 Integration App Token>
 ```
 
