@@ -1,3 +1,10 @@
+## 2026-11-13 私海助理筛选栏滚动遮挡（Codex，Git 交付，未部署）
+
+- 工作区 `D:/MyProgram/commission-system-codex-private-sea-filter-scroll`，分支 `codex/private-sea-filter-scroll`，基于 `main@ca82e09e`；用户已授权提交、合并 main 并推送 origin；本次不部署。
+- 私海筛选栏继承全局 `.toolbar` 的 `position: sticky`、导航栏顶部偏移和层级，滚动时覆盖客户卡片。`ClientDesk.vue` 的局部样式改为 `position: static; top: auto; z-index: auto`，筛选区域随页面正常滚动，其他页面的工具栏保持原样。
+- 私海前端测试 22/22、前端生产构建（42.78 秒，保留既有分包大小警告）、增量约定检查通过；Git 巡检 `--no-fetch` 已执行，仅为本地快照。构建生成的两个无内容变化导航清单已恢复。验证材料保留至主目录 `tmp/private-sea-filter-scroll-check/`。
+- 浏览器隔离验收：使用真实页面、分栏和客户卡片组件及模拟数据，1366×768 与 390×844 下滚/回滚通过，筛选栏计算样式为 `static/auto/auto`。旧样式对照在窄屏滚动 839px 后仍占据顶部 276px，并覆盖客户卡片；修复后随文档滚出视口。未连接生产后端，截图和夹具保留在上述验证目录。
+
 ## 2026-11-13 WhatsApp 同步授权回调超时（Codex，Git 交付，未部署）
 
 - 用户反馈关联成功后同步消息返回 `HTTP 503 - authorization_unavailable`。生产只读核验：历史同步逐条更新账号时间、flush 后持账号排他锁数分钟，阻塞连接器 5 秒授权回调；现场 MySQL 锁等待关系及后端 1205 与连接器日志吻合。

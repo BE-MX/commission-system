@@ -109,7 +109,8 @@ onMounted(async () => {
 .eyebrow { color: var(--button-primary-text); font: 700 10px var(--font-display); letter-spacing: 0.12em; }
 h1 { margin: 3px 0; font: 800 28px/1.2 var(--font-display); letter-spacing: -0.03em; }
 .heading p { margin: 0; }
-.toolbar { display: grid; gap: 12px; background: var(--dash-glass-bg); border-color: var(--dash-glass-border); box-shadow: var(--dash-glass-shadow); }
+/* Keep the multi-row filters in normal flow so they cannot cover customer cards. */
+.toolbar { position: static; top: auto; z-index: auto; display: grid; gap: 12px; background: var(--dash-glass-bg); border-color: var(--dash-glass-border); box-shadow: var(--dash-glass-shadow); }
 .tabs { display: flex; gap: 4px; padding: 3px; border-radius: 12px; background: var(--tag-neutral-bg); justify-self: start; }
 .tabs button { padding: 6px 14px; border: 0; border-radius: 9px; background: transparent; color: var(--text-secondary); font: 600 13px var(--font-display); cursor: pointer; }
 .tabs .on { background: var(--card-bg); color: var(--text-primary); box-shadow: var(--card-shadow); }
