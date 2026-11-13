@@ -35,7 +35,7 @@ def office(action, host_key=''):
     result = subprocess.run(
         ['ssh', *SSH_OPTIONS, '-p', '2224', '-o', 'HostKeyAlias=[127.0.0.1]:2223',
          'office-prod', 'powershell -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand ' + encoded],
-        input=prefix + source, text=True, capture_output=True, timeout=90,
+        input=prefix + source, text=True, encoding='utf8', errors='replace', capture_output=True, timeout=90,
     )
     if result.returncode:
         raise RuntimeError(result.stderr[-2500:] or 'Office stage failed')

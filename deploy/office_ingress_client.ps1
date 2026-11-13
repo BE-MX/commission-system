@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
 $cfg = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($request)) | ConvertFrom-Json
 $root = 'D:\commission-system\.deploy_state\office-beijing-tunnel'
 $ssh = 'C:\Windows\System32\OpenSSH\ssh.exe'
