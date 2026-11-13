@@ -1,3 +1,11 @@
+## 2026-11-13 WhatsApp 同步授权回调超时（Codex，Git 交付，未部署）
+
+- 用户反馈关联成功后同步消息返回 `HTTP 503 - authorization_unavailable`。生产只读核验：历史同步逐条更新账号时间、flush 后持账号排他锁数分钟，阻塞连接器 5 秒授权回调；现场 MySQL 锁等待关系及后端 1205 与连接器日志吻合。
+- 分支 `codex/whatsapp-auth-lock-fix`，独立 worktree `D:/MyProgram/commission-system-codex-whatsapp-auth-lock-fix`。消息时间改为成功保存点后的局部聚合，批次末尾再更新账号，保留实时授权及批次原子性；无迁移、无前端或 Connector 变更。
+- 受影响 SQLite 57 项、独立本机 MySQL 双连接 1 项通过；同一 MySQL 测试加载旧实现后确认 1205 失败。独立审查、约定检查和 diff 检查通过；Git 巡检为本地快照。
+- 用户随后授权提交、合并并推送本次修复；Git 交付保留主目录其他任务的未提交修改，生产未部署。生产已提交 875 条消息/142 个会话只是现场快照，不能代表全量覆盖；授权超时仍待发布修复。上线需用户授权，经受管部署入口保留现有生产历史及账号授权。
+- 证据与上线边界见 [修复记录](reports/2026-11-13-whatsapp-sync-authorization-lock.md)。
+
 ## 2026-11-13 客户跟进统计口径与本次结果必填（Codex，Git 交付，未部署）
 
 - 分支 `codex/followup-next-step-rule`，worktree `D:/MyProgram/commission-system-codex-next-step-rule`。用户授权修改统计规则，随后要求本次结果必填，并明确授权提交、合并与推送；本次不包含生产发布。

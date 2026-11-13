@@ -55,10 +55,15 @@ def pull_changes(db, account_uid: str, limit: int, resource: str = 'messages') -
     first_rejected = None
     conversations_count = 0
     last_sequence = 0
+    # Keep account metadata clean throughout event savepoints. An early UPDATE
+    # upgrades our shared account lock to exclusive and blocks the connector's
+    # authorization heartbeat for the rest of a potentially long history batch.
+    latest_message_at = account.last_message_at
     for event in items:
         if not isinstance(event, dict) or not isinstance(event.get('sequence'), int) or event['sequence'] <= last_sequence:
             raise ValueError('Connector 变更顺序不合法')
         last_sequence = event['sequence']
+        event_message_at = None
         try:
             payload = event.get('payload')
             if not isinstance(payload, dict):
@@ -92,8 +97,7 @@ def pull_changes(db, account_uid: str, limit: int, resource: str = 'messages') -
                         if conv.last_message_at is None or msg.sent_at >= conv.last_message_at:
                             conv.last_message_at = msg.sent_at
                             conv.last_message_preview = '[消息已撤回]' if msg.deleted_at else msg.content_preview
-                        if account.last_message_at is None or msg.sent_at > account.last_message_at:
-                            account.last_message_at = msg.sent_at
+                        event_message_at = msg.sent_at
                     if previous_revision != msg.source_revision:
                         db.flush()  # Production SessionLocal uses autoflush=False.
                         from app.whatsapp.crm_sync import project_changed_message
@@ -114,6 +118,9 @@ def pull_changes(db, account_uid: str, limit: int, resource: str = 'messages') -
                 else:
                     raise ValueError('不支持的 Connector 变更类型')
                 db.flush()
+            # A quarantined/rolled-back event must not advance account coverage.
+            if event_message_at and (latest_message_at is None or event_message_at > latest_message_at):
+                latest_message_at = event_message_at
         except PermissionError:
             raise  # Scope/consent violations reject the whole batch.
         except (OperationalError, DisconnectionError):
@@ -133,6 +140,8 @@ def pull_changes(db, account_uid: str, limit: int, resource: str = 'messages') -
     if not access.owner_enabled(db, account, fresh=True) or (account.session_generation, account.consent_version) != expected:
         raise PermissionError('批次提交前账号授权已失效')
     _upsert_account(db, metadata, account.ark_user_id, lock=False)
+    if latest_message_at and (account.last_message_at is None or latest_message_at > account.last_message_at):
+        account.last_message_at = latest_message_at
     next_cursor = page.get('next_cursor')
     if next_cursor is not None and (not isinstance(next_cursor, str) or len(next_cursor) > 500):
         raise ValueError('Connector 游标不合法')
