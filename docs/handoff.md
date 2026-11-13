@@ -1,6 +1,6 @@
-## 2026-11-13 办公室公网入口迁北京（Codex，生产已切换，本地分支未合入main）
+## 2026-11-13 办公室公网入口迁北京（Codex，生产已切换，Git集成交付）
 
-- 用户授权迁移主入口/隧道并处理客户端。任务worktree `D:/MyProgram/commission-system-codex-beijing-office-ingress`、分支 `codex/beijing-office-ingress`、基点 `db8328aa`；本任务未执行GitHub push或main合并，勿将旧任务授权外推。
+- 用户授权迁移主入口/隧道并处理客户端。任务worktree `D:/MyProgram/commission-system-codex-beijing-office-ingress`、分支 `codex/beijing-office-ingress`、基点 `db8328aa`；用户随后明确授权本次合入main并推送；新加坡回退通道保持现状。此次Git集成不触发再次部署。
 - 两地应用已发布 `e868f077039add1611ef564e90fc5e0d4538cd87`，release_id `ede451dd85534d59b43d9dc584e3d7cc`，status=succeeded；schema262不变，五静态目标完成，出库verified/timer启用，邮件Worker保持停用，清理deferred。
 - `.cloud`办公室专属API经北京回环8002 SSH隧道直达办公室8001；`ArkOfficeBeijingTunnel`专用账号/key、限权和真实自动重连已验证。原新加坡FRP及`.work`保留，独立PM/hair/video/outreach不迁移。DNSPod误指北京的work根A已暂停，权威与公共DNS只返新加坡，取代上一条的DNS待修状态。
 - 28/28必需部署检查通过；部署/路由65项、前端地址15项、集成说明23项、发票创建隔离1项通过，前端构建通过。历史回款完整小文件校验及3种图片64KB样本对照、登录态只读接口/MCP初始化成功，未代做业务写入或发货。

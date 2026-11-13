@@ -2,7 +2,7 @@
 
 ## 范围与状态
 
-用户授权将办公室公网入口和隧道迁到北京、统一 `https://leshine.cloud`，保留原新加坡通道回退，同时处理客户端与接口。任务工作区 `D:/MyProgram/commission-system-codex-beijing-office-ingress`，分支 `codex/beijing-office-ingress`，基点 `db8328aa`。本次授权不外推为 GitHub push 或合入 main。
+用户授权将办公室公网入口和隧道迁到北京、统一 `https://leshine.cloud`，保留原新加坡通道回退，同时处理客户端与接口。任务工作区 `D:/MyProgram/commission-system-codex-beijing-office-ingress`，分支 `codex/beijing-office-ingress`，基点 `db8328aa`。用户随后明确授权将本次修改合入 main 并推送，保留新加坡回退通道；该 Git 集成不触发再次部署。
 
 北京隧道、业务路由和 DNS 修复已生效。应用版本 `e868f077039add1611ef564e90fc5e0d4538cd87` 已通过统一发布入口完成两地发布，独立健康检查 28/28 项通过。
 
@@ -42,3 +42,7 @@
 - 北京服务启动于14:17:04，当前 Settings 的回款代理、短链和社媒MCP健康地址均为cloud；新隧道健康数据库connected。
 - 正常发布仅调整两server中COLORWORK与MCP块顺序，现Nginx摘要 `50e21f6d5228d329d3b62f26790efb315107b96e0ecb4231805851ef80f89664`。收尾控制器精确识别这一变化，仍验证原候选快照摘要并拒绝其他漂移；16项测试及独立复核通过，现场只读核验 rollback_candidate_matches=true。没有实际切回或重载。
 - 新控制器与PDA/文档为后续本地提交，未为此重发服务器应用。回退须从该最新控制提交调用，不能使用生产e868f077旧控制器。
+
+## Git 集成交付
+
+主目录原有未提交修改单独保护与恢复，不纳入本次提交。任务工作区暂留供小程序预览、PDA安装包和生产回退控制使用，待终端事项结束并保全证据后再清理。Git巡检使用已fetch origin/main后的本地快照。
