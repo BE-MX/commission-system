@@ -202,6 +202,17 @@
       "deploy": "deploy.bat --sales-agent-stage prepare/configure/verify/model/activate/verify-active/pause",
       "status": "active RPC verified; mimo-v2.6-flash; heartbeat 0m; pending research-gap API deployment",
       "migration_status": "configured-2026-10-12; Mac historical queue/session unavailable"
+    },
+    {
+      "host": "office",
+      "name": "ArkOfficeBeijingTunnel",
+      "manager": "nssm",
+      "database_writer": false,
+      "health": "Beijing loopback http://127.0.0.1:8002/health",
+      "source": "deploy/office_ingress_client.ps1",
+      "state": "D:/commission-system/.deploy_state/office-beijing-tunnel",
+      "deploy": "deploy.bat --office-beijing-ingress STAGE",
+      "fallback": "Singapore frpc/frps remains active"
     }
   ],
   "terminals": [

@@ -93,6 +93,7 @@ def probe(root):
         for unit in units:
             check(group, unit, lambda host=host, unit=unit: running(command(["ssh", *SSH, host, "systemctl is-active " + unit], root), "active"))
     check("leshine.cloud", "后端与数据库", lambda: cloud_health(root))
+    check("leshine.cloud", "北京到办公室的业务隧道", lambda: cloud_health(root, "beijing", 8002))
     check("leshine.work", "新加坡到办公室的业务隧道", lambda: cloud_health(root, "singapore", 8002))
     for domain in ("leshine.cloud", "leshine.work"):
         check(domain, "公网 API 路由与鉴权", lambda domain=domain: public_api(domain))
@@ -112,6 +113,8 @@ def probe(root):
             # Timers may intentionally be stopped; report actual state as an
             # advisory. The deployment engine verifies/restores its baseline.
             check(group, unit + "（原状态）", lambda item=item, unit=unit: service_detail(command(["ssh", *SSH, HOSTS[item["host"]], "systemctl show " + unit + " --property=ActiveState,SubState,UnitFileState --no-pager"], root)), False)
+        elif item["manager"] == "nssm" and item["host"] == "office" and item["name"] == "ArkOfficeBeijingTunnel":
+            check(group, item["name"], lambda: running(command([nssm, "status", "ArkOfficeBeijingTunnel"], root), "SERVICE_RUNNING"))
         elif item["manager"] == "pm2":
             registered_host = HOSTS.get(item["host"])
             writer = next((w for w in inventory.get("migration_writers", []) if w.get("kind") == "pm2" and w.get("host") == registered_host), None)

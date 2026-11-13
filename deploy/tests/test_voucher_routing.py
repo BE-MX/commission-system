@@ -40,9 +40,8 @@ def test_whatsapp_routes_only_connector_domain_to_office(region):
     assert 'proxy_cache off;' in source
     assert 'access_log off;' in source
     if region == 'cloud':
-        assert 'proxy_pass https://119.28.107.92;' in source
-        assert 'proxy_ssl_verify on;' in source
-        assert 'proxy_ssl_name leshine.work;' in source
+        assert 'proxy_pass http://127.0.0.1:8002;' in source
+        assert 'proxy_ssl_' not in source
     else:
         assert 'proxy_pass http://127.0.0.1:8002;' in source
     with pytest.raises(ValueError, match='Conflicting'):
@@ -128,7 +127,7 @@ def test_receipts_route_only_receipt_api_to_office(region):
     assert "proxy_next_upstream off;" in source
     assert "proxy_set_header Authorization $http_authorization;" in source
     if region == "cloud":
-        assert "proxy_ssl_verify on;" in source and "proxy_ssl_name leshine.work;" in source
+        assert "proxy_pass http://127.0.0.1:8002;" in source and "proxy_ssl_" not in source
     with pytest.raises(ValueError):
         routing.render(config(region) + "\nlocation /api/receipts {}", source, region, "receipt")
 
@@ -342,7 +341,7 @@ def test_shipping_video_routing_coexists_with_vouchers_using_office_storage(regi
     assert 'client_max_body_size 101m;' in candidate
     assert 'proxy_next_upstream off;' in video
     assert 'proxy_set_header Authorization $http_authorization;' in video
-    assert ('proxy_pass https://119.28.107.92;' if region == 'cloud' else 'proxy_pass http://127.0.0.1:8002;') in video
+    assert ('proxy_pass http://127.0.0.1:8002;') in video
     assert 'proxy_read_timeout 300s;' in video
     assert 'proxy_request_buffering off;' in video
 
@@ -359,7 +358,7 @@ def test_station_upload_limits_precede_shared_office_module_route(region):
     for path in ['/api/shipping-inspection/station/scan', '/api/shipping-inspection/station/sessions/abc/submit', '/api/assets/upload']:
         assert not any(re.fullmatch(pattern, path) for pattern in upload_patterns)
     assert 'client_max_body_size 21m;' in content
-    assert content.count('proxy_pass https://119.28.107.92;' if region == 'cloud' else 'proxy_pass http://127.0.0.1:8002;') == 4
+    assert content.count('proxy_pass http://127.0.0.1:8002;') == 4
     with pytest.raises(ValueError):
         routing.render(config(region) + '\n# /api/shipping-inspection/station/ already managed', content, region, 'shipping-video')
 
@@ -393,7 +392,8 @@ def test_entire_shipping_module_uses_one_store_without_public_media_or_retries(r
     assert content.count('proxy_next_upstream off;') == expected_routes
     assert content.count('proxy_set_header Authorization $http_authorization;') == expected_routes
     if region == 'cloud':
-        assert content.count('proxy_ssl_verify on;') == 4
+        assert content.count('proxy_pass http://127.0.0.1:8002;') == 4
+        assert 'proxy_ssl_' not in content
 
 
 @pytest.mark.parametrize('region', ['office', 'cloud'])
@@ -413,7 +413,7 @@ def test_only_cloud_outbound_document_reads_bypass_office_without_moving_media_o
                     if modifier == '~' and re.match(pattern, path))
 
     local = 'proxy_pass http://127.0.0.1:8001;'
-    office = 'proxy_pass https://119.28.107.92;' if region == 'cloud' else 'proxy_pass http://127.0.0.1:8002;'
+    office = 'proxy_pass http://127.0.0.1:8002;'
     listing = resolve('/api/shipping-inspection/outbound-records?page=1&page_size=20&keyword=%E7%BF%9F+%23261023')
     assert (local if region == 'cloud' else office) in listing
     assert 'proxy_set_header Authorization $http_authorization;' in listing

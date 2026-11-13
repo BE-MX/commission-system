@@ -403,6 +403,7 @@ def publish(args):
 if __name__ == "__main__":
     sys.modules["publish"] = sys.modules[__name__]
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument('--office-beijing-ingress', choices=['prepare', 'key', 'server', 'client', 'verify', 'reconnect', 'routes-prepare', 'routes-activate', 'rollback'], help='Install and verify the dedicated Beijing office tunnel; preserve Singapore fallback')
     parser.add_argument('--color-guide-site', metavar='PLAN_JSON', help='Publish only the Beijing static color guide')
     parser.add_argument('--color-guide-navigation', metavar='PLAN_JSON', help='Publish only the Beijing color-guide navigation overlay')
     parser.add_argument('--customer-portal-site', choices=['https', 'verify'], help='Configure or verify the approved Beijing customer-site HTTPS boundary; no business gates')
@@ -452,6 +453,13 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
+        if args.office_beijing_ingress:
+            if any(value for key, value in vars(args).items() if key != 'office_beijing_ingress'):
+                raise RuntimeError('Office ingress accepts only its stage')
+            from office_beijing_ingress import execute
+            with deployment_lock():
+                print(json.dumps(execute(args.office_beijing_ingress)), flush=True)
+            sys.exit(0)
         if args.colorwork_runtime_only:
             if not args.revision or any(value for key, value in vars(args).items()
                                         if key not in {'colorwork_runtime_only', 'revision', 'prepare_only'}):
@@ -653,7 +661,7 @@ if __name__ == "__main__":
         if any(getattr(locals().get('args'), key, None) for key in ['candidate_retention_only', 'static_retention_only', 'okki_sync_only', 'mail_worker_stage', 'colorwork_backup_policy', 'storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
             print('STORAGE MAINTENANCE FAILED: ' + str(error), file=sys.stderr, flush=True)
             sys.exit(1)
-        if not getattr(locals().get("args"), "whatsapp_routing_only", False) and not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "invoice_schema_only", None) and not getattr(locals().get("args"), "recover_invoice_166", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
+        if not getattr(locals().get("args"), "office_beijing_ingress", None) and not getattr(locals().get("args"), "whatsapp_routing_only", False) and not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "invoice_schema_only", None) and not getattr(locals().get("args"), "recover_invoice_166", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
             journal = marker("publish-current")
             if journal.get('status') != 'succeeded':
                 journal.update(status="failed", error_type=type(error).__name__)

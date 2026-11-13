@@ -121,7 +121,7 @@ const keyVisible = ref(false)
 const issuedKey = ref('')
 const issuedPreset = ref('')
 // Public service entry is independent of the administrator's LAN/dev address.
-const gatewayBase = 'https://leshine.work/api/ai-gateway'
+const gatewayBase = 'https://leshine.cloud/api/ai-gateway'
 const configField = ref(null)
 const keyConfig = computed(() => `ARK_AI_BASE_URL=${gatewayBase}\nARK_AI_KEY=${issuedKey.value}\nARK_AI_PRESET=${issuedPreset.value}`)
 const requestsVisible = ref(false)

@@ -189,7 +189,7 @@ test('client rejects cleartext base URLs unless localhost is explicitly enabled'
     }))
     assert.throws(
       () => new ArkInvoiceClient({
-        baseUrl: 'https://leshine.work/api/integrations/v1',
+        baseUrl: 'https://leshine.cloud/api/integrations/v1',
         token: 'ark_live_test',
         timeoutMs: Number.POSITIVE_INFINITY,
       }),
@@ -201,7 +201,7 @@ test('client rejects cleartext base URLs unless localhost is explicitly enabled'
 test('timeout covers a response body that never completes', async () => {
   await withRuntimeClient(async ({ ArkInvoiceClient, ArkInvoiceTransportError }) => {
     const client = new ArkInvoiceClient({
-      baseUrl: 'https://leshine.work/api/integrations/v1',
+      baseUrl: 'https://leshine.cloud/api/integrations/v1',
       token: 'ark_live_test',
       timeoutMs: 10,
       fetchImpl: async () => ({
@@ -223,7 +223,7 @@ test('create waits through processing responses and returns the eventual result'
   await withRuntimeClient(async ({ ArkInvoiceClient }) => {
     const calls = []
     const client = new ArkInvoiceClient({
-      baseUrl: 'https://leshine.work/api/integrations/v1',
+      baseUrl: 'https://leshine.cloud/api/integrations/v1',
       token: 'ark_live_test',
       recoveryDelayMs: 1,
       fetchImpl: async (url, init) => {
@@ -248,7 +248,7 @@ test('429 recovery queries then retries the unchanged payload after a 404', asyn
   await withRuntimeClient(async ({ ArkInvoiceClient }) => {
     const calls = []
     const client = new ArkInvoiceClient({
-      baseUrl: 'https://leshine.work/api/integrations/v1',
+      baseUrl: 'https://leshine.cloud/api/integrations/v1',
       token: 'ark_live_test',
       recoveryDelayMs: 1,
       fetchImpl: async (url, init) => {
@@ -278,7 +278,7 @@ test('5xx create failure recovers by querying the original external id', async (
   await withRuntimeClient(async ({ ArkInvoiceClient }) => {
     const calls = []
     const client = new ArkInvoiceClient({
-      baseUrl: 'https://leshine.work/api/integrations/v1',
+      baseUrl: 'https://leshine.cloud/api/integrations/v1',
       token: 'ark_live_test',
       recoveryDelayMs: 1,
       fetchImpl: async (url, init) => {
@@ -300,7 +300,7 @@ test('external order content conflict stops immediately without recovery', async
   await withRuntimeClient(async ({ ArkInvoiceClient, ArkInvoiceApiError }) => {
     let calls = 0
     const client = new ArkInvoiceClient({
-      baseUrl: 'https://leshine.work/api/integrations/v1',
+      baseUrl: 'https://leshine.cloud/api/integrations/v1',
       token: 'ark_live_test',
       recoveryDelayMs: 1,
       fetchImpl: async () => {
@@ -326,7 +326,7 @@ test('bounded recovery reports an unknown result instead of leaking a lookup err
   await withRuntimeClient(async ({ ArkInvoiceClient, ArkInvoiceResultUnknownError }) => {
     let calls = 0
     const client = new ArkInvoiceClient({
-      baseUrl: 'https://leshine.work/api/integrations/v1',
+      baseUrl: 'https://leshine.cloud/api/integrations/v1',
       token: 'ark_live_test',
       recoveryDelayMs: 1,
       recoveryAttempts: 2,
@@ -364,7 +364,7 @@ test('broken 201 create response recovers by querying the same external order id
       return jsonResponse({ code: 200, message: 'invoice replayed', data: recoveredResult })
     }
     const client = new ArkInvoiceClient({
-      baseUrl: 'https://leshine.work/api/integrations/v1',
+      baseUrl: 'https://leshine.cloud/api/integrations/v1',
       token: 'ark_live_test',
       fetchImpl,
     })
@@ -384,7 +384,7 @@ test('empty 201 create data recovers by querying the same external order id', as
   await withRuntimeClient(async ({ ArkInvoiceClient }) => {
     const calls = []
     const client = new ArkInvoiceClient({
-      baseUrl: 'https://leshine.work/api/integrations/v1',
+      baseUrl: 'https://leshine.cloud/api/integrations/v1',
       token: 'ark_live_test',
       fetchImpl: async (url, init) => {
         calls.push({ url: String(url), method: init.method })
@@ -405,7 +405,7 @@ test('mismatched create HTTP and envelope codes recover by external order id', a
   await withRuntimeClient(async ({ ArkInvoiceClient }) => {
     const calls = []
     const client = new ArkInvoiceClient({
-      baseUrl: 'https://leshine.work/api/integrations/v1',
+      baseUrl: 'https://leshine.cloud/api/integrations/v1',
       token: 'ark_live_test',
       fetchImpl: async (url, init) => {
         calls.push({ url: String(url), method: init.method })
@@ -429,7 +429,7 @@ test('malformed validate success throws once without create recovery', async () 
   await withRuntimeClient(async ({ ArkInvoiceClient, ArkInvoiceSuccessfulResponseError }) => {
     let calls = 0
     const client = new ArkInvoiceClient({
-      baseUrl: 'https://leshine.work/api/integrations/v1',
+      baseUrl: 'https://leshine.cloud/api/integrations/v1',
       token: 'ark_live_test',
       fetchImpl: async () => {
         calls += 1
@@ -449,7 +449,7 @@ test('malformed get success throws once without create recovery', async () => {
   await withRuntimeClient(async ({ ArkInvoiceClient, ArkInvoiceSuccessfulResponseError }) => {
     let calls = 0
     const client = new ArkInvoiceClient({
-      baseUrl: 'https://leshine.work/api/integrations/v1',
+      baseUrl: 'https://leshine.cloud/api/integrations/v1',
       token: 'ark_live_test',
       fetchImpl: async () => {
         calls += 1
@@ -482,7 +482,7 @@ test('create message and replay semantics must match first-create status', async
     for (const invalid of invalidFirstResponses) {
       const calls = []
       const client = new ArkInvoiceClient({
-        baseUrl: 'https://leshine.work/api/integrations/v1',
+        baseUrl: 'https://leshine.cloud/api/integrations/v1',
         token: 'ark_live_test',
         fetchImpl: async (url, init) => {
           calls.push({ url: String(url), method: init.method })
@@ -525,7 +525,7 @@ test('validate and get reject invalid success messages or replay flags once', as
     for (const invalid of invalidCalls) {
       let calls = 0
       const client = new ArkInvoiceClient({
-        baseUrl: 'https://leshine.work/api/integrations/v1',
+        baseUrl: 'https://leshine.cloud/api/integrations/v1',
         token: 'ark_live_test',
         fetchImpl: async () => {
           calls += 1
@@ -564,7 +564,7 @@ test('validate rejects backend-pattern violations for dates currency and money',
     for (const invalid of invalidResults) {
       let calls = 0
       const client = new ArkInvoiceClient({
-        baseUrl: 'https://leshine.work/api/integrations/v1',
+        baseUrl: 'https://leshine.cloud/api/integrations/v1',
         token: 'ark_live_test',
         fetchImpl: async () => {
           calls += 1
@@ -585,7 +585,7 @@ test('create rejects malformed totals and recovers with the same external id', a
   await withRuntimeClient(async ({ ArkInvoiceClient }) => {
     const calls = []
     const client = new ArkInvoiceClient({
-      baseUrl: 'https://leshine.work/api/integrations/v1',
+      baseUrl: 'https://leshine.cloud/api/integrations/v1',
       token: 'ark_live_test',
       fetchImpl: async (url, init) => {
         calls.push({ url: String(url), method: init.method })
@@ -645,7 +645,7 @@ test('valid validate first-create replay and get envelopes are accepted', async 
     for (const item of cases) {
       let calls = 0
       const client = new ArkInvoiceClient({
-        baseUrl: 'https://leshine.work/api/integrations/v1',
+        baseUrl: 'https://leshine.cloud/api/integrations/v1',
         token: 'ark_live_test',
         fetchImpl: async () => {
           calls += 1

@@ -8,7 +8,7 @@ App({
     // 内贸页 onShow 取走后立即置回 null（只消费一次）
     pendingDomesticScan: null,
     // baseUrl: 'http://10.91.3.182:8001'    // 本地开发（真机调试用）
-    baseUrl: 'https://leshine.work'             // 生产/体验版
+    baseUrl: 'https://leshine.cloud'             // 生产/体验版
   },
 
   onLaunch: function () {

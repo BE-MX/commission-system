@@ -1,6 +1,6 @@
 import { formatBeijingDateTime, parseApiDateTime } from '../../utils/datetime.js'
 
-export const INVOICE_API_ENDPOINT = 'https://leshine.work/api/integrations/v1'
+export const INVOICE_API_ENDPOINT = 'https://leshine.cloud/api/integrations/v1'
 
 export function buildServerEnvSnippet(token) {
   return [

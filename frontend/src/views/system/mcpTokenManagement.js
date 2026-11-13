@@ -1,6 +1,6 @@
 import { formatBeijingDateTime } from '../../utils/datetime.js'
 
-export const MCP_ENDPOINT = 'https://leshine.work/mcp/'
+export const MCP_ENDPOINT = 'https://leshine.cloud/mcp/'
 
 export function isKnowledgeReady(candidate) {
   return Boolean(candidate?.has_knowledge_read && Number(candidate?.knowledge_library_count) > 0)

@@ -66,8 +66,8 @@ async function ensureEnvFile() {
   const gatewayToken = randomBytes(32).toString("hex");
   const template = [
     `OPENCLAW_GATEWAY_TOKEN=${gatewayToken}`,
-    "ARK_BASE_URL=https://leshine.work",
-    "ARK_ALLOWED_ORIGIN=https://leshine.work",
+    "ARK_BASE_URL=https://leshine.cloud",
+    "ARK_ALLOWED_ORIGIN=https://leshine.cloud",
     "ARK_AGENT_ID=openclaw-sales-01",
     "ARK_API_TIMEOUT_MS=30000",
     "# Set true after creating secrets/runtime-heartbeat-token (0600) and registering its SHA-256 in Ark.",
@@ -182,8 +182,8 @@ async function loadArkRuntimeSettings() {
     values[key] = value;
   }
 
-  const baseUrl = values.ARK_BASE_URL || "https://leshine.work";
-  const allowedOrigin = values.ARK_ALLOWED_ORIGIN || "https://leshine.work";
+  const baseUrl = values.ARK_BASE_URL || "https://leshine.cloud";
+  const allowedOrigin = values.ARK_ALLOWED_ORIGIN || "https://leshine.cloud";
   const parsedBase = new URL(baseUrl);
   const parsedAllowed = new URL(allowedOrigin);
   if (!["http:", "https:"].includes(parsedBase.protocol)

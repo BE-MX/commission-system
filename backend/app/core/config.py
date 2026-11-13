@@ -426,8 +426,8 @@ class Settings(BaseSettings):
     # ── 运行与自动化中心（健康检查仅允许由部署环境配置，不接受网页输入）────
     OPERATIONS_PROBE_TIMEOUT_SECONDS: float = 3.0
     OPERATIONS_CACHE_TTL_SECONDS: float = 20.0
-    OPERATIONS_ALLOWED_HEALTH_HOSTS: str = "leshine.work,127.0.0.1,localhost"
-    OPERATIONS_SOCIAL_MCP_HEALTH_URL: str = "https://leshine.work/mcp/social-customer/health"
+    OPERATIONS_ALLOWED_HEALTH_HOSTS: str = "leshine.cloud,leshine.work,127.0.0.1,localhost"
+    OPERATIONS_SOCIAL_MCP_HEALTH_URL: str = "https://leshine.cloud/mcp/social-customer/health"
     OPERATIONS_SHOPIFY_HEALTH_URL: str = ""
     OPERATIONS_OPENCLAW_HEALTH_URL: str = ""
     # JSON 数组：[{"id","name","category","environment","owner","management","health_url"}]

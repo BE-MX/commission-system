@@ -26,7 +26,7 @@ from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload
 
 INVOICE_SCOPE = "invoice:write"
 _MONEY = Decimal("0.01")
-_REVIEW_URL = "https://leshine.work/invoice/manage"
+_REVIEW_URL = "https://leshine.cloud/invoice/manage"
 _INVOICE_NO_CREATE_ATTEMPTS = 3
 logger = logging.getLogger("commission.integration.service")
 
