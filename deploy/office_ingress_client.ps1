@@ -59,13 +59,21 @@ foreach ($file in @($key, "$key.pub", $known, $clientConfig)) {
 }
 if ($cfg.action -eq 'key') {
     if (!(Test-Path -LiteralPath $key)) {
-        # OpenSSH reads an empty passphrase interactively; pipe two blank lines.
-        $old = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        "`n`n" | & $keygen -t ed25519 -f $key -C ark-office-beijing-tunnel 2>&1 | Out-Null
-        $result = $LASTEXITCODE
-        $ErrorActionPreference = $old
-        if ($result -ne 0) { throw 'Key generation failed' }
+        # Recover only this task's interrupted pre-key process, never another key.
+        Get-CimInstance Win32_Process -Filter "Name='ssh-keygen.exe'" | Where-Object {
+            $_.CommandLine -like "* -f $key *" -and $_.CommandLine -like '*ark-office-beijing-tunnel*'
+        } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+        # PowerShell 5.1 drops empty native argv; ProcessStartInfo retains -N "".
+        $start = New-Object Diagnostics.ProcessStartInfo
+        $start.FileName = $keygen
+        $start.Arguments = '-t ed25519 -N "" -f "' + $key + '" -C ark-office-beijing-tunnel'
+        $start.UseShellExecute = $false
+        $start.CreateNoWindow = $true
+        $start.RedirectStandardOutput = $true
+        $start.RedirectStandardError = $true
+        $process = [Diagnostics.Process]::Start($start)
+        if (!$process.WaitForExit(20000)) { $process.Kill(); throw 'Key generation timeout' }
+        if ($process.ExitCode -ne 0) { throw 'Key generation failed' }
         Protect $key $false
         Protect "$key.pub" $false
     }
