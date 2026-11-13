@@ -374,6 +374,9 @@ from app.invoice.stock_reservations import fenced
 @fenced
 def run(db,invoice_id,user,*,linked_id=None,linked_token=None,follow_outbound=True):
     try:
+        from app.invoice import deleted_outbound_recovery
+        deleted_outbound_recovery.before_sync(db, invoice_id, user,
+            linked_id=linked_id, linked_token=linked_token)
         expected,payload=prepare(db,invoice_id,user,linked_id,linked_token)
         api_token=token(db)
         attempt,ticket=claim(db,invoice_id,user,expected,payload,linked_id,linked_token)

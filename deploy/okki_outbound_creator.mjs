@@ -416,7 +416,7 @@ async function main() {
     invoice = await loadInvoiceForOrder(conn, process.argv[2]);
     const [[task]] = await conn.query(
       `SELECT t.invoice_id, t.status, t.reason, t.attempts, i.sync_status, i.linked_sync_id, i.order_type, i.status AS invoice_status,
-              (SELECT MAX(id) FROM ark_invoice_sync_logs WHERE invoice_id=i.id AND success=1) AS latest_sync_log_id
+              (SELECT MAX(id) FROM ark_invoice_sync_logs WHERE invoice_id=i.id AND success=1 AND action IN ('create','update')) AS latest_sync_log_id
          FROM ark_okki_outbound_tasks t JOIN ark_invoices i ON i.id=t.invoice_id WHERE t.order_id=?`,
       [process.argv[2]]);
     invoiceId = task?.invoice_id;
@@ -446,7 +446,7 @@ async function main() {
       if (!lockedInvoice) throw new Error('Claimed invoice missing; no creation attempted');
       const [[current]] = await check.query(
         `SELECT t.status, t.reason, t.attempts, i.sync_status, i.linked_sync_id, i.order_type, i.status AS invoice_status,
-                (SELECT MAX(id) FROM ark_invoice_sync_logs WHERE invoice_id=i.id AND success=1) AS latest_sync_log_id
+                (SELECT MAX(id) FROM ark_invoice_sync_logs WHERE invoice_id=i.id AND success=1 AND action IN ('create','update')) AS latest_sync_log_id
            FROM ark_okki_outbound_tasks t JOIN ark_invoices i ON i.id=t.invoice_id WHERE t.order_id=? FOR UPDATE`,
         [process.argv[2]]);
       if (managedClaim) assertClaimedTask(current, claimedSyncLogId, claimedAttempt, generation);

@@ -1245,7 +1245,8 @@ def save_linked(invoice_id: int, body: LinkedSavePayload, db: Session = Depends(
                 user=Depends(require_permission("invoice:write")),
                 sync_user=Depends(require_permission("invoice:sync"))):
     from app.invoice import linked_sync_service as linked
-    from app.invoice import edit_authority
+    from app.invoice import edit_authority, deleted_outbound_recovery
+    deleted_outbound_recovery.before_sync(db, invoice_id, user, body=body)
     invoice, user, receipt_rows = edit_authority.prepare(db, invoice_id, user, "invoice:write", "invoice:sync", linked_body=body)
     try:
         row = linked.create(db, invoice, body, _user_id(user), receipt_rows=receipt_rows)

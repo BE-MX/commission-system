@@ -69,13 +69,16 @@ def test_active_task_read_rejects_missing_or_cross_order_pointer(db, order):
 
 def test_ordinary_push_classifies_active_task_before_sending(db, order):
     from app.invoice import order_sync_execution as execution
+    from app.invoice import deleted_outbound_recovery
     from unittest.mock import Mock
     from fastapi import HTTPException
     operation(db, order)
     def blocked(*args):
         linked.ensure_idle(order)
     from unittest.mock import patch
-    with patch.object(execution, 'prepare', blocked):
+    # This unit exercises prepare's exception classification with a mock session;
+    # real deletion preflight/authority is covered by test_deleted_outbound_recovery.
+    with patch.object(execution, 'prepare', blocked), patch.object(deleted_outbound_recovery, 'before_sync'):
         with pytest.raises(HTTPException) as error:
             execution.run.__wrapped__(Mock(), order.id, {'id': 1})
     assert error.value.status_code == 409

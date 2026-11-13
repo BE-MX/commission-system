@@ -37,6 +37,21 @@ def verify_generation_target(row, invoice):
         reject(409, "原推单代次缺少当前订单的可信引用")
 
 
+def deletion_precedes_sync(deletion, latest):
+    if deletion is None or latest is None:
+        return False
+    if latest.created_at > deletion.created_at:
+        return True
+    # MySQL DATETIME rounds away subsecond ordering. Automatic deletion recovery
+    # also records the last successful order push under the shared executor lock.
+    review = (deletion.payload or {}).get('deletion_recovery') or {}
+    prior = review.get('prior_sync_log_id')
+    return (latest.created_at == deletion.created_at and type(prior) is int and prior >= 0
+            and latest.id > prior and latest.action in {'create', 'update'} and latest.success == 1
+            and review.get('resolution') in {'remote_deleted', 'accepted_then_remote_deleted'}
+            and (review.get('evidence') or {}).get('outbound_invoice_id') == deletion.request_id)
+
+
 def capture(db, invoice, *, worker_capture=False):
     legacy_sending.authorize(db, invoice)
     linked.ensure_idle(invoice)
@@ -114,7 +129,7 @@ def capture(db, invoice, *, worker_capture=False):
         currency=invoice.currency, total_amount=invoice.total_amount, surcharge_amount=invoice.surcharge_amount)
     info = {"status": task.status if task else None, "reason": task.reason if task else None,
             "latest_id": latest.id if latest else None, "deleted_id": deleted_id,
-            "deletion_verified": bool(deletion and latest and latest.created_at > deletion.created_at),
+            "deletion_verified": deletion_precedes_sync(deletion, latest),
             "custom_missing": custom_missing}
     return binding, dto, deepcopy(product_rows), info, task
 

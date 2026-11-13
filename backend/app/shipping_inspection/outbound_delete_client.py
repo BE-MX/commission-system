@@ -52,11 +52,12 @@ def _request(token, invoice_id, *, remove=False):
     )
 
 
-def read(token, invoice_id):
+def observe(token, invoice_id):
+    """Keep a soft-deleted detail for status/ownership checks during recovery."""
     from app.shipping_inspection import outbound_presence
     detail = _request(token, invoice_id)
     if detail is None:
-        return None
+        return {'detail': None, 'active': False}
     # OKKI can return status=1 from a soft-deleted detail. The active list is
     # authoritative; never interpret a failed/incomplete list as absence.
     try:
@@ -64,7 +65,12 @@ def read(token, invoice_id):
         active = outbound_presence.is_active(token, str(invoice_id), start)
     except outbound_presence.PresenceError as exc:
         raise DeleteRemoteError(str(exc)) from exc
-    return detail if active else None
+    return {'detail': detail, 'active': active}
+
+
+def read(token, invoice_id):
+    observation = observe(token, invoice_id)
+    return observation['detail'] if observation['active'] else None
 
 
 def remove(token, invoice_id, *, db=None, ticket=None):

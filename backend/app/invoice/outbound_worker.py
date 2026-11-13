@@ -91,11 +91,20 @@ def local(db,invoice_id):
             data=candidate.payload or {}
             if str(invoice.xiaoman_order_id) not in list(map(str,data.get('order_ids',[]))) or str(task.id) not in [str(row.get('id')) for row in data.get('tasks',[])]:continue
             identity=common.canonical_identity(data['outbound_invoice_id'])
-            if candidate.request_id!=identity or candidate.outbound_record_id!=identity:reject(409,'原删除证据身份不一致')
+            if candidate.request_id!=identity or not candidate.outbound_record_id:
+                reject(409,'原删除证据身份不一致')
+            # The audit stores a local mirror ID, not the provider invoice ID.
+            # A removed mirror may be absent; its permanent deletion receipt
+            # still binds the original order/task and provider ID below.
+            from app.shipping_inspection import outbound_service
+            original=outbound_service.get_outbound_record(db,candidate.outbound_record_id,include_deleted=True)
+            if original is not None and (str(original['outbound_invoice_id'])!=identity or
+                    original['order_id']!=str(invoice.xiaoman_order_id)):
+                reject(409,'原删除证据与出库镜像身份不一致')
             common.index(data['tasks'],'id')
             for value in data['order_ids']:common.canonical_identity(value)
             latest=db.get(InvoiceSyncLog,info['latest_id'])
-            if latest.created_at<=candidate.created_at:reject(409,'原删除后没有新的成功推单')
+            if not followup.deletion_precedes_sync(candidate,latest):reject(409,'原删除后没有新的成功推单')
             deletion=candidate;break
         if deletion is None:reject(409,'再生成缺少永久原删除证据')
     binding=(tuple(push_state),base[2:],row_state(invoice),tuple(row_state(item) for item in invoice.items),

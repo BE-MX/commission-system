@@ -117,6 +117,7 @@ def requeue_waiting_stock_after_invoice_sync(db: Session, invoice: Invoice) -> O
             print(f"[outbound] invalid regeneration marker invoice={invoice.id} task={task.id}", flush=True)
             return None
         latest = (db.query(InvoiceSyncLog.id).filter_by(invoice_id=invoice.id, success=1)
+                  .filter(InvoiceSyncLog.action.in_(['create', 'update']))
                   .order_by(InvoiceSyncLog.id.desc()).first())
         if latest is None:
             return None

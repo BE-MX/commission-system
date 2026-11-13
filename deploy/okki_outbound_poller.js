@@ -144,7 +144,7 @@ export async function claimBatch(conn) {
     );
     if (result.affectedRows === 1) {
       const [[latest]] = await conn.query(
-        'SELECT MAX(id) AS id FROM ark_invoice_sync_logs WHERE invoice_id=? AND success=1', [row.invoice_id]);
+        "SELECT MAX(id) AS id FROM ark_invoice_sync_logs WHERE invoice_id=? AND success=1 AND action IN ('create','update')", [row.invoice_id]);
       claimed.push({...row, priorStatus: row.status, attempts: Number(row.attempts) + 1,
         claimedSyncLogId: latest?.id ?? null});
     }
@@ -259,7 +259,7 @@ export async function advanceGeneration(conn, task, generation, status, reason) 
   if (!baseline) return;
   const [[latest]] = await conn.query(
     `SELECT i.sync_status,
-            (SELECT MAX(l.id) FROM ark_invoice_sync_logs l WHERE l.invoice_id=i.id AND l.success=1) AS id
+            (SELECT MAX(l.id) FROM ark_invoice_sync_logs l WHERE l.invoice_id=i.id AND l.success=1 AND l.action IN ('create','update')) AS id
        FROM ark_invoices i WHERE i.id=?`, [task.invoice_id]);
   if (latest?.sync_status !== 'synced' || !latest.id || BigInt(latest.id) <= BigInt(baseline)) return;
   const [[custom]] = await conn.query(
