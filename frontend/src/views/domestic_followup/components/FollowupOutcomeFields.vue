@@ -1,7 +1,7 @@
 <template>
   <div class="outcome-grid">
-    <el-form-item label="本次结果">
-      <el-select v-model="form.result_code" clearable placeholder="可留空" class="full">
+    <el-form-item label="本次结果" required>
+      <el-select v-model="form.result_code" clearable placeholder="请选择本次结果" class="full">
         <el-option v-for="result in results" :key="result" :label="result" :value="result" />
       </el-select>
     </el-form-item>

@@ -63,7 +63,7 @@ export function groupInsights(items, category) {
 
 export function qualityDescription(key) {
   return {
-    next_step: '有效沟通的记录中，填了下次跟进日期的占比',
+    next_step: '全部已确认跟进记录中，填了下次跟进日期的占比（不要求填写本次结果）',
     commitment: '已到期约定中，未顺延且按时完成的占比',
     effective_progress: '填了沟通结果的记录中，标记为有效推进的占比',
   }[key] || ''

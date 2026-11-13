@@ -25,6 +25,7 @@ def saved(db, monkeypatch):
     other = make_user(db, "edit_other")
     customer = make_customer(db, owner, "修改测试店")
     row, _ = followup_service.direct_save(db, context(owner), DirectSaveIn(
+        result_code="有效沟通",
         request_id="edit-original", customer_id=customer.id, followup_date=date(2026, 11, 1),
         raw_text="原文", summary="原摘要", next_date=date(2026, 11, 9), next_plan="问补货",
         items=[{"kind": "content", "text": "原要点"}, {"kind": "issue", "text": "色差", "category": "色差"}]))
@@ -33,7 +34,7 @@ def saved(db, monkeypatch):
 
 def payload(db, row, **changes):
     data = followup_service.serialize(db, row)
-    values = {key: data[key] for key in edit_service.EDIT_FIELDS}
+    values = {key: data[key] for key in (*edit_service.EDIT_FIELDS, *followup_service.OUTCOME_FIELDS)}
     values.update(version=row.version, request_id=str(uuid4()), reason="修正录入错误",
                   attachment_ids=[a["id"] for a in data["attachments"]],
                   items=[{"id": i["id"], "kind": i["kind"], "text": i["text"], "category": i["category"],

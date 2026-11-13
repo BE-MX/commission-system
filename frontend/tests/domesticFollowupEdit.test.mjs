@@ -7,6 +7,7 @@ import { mayEditFollowup, recordToEditForm, canRemoveEditItem } from '../src/vie
 import { revisionChanges } from '../src/views/domestic_followup/followupHistory.js'
 
 const record = () => ({ id: 1, version: 2, can_edit: true, author_user_id: 7, customer_id: 1,
+  result_code: '有效沟通',
   raw_text: '原文', summary: '摘要', followup_date: '2026-11-01', channel: '微信',
   state_changes: ['稳定没变化'], next_date: '2026-11-09', next_plan: '原计划', next_method: '电话',
   attachments: [{ id: 11, seq: 1, file_name: 'original.png' }], items: [
@@ -47,6 +48,20 @@ test('save requires reason and emits a full editable payload then refreshes call
   assert.equal(calls[0][1].items[2].key, undefined)
   assert.equal(saved[0].version, 3)
   assert.equal(editor.visible.value, false)
+})
+
+test('editing a legacy record requires an outcome before sending a request', async () => {
+  let calls = 0
+  const editor = useFollowupEditor({ followup: async () => ({ ...record(), result_code: null }),
+    dicts: async () => ({}), editFollowup: async () => { calls++; return record() } })
+  await editor.open(1)
+  editor.form.value.reason = '补充本次结果'
+  assert.equal(await editor.save(), false)
+  assert.equal(editor.error.value, '请选择本次结果')
+  assert.equal(calls, 0)
+  editor.form.value.result_code = '未回复'
+  assert.equal(await editor.save(), true)
+  assert.equal(calls, 1)
 })
 
 test('stale conflict preserves user text and prevents silent overwrite until reload', async () => {

@@ -38,6 +38,7 @@ def test_public_sea_release_keeps_independent_tasks_and_single_writer(db):
     for actor in (previous, outsider):
         with followup_client(db, actor, (*ALL_PERMS, "domestic_followup:read_all")) as client:
             denied = client.post("/api/domestic-followup/followups", json={
+                "result_code": "有效沟通",
                 "customer_id": customer.id, "raw_text": "不能抢跟", "request_id": f"denied-{actor.id}",
             })
             assert denied.status_code == 403, denied.text
@@ -62,6 +63,7 @@ def test_former_author_retains_record_but_cannot_change_transferred_plan(db):
     db.commit()
     record_path = f"/api/domestic-followup/followups/{row.id}"
     body = {"version": row.version, "request_id": "edit-old-contact", "reason": "纠正客户原话",
+            "result_code": "有效沟通",
             "raw_text": "原话更正", "followup_date": row.followup_date.isoformat(), "next_plan": row.next_plan,
             "next_date": row.next_date.isoformat()}
     with followup_client(db, original) as client:
@@ -90,6 +92,7 @@ def test_receipt_assignment_does_not_grant_development_access(db):
     with followup_client(db, service) as client:
         path = "/api/domestic-followup/followups"
         body = {"request_id": "service-tries-plan", "customer_id": customer.id, "source_task_id": receipt.id,
+                "result_code": "有效沟通",
                 "raw_text": "收货反馈", "next_date": (beijing_today() + timedelta(days=1)).isoformat()}
         denied = client.post(path, json=body)
         assert denied.status_code == 403, denied.text
@@ -136,6 +139,7 @@ def test_historical_supplement_cannot_change_live_arrangement(db):
     _record(db, old, customer, "older-communication")
     db.commit()
     data = {"customer_id": customer.id, "request_id": "old-user-supplement", "raw_text": "补录原沟通",
+            "result_code": "有效沟通",
             "followup_date": (beijing_today() - timedelta(days=1)).isoformat(), "historical_only": True}
     with followup_client(db, old) as client:
         path = "/api/domestic-followup/followups"

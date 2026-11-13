@@ -3,7 +3,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.domestic_followup.constants import NEGATIVE_RESULT_CODES, OPEN_ITEM_STATES, TRACKED_KINDS
+from app.domestic_followup.constants import OPEN_ITEM_STATES, TRACKED_KINDS
 from app.domestic_followup.models import DomesticFollowup, DomesticFollowupItem, DomesticFollowupTask
 
 
@@ -13,9 +13,8 @@ def _ratio(numerator: int, denominator: int) -> float | None:
 
 def quality_stats(db: Session, user_id: int, records: list[DomesticFollowup], start: date, end: date,
                   today: date) -> dict:
-    positive = [row for row in records if row.result_code and row.result_code not in NEGATIVE_RESULT_CODES]
     resulted = [row for row in records if row.result_code]
-    next_count = sum(row.next_date is not None for row in positive)
+    next_count = sum(row.next_date is not None for row in records)
     progress_count = sum(bool(row.effective_progress) for row in resulted)
     plans = (db.query(DomesticFollowupTask)
              .filter(DomesticFollowupTask.assignee_user_id == user_id,
@@ -53,8 +52,8 @@ def quality_stats(db: Session, user_id: int, records: list[DomesticFollowup], st
             gaps.append((later.followup_date - row.followup_date).days)
     return {
         "quality": {
-            "next_step": {"label": "留下一步", "numerator": next_count, "denominator": len(positive),
-                          "value": _ratio(next_count, len(positive))},
+            "next_step": {"label": "留下一步", "numerator": next_count, "denominator": len(records),
+                          "value": _ratio(next_count, len(records))},
             "commitment": {"label": "约定兑现", "numerator": on_time, "denominator": len(plans),
                            "value": _ratio(on_time, len(plans))},
             "effective_progress": {"label": "有效推进", "numerator": progress_count, "denominator": len(resulted),

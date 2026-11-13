@@ -61,7 +61,9 @@ def _validate(fields: FollowupFields, values: dict, followup_date) -> None:
         raise ValueError("下次跟进日期不能早于跟进日期")
 
 
-def validate_outcome(values, result, obstacles, effective, *, previous=None):
+def validate_outcome(values, result, obstacles, effective, *, previous=None, required=False):
+    if required and not (result or "").strip():
+        raise ValueError("请选择本次结果")
     prior_result = previous.result_code if previous is not None else None
     prior_obstacles = (previous.obstacles or []) if previous is not None else []
     if result and result != prior_result and result not in values[DICT_RESULT]:
@@ -113,7 +115,7 @@ def _apply_and_confirm(db: Session, current_user: dict, followup: Followup, fiel
         fields = fields.model_copy(update={"channel": followup.channel})
     values = dict_service.load_values(db)
     _validate(fields, values, followup.followup_date)
-    validate_outcome(values, fields.result_code, fields.obstacles, fields.effective_progress)
+    validate_outcome(values, fields.result_code, fields.obstacles, fields.effective_progress, required=True)
     customer, responsibility, task_only = record_access.confirm_access(db, current_user, followup, fields)
 
     followup.customer_id = customer.id
@@ -354,13 +356,16 @@ def quick_receipt_ok(db: Session, current_user: dict, task_id: int, request_id: 
                 return done
             raise ConflictError("该回访待办已结束")
         task_service.ensure_task_actor(db, current_user, task)
+        if "有效沟通" not in dict_service.load_values(db)[DICT_RESULT]:
+            raise ValueError("有效沟通已停用，请使用「记跟进」选择当前可用的本次结果")
         followup = Followup(author_user_id=user_id, request_id=request_id, followup_date=beijing_today(),
                             raw_text=RECEIPT_OK_TEXT, source="web", status="draft", ai_status="none",
                             source_task_id=task.id, version=1)
         db.add(followup)
         db.flush()
         _apply_and_confirm(db, current_user, followup,
-                           FollowupFields(customer_id=task.customer_id, summary=RECEIPT_OK_TEXT))
+                           FollowupFields(customer_id=task.customer_id, summary=RECEIPT_OK_TEXT,
+                                          result_code="有效沟通"))
         db.commit()
     except IntegrityError as exc:
         db.rollback()

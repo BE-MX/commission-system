@@ -36,7 +36,7 @@ def _validate_edit(db, row, payload, items):
     updates = payload.model_dump(include=payload.model_fields_set)
     followup_service.validate_outcome(
         values, updates.get("result_code", row.result_code), updates.get("obstacles", row.obstacles or []),
-        updates.get("effective_progress", row.effective_progress), previous=row,
+        updates.get("effective_progress", row.effective_progress), previous=row, required=True,
     )
 
 

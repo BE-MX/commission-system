@@ -25,6 +25,7 @@ def test_direct_save_creates_items_tasks_and_is_idempotent(db):
     user = make_user(db, "fu_svc_a")
     customer = make_customer(db, user, "服务店A")
     payload = DirectSaveIn(
+        result_code="有效沟通",
         request_id="req-direct-a", customer_id=customer.id, raw_text="客户说色差，下周一再电话",
         channel="微信", state_changes=["竞争品牌增加"], next_date=date(2026, 11, 2), next_plan="问补货",
         next_method="电话",
@@ -48,6 +49,7 @@ def test_direct_save_rejects_unknown_dict_value(db):
     customer = make_customer(db, user, "服务店B")
     with pytest.raises(ValueError, match="状态变化"):
         followup_service.direct_save(db, _ctx(user), DirectSaveIn(
+            result_code="有效沟通",
             request_id="req-direct-b", customer_id=customer.id, raw_text="x", state_changes=["瞎编的状态"]))
 
 
@@ -56,7 +58,7 @@ def test_direct_save_requires_content(db):
     user = make_user(db, "fu_svc_c")
     customer = make_customer(db, user, "服务店C")
     with pytest.raises(ValueError, match="跟进内容"):
-        followup_service.direct_save(db, _ctx(user), DirectSaveIn(request_id="req-direct-c", customer_id=customer.id))
+        followup_service.direct_save(db, _ctx(user), DirectSaveIn(result_code="有效沟通", request_id="req-direct-c", customer_id=customer.id))
 
 
 def test_dates_are_validated(db):
@@ -66,10 +68,12 @@ def test_dates_are_validated(db):
     db.commit()  # 第一次调用失败会 rollback；先提交夹具，第二次调用才找得到客户
     with pytest.raises(ValueError, match="下次跟进日期"):
         followup_service.direct_save(db, _ctx(user), DirectSaveIn(
+            result_code="有效沟通",
             request_id="req-direct-d1", customer_id=customer.id, raw_text="x",
             followup_date=date(2026, 10, 28), next_date=date(2026, 10, 27)))
     with pytest.raises(ValueError, match="晚于今天"):
         followup_service.direct_save(db, _ctx(user), DirectSaveIn(
+            result_code="有效沟通",
             request_id="req-direct-d2", customer_id=customer.id, raw_text="x", followup_date=date(2026, 10, 31)))
 
 
@@ -81,14 +85,15 @@ def test_draft_confirm_flow_with_version_and_alias(db):
     assert draft.status == "draft" and draft.ai_status == "running" and draft.customer_id is None
 
     with pytest.raises(followup_service.ConflictError):
-        followup_service.confirm_draft(db, _ctx(user), draft.id, ConfirmIn(version=99, customer_id=customer.id))
+        followup_service.confirm_draft(db, _ctx(user), draft.id, ConfirmIn(result_code="有效沟通", version=99, customer_id=customer.id))
 
     confirmed = followup_service.confirm_draft(db, _ctx(user), draft.id, ConfirmIn(
+        result_code="有效沟通",
         version=1, customer_id=customer.id, chat_title="E 店 老板", summary="摘要"))
     assert confirmed.status == "confirmed" and confirmed.version == 2
     assert db.query(DomesticCustomerAlias).filter_by(customer_id=customer.id, alias_norm="e店老板").one()
     with pytest.raises(followup_service.ConflictError):
-        followup_service.confirm_draft(db, _ctx(user), draft.id, ConfirmIn(version=2, customer_id=customer.id))
+        followup_service.confirm_draft(db, _ctx(user), draft.id, ConfirmIn(result_code="有效沟通", version=2, customer_id=customer.id))
 
 
 def test_confirm_requires_customer(db):
@@ -96,7 +101,7 @@ def test_confirm_requires_customer(db):
     user = make_user(db, "fu_svc_f")
     draft, _ = followup_service.create_draft(db, _ctx(user), DraftCreateIn(request_id="req-draft-f", raw_text="x"))
     with pytest.raises(ValueError, match="请选择客户"):
-        followup_service.confirm_draft(db, _ctx(user), draft.id, ConfirmIn(version=1))
+        followup_service.confirm_draft(db, _ctx(user), draft.id, ConfirmIn(result_code="有效沟通", version=1))
 
 
 def test_other_user_cannot_touch_draft(db):
@@ -134,6 +139,7 @@ def test_quick_receipt_ok_closes_receipt_task(db):
     db.add(task)
     db.commit()
     followup = followup_service.quick_receipt_ok(db, _ctx(user), task.id, "req-receipt-h")
+    assert followup.result_code == "有效沟通"
     assert followup.raw_text == "已回访，客户无问题反馈" and followup.status == "confirmed"
     db.refresh(task)
     assert task.status == "done" and task.closed_reason == "回访完成"
@@ -146,11 +152,13 @@ def test_resolved_item_must_belong_to_same_customer(db):
     c1 = make_customer(db, user, "服务店I1")
     c2 = make_customer(db, user, "服务店I2")
     first, _ = followup_service.direct_save(db, _ctx(user), DirectSaveIn(
+        result_code="有效沟通",
         request_id="req-direct-i1", customer_id=c1.id, raw_text="x",
         items=[{"kind": "issue", "text": "掉发", "category": "质量"}]))
     item = db.query(DomesticFollowupItem).filter_by(followup_id=first.id).one()
     with pytest.raises(ValueError, match="不属于该客户"):
         followup_service.direct_save(db, _ctx(user), DirectSaveIn(
+            result_code="有效沟通",
             request_id="req-direct-i2", customer_id=c2.id, raw_text="y",
             resolved_items=[{"item_id": item.id, "resolution": "已换货"}]))
 
@@ -162,6 +170,7 @@ def test_timeline_on_public_sea_hides_other_authors(db):
     customer = make_customer(db, None, "公海店K", creator=a)
     make_shipment(db, customer, a, datetime(2026, 10, 27, 10, 0))  # 发货也是客户经营数据，不可读者不能看
     followup_service.direct_save(db, _ctx(a), DirectSaveIn(
+        result_code="有效沟通",
         request_id="req-direct-k", customer_id=customer.id, raw_text="A 的私下沟通",
         items=[{"kind": "issue", "text": "掉色", "category": "质量"}]))
     seen_by_b = followup_service.timeline(db, _ctx(b), customer.id)
@@ -175,6 +184,7 @@ def test_timeline_merges_followups_and_shipments(db):
     customer = make_customer(db, user, "服务店J")
     make_shipment(db, customer, user, datetime(2026, 10, 27, 10, 0))
     followup_service.direct_save(db, _ctx(user), DirectSaveIn(
+        result_code="有效沟通",
         request_id="req-direct-j", customer_id=customer.id, raw_text="回访", followup_date=date(2026, 10, 29)))
     timeline = followup_service.timeline(db, _ctx(user), customer.id)
     assert [e["type"] for e in timeline["events"]] == ["followup", "shipment"]
@@ -197,6 +207,7 @@ def test_using_someone_elses_source_task_rejects_write(db):
     db.commit()
     with pytest.raises(PermissionError, match="不是你的待办"):
         followup_service.direct_save(db, _ctx(helper), DirectSaveIn(
+            result_code="有效沟通",
             request_id="req-direct-m", customer_id=customer.id, raw_text="帮忙问了下",
             source_task_id=receipt.id, close_task_ids=[receipt.id]))
     db.refresh(receipt)
@@ -208,7 +219,7 @@ def test_duplicate_request_race_returns_existing_record(db, monkeypatch):
     user = make_user(db, "fu_svc_n")
     customer = make_customer(db, user, "服务店N")
     db.commit()
-    payload = DirectSaveIn(request_id="req-direct-n", customer_id=customer.id, raw_text="x")
+    payload = DirectSaveIn(result_code="有效沟通", request_id="req-direct-n", customer_id=customer.id, raw_text="x")
     first, _ = followup_service.direct_save(db, _ctx(user), payload)
     original = followup_service._by_request
     calls = []
@@ -230,7 +241,7 @@ def test_integrity_error_without_existing_record_is_not_reported_as_duplicate(db
     user = make_user(db, "fu_svc_o")
     customer = make_customer(db, user, "服务店O")
     db.commit()
-    payload = DirectSaveIn(request_id="req-direct-o", customer_id=customer.id, raw_text="x")
+    payload = DirectSaveIn(result_code="有效沟通", request_id="req-direct-o", customer_id=customer.id, raw_text="x")
     followup_service.direct_save(db, _ctx(user), payload)
     monkeypatch.setattr(followup_service, "_by_request", lambda *a: None)
     with pytest.raises(ValueError, match="保存失败，请重试"):
@@ -262,6 +273,7 @@ def test_quick_receipt_ok_request_id_collision_returns_existing(db, monkeypatch)
     customer = make_customer(db, user, "服务店R1")
     task = _receipt_task(db, user, customer, "receipt:r1")
     first = followup_service.direct_save(db, _ctx(user), DirectSaveIn(
+        result_code="有效沟通",
         request_id="req-receipt-r1", customer_id=customer.id, raw_text="x"))[0]
     _racing_by_request(monkeypatch)
     again = followup_service.quick_receipt_ok(db, _ctx(user), task.id, "req-receipt-r1")

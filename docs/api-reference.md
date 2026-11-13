@@ -2851,21 +2851,21 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | GET | `/customers/{customer_id}/timeline` | 客户时间线：跟进记录 + 任务 + 发货/AI 背景；可读/可写分开判定，不可读时隐藏发货和 AI 背景（见模块说明）。 |
 | POST | `/attachments` | 上传跟进截图，≤10MB；先上传拿到附件 ID，建草稿或直接保存时再绑定。 |
 | GET | `/attachments/{attachment_id}/file` | 读取截图原图，鉴权后返回文件，不走静态目录直连。 |
-| POST | `/followups` | 直接保存一条跟进（不经 AI 草稿），已绑定未 OCR 的附件在后台线程补跑 OCR。 |
+| POST | `/followups` | 直接保存一条跟进（不经 AI 草稿），`result_code` 本次结果必填且需符合当前字典；缺失或空白返回 400。已绑定未 OCR 的附件在后台线程补跑 OCR。 |
 | GET | `/followups` | 已确认记录列表，支持 `customer_id`、`mine`、`author_user_id`、`keyword`、`date_from` / `date_to`（跟进日期，含首尾）和分页；筛选始终与当前用户可见范围取交集。关键字按字面匹配客户名/编码/联系人及原文/摘要/条目，反向日期范围返回 400。 |
 | GET | `/followups/authors` | 查看权限即可读取；返回当前可见已确认记录的录入人 `{id, real_name}`，含历史停用/离职录入人；不返回仅有草稿或范围外记录的录入人。 |
 | GET | `/followups/{id}` | 单条已确认记录，沿用原查看范围，返回 `can_edit`。 |
-| PUT | `/followups/{id}` | 需 write；仅原作者或 super_admin 可修改，read_all 不授予编辑他人记录权。提交 `version`、`request_id`、必填 `reason` 与完整可编辑字段、保留的条目 ID/截图 ID；客户、作者和原待办来源不可改。旧版本/同请求不同内容返回 409；同请求同内容安全重放。事务内留存前后快照并同步待办，新增截图后台 OCR。 |
+| PUT | `/followups/{id}` | 需 write；仅原作者或 super_admin 可修改，read_all 不授予编辑他人记录权。提交 `version`、`request_id`、必填 `reason` 与完整可编辑字段、保留的条目 ID/截图 ID；`result_code` 合并原记录后必须非空，存量空结果需补选，不能清空已有结果；客户、作者和原待办来源不可改。旧版本/同请求不同内容返回 409；同请求同内容安全重放。事务内留存前后快照并同步待办，新增截图后台 OCR。 |
 | GET | `/followups/{id}/history` | 原查看范围内读取修改历史；包含修改人、时间、原因、版本、记录及关联待办前后快照。归档截图保留鉴权读取。 |
 | POST | `/drafts` | 建 AI 草稿；创建成功后在后台线程跑 `ai_parse_service.run_parse`，前端轮询状态。 |
 | GET | `/drafts` | 当前用户未处理的草稿列表。 |
 | GET | `/drafts/{followup_id}` | 草稿详情（含 AI 原始结果，供表单回填）。 |
-| POST | `/drafts/{followup_id}/confirm` | 确认草稿，按确认内容生成跟进任务；`request_id` 幂等。 |
+| POST | `/drafts/{followup_id}/confirm` | 确认草稿，`result_code` 本次结果必填（创建草稿仍允许空），缺失或空白返回 400 且保留草稿；按确认内容生成跟进任务。 |
 | DELETE | `/drafts/{followup_id}` | 作废草稿。 |
 | GET | `/tasks` | 跟进任务列表：`scope=mine/visible`、`status`、`task_type`、`customer_id`、`due=today/upcoming/all`，分页。 |
 | GET | `/tasks/summary` | 任务计数卡（按类型），工作台首屏用。 |
 | POST | `/tasks/{task_id}/snooze` | 顺延任务到期日（`days`），记一次顺延次数。 |
-| POST | `/tasks/{task_id}/receipt-ok` | 收货回访任务一键「已联系，一切正常」，直接生成一条确认记录；`request_id` 幂等。 |
+| POST | `/tasks/{task_id}/receipt-ok` | 收货回访任务一键「已联系，一切正常」，直接生成一条确认记录，本次结果为“有效沟通”；该字典值停用时提示使用「记跟进」选择当前可用结果，任务不关闭；`request_id` 幂等。 |
 | GET | `/items` | 异常/意见条目看板：`status`、`kind`（issue/suggestion）、`category`、`customer_id`、`mine`，分页。 |
 | POST | `/items/{item_id}/resolve` | 处理条目（关闭时校验操作人是当前处理人）。 |
 | POST | `/items/{item_id}/transfer` | 转交条目处理人；目标须持有 `domestic_followup:write`，否则 400。 |

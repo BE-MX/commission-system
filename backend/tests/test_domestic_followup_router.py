@@ -31,9 +31,11 @@ def test_direct_save_submits_ocr_only_when_screenshots_pending(db, monkeypatch):
     calls = _record_jobs(monkeypatch)
     with followup_client(db, user) as client:
         plain = client.post("/api/domestic-followup/followups", json={
+            "result_code": "有效沟通",
             "request_id": "rt-ocr-plain", "customer_id": customer.id, "raw_text": "无截图"})
         assert plain.status_code == 200 and calls == []
         shot = client.post("/api/domestic-followup/followups", json={
+            "result_code": "有效沟通",
             "request_id": "rt-ocr-shot", "customer_id": customer.id, "raw_text": "带截图",
             "attachment_ids": [att.id]})
         assert shot.status_code == 200
@@ -52,6 +54,7 @@ def test_direct_save_and_list(db):
     customer = make_customer(db, user, "路由店B")
     with followup_client(db, user) as client:
         resp = client.post("/api/domestic-followup/followups", json={
+            "result_code": "有效沟通",
             "request_id": "rt-direct-b", "customer_id": customer.id, "raw_text": "回访正常",
             "next_date": "2026-11-02", "next_plan": "问补货"})
         assert resp.status_code == 200 and resp.json()["code"] == 200
@@ -74,10 +77,10 @@ def test_draft_starts_background_parse_and_conflict_maps_409(db, monkeypatch):
         replay = client.post("/api/domestic-followup/drafts", json={"request_id": "rt-draft-c", "raw_text": "聊天"})
         assert replay.json()["data"]["id"] == draft["id"] and len(calls) == 1  # 重放不重复调模型
         bad = client.post(f"/api/domestic-followup/drafts/{draft['id']}/confirm",
-                          json={"version": 9, "customer_id": customer.id})
+                          json={"result_code": "有效沟通", "version": 9, "customer_id": customer.id})
         assert bad.status_code == 409
         good = client.post(f"/api/domestic-followup/drafts/{draft['id']}/confirm",
-                           json={"version": draft["version"], "customer_id": customer.id})
+                           json={"result_code": "有效沟通", "version": draft["version"], "customer_id": customer.id})
         assert good.status_code == 200 and good.json()["data"]["status"] == "confirmed"
 
 
@@ -88,7 +91,7 @@ def test_writing_other_owners_customer_is_403(db):
     customer = make_customer(db, owner, "路由店D")
     with followup_client(db, other) as client:
         resp = client.post("/api/domestic-followup/followups",
-                           json={"request_id": "rt-direct-d", "customer_id": customer.id, "raw_text": "x"})
+                           json={"result_code": "有效沟通", "request_id": "rt-direct-d", "customer_id": customer.id, "raw_text": "x"})
         assert resp.status_code == 403 and "fu_rt_d1" in resp.json()["detail"]
 
 

@@ -412,7 +412,7 @@ def drilldown(db: Session, current_user: dict, *, kind: str = "records", user_id
     if state_change:
         rows = [row for row in rows if state_change in (row.state_changes or [])]
     if quality == "next_step":
-        rows = [row for row in rows if row.result_code and row.result_code not in NEGATIVE_RESULT_CODES and row.next_date]
+        rows = [row for row in rows if row.next_date is not None]
     elif quality == "effective_progress":
         rows = [row for row in rows if row.result_code and row.effective_progress]
     if kind == "signal":

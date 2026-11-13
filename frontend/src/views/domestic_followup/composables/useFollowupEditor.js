@@ -36,6 +36,7 @@ export function useFollowupEditor(api, onSaved = () => {}) {
   async function save() {
     if (saving.value || !form.value || conflict.value) return false
     if (!form.value.reason.trim()) { error.value = '请填写修改原因'; return false }
+    if (!form.value.result_code?.trim()) { error.value = '请选择本次结果'; return false }
     saving.value = true
     error.value = ''
     // A transport retry must use exactly the same idempotent payload.

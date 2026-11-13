@@ -1,11 +1,65 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import * as Vue from 'vue'
+import { transform } from 'esbuild'
+import * as draftHelpers from '../src/views/domestic_followup/followupDraft.js'
 import {
   draftToForm, emptyForm, formToPayload, imageFilesFromClipboard, mergeManualFields, nextBasisHint, taskDueLabel,
   weekdayLabel, clipboardHasText, imageFilesFromDrop, pollDecision, POLL_LIMIT, POLL_MS,
 } from '../src/views/domestic_followup/followupDraft.js'
 
 const TODAY = '2026-10-30'
+
+async function composerForTest() {
+  const source = await readFile(new URL('../src/views/domestic_followup/composables/useFollowupComposer.js', import.meta.url), 'utf8')
+  const { code } = await transform(source, { format: 'cjs', loader: 'js' })
+  const calls = [], warnings = []
+  const api = {
+    directSave: async payload => { calls.push(['save', payload]); return {} },
+    confirmDraft: async (id, payload) => { calls.push(['confirm', payload]); return {} },
+    createDraft: async payload => { calls.push(['draft', payload]); return { id: 1 } },
+  }
+  const requireStub = id => {
+    if (id === 'vue') return { ...Vue, onBeforeUnmount: () => {} }
+    if (id === '../followupDraft') return draftHelpers
+    if (id === '@/api/domesticFollowup') return { followupApi: api, apiError: error => error.message }
+    if (id === '@/utils/datetime') return { currentBeijingDate: () => TODAY }
+    if (id === '@/utils/feedback') return {
+      msgWarning: text => warnings.push(text), msgSuccessText: () => {}, msgError: error => { throw new Error(error) },
+    }
+    throw new Error(`Unexpected composer import: ${id}`)
+  }
+  const module = { exports: {} }
+  new Function('require', 'module', 'exports', 'window', code)(requireStub, module, module.exports, { matchMedia: () => ({ matches: false }) })
+  const composer = module.exports.useFollowupComposer()
+  Object.assign(composer.form.value, { customer_id: 1, raw_text: '沟通原文', id: 1, version: 1 })
+  return { composer, calls, warnings }
+}
+
+for (const action of ['saveDirect', 'confirm']) {
+  test(`${action} requires an explicit outcome before sending the request`, async () => {
+    const { composer, calls, warnings } = await composerForTest()
+    await composer[action]()
+    assert.deepEqual(warnings, ['请选择本次结果'])
+    assert.equal(calls.length, 0)
+    composer.form.value.result_code = '未回复'
+    await composer[action]()
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0][1].result_code, '未回复')
+    composer.close()
+  })
+}
+
+test('AI draft creation remains available without an outcome', async () => {
+  const { composer, calls, warnings } = await composerForTest()
+  try {
+    await composer.startAi()
+    assert.equal(calls[0][0], 'draft')
+    assert.equal(calls[0][1].result_code, null)
+    assert.deepEqual(warnings, [])
+  } finally { composer.close() }
+})
 
 test('weekdayLabel maps ISO calendar dates to weekday labels', () => {
   assert.equal(weekdayLabel('2026-10-30'), '周五')

@@ -109,7 +109,7 @@ def ctx(user_id):
 
 
 def command(**changes):
-    return EditFollowupIn(version=2, request_id=uuid4().hex, reason="test correction",
+    return EditFollowupIn(version=2, request_id=uuid4().hex, reason="test correction", result_code="有效沟通",
                            followup_date=date(2026, 11, 1), raw_text="after", **changes)
 
 
@@ -223,6 +223,7 @@ def test_waiting_legacy_writer_sees_new_responsibility(followup_db):
             started.put(db.scalar(text("SELECT CONNECTION_ID()")))
             with pytest.raises(PermissionError, match="当前跟进安排"):
                 followup_service.direct_save(db, ctx(original_id), DirectSaveIn(
+                    result_code="有效沟通",
                     request_id="old-window-save", customer_id=customer_id, raw_text="stale legacy write",
                 ))
 

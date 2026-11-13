@@ -12,6 +12,13 @@ MANAGER = ("domestic_followup:read", "domestic_followup:read_all")
 SALES = ("domestic_followup:read", "domestic_followup:write")
 
 
+@pytest.fixture(autouse=True)
+def fixed_business_day(monkeypatch):
+    from app.domestic_followup import stats_service
+
+    monkeypatch.setattr(stats_service, "beijing_today", lambda: TODAY)
+
+
 def _record(db, author, customer, when, *, result=None, effective=False, next_date=None,
             status="confirmed", obstacles=None, states=None):
     row = DomesticFollowup(
@@ -62,7 +69,7 @@ def test_personal_counts_confirmed_records_and_negative_results(db):
         assert person["kpis"]["count"] == 3
         assert person["kpis"]["reach"] == 2
         assert person["kpis"]["effective_rate"] == 0.5
-        assert person["quality"]["next_step"]["value"] == 1
+        assert person["quality"]["next_step"]["value"] == 0.3333
         assert person["quality"]["effective_progress"]["value"] == 0.5
         assert data["team_average"] is None  # 少于 4 人不能反推团队明细
         assert _personal(client, other.id).status_code == 403

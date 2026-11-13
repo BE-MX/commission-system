@@ -209,6 +209,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
 
   async function saveDirect() {
     if (!form.value.customer_id) return msgWarning('直接保存需要先选客户；不确定客户可以点「AI 整理」')
+    if (!form.value.result_code?.trim()) return msgWarning('请选择本次结果')
     if (!canSave.value) return
     if (form.value.historical_only && form.value.followup_date >= currentBeijingDate()) return msgWarning('请选择今天以前的实际沟通日期')
     saving.value = true
@@ -298,6 +299,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
 
   async function confirm() {
     if (!form.value.customer_id) return msgWarning('请选择客户')
+    if (!form.value.result_code?.trim()) return msgWarning('请选择本次结果')
     if (!customerWritable.value) return msgWarning('该客户不归你负责，不能记录跟进，请换一个客户')
     if (!canSave.value) return
     saving.value = true
