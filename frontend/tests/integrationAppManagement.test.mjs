@@ -13,10 +13,10 @@ import {
 
 
 test('uses the production invoice endpoint and builds a server-only environment snippet', () => {
-  assert.equal(INVOICE_API_ENDPOINT, 'https://leshine.work/api/integrations/v1')
+  assert.equal(INVOICE_API_ENDPOINT, 'https://leshine.cloud/api/integrations/v1')
 
   const snippet = buildServerEnvSnippet('ark_live_secret')
-  assert.match(snippet, /ARK_INVOICE_API_BASE_URL=https:\/\/leshine\.work\/api\/integrations\/v1/)
+  assert.match(snippet, /ARK_INVOICE_API_BASE_URL=https:\/\/leshine\.cloud\/api\/integrations\/v1/)
   assert.match(snippet, /ARK_INVOICE_API_TOKEN=ark_live_secret/)
   assert.doesNotMatch(snippet, /localStorage|sessionStorage|window\.|document\./)
 })

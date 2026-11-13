@@ -403,7 +403,7 @@ def publish(args):
 if __name__ == "__main__":
     sys.modules["publish"] = sys.modules[__name__]
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument('--office-beijing-ingress', choices=['prepare', 'key', 'server', 'client', 'verify', 'reconnect', 'routes-prepare', 'routes-activate', 'rollback'], help='Install and verify the dedicated Beijing office tunnel; preserve Singapore fallback')
+    parser.add_argument('--office-beijing-ingress', choices=['prepare', 'key', 'server', 'client', 'verify', 'reconnect', 'routes-prepare', 'routes-activate', 'rollback', 'receipt-config'], help='Install and verify the dedicated Beijing office tunnel; preserve Singapore fallback')
     parser.add_argument('--color-guide-site', metavar='PLAN_JSON', help='Publish only the Beijing static color guide')
     parser.add_argument('--color-guide-navigation', metavar='PLAN_JSON', help='Publish only the Beijing color-guide navigation overlay')
     parser.add_argument('--customer-portal-site', choices=['https', 'verify'], help='Configure or verify the approved Beijing customer-site HTTPS boundary; no business gates')

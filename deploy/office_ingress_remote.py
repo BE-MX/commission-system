@@ -16,6 +16,7 @@ NGINX = Path('/etc/nginx/sites-enabled/ark-cloud.conf')
 USER = 'ark-office-tunnel'
 HOME = Path('/var/lib/ark-office-tunnel')
 SSHD = Path('/etc/ssh/sshd_config.d/90-ark-office-tunnel.conf')
+ENV = Path('/home/ubuntu/commission-system/backend/.env')
 OLD = 'https://119.28.107.92'
 NEW = 'http://127.0.0.1:8002'
 FEATURES = ('RECEIPT', 'DESIGN IMAGE', 'WHATSAPP', 'SHIPPING VIDEO')
@@ -231,6 +232,43 @@ def routes(action, request):
     return record
 
 
+def receipt_config():
+    """Update the inactive COS fallback origin; normal release reloads Settings."""
+    verify_tunnel()
+    routing = json.loads((ROOT / 'routes.json').read_text())
+    if routing['status'] != 'activated' or digest(NGINX.read_text()) != routing['candidate']:
+        raise RuntimeError('Receipt origin requires verified Beijing office routing')
+    path = ENV
+    if path.is_symlink():
+        raise RuntimeError('Unexpected environment link')
+    original = path.read_text()
+    pattern = r'(?m)^RECEIPT_STORAGE_PROXY_URL=https://leshine\.work[ \t]*$'
+    candidate, count = re.subn(pattern, 'RECEIPT_STORAGE_PROXY_URL=https://leshine.cloud', original)
+    marker = ROOT / 'receipt-config.json'
+    if marker.exists():
+        record = json.loads(marker.read_text())
+        if record['status'] != 'saved-restart-pending' or digest(original) != record['candidate']:
+            raise RuntimeError('Receipt environment changed after update')
+        return record
+    if count != 1:
+        raise RuntimeError('Unexpected receipt proxy setting')
+    backup = ROOT / 'backend-env-before'
+    if backup.exists():
+        raise RuntimeError('Interrupted receipt update requires inspection')
+    backup.write_bytes(path.read_bytes())
+    backup.chmod(0o600)
+    record = {'baseline': digest(original), 'candidate': digest(candidate), 'status': 'applying'}
+    save(marker, record)
+    if path.read_text() != original:
+        raise RuntimeError('Concurrent environment change')
+    path.write_text(candidate)
+    if digest(path.read_text()) != record['candidate']:
+        raise RuntimeError('Environment verification failed')
+    record['status'] = 'saved-restart-pending'
+    save(marker, record)
+    return record
+
+
 def execute(request):
     if socket.gethostname() != 'VM-4-6-ubuntu' or os.geteuid() != 0:
         raise RuntimeError('Unexpected Beijing host/identity')
@@ -242,6 +280,8 @@ def execute(request):
                 'nginx': digest(NGINX.read_text()), 'port8002': run(['ss', '-H', '-lnt', 'sport = :8002'])}
     if action == 'server':
         return install_server(request['public_key'])
+    if action == 'receipt-config':
+        return receipt_config()
     if action == 'verify':
         # NSSM can need several seconds after a requested reconnect.
         for attempt in range(6):

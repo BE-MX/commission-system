@@ -117,3 +117,20 @@ def test_effective_ssh_rejects_wider_forwarding(monkeypatch):
     monkeypatch.setattr(m, 'effective', lambda _: {'allowtcpforwarding': 'yes'})
     with pytest.raises(RuntimeError, match='restrictions'):
         m.verify_ssh()
+
+
+def test_receipt_origin_preserves_other_settings_and_rejects_drift(local_routes, monkeypatch):
+    root, nginx = local_routes
+    m.routes('routes-activate', m.routes('routes-prepare', {}))
+    env = root / 'fixture.env'
+    before = 'SOME_KEY=fixture-only\nRECEIPT_STORAGE_PROXY_URL=https://leshine.work\nOTHER=value\n'
+    env.write_text(before)
+    monkeypatch.setattr(m, 'ENV', env)
+    record = m.receipt_config()
+    assert record['status'] == 'saved-restart-pending'
+    assert env.read_text() == before.replace('https://leshine.work', 'https://leshine.cloud')
+    assert (root / 'backend-env-before').read_text() == before
+    assert m.receipt_config() == record
+    env.write_text(env.read_text() + 'ADDED=setting\n')
+    with pytest.raises(RuntimeError, match='changed'):
+        m.receipt_config()

@@ -29,7 +29,7 @@ test('token filters combine account or label keyword with status', () => {
 
 
 test('agent config uses the fixed production MCP endpoint and bearer token', () => {
-  assert.equal(MCP_ENDPOINT, 'https://leshine.work/mcp/')
+  assert.equal(MCP_ENDPOINT, 'https://leshine.cloud/mcp/')
   const config = JSON.parse(buildAgentConfig('secret-token'))
   assert.deepEqual(config, {
     mcpServers: {

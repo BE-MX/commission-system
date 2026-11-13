@@ -80,6 +80,8 @@ def execute(stage):
                            candidate=prior['result']['candidate'])
         elif stage == 'rollback':
             result = cloud('rollback')
+        elif stage == 'receipt-config':
+            result = cloud('receipt-config')
         else:
             raise ValueError('Unknown stage')
         record.update(status='succeeded', result=result)
