@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.customer_media import service
 from app.customer_media.router import router
 from app.models.customer import CustomerCommissionSnapshot
+from app.models.business import CustomerInfo
 from tests.customer_media_support import set_grants
 from tests.test_customer_media import _add_customer, _seed_workflow, _payload
 
@@ -21,6 +22,7 @@ def scope_data(db):
     batch.status = "pending_review"
     for customer_id, salesperson in [("CUST-MEDIA-1", "1007"), ("CUST-MEDIA-2", "1008")]:
         _add_customer(db, customer_id, customer_id)
+        db.get(CustomerInfo, customer_id).owner_user_ids = [int(salesperson)]
         db.add(CustomerCommissionSnapshot(customer_id=customer_id, salesperson_id=salesperson, is_current=True, source="auto"))
         service.create_portal_account(db, _payload(owner, "customer_media:admin", "customer_media_account:read_all"), customer_id, f"{customer_id}@example.com", "TestPassword123")
     db.add_all([

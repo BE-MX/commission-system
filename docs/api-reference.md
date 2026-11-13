@@ -1384,6 +1384,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 ## 客户拍摄素材门户（`/api/customer-media`，114 迁移，2026-08-17 业务预览入口）
 
+设计预约客户搜索 `GET /customers`、预约提交 `POST /api/design/requests` 及预约上下文客户标签，统一通过本人 active OKKI 绑定匹配 `lsordertest.customer_info.owner_user_ids`，不依赖提成归属快照。`customer_media:admin`、门户及账号 `read_all` 权限不扩大预约客户范围；super_admin 保留全客户权限。搜索和提交均读取数据库当前角色授权，旧 JWT 不保留已撤销的写权限或管理员范围。提交时按客户 ID 重新核验当前归属；缺少有效 OKKI 绑定返回 409，客户不存在或越权返回 403。名称/联系人搜索最多返回20条。
+
 内部素材交付沿用 `customer_media:*` 权限；业务员预览入口使用页面权限 `customer_media_portal:read`。普通业务员通过本人 active OKKI 绑定映射到当前 `customer_commission_snapshot.salesperson_id`，只能看到当前归属客户；只有 `customer_media_portal:read_all`（或 super_admin）可查看全部门户；`customer_media:admin` 不再隐含全量范围。内部接口每次按数据库当前角色授权校验，不使用旧 JWT 权限作为最终依据。详情越权与不存在统一返回 404。预览数据与客户门户共用 `portal_library()`，只返回仍处于 `published` 状态的批次和未删除素材，草稿、待审核、待修改与已下架批次不会进入响应。
 
 | 方法 | 路径 | 权限 / 会话 | 契约 |

@@ -8,7 +8,7 @@ from app.core.time import beijing_now
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, File, UploadFile, BackgroundTasks
+from fastapi import APIRouter, Depends, Query, File, UploadFile, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse
 from app.core.list_sort import apply_list_sort
 from sqlalchemy.orm import Session
@@ -45,6 +45,7 @@ from app.design.notifications import (
     _notify_reschedule_date_changed,
 )
 from app.customer_media import service as customer_media_service
+from app.customer_media.access import require_permission as require_live_permission
 
 
 logger = logging.getLogger("design")
@@ -69,11 +70,16 @@ def create_request(
     data: DesignRequestCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission('design:write')),
+    _user: dict = Depends(require_live_permission('design:write')),
 ):
     """提交设计预约申请"""
-    user_id, user_name, _ = customer_media_service.user_identity(db, _user)
-    customer = customer_media_service.validate_customer_access(db, _user, data.customer_id)
+    try:
+        user_id, user_name, _ = customer_media_service.user_identity(db, _user)
+        customer = customer_media_service.validate_customer_access(db, _user, data.customer_id)
+    except customer_media_service.CustomerMediaForbidden as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except customer_media_service.CustomerMediaConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
     data = data.model_copy(update={
         "customer_name": customer["name"],
         "salesperson_id": user_id,

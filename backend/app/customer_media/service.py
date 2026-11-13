@@ -256,23 +256,21 @@ def sales_portal_customer_detail(
 
 
 def list_customers(db: Session, payload: dict, search: str) -> list[dict]:
-    if is_admin(payload):
-        return list_account_customers(db, payload, search)
+    """Booking customers follow OKKI ownership, independent of media action grants."""
     from app.customer_image.service import CustomerScopeConflictError, list_available_customers
     user_id, _, _ = user_identity(db, payload)
     try:
-        return list_available_customers(db, user_id, is_admin(payload), search, 20)
+        return list_available_customers(db, user_id, "super_admin" in payload.get("roles", []), search, 20)
     except CustomerScopeConflictError as exc:
         raise CustomerMediaConflict(str(exc)) from exc
 
 
 def validate_customer_access(db: Session, payload: dict, customer_id: str) -> dict:
+    """Recheck the same OKKI scope for booking submission and customer tags."""
     from app.customer_image.service import CustomerScopeConflictError, get_available_customer
     user_id, _, _ = user_identity(db, payload)
-    if is_admin(payload):
-        _assert_account_customer(db, payload, customer_id)
     try:
-        match = get_available_customer(db, user_id, is_admin(payload), customer_id)
+        match = get_available_customer(db, user_id, "super_admin" in payload.get("roles", []), customer_id)
     except CustomerScopeConflictError as exc:
         raise CustomerMediaConflict(str(exc)) from exc
     if not match:

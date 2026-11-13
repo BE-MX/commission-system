@@ -1,3 +1,11 @@
+## 2026-11-13 Ginny / Tilly Gay 预约客户范围（Codex，Git 交付，未部署）
+
+- 亮哥明确授权先补提成归属快照：客户 `104825242721250` 已创建快照 `1805`，Ginny / `55411216`，按已核验员工与主管规则为 2% / 1%，无二级主管；独立读回确认一条有效完整快照。当前代码下的客户搜索和提交前校验均已通过，未代提交预约、未重算回款。
+- 任务工作区 `D:/MyProgram/commission-system-codex-design-customer-owner-scope`，分支 `codex/design-customer-owner-scope`，基于 `main@485f113c`。预约搜索、提交及预约上下文客户标签统一匹配小满 `owner_user_ids`，素材管理/门户权限不扩大范围，super_admin 保留全量；门户账号和业务预览的原快照范围不变。
+- 搜索与提交均核验实时角色授权及绑定，旧 token 在撤销管理员或设计写权限后不能继续放行；不存在/越权 403，无有效绑定 409。
+- 相关不同用例累计 102 项通过（含 14 项新增 API 回归）；3 个附件删除旧用例失败已在未修改 main 上复现。无前端与迁移，不做生产预约写入验收。完整证据及检查状态见[修复记录](reports/2026-11-13-design-customer-owner-scope.md)。
+- 快照已生产生效；亮哥后续已授权提交、合并 main 并推送 origin，本轮明确不部署。操作脚本、写前状态和读回证据归档至主目录 `tmp/tilly-snapshot/`，本任务已合并分支与 worktree 在验证交付后清理。
+
 ## 2026-11-13 跟进统计日历左侧标签裁切（Codex，Git 交付，未部署）
 
 - 分支 `codex/followup-calendar-labels`，基于 `main@6f4273fd`；亮哥已授权提交、合并并推送 main，本次不部署。验收证据交付时保留至主目录 `tmp/calendar-label-check/`。
