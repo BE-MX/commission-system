@@ -7,7 +7,6 @@ import re
 import subprocess
 import sys
 import uuid
-import urllib.request
 
 SPECS = {
     "office": ("/etc/nginx/conf.d/leshine.conf", "8002", 1),
@@ -50,11 +49,21 @@ def run(args):
 
 
 def healthy(region):
-    domain = "leshine.cloud" if region == "cloud" else "leshine.work"
-    url = "https://" + domain + "/api/colorwork/workbench/api/health"
-    with urllib.request.urlopen(url, timeout=10) as response:
-        if response.status != 200 or json.load(response) != {"status": "ok", "module": "colorwork"}:
-            raise RuntimeError("Colorwork readiness failed: " + domain)
+    domain, address = {
+        "cloud": ("leshine.cloud", "154.8.205.162"),
+        "office": ("leshine.work", "119.28.107.92"),
+    }[region]
+    # Verify the registered target while retaining certificate hostname/SNI.
+    # Public DNS can contain both regions and must not select another server.
+    result = subprocess.run([
+        "curl", "--silent", "--show-error", "--compressed", "--noproxy", "*",
+        "--connect-timeout", "5", "--max-time", "10", "--resolve",
+        domain + ":443:" + address, "--write-out", "\n%{http_code}",
+        "https://" + domain + "/api/colorwork/workbench/api/health",
+    ], capture_output=True, text=True, timeout=15, check=True)
+    body, _, status = result.stdout.rpartition("\n")
+    if status != "200" or json.loads(body) != {"status": "ok", "module": "colorwork"}:
+        raise RuntimeError("Colorwork readiness failed: " + domain)
 
 
 def syntax_config(snippet, scratch):

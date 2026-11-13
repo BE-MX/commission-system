@@ -1,7 +1,6 @@
 """Routing preparation and failure safety; no production data or services."""
 
 import importlib.util
-import io
 import json
 from pathlib import Path
 import re
@@ -191,13 +190,32 @@ def test_bad_public_route_rolls_back(site, monkeypatch):
     ({"status": "ok"}, 200, False),
 ])
 def test_readiness_identifies_module_not_just_http_success(monkeypatch, payload, status, valid):
-    response = io.BytesIO(json.dumps(payload).encode())
-    response.status = status
-    probe = Mock(return_value=response)
-    monkeypatch.setattr(routing.urllib.request, "urlopen", probe)
+    result = Mock(stdout=json.dumps(payload) + "\n" + str(status))
+    probe = Mock(return_value=result)
+    monkeypatch.setattr(routing.subprocess, "run", probe)
     if valid:
         routing.healthy("office")
     else:
         with pytest.raises(RuntimeError, match="readiness failed"):
             routing.healthy("office")
-    assert probe.call_args.args[0] == "https://leshine.work/api/colorwork/workbench/api/health"
+    args = probe.call_args.args[0]
+    assert args[-1] == "https://leshine.work/api/colorwork/workbench/api/health"
+    assert args[args.index('--resolve') + 1] == 'leshine.work:443:119.28.107.92'
+    assert args[args.index('--noproxy') + 1] == '*'
+    assert not {'-k', '--insecure', '-L', '--location'}.intersection(args)
+    assert probe.call_args.kwargs['check'] is True
+
+
+def test_cloud_probe_is_bound_to_beijing(monkeypatch):
+    probe = Mock(return_value=Mock(stdout='{"status":"ok","module":"colorwork"}\n200'))
+    monkeypatch.setattr(routing.subprocess, 'run', probe)
+    routing.healthy('cloud')
+    args = probe.call_args.args[0]
+    assert args[args.index('--resolve') + 1] == 'leshine.cloud:443:154.8.205.162'
+
+
+def test_tls_and_transport_errors_are_not_treated_as_healthy(monkeypatch):
+    error = routing.subprocess.CalledProcessError(60, ['curl'])
+    monkeypatch.setattr(routing.subprocess, 'run', Mock(side_effect=error))
+    with pytest.raises(routing.subprocess.CalledProcessError):
+        routing.healthy('office')
