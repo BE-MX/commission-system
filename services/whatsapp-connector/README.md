@@ -103,3 +103,7 @@ account 包含 provider、session_generation、consent_version、status、connec
 备份/恢复必须停掉所有本机 writer，用一致的 SQLite 备份保留数据库，并在独立秘密管理系统保存密钥。旧发布回滚需要原有依赖/原有状态；不能把 Baileys 凭据交给旧实现。生产只通过项目 `deploy/deploy.bat` 与登记的北京 Agent 服务入口执行；当前发布与真实账号验收见[项目交接](../../docs/handoff.md)，服务运行不等于账号已重新关联或历史已完整同步。
 
 协议参考：[Baileys documentation](https://baileys.wiki/)、[Baileys rc14 release](https://github.com/WhiskeySockets/Baileys/releases/tag/v7.0.0-rc14)、[Node SQLite](https://nodejs.org/api/sqlite.html)。实际实现/验收以 lockfile 安装的 rc14 `lib/Types/Events.d.ts`、`lib/Utils/use-multi-file-auth-state.js` 和 `lib/Socket/chats.js` 为准。
+
+### 本人会话身份
+
+账号元数据增加 `self_identity={session_generation,pn_jid,lid_jid}`，只从当前绑定凭据 `me.id/me.lid` 提取并规范化，不读取联系人别名推测本人。启动加载既有凭据、凭据更新时记录，脱机仍保留，代次不一致时不对外返回。仅暴露业务账号身份标识，不暴露完整凭据、密钥或 QR。后端保存到原有账号 raw_payload，用于所有业务员的未关联客户列表排除；不删除消息、不改会话 ID、客户关联或冲突映射，无数据库迁移。

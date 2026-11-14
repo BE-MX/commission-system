@@ -48,13 +48,13 @@ export class Store {
     return row ? this.cipher.open(row.data, 'data', `account:${uid}`) : null
   }
   accounts() { return this.db.prepare('SELECT uid FROM accounts').all().map(row => this.account(row.uid)) }
-  configure(uid, authorization) {
+  configure(uid, authorization, { freshCredentials = false } = {}) {
     return this.transaction(() => {
       const current = this.account(uid)
       if (current && current.ark_user_id !== authorization.ark_user_id) throw error('owner_mismatch', 403)
       if (current && authorization.session_generation < current.session_generation) throw error('stale_generation')
       const held = this.db.prepare(`SELECT * FROM leases WHERE uid=? AND expires>${CLOCK}`).get(uid)
-      if (held && (current?.session_generation !== authorization.session_generation || current?.consent_version !== String(authorization.consent_version))) throw error('lease_busy')
+      if (held && (current?.session_generation !== authorization.session_generation || current?.consent_version !== String(authorization.consent_version) || freshCredentials)) throw error('lease_busy')
       const changed = current && current.session_generation !== authorization.session_generation
       const account = { ...current, account_uid: uid, ark_user_id: authorization.ark_user_id,
         consent_version: authorization.consent_version, session_generation: authorization.session_generation,
@@ -65,6 +65,12 @@ export class Store {
         revoke_state: changed || !current ? 'none' : current.revoke_state,
         last_error_code: null, coverage: current?.coverage || { earliest_message_at: null,
           latest_message_at: null, last_ingest_at: null, gap_reason: null } }
+      if (changed || freshCredentials) {
+        // Bind generation and credential retirement must commit together: a restart
+        // must never relabel the previous number's credentials as the new binding.
+        this.db.prepare('DELETE FROM auth WHERE uid=?').run(uid)
+        delete account.self_identity
+      }
       this.writeAccount(account)
       return account
     })
@@ -155,7 +161,15 @@ export class Store {
       return revisions
     })
   }
-  clearAuth(lease) { this.transaction(() => { this.fence(lease); this.db.prepare('DELETE FROM auth WHERE uid=?').run(lease.uid) }) }
+  clearAuth(lease) {
+    this.transaction(() => {
+      const account = this.fence(lease)
+      this.db.prepare('DELETE FROM auth WHERE uid=?').run(lease.uid)
+      delete account.self_identity
+      this.writeAccount(account)
+      this.change(lease, 'account', lease.uid)
+    })
+  }
   republish(lease) {
     this.transaction(() => {
       this.fence(lease)
