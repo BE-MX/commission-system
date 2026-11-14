@@ -48,7 +48,14 @@ def connector_environment(inherited, file_values, base, extra):
     return environment
 
 
+def check_connector_pending():
+    journal = STATE / 'whatsapp-connector-release.json'
+    if journal.exists() and json.loads(journal.read_text(encoding='utf8')).get('status') not in {'prepared', 'succeeded'}:
+        raise RuntimeError('Interrupted connector release requires inspection before office activation')
+
+
 def prepare(live, previous, revision, recover_149=False, recover_151=False, recover_168=False):
+    check_connector_pending()
     from office_hot_static import check_pending
     check_pending(STATE)
     if os.name != "nt":
@@ -191,10 +198,18 @@ def activate(prepared):
 def activate_locked(prepared):
     from office_hot_static import check_pending
     check_pending(STATE)
+    if not prepared.get('connector_only_backup'):
+        check_connector_pending()
     nssm, live = prepared["nssm"], prepared["live"]
     revision, previous = prepared["revision"], prepared["previous"]
     if run(["git", "rev-parse", "HEAD"], cwd=live, capture=True) != previous:
         raise RuntimeError("Office checkout changed after preparation")
+    if prepared.get('connector_only_backup'):
+        for root in (live, ROOT):
+            if run(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=root, capture=True):
+                raise RuntimeError('Connector source changed after preparation')
+        if run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture=True) != revision:
+            raise RuntimeError('Connector candidate revision changed after preparation')
     if not (prepared['backend_changed'] or prepared['connector_changed'] or prepared.get('schema_changed')):
         from office_hot_static import eligible, publish as publish_static
         if eligible(prepared['static']):
@@ -208,8 +223,12 @@ def activate_locked(prepared):
             'schema': prepared['schema'], 'backups': [], 'status': 'unchanged'})
         return {"status": "unchanged", "revision": revision}
     protocol_before=protocol_observation(ROOT,prepared['python'])
+    if prepared.get('connector_only_backup') and protocol_before.get('mode') != 'legacy':
+        raise RuntimeError('Connector-only requires verified legacy rollback compatibility before any service stop')
     backups = []
     frontend_backup = None
+    if prepared.get('connector_only_backup'):
+        from whatsapp_connector_release import backup_store, verify_connector
     services = (["CommissionSystem"] if backend_changed else []) + (["WhatsAppConnector"] if connector_changed or prepared.get("schema_changed") else [])
     # Stopping is inside the recovery block: a partial stop must not strand services.
     try:
@@ -218,6 +237,8 @@ def activate_locked(prepared):
             if run([nssm, "status", service], capture=True) != "SERVICE_STOPPED":
                 run([nssm, "stop", service])
         if connector_changed:
+            if prepared.get('connector_only_backup'):
+                backup_store(prepared)
             destination = live / "services/whatsapp-connector/node_modules"
             staged = ROOT / "services/whatsapp-connector/node_modules"
             backup = STATE / ("connector-deps-" + str(time.time_ns()))
@@ -244,6 +265,8 @@ def activate_locked(prepared):
         for service in services:
             run([nssm, "start", service])
         wait_ready(prepared['port'], nssm, services)
+        if prepared.get('connector_only_backup'):
+            verify_connector(prepared)
         service_event(STATE, 'office', revision, previous, 'http-ready')
     except Exception:
         for service in services:
@@ -259,12 +282,15 @@ def activate_locked(prepared):
                         destination.rename(STATE / ("office-failed-" + str(time.time_ns())))
                     if backup.exists():
                         backup.rename(destination)
-                run([nssm, "set", "CommissionSystem", "Application", prepared["application"]])
-                run([nssm, "set", "CommissionSystem", "AppParameters", prepared["parameters"]])
+                if backend_changed:
+                    run([nssm, "set", "CommissionSystem", "Application", prepared["application"]])
+                    run([nssm, "set", "CommissionSystem", "AppParameters", prepared["parameters"]])
                 service_event(STATE, 'office', revision, previous, 'rollback-start-requested')
                 for service in services:
                     run([nssm, "start", service])
                 wait_ready(prepared['port'], nssm, services)
+                if prepared.get('connector_only_backup'):
+                    verify_connector(prepared)
                 guard.check()
                 service_event(STATE, 'office', revision, previous, 'rollback-http-ready')
         except Exception:
@@ -277,6 +303,9 @@ def activate_locked(prepared):
         record_backup(STATE, *frontend_backup)
     for name, _, _, files in prepared["static"]:
         atomic_json(STATE / ("office-" + name + ".json"), {"files": files})
+    if prepared.get('connector_only_backup'):
+        return {"status": "updated", "revision": revision,
+                "backups": [[str(a), str(b)] for a, b in backups]}
     atomic_json(STATE / "office-success.json", {"revision": revision, "previous": previous,
                 "schema": prepared["schema"], "backups": [[str(a), str(b)] for a, b in backups]})
     return {"status": "updated", "revision": revision}

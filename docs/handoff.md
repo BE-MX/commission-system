@@ -1,3 +1,10 @@
+## 2026-11-14 Rina WhatsApp 联系人名称与手机号同步（Codex，本地修复未部署）
+
+- 生产只读：Rina 103 个未关联非群会话，45 缺名称、101 缺号码；联系人 PN 与会话 LID 未连接，rc14 事件缓冲还会丢失 history mapping 数组。
+- `codex/whatsapp-contact-metadata` 补明确身份映射、provider 双向 key 核验、完整名称字段与授权启动回填；不改会话/消息 UID 或客户关联，冲突隔离、批内原子性及暂停竞态有保护。
+- 真实缓存仅复制到内存试运行：安全补回 19 名称/94 号码，剩余 26/7；消息、凭据和会话 ID 不变，重复执行幂等。初步 21/100 候选经冲突保护缩小为 19/94，不能把候选数当修复结果。
+- 16 个专项回归及77项全套串行测试通过，独立审查问题已修；完整验证与生产发布状态见 [调查记录](reports/2026-11-14-whatsapp-contact-metadata.md)。未 commit/push/merge/deploy，未写生产数据。
+
 ## 2026-11-13 私海助理筛选栏滚动遮挡（Codex，Git 交付，未部署）
 
 - 工作区 `D:/MyProgram/commission-system-codex-private-sea-filter-scroll`，分支 `codex/private-sea-filter-scroll`，基于 `main@ca82e09e`；用户已授权提交、合并 main 并推送 origin；本次不部署。

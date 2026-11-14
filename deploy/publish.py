@@ -403,6 +403,7 @@ def publish(args):
 if __name__ == "__main__":
     sys.modules["publish"] = sys.modules[__name__]
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument('--whatsapp-connector-only', metavar='BASELINE_SHA', help='Publish only the reviewed office connector from a fixed baseline; no schema/backend/static activation')
     parser.add_argument('--office-beijing-ingress', choices=['prepare', 'key', 'server', 'client', 'verify', 'reconnect', 'routes-prepare', 'routes-activate', 'rollback', 'receipt-config'], help='Install and verify the dedicated Beijing office tunnel; preserve Singapore fallback')
     parser.add_argument('--color-guide-site', metavar='PLAN_JSON', help='Publish only the Beijing static color guide')
     parser.add_argument('--color-guide-navigation', metavar='PLAN_JSON', help='Publish only the Beijing color-guide navigation overlay')
@@ -453,6 +454,13 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
+        if getattr(args, 'whatsapp_connector_only', None):
+            from whatsapp_connector_release import validate_args, execute
+            validate_args(args)
+            with deployment_lock():
+                print(json.dumps(execute(Path(__file__).resolve().parent.parent, ROOT, STATE,
+                                         args.revision, args.whatsapp_connector_only, args.prepare_only)), flush=True)
+            sys.exit(0)
         if args.office_beijing_ingress:
             if any(value for key, value in vars(args).items() if key != 'office_beijing_ingress'):
                 raise RuntimeError('Office ingress accepts only its stage')
@@ -658,6 +666,9 @@ if __name__ == "__main__":
         else:
             publish(args)
     except Exception as error:
+        if getattr(locals().get('args'), 'whatsapp_connector_only', None):
+            print('CONNECTOR RELEASE FAILED: ' + str(error), file=sys.stderr, flush=True)
+            sys.exit(1)
         if any(getattr(locals().get('args'), key, None) for key in ['candidate_retention_only', 'static_retention_only', 'okki_sync_only', 'mail_worker_stage', 'colorwork_backup_policy', 'storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
             print('STORAGE MAINTENANCE FAILED: ' + str(error), file=sys.stderr, flush=True)
             sys.exit(1)

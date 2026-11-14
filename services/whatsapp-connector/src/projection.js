@@ -9,6 +9,10 @@ export function phone(jid) {
   const match = String(jid || '').match(/^(\d{6,15})(?::\d+)?@(s\.whatsapp\.net|c\.us)$/)
   return match ? `+${match[1]}` : null
 }
+const contactJid = jid => typeof jid === 'string'
+  ? jid.replace(/:\d+@/, '@').replace(/@c\.us$/, '@s.whatsapp.net') : ''
+const isLid = jid => /^\d{1,30}@lid$/.test(jid)
+const nonempty = value => typeof value === 'string' && value.trim() ? value.trim() : null
 function sourceKey(key) {
   if (!key?.remoteJid || !key.id) throw error('invalid_message_key')
   for (const value of Object.values(key)) if (typeof value === 'string' && value.length > 255) throw error('message_key_size_limit')
@@ -58,18 +62,21 @@ function content(raw) {
   return { content_type: 'unsupported', content_text: '[Unsupported WhatsApp message]', attachments: [] }
 }
 export class Projector {
-  constructor(store) { this.store = store }
+  constructor(store) { this.store = store; this.refreshingMetadata = new Set() }
   ingest(lease, kind, event, eventId, bytes) {
     try { return this.ingestBatch(lease, kind, event, eventId, bytes) }
-    finally { this.pendingRange = null }
+    finally { this.pendingRange = null; this.metadataBefore = null; this.conflictedJids = null }
   }
   ingestBatch(lease, kind, event, eventId, bytes) {
     return this.store.ingest(lease, kind, () => {
       // Message timestamps are folded into one account write per event, not one per message.
       this.pendingRange = { earliest: null, latest: null }
+      this.metadataBefore = new Map()
+      this.conflictedJids = new Set()
       if (kind === 'messages.upsert') for (const message of event.messages || []) this.message(lease, message,
         { live: event.type === 'notify', history: event.type === 'append' })
       else if (kind === 'messaging-history.set') {
+        for (const mapping of event.lidPnMappings || []) this.mapping(lease, mapping)
         for (const contact of event.contacts || []) this.contact(lease, contact)
         for (const chat of event.chats || []) this.chat(lease, chat)
         for (const message of event.messages || []) this.message(lease, message, { history: true })
@@ -79,6 +86,7 @@ export class Projector {
         history_state: event.status === 'paused' ? 'stalled' : 'partial',
         history_batch_complete: event.status === 'complete', history_completion_explicit: Boolean(event.explicit),
       })
+      else if (kind === 'lid-mapping.update') this.mapping(lease, event)
       else if (['chats.upsert', 'chats.update'].includes(kind)) for (const chat of event) this.chat(lease, chat)
       else if (kind === 'chats.delete') for (const jid of event) {
         this.chat(lease, { id: jid }, { deleted: true })
@@ -91,6 +99,17 @@ export class Projector {
           // Prevent delayed history repopulating the explicitly deleted chat.
           this.chat(lease, { id: event.jid }, { deleted: true })
         } else for (const key of event.keys || []) this.deleteMessage(lease, key)
+      }
+      // A conflict later in the same batch must not publish metadata tentatively
+      // copied by an earlier pair. Retain only values committed before this event.
+      if (this.conflictedJids.size) for (const [id, before] of this.metadataBefore) {
+        const current = this.store.entity(lease.uid, 'conversation', id)
+        if (this.conflictedJids.has(contactJid(current.chat_id))) {
+          const direct = this.contactMetadata(lease, current.chat_id)
+          this.store.putEntity(lease, 'conversation', id, { ...current, ...before,
+            contact_name: before.contact_name || direct.name || null,
+            contact_phone: phone(current.chat_id) || before.contact_phone || null }, { chat: hash(current.chat_id) })
+        }
       }
       const range = this.pendingRange
       this.pendingRange = null
@@ -117,23 +136,151 @@ export class Projector {
   contact(lease, contact) {
     if (!contact.id) throw error('invalid_contact_key')
     if (ignoredJid(contact.id)) return
-    const id = hash(contact.id)
+    const jid = contactJid(contact.id)
+    this.providerMapping(lease, jid)
+    const id = hash(jid)
     const previous = this.store.entity(lease.uid, 'contact', id) || {}
-    this.store.putEntity(lease, 'contact', id, { ...previous, ...contact }, {}, true)
-    const existing = this.store.entity(lease.uid, 'conversation', conversationId(lease.uid, contact.id))
-    if (existing) this.chat(lease, { id: contact.id, name: contact.name || contact.notify || contact.verifiedName })
+    const merged = { ...previous, ...contact, id: jid }
+    // History and avatar updates often carry absent/null fields, not name removals.
+    for (const field of ['name', 'notify', 'verifiedName', 'username', 'lid', 'phoneNumber']) {
+      merged[field] = nonempty(contact[field]) || previous[field] || null
+    }
+    const accepted = this.mapping(lease, { lid: isLid(jid) ? jid : merged.lid, pn: phone(jid) ? jid : merged.phoneNumber })
+    if (accepted === false) return
+    this.store.putEntity(lease, 'contact', id, merged, {}, true)
+    this.refreshContactChats(lease, jid)
+  }
+  mapping(lease, mapping) {
+    const lid = contactJid(mapping?.lid), pn = contactJid(mapping?.pn)
+    if (!isLid(lid) || !phone(pn)) return
+    const account = this.store.account(lease.uid)
+    const me = this.store.authGet(lease, 'creds', ['current']).current?.value?.me
+    // rc14 can attach the companion sender's PN to an outgoing customer's key.
+    // Never turn our own identity into a customer's contact alias.
+    if ([account.self_jid, me?.id].some(id => contactJid(id) === pn)
+      || [account.self_lid, me?.lid].some(id => contactJid(id) === lid)) return false
+    const left = this.store.entity(lease.uid, 'contact_alias', hash(lid))
+    const right = this.store.entity(lease.uid, 'contact_alias', hash(pn))
+    if ((left && left.other !== pn) || (right && right.other !== lid)) {
+      // Quarantine ambiguous metadata locally; it must neither cross-label people
+      // nor abort a valid message/history batch and pause collection for the account.
+      for (const jid of new Set([lid, pn, left?.other, right?.other].filter(Boolean))) {
+        this.store.putEntity(lease, 'contact_alias', hash(jid), { jid, other: null, ambiguous: true }, {}, true)
+        this.conflictedJids?.add(jid)
+      }
+      this.coverage(lease, { coverage: { gap_reason: 'contact_identity_conflict' } })
+      return false
+    }
+    if (left?.other === pn && right?.other === lid) return true
+    for (const [jid, other] of [[lid, pn], [pn, lid]]) {
+      this.store.putEntity(lease, 'contact_alias', hash(jid), { jid, other }, {}, true)
+    }
+    this.refreshContactChats(lease, lid)
+    return true
+  }
+  providerMapping(lease, jid) {
+    if (phone(jid)) {
+      const pnUser = jid.split('@')[0]
+      const lidUser = this.store.authGet(lease, 'lid-mapping', [pnUser])[pnUser]?.value
+      if (typeof lidUser === 'string' && /^\d{1,30}$/.test(lidUser)) {
+        const key = `${lidUser}_reverse`
+        if (this.store.authGet(lease, 'lid-mapping', [key])[key]?.value === pnUser) {
+          this.mapping(lease, { lid: `${lidUser}@lid`, pn: jid })
+        }
+      }
+      return
+    }
+    if (!isLid(jid)) return
+    const lidUser = jid.split('@')[0], key = `${lidUser}_reverse`
+    const pnUser = this.store.authGet(lease, 'lid-mapping', [key])[key]?.value
+    if (typeof pnUser === 'string' && /^\d{6,15}$/.test(pnUser)
+      && this.store.authGet(lease, 'lid-mapping', [pnUser])[pnUser]?.value === lidUser) {
+      this.mapping(lease, { lid: jid, pn: `${pnUser}@s.whatsapp.net` })
+    }
+  }
+  refreshContactChats(lease, jid) {
+    // Startup repair publishes each conversation once, filling only missing fields.
+    if (this.refreshingMetadata.has(lease.uid)) return
+    const aliasRecord = this.store.entity(lease.uid, 'contact_alias', hash(jid))
+    const alias = aliasRecord?.other
+    const ids = [jid, alias].filter(Boolean)
+    for (const id of [...ids, ...ids.filter(value => phone(value)).map(value => value.replace('@s.whatsapp.net', '@c.us'))]) {
+      const existing = this.store.entity(lease.uid, 'conversation', conversationId(lease.uid, id))
+      if (existing) this.chat(lease, { id })
+    }
+  }
+  contactMetadata(lease, id) {
+    const jid = contactJid(id)
+    const aliasRecord = this.store.entity(lease.uid, 'contact_alias', hash(jid))
+    const alias = aliasRecord?.other
+    const contacts = [jid, alias].filter(Boolean).map(key => this.store.entity(lease.uid, 'contact', hash(key)))
+    const name = ['name', 'notify', 'verifiedName', 'username']
+      .flatMap(field => contacts.map(contact => nonempty(contact?.[field]))).find(Boolean)
+    return { name, phone: phone(jid) || phone(alias), alias }
+  }
+  async refreshMetadata(lease, authorize) {
+    if (this.store.account(lease.uid).contact_metadata_version === 1) return
+    this.refreshingMetadata.add(lease.uid)
+    try {
+    let checkedAt = -Infinity
+    const checkpoint = async () => {
+      if (performance.now() - checkedAt >= Math.min(1000, lease.ttl / 3)) {
+        await authorize(); this.store.renew(lease); checkedAt = performance.now()
+      }
+    }
+    // Replay only metadata in the original encrypted store. No second socket, body
+    // export, message identity change, or forced historical download is required.
+    for (const contact of this.store.iterEntities(lease.uid, 'contact')) {
+      await checkpoint()
+      this.store.ingest(lease, 'contact-metadata-refresh', () => this.contact(lease, contact))
+    }
+    // One streaming pass per account, not one whole message-table scan per chat.
+    // Retain only the latest incoming name and timestamp, never message bodies.
+    const names = new Map()
+    for (const message of this.store.iterEntities(lease.uid, 'message')) {
+      await checkpoint()
+      if (message.is_deleted || message.direction !== 'inbound' || !nonempty(message.sender_name)) continue
+      const latest = names.get(message.conversation_uid)
+      if (!latest || (message.sent_at || '') > latest.at) {
+        names.set(message.conversation_uid, { name: message.sender_name, at: message.sent_at || '' })
+      }
+    }
+    for (const conv of this.store.iterEntities(lease.uid, 'conversation')) {
+      await checkpoint()
+      if (conv.is_group || conv.is_deleted) continue
+      this.store.ingest(lease, 'contact-metadata-refresh', () => {
+        const jid = contactJid(conv.chat_id)
+        this.providerMapping(lease, jid)
+        this.chat(lease, { id: conv.chat_id, pushName: names.get(conv.conversation_uid)?.name })
+      })
+    }
+    await authorize()
+    this.store.renew(lease)
+    this.store.patchAccount(lease, { contact_metadata_version: 1 })
+    } finally { this.refreshingMetadata.delete(lease.uid) }
   }
   chat(lease, chat, { deleted = false, live = false } = {}) {
     if (!chat?.id) throw error('invalid_chat_key')
     if (ignoredJid(chat.id)) return null
     const id = conversationId(lease.uid, chat.id)
+    if (this.metadataBefore && !this.metadataBefore.has(id)) {
+      const before = this.store.entity(lease.uid, 'conversation', id) || {}
+      this.metadataBefore.set(id, { contact_name: before.contact_name || null,
+        contact_phone: before.contact_phone || null, alt_jid: before.alt_jid || null })
+    }
+    const jid = contactJid(chat.id)
+    // rc14's event buffer omits lidPnMappings from history events, but its
+    // processor has already persisted those pairs in the authorized key store.
+    this.providerMapping(lease, jid)
+    if (isLid(jid) && (chat.pnJid || chat.altJid)) this.mapping(lease, { lid: jid, pn: chat.pnJid || chat.altJid })
     const previous = this.store.entity(lease.uid, 'conversation', id) || {}
-    const contact = this.store.entity(lease.uid, 'contact', hash(chat.id))
+    const contact = this.contactMetadata(lease, chat.id)
+    const fillOnly = this.refreshingMetadata.has(lease.uid)
     const value = { ...previous, conversation_uid: id, chat_id: chat.id, source_jid: chat.id,
-      alt_jid: chat.altJid || previous.alt_jid || null,
+      alt_jid: (fillOnly && previous.alt_jid) || contact.alias || previous.alt_jid || null,
       // @lid chats carry no number; the phone-form alternate JID from message keys keeps CRM matching.
-      contact_phone: phone(chat.id) || phone(contact?.phoneNumber) || phone(chat.altJid) || previous.contact_phone || null,
-      contact_name: chat.name || contact?.name || contact?.notify || previous.contact_name || null,
+      contact_phone: (fillOnly && previous.contact_phone) || contact.phone || previous.contact_phone || null,
+      contact_name: (fillOnly && previous.contact_name) || nonempty(chat.name) || contact.name || previous.contact_name || nonempty(chat.pushName) || null,
       is_group: chat.id.endsWith('@g.us'), last_message_at: previous.last_message_at || sentAt(chat.conversationTimestamp),
       last_message_preview: previous.last_message_preview || '', is_deleted: deleted || (previous.is_deleted && !live) || false,
       history_blocked: deleted || previous.history_blocked || false,
@@ -166,7 +313,8 @@ export class Projector {
       || (!edited && previous?.is_edited)) return
     const timestamp = previous?.sent_at || sentAt(raw.messageTimestamp)
     const conversation = this.chat(lease, { id: key.remoteJid,
-      altJid: key.remoteJid.endsWith('@lid') && phone(key.remoteJidAlt) ? key.remoteJidAlt : undefined }, { live })
+      pushName: !key.fromMe && (isLid(contactJid(key.remoteJid)) || phone(key.remoteJid)) ? raw.pushName : undefined,
+      altJid: !key.fromMe && key.remoteJid.endsWith('@lid') && phone(key.remoteJidAlt) ? key.remoteJidAlt : undefined }, { live })
     if (conversation.is_deleted) {
       this.coverage(lease, { coverage: { gap_reason: 'deleted_chat_history_ambiguous' } })
       return

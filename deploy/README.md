@@ -497,3 +497,16 @@ Windows journal replacement retries only transient WinError 5/32/33 on the same 
    ```
 
 3. 将两端后端的 `PROJECT_RADAR_SINGAPORE_SSH_HOST` 设置为该别名，随受管后端发布生效。验收从项目雷达详情重新分析直连失败的网站，确认日志显示新加坡补抓且详情写回。恢复原抓取路径时清空该设置，按受管入口重新加载配置。
+
+## 仅办公室 WhatsApp 联系人修复发布
+
+已授权的 2026-11-14 联系人元数据修复使用窄入口，不运行默认全环境发布。从已导入并核验的 `.deploy_state/sources/<候选完整SHA>/deploy/deploy.bat` 执行：
+
+```powershell
+deploy.bat --whatsapp-connector-only <线上基线完整SHA> --live-root D:/commission-system --revision <候选完整SHA> --no-pull --prepare-only
+# 同一候选通过后去掉 --prepare-only；必须已有本次办公室连接器发布授权。
+```
+
+白名单只接受本次两个连接器源文件、测试、文档和入口支持；其他业务文件、依赖和迁移变更阻断。共用发布锁，拒绝未结束全量发布/迁移/连接器回执。源代码必须干净、固定且从线上基线快进；schema必须无pending，原连接器须健康且开启启动恢复。现有rollback_guard仅支持legacy，因此切换前再次核实该协议模式；不满足则不停止任何服务。
+
+只停止/启动WhatsAppConnector，停止后以SQLite一致备份保存加密状态并收紧备份目录ACL；不导出密钥。复用依赖准备、Git快进及失败回滚，启动和回滚均验鉴权loopback健康。专用回执 `.deploy_state/whatsapp-connector-release.json`，保留全量office-success回执和其静态回滚引用。失败/中断必须先核查，不删除日志盲重跑；SQLite备份是恢复依据，不自动覆盖已接收的新消息。生产结果另核对后端消费及本人页面。

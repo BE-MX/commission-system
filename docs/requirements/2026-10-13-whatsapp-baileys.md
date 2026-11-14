@@ -13,6 +13,8 @@
 
 ## 契约
 
+2026-11-14 联系人元数据补充：利用 provider 明确 PN/LID 对应关系及双向一致的加密 mapping key 连接联系人资料；新增私有 alias 投影，不增 API、不修改会话/消息 UID 或客户绑定。注册凭据恢复启动时按授权与 fencing 执行幂等元数据回填，普通扫码凭据以 `me.id` 判断可恢复，不单独依赖 `registered`。未知或冲突身份不猜测；冲突仅隔离元数据传播，不能导致整批正常消息回滚或账号采集暂停。细则见连接器 README，验证与上线状态见 [联系人同步调查](../reports/2026-11-14-whatsapp-contact-metadata.md)。
+
 保留 `/api/whatsapp` v1 绑定、账号、同步计数、会话/消息分页；新增按账号授权、状态与重新关联操作，内部 Connector 授权查询以服务 Bearer key 验证，不依赖员工 JWT。新 Connector `/internal/v2/changes` 返回持久变更序号、has_more 和账号授权代次，应用成功提交后才推进本地 checkpoint。绑定先提交本地保留的账号/操作 ID，再调用幂等 Connector；超时按确定操作 ID 回读，不自动再次发送写请求。
 
 ## 迁移与边界

@@ -64,6 +64,12 @@ rc14 的 `logout()` 只等待 socket 写入，没有远端 ACK，且没有 `cred
 
 ## 采集、覆盖信息与恢复
 
+联系人元数据按 WhatsApp 明确提供的 PN/LID 对应关系连接：消费联系人 `lid/phoneNumber`、历史 `lidPnMappings`、`lid-mapping.update`、聊天 `pnJid`，并双向核验 rc14 已保存的 `lid-mapping` key。后者也覆盖 rc14 事件缓冲丢弃历史映射数组的情况。只补名称和号码，不改 conversation/message UID，不合并聊天或建立方舟客户关联。联系人名称依次使用保存名、昵称、企业名、username；无这些值时才使用本人收到的一对一消息昵称，销售自己的昵称和群成员昵称不用于客户标题。
+
+已有凭据（含普通 QR 登录仅有 `me.id`、`registered=false` 的情况）在启动时通过最新 Ark 授权与本机租约后，一次性重新投影缓存联系人，并只补会话缺失的名称和号码，保留已有非空值；先完成映射冲突检查再发布会话。新扫码过程不做缓存回填。旧消息只流式扫描一次以取有效入站昵称，不改正文、消息身份、撤回状态或凭据；已删除会话不恢复。成功后记录内部版本，失败可继续，变更经原 sequence feed 同步至方舟。
+
+不从 LID 数字猜手机号，不把出站消息的 `remoteJidAlt` 作为联系人身份，不接受本账号号码作为客户别名。冲突 PN/LID 对停止互相传播资料，记录 `coverage.gap_reason=contact_identity_conflict`，其余消息继续采集。同一批次新发现冲突时撤回该批次暂写的别名元数据；此前已发布的旧字段不会自动清空（后端空值契约会保留旧值），须单独核实。没有可靠来源的名称与号码保持缺失。Rina 的只读核查与修复试运行见 [2026-11-14 调查记录](../../docs/reports/2026-11-14-whatsapp-contact-metadata.md)。
+
 采集全部已授权账号会话（含群组），处理 `messages.upsert` 的整个 notify/append 数组、`messaging-history.set` 的所有 chats/contacts/messages、chats/contacts 更新以及消息 edit/delete。canonical UID 是有界 SHA-256 ID；保留完整 source key 的 remoteJid/id/fromMe/participant 与 PN/LID/username 替代地址。不从群组或 LID 推断手机号。
 
 未知消息保存安全占位 `unsupported`；媒体只保存类型/文件名元数据，未下载附件。编辑替换当前正文，包含 rc14 的 `editedMessage.message` 包装；撤回清空正文和会话预览。墓碑阻止延迟历史重新填回已删除消息。删除整个会话后允许新的 notify 消息 ID 恢复后续会话；首次有效新消息建立持久的重新打开时间边界，其后的 append/history 继续同步。旧墓碑 ID 不恢复，无法证明晚于边界的历史和未知旧编辑不恢复正文，并明确记录 `deleted_chat_history_ambiguous` gap；已知新消息仍可编辑。读取型状态/送达回执不自动当成撤回。

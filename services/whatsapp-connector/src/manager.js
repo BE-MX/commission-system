@@ -8,7 +8,7 @@ import { Projector, phone } from './projection.js'
 import { diagnostic as defaultDiagnostic } from './diagnostics.js'
 
 const INGEST_EVENTS = ['messages.upsert', 'messages.update', 'messages.delete', 'messaging-history.set',
-  'messaging-history.status', 'chats.upsert', 'chats.update', 'chats.delete', 'contacts.upsert', 'contacts.update']
+  'messaging-history.status', 'chats.upsert', 'chats.update', 'chats.delete', 'contacts.upsert', 'contacts.update', 'lid-mapping.update']
 const logger = pino({ level: 'silent' }) // Upstream debug records can contain keys/bodies/QR; never enable them here.
 
 export function classifyDisconnect(code) {
@@ -162,7 +162,7 @@ export class Manager {
     const lease = this.store.acquire(uid, this.holder, this.leaseTTL)
     session ||= [...this.sessions.values()].filter(value => value.account_uid === uid && value.session_generation === account.session_generation
       && value.consent_version === account.consent_version).sort((a, b) => a.created_at.localeCompare(b.created_at)).at(-1) || null
-    const entry = { uid, lease, session, stopped: false, collecting: true, queue: Promise.resolve(),
+    const entry = { uid, lease, session, freshBind, stopped: false, collecting: true, queue: Promise.resolve(),
       queueCount: 0, queueBytes: 0, retries: 0, authFailures: 0, listeners: [], socket: null, qr: null, validating: false, epoch: 0 }
     this.entries.set(uid, entry)
     try {
@@ -184,6 +184,11 @@ export class Manager {
     await this.authorized(entry.uid, this.store.account(entry.uid)) // Recheck immediately before every socket construction.
     if (entry.stopped) return
     this.store.renew(entry.lease)
+    const credentials = this.store.authGet(entry.lease, 'creds', ['current']).current?.value
+    if (!entry.freshBind && (credentials?.registered || credentials?.me?.id)) {
+      await this.projector.refreshMetadata(entry.lease, () => this.authorized(entry.uid, this.store.account(entry.uid)))
+    }
+    if (entry.stopped) return
     const auth = authState(this.store, entry.lease, err => this.protect(entry, err.code || 'auth_store_failed'))
     entry.auth = auth.state
     const pairing = () => ({ registered: auth.state.creds.registered === true, has_identity: Boolean(auth.state.creds.me) })
@@ -506,10 +511,13 @@ export class Manager {
       if (!['active', 'binding'].includes(account.status)) continue
       try {
         const entry = await this.start(account.account_uid)
-        this.store.patchAccount(entry.lease, { coverage: { ...account.coverage,
-          gap_reason: account.coverage?.gap_reason || 'connector_restart_gap' } })
+        if (entry.stopped || this.closed) continue
+        const current = this.store.fence(entry.lease)
+        this.store.patchAccount(entry.lease, { coverage: { ...current.coverage,
+          gap_reason: current.coverage?.gap_reason || 'connector_restart_gap' } })
       }
       catch (err) {
+        if (this.closed || !['active', 'binding'].includes(this.store.account(account.account_uid)?.status)) continue
         if (err.code === 'authorization_unavailable') this.waitOffline(account.account_uid, err.code)
         else if (err.code !== 'lease_busy') this.protectOffline(account.account_uid, err.code || 'start_failed')
         console.warn(`connector_restore_failed:${err.code || 'start_failed'}`)
