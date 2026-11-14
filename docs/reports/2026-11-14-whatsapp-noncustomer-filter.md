@@ -2,7 +2,7 @@
 
 ## 范围与状态
 
-用户要求 Rina 本人会话和 WhatsApp 平台通知不再进入未关联客户列表，保留消息，5 组号码冲突不动，并将机制适用于所有业务员。本地实现分支 `codex/whatsapp-noncustomer-filter`，基点 `c9d899ca`；本记录不代表生产已部署。
+用户要求 Rina 本人会话和 WhatsApp 平台通知不再进入未关联客户列表，保留消息，5 组号码冲突不动，并将机制适用于所有业务员。本地实现分支 `codex/whatsapp-noncustomer-filter`，基点 `c9d899ca`；2026-11-14 已按用户后续明确授权发布生产，实际版本与验收如下。
 
 ## 行为
 
@@ -26,3 +26,15 @@
 ## 发布边界
 
 必须同时更新办公室连接器与提供私海接口的后端；原 `--whatsapp-connector-only` 只允许连接器修复，不能用来发布这次后端规则。当前 main 另含客户回收/统计与迁移263，本次排除不需要这些变更；若单独发布，应基于已上线 `5c6e2704` 组合本次修复，保留 schema262，通过受管部署入口预检。发布前后核对实际版本、消息总量、缺失数与5组冲突指纹；不以生产只读模拟冒充实际发布。
+
+
+## 2026-11-14 生产发布与实际验收
+
+- 用户确认固定候选 `68f72bdd1995fd5ed013c9ba0c186ae5c9774f7c`，只发布本次规则和身份生命周期保护。候选基于办公室已上线 `5c6e2704`，没有合入 main 其他业务功能或迁移263。
+- 通过办公室受管候选 `deploy/deploy.bat --live-root D:/commission-system --revision 68f72bdd1995fd5ed013c9ba0c186ae5c9774f7c --no-pull`，先 prepare-only 后正式激活；发布 ID `91595cc4551e45c3ba32fbb8beeb1582`。全量回执 succeeded，两地实际 HEAD 均匹配候选。办公室连接器及两地后端已更新，schema 仍为 `262_invoice_customer_sync_log`，无 DDL。五个已登记静态目标均 unchanged、0字节传输。
+- 28/28 必需服务、数据库、隧道、公网路由检查通过；另行验证连接器鉴权 loopback health 为 ok。出库 timer 保持原 active/enabled，邮件 Worker 保持停止。未纳管服务、客户端和定期资源清理不计为本次已更新。
+- Rina 本人登录态真实浏览器：发布前103条，发布后101条；以100条/页核对两页，剩余23个通用标题、5条号码未同步。四个具名冲突 Linda Michelle Butler、Roxanne、Gary、Rytha，以及07-31 14:34的无名会话均仍可见。界面名称/分钟时间仅作展示证据，身份保留另以数据库指纹确认。
+- 紧邻发布前后只读快照比对：原8,387条消息ID及文本、方向、时间和删除标记全部一致；5条冲突会话的完整核查字段指纹一致，客户关联记录一致。本人221条与平台通知4条消息全部保留。此前只读模拟是220+4；正式快照前正常新增1条本人消息，所以本次保留225条，不能将差值当成删除或补全。
+- 规则对所有业务员通用，无 Rina 用户ID白名单；只依据各自当前绑定代次的精确本人身份。其他业务员身份未同步齐时保守保留显示，不猜测排除。
+- 本地证据：发布工作区 `.deploy_state/noncustomer-release/` 内 prepare.log、activation.log、postcheck.json、before.json、after.json、data-preservation.json 和 ui/。无消息发送、客户关联或冲突修复操作。
+- Git：实现为 `964b37ef`，生产候选为 `68f72bdd`；本轮未获 main 合并或 origin 推送授权，因此继续保留两个任务分支和 worktree。后续 main 发布前需先集成本修复，防止规则回退；部署使用的独立 deploy/<SHA> 制品引用不等于 origin/main 推送。
