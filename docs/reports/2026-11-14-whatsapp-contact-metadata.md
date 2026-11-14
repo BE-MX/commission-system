@@ -2,7 +2,7 @@
 
 ## 结论与交付状态
 
-修复代码位于 `codex/whatsapp-contact-metadata`，基于主分支 `24d2cb6f`。已完成连接器现场只读核查、隔离回归与使用真实缓存的内存试运行；用户已授权仅办公室连接器发布及补全；正在固定本地候选，尚未上线、推送或合并，未修改生产会话、客户绑定、消息、凭据和采集服务状态。
+用户明确授权办公室连接器发布、补全及 Rina 实际显示核验。修复 `5c6e2704040ff14e5ae704c40cbbf83fca63105a` 已经受管入口发布成功，账号恢复 connected，补全版本为 1。办公室只重启 WhatsAppConnector，未重启后端、未迁移数据库；schema 仍为 262。本轮按用户授权将修复与发布记录合入开发 `main` 并推送 `origin`；此次 Git 交付不重复部署，办公室实际发布版本仍为 `5c6e2704`。
 
 2026-11-14 10:30 左右（UTC+8），Rina 活跃账号共有 103 个非群未关联会话，45 个缺名称、101 个缺手机号。连接器已有 318 条联系人资料（139 条 LID、139 条 PN）、266 条带名称、102 个会话有双向一致 auth 映射。该扫码账号 `registered=false` 但存在 `me.id`，服务正常运行，不能以 registered=false 判未绑定。
 
@@ -33,10 +33,22 @@
 
 ## 上线边界
 
-办公室 NSSM `WhatsAppConnector` 是该账号唯一连接器，工作目录 `D:/commission-system/services/whatsapp-connector`。管理 SSH 端口 2224 本次恢复后已连通。只读确认办公室 Git 为 `24d2cb6f`，服务 Running。上线必须走项目 `deploy/deploy.bat` 指定入口，需覆盖此生产发布的授权，先备份状态并保留回滚引用；部署会重启共享连接器，其他已绑定账号也会暂时重连并按同样规则补元数据。
+办公室 NSSM `WhatsAppConnector` 是该账号唯一连接器，工作目录 `D:/commission-system/services/whatsapp-connector`。管理 SSH 端口 2224 本次恢复后已连通。发布前只读确认办公室 Git 为 `24d2cb6f`，服务 Running。上线必须走项目 `deploy/deploy.bat` 指定入口，需覆盖此生产发布的授权，先备份状态并保留回滚引用；部署会重启共享连接器，其他已绑定账号也会暂时重连并按同样规则补元数据。
 
-发布后需按账号核对实际生产缺失数、既有客户关联与消息计数，确认新会话变更被后端消费。上述 19/94 是真实缓存的内存试运行结果，**不是已写入生产的数量**。未申请新的扫码、发送消息、下载媒体、修改授权或建立任何客户关联。
+发布后已按账号核对实际缺失数、客户关联、原消息内容及前端显示。上述 19/94 为发布前内存试运行，不等同于运行后的全部变化；最终结果见下节。未申请新的扫码、代发消息、修改授权或建立客户关联。
 
 ## 本次发布准备
 
-用户已明确授权发布和补全并核对Rina本人显示。新增受限 `--whatsapp-connector-only` 入口，保持默认全量发布与本次范围分离。部署相关46项隔离测试通过；独立审查指出的范围、回执和提前失败回滚问题已修复，并验证备份失败与健康失败均能恢复旧连接器，不修改CommissionSystem配置或启停后端。最终上线结果待实测补充。
+用户已明确授权发布和补全并核对Rina本人显示。新增受限 `--whatsapp-connector-only` 入口，保持默认全量发布与本次范围分离。部署相关46项隔离测试通过；独立审查指出的范围、回执和提前失败回滚问题已修复，并验证备份失败与健康失败均能恢复旧连接器，不修改CommissionSystem配置或启停后端。最终上线结果如下。
+
+## 生产发布与 Rina 实际显示验收（2026-11-14）
+
+- 经 `deploy/deploy.bat --whatsapp-connector-only <baseline> --live-root D:/commission-system --revision <candidate> --no-pull` 完成预检和正式切换；回执 `scope=office-whatsapp-connector,status=succeeded`，基线 `24d2cb6f`，候选 `5c6e2704`。办公室 Git checkout 与服务源码 SHA256 对应已验证候选，后端代码和服务配置未更改，北京未发布。
+- 停止连接器后完成 SQLite 一致性备份与 `integrity_check`，受限 ACL 备份保留在办公室 `.deploy_state/whatsapp-connector-backups/5c6e2704040ff14e5ae704c40cbbf83fca63105a/`；完整回执和备份摘要见本地 `final-release-state.json`。切换后连接器鉴权健康正常，WhatsAppConnector 与 CommissionSystem 均 Running，Rina `active/connected`、`needs_user_action=false`。
+- 生产连接器、后端只读统计与 Rina 本人 Chrome 页面相互一致：103 个未关联非群会话；缺名称从 45 降至 25，缺号码从 101 降至 7，即当前 78 个有名称、96 个有号码。对照稳定 conversation_uid，共 20 个原空名称和 94 个原空号码已填入。发布前内存试运行只预计补名称 19 个，生产重连后还处理了新消息及联系人资料，因此不能把这 20 个全部归为启动回填。
+- 后端 103 个原 conversation_uid 全部保留，客户关联指纹未变（原来为空）。启动回填仅补空，但恢复实时联系人同步后另有 2 个原非空名称更新；逐项确认新名称等于可靠 alias 对应联系人资料，alias 未冲突，原非空号码未变。不能声称整个发布观察期间所有已有名称均未变。
+- 连接器备份对照：发布前 8,385 条原消息 ID 与解密 payload 逐项完全保留；发布后 8,386 条，正常新增 1 条消息。数据库和浏览器核验未发送消息或进行客户关联写入。
+- Computer Use 使用 `gpt-6.1-terra/xhigh`，通过现有合法登录确认 Rina / 张心茹，检查真实 `https://leshine.cloud/client-desk` 的“仅我的私海 → 未关联会话”，按 100 条第一页及 3 条末页核对：25 个通用标题“WhatsApp 会话”、7 个“号码未同步”。截图位于证据目录 `ui/before.jpg`、`ui/after-top.jpg`、`ui/after-page2.jpg`，未使用模拟页面。
+- 剩余缺失项缺少可安全使用的名称/号码或存在身份冲突，保持原状，不按昵称猜测归属。后续同一账号、同一会话的新消息仍沿既有客户关联归属；本次补元数据不合并独立会话，也不自动创建客户关联。
+- 证据目录 `.deploy_state/rina-whatsapp-contact-20261114/` 保留 `activation.log`、`before-production.json`、`after-production.json`、`connector-after.json`、`final-release-state.json` 及 UI 截图；生产临时核验脚本已清理，备份和候选保留作为恢复材料。收尾 Git 巡检为 `--no-fetch` 本地快照。
+- 本次 Git 交付包含修复提交 `5c6e2704` 与生产验收记录；保留办公室备份和发布版本，不重新执行部署。证据归档至主工作区同名 `.deploy_state/rina-whatsapp-contact-20261114/`，供任务 worktree 清理后继续核验。
