@@ -36,5 +36,5 @@
 - Rina 本人登录态真实浏览器：发布前103条，发布后101条；以100条/页核对两页，剩余23个通用标题、5条号码未同步。四个具名冲突 Linda Michelle Butler、Roxanne、Gary、Rytha，以及07-31 14:34的无名会话均仍可见。界面名称/分钟时间仅作展示证据，身份保留另以数据库指纹确认。
 - 紧邻发布前后只读快照比对：原8,387条消息ID及文本、方向、时间和删除标记全部一致；5条冲突会话的完整核查字段指纹一致，客户关联记录一致。本人221条与平台通知4条消息全部保留。此前只读模拟是220+4；正式快照前正常新增1条本人消息，所以本次保留225条，不能将差值当成删除或补全。
 - 规则对所有业务员通用，无 Rina 用户ID白名单；只依据各自当前绑定代次的精确本人身份。其他业务员身份未同步齐时保守保留显示，不猜测排除。
-- 本地证据：发布工作区 `.deploy_state/noncustomer-release/` 内 prepare.log、activation.log、postcheck.json、before.json、after.json、data-preservation.json 和 ui/。无消息发送、客户关联或冲突修复操作。
-- Git：实现为 `964b37ef`，生产候选为 `68f72bdd`；本轮未获 main 合并或 origin 推送授权，因此继续保留两个任务分支和 worktree。后续 main 发布前需先集成本修复，防止规则回退；部署使用的独立 deploy/<SHA> 制品引用不等于 origin/main 推送。
+- 本地证据：主工作区 `.deploy_state/whatsapp-noncustomer-20261114/` 内 prepare.log、activation.log、postcheck.json、before.json、after.json、data-preservation.json 和 ui/。无消息发送、客户关联或冲突修复操作。
+- Git：实现为 `964b37ef`，生产候选为 `68f72bdd`；用户后续明确授权本次修复和发布记录合并 main 并推送，无需重复部署。集成时保留 main 已有功能，三份运行源文件与已部署候选逐字一致；集成63项后端回归及增量约定检查通过。生产继续保持 schema262，main 原有迁移263不在本次执行。交付完成后归档证据并清理本次已合并任务分支/worktree；部署使用的独立 deploy/<SHA> 制品引用不等于 origin/main 推送。

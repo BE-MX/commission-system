@@ -4,7 +4,7 @@
 - 默认未关联列表排除当前账号已验证本人PN/LID及WhatsApp平台通知，适用于所有业务员；退出/重绑同步撤回旧身份，信息不足不猜测。已有linked/ignored视图、消息存储和号码冲突保持原样。
 - 63项后端、83项连接器测试和独立审查通过；发布后28/28必需检查及连接器鉴权健康检查通过。Rina本人真实页面103→101，剩余23通用名称/5号码未同步，五个冲突条目全部仍在。
 - 紧邻发布的数据库快照逐项核对原8,387条消息ID和文本全部保留，5组冲突元数据和客户关联不变；本人221条+平台4条消息保留。与此前模拟224条的差异来自发布前新增1条消息。
-- 实现分支 `codex/whatsapp-noncustomer-filter`（964b37ef）；生产专用分支 `codex/whatsapp-noncustomer-release`（68f72bdd）。本轮未合并main或推送origin，后续main发布前需先集成修复。证据位于发布工作区 `.deploy_state/noncustomer-release/`；详见[实施与发布记录](reports/2026-11-14-whatsapp-noncustomer-filter.md)。
+- 实现分支 `codex/whatsapp-noncustomer-filter`（964b37ef）；生产专用分支 `codex/whatsapp-noncustomer-release`（68f72bdd）。用户后续授权将修复和发布记录集成main并推送，本次仅Git交付、不重复部署；集成63项后端回归和增量约定检查通过，运行代码与生产候选一致。证据归档于主目录 `.deploy_state/whatsapp-noncustomer-20261114/`；详见[实施与发布记录](reports/2026-11-14-whatsapp-noncustomer-filter.md)。
 
 ## 2026-11-14 Rina WhatsApp 联系人名称与手机号同步（Codex，办公室已发布）
 

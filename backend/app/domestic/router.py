@@ -326,6 +326,25 @@ def create_customer(
     return ok({"id": customer.id}, message="客户已创建")
 
 
+@router.post("/customers/{customer_id}/claim", summary="从公海认领客户")
+def claim_customer(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        result = customer_service.claim_customer(db, customer_id, _uid(current_user))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if result["order_expired"]:
+        message = "已认领。该客户已超过 3 个月未下单，今天不下单的话下一次释放会再回到公海"
+    else:
+        message = f"已认领，跟进倒计时重新开始；3 个月未下单的倒计时不变（{result['order_due']} 到期）"
+    return ok(result, message=message)
+
+
 @router.put("/customers/{customer_id}", summary="编辑客户")
 def update_customer(
     customer_id: int,
