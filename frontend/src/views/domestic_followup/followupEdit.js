@@ -10,7 +10,7 @@ export function recordToEditForm(record) {
     version: record.version, request_id: newRequestId(), reason: '',
     raw_text: record.raw_text || '', followup_date: record.followup_date, channel: record.channel,
     summary: record.summary || '', state_changes: [...(record.state_changes || [])],
-    next_date: record.next_date, next_plan: record.next_plan || '', next_method: record.next_method,
+    next_date: record.next_date, next_plan: record.next_plan, next_method: record.next_method,
     ...followupOutcome(record),
     attachment_ids: record.attachments.map(a => a.id),
     items: record.items.map(item => ({

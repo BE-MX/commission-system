@@ -2896,7 +2896,7 @@ AI 整理走 `app.ai.service.chat` facade，预设 `domestic_followup_parse`（�
 | GET/POST/DELETE | `/collaboration/settings/scopes`、`/collaboration/settings/scopes/{id}` | 地区或客户范围配置。要求 `domestic_followup:admin` 和 `domestic_followup:coordinate`，或超级管理员。 |
 | GET/PUT | `/collaboration/settings/thresholds` | 读取和配置待接收提醒天数。权限同范围配置。用户选项使用 `GET /collaboration/settings/users`。 |
 
-`/followups` 和草稿确认支持结构化沟通结果、障碍、证据类型及明确共享的摘要。协作客户的新计划需声明用途和责任版本，`plan_assignee_user_id` 可指定在职且有该客户资格的现任负责人或协作人。历史补录只保存沟通事实。协作客户的旧记录编辑冻结关联计划字段，现任通过新跟进或待办更新安排。旧提醒和直接写入口都校验当前任务或跟进责任。
+`/followups` 和草稿确认支持结构化沟通结果、障碍、证据类型及明确共享的摘要。协作客户的新计划需声明用途和责任版本，`plan_assignee_user_id` 可指定在职且有该客户资格的现任负责人或协作人。历史补录只保存沟通事实。编辑已确认记录时可更正 `followup_date` 与 `next_date`，后者传 `null` 即清空。跟进日期最晚为北京时间当天，下次日期最早为本次跟进日期。协作客户的下次日期更正只写入本条记录及其修改历史，当前安排通过新跟进或待办更新。旧提醒和直接写入口都校验当前任务或跟进责任。
 
 # 本地产品与库存账（开发分支）
 

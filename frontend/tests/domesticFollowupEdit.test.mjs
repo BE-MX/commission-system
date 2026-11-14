@@ -50,6 +50,29 @@ test('save requires reason and emits a full editable payload then refreshes call
   assert.equal(editor.visible.value, false)
 })
 
+test('collaboration record dates can change or clear while a blank plan stays unchanged', async () => {
+  const updatedDates = ['2026-11-12', '']
+  for (const nextDate of updatedDates) {
+    const calls = []
+    const editor = useFollowupEditor({
+      followup: async () => ({ ...record(), planning_editable: false, next_plan: null }),
+      dicts: async () => ({}),
+      editFollowup: async (id, body) => { calls.push(body); return { id, version: 3 } },
+    })
+    await editor.open(1)
+    const form = editor.form.value
+    Object.assign(form, { reason: '更正日期', followup_date: '2026-11-10' })
+    assert.equal(await editor.save(), false)
+    assert.equal(editor.error.value, '下次跟进日期不能早于跟进日期')
+    assert.equal(calls.length, 0)
+    form.next_date = nextDate
+    assert.equal(await editor.save(), true)
+    assert.equal(calls[0].followup_date, '2026-11-10')
+    assert.equal(calls[0].next_date, nextDate || null)
+    assert.equal(calls[0].next_plan, null)
+  }
+})
+
 test('editing a legacy record requires an outcome before sending a request', async () => {
   let calls = 0
   const editor = useFollowupEditor({ followup: async () => ({ ...record(), result_code: null }),
