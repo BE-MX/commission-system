@@ -5,7 +5,7 @@ import { onMounted, reactive, ref } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
 import {
-  adjustCustomer, createCustomer, deleteCustomer, getCustomerOptions,
+  adjustCustomer, claimCustomer, createCustomer, deleteCustomer, getCustomerOptions,
   importCustomers, initializeCustomer, listCustomerBalanceLedger, listCustomers,
   newRequestId, rechargeCustomer, updateCustomer,
 } from '@/api/domestic'
@@ -333,6 +333,20 @@ const {
     await listPageState.refreshRemove()
   }
 
+  const claimingId = ref(null)
+  async function handleClaim(row) {
+    if (claimingId.value) return
+    claimingId.value = row.id
+    try {
+      const res = await claimCustomer(row.id)
+      // 订单钟不随认领重置：超过 3 个月未下单的客户会提示今天下单才能留住
+      (res?.data?.order_expired ? msgWarning : msgSuccessText)(res?.message || `已认领「${row.shop_name}」`)
+      await listPageState.refreshRemove()
+    } catch { /* 拦截器已提示（含「已被别人认领」） */ } finally {
+      claimingId.value = null
+    }
+  }
+
   async function loadOptions() {
     try {
       const res = await getCustomerOptions()
@@ -343,6 +357,7 @@ const {
   onMounted(loadOptions)
 
   return {
+    claimingId, handleClaim,
     sortLedger: ({ prop, order }) => ledgerState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }),
     ...listPageState,
     ...listPageState,
