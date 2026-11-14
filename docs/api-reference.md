@@ -1199,6 +1199,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 
 内贸生产的下单 + 按数量拆批报工。与外贸「生产订单（`/api/stock/production`）+ 生产报工（`/api/production`）」是**平行的两套**：外贸报工整行 0/1 流转，内贸带数量。只共用工序/工艺路线/工人工序绑定三类全局资产。
 
+- 公海双钟（2026-11-13，263 迁移）：释放口径唯一来源 `app/domestic/public_sea.py`——订单钟 3 个自然月（基准同上，不含认领日），跟进钟 1 个自然月（最近已确认跟进 / 已生效正式订单 / 认领日 / 建档日取最新，并不早于跟进设置 `public_sea_follow_launch_date`）；生效日未配置或未到时跟进钟只预演不释放。暂缓且约定日在今天或之后的客户，跟进钟最早在约定日次日到期；生效日不能设为过去。因跟进钟释放的客户同事务结束跟进责任（置 unassigned、清协作人、作废待处理交接）并以「客户释放」取消约定跟进与收货回访（`domestic_followup/public_sea_hooks.py`）；因订单钟释放保留跟进责任（11-09 D07）。`POST /customers/{id}/claim`（`domestic:write`）：仅无归属且启用的客户可认领，行锁防并发，已有归属 409；写入 `owner_claimed_at`，只重置跟进钟，订单钟不变（防放掉再认领续期）；返回 `order_due/order_expired`，订单钟已到期时提示今天下单才能留住；跟进责任无负责人时同事务交给认领人（following + 客户级协作范围 + 协作事件 claim），仍有人在跟的保持不动。
 - 订单大类（140）：`POST /orders` 新增 `order_kind=business|production`，缺省为业务订单。业务单沿用 `DO{YYYYMMDD}-{NNN}`；生产单单独递增 `DP{YYYYMMDD}-{NNN}`，`order_no` 自动取该系统号。生产单不建客户档案；142 起 `customer_id` 可选关联已有启用客户，`order_category/order_type/order_channel/required_ship_date` 均为 NULL；不需要报价、原价或客户余额，保存草稿和正式提交都不产生客户资金流水。生产单请求中的销售与发型字段在落库前统一清空，更新接口明确拒绝这些字段；头套不需发型系列，发片保留工艺/尺寸和发长，保留颜色及通用备注图文。`POST /orders/{id}/submit` 对生产单只需 `request_id`；追加明细无需 `expected_quote`。业务订单继续遵守下文报价、客户与发货日期契约。
 - 路线选择（140）：新建/追加明细由“订单大类 + 业务类别 + 产品类型”选择固定路线，产品档案的 `route_id` 不决定该明细路线。头套/发片生产单分别使用 `生产订单 · 头套网帽（递针）` / `生产订单 · 发片网底（递针）`（确认下单至入库）；业务普单使用对应 `业务普单 · …`（毛坯出库至发货完成）；业务特单使用原始完整路线。生产单入库全部报完即已完工，`POST /items/{id}/ship` 拒绝生产单。已保存的业务订单不能改普货/特单类别；人工挂路线也只接受对应固定路线，避免订单类别与报工快照不一致。历史订单的原有快照不重建。
 - 列表与显示（140）：`GET /orders` 支持 `order_kind` 筛选，列表、详情、打印卡和小程序数据带 `order_kind/order_kind_label`。主站新增 `/domestic/production-orders/create`，原业务入口 `/domestic/orders/create` 保留；生产单详情、流转卡和备货 Excel 隐藏销售及发型字段，“公司备货”仅为展示文案。沿用现有订单读写与创建人数据范围权限。
@@ -3143,6 +3144,7 @@ stock条目含external_id、mode、warehouse_id、local_sku_id、quality、整�
 |---|---|---|
 | GET | `/stats/personal` | `range=w/30/q/custom`，自定义传 `date_from/date_to`，可选 `user_id`；业务员仅本人，管理者可查统计名单全部或单人。返回个人指标、前期对比、节奏、覆盖、质量、今日未提交与匿名团队均值；均值仅名单满四人返回。 |
 | GET | `/stats/team` | 同时间参数；需 `domestic_followup:read_all`，返回团队去重指标、人员对比、信号、异常及协调入口计数。 |
+| GET | `/stats/churn-map` | 客户流失态势（当前快照，不随时间范围变化）：每个有归属客户的释放日与先到期的钟（`public_sea.compute_clocks`，新规则生效前跟进钟按预演口径）、频率绑带、按 7 大区 + 未填地区聚合、近 30 天落海明细。`domestic_followup:read` 只返回本人归属或负责跟进的客户、不返回姓名，带他人 `user_id` 403；查看某人（业务员本人，或 `read_all` 传 `user_id`）时近 30 天落海只算、只列原归属是这个人的，同事的落海客户只计入各区公海总数。`read_all` 返回归属人选项。 |
 | GET | `/stats/rhythm` | `scope=personal/team` 和时间参数，可选 `user_id`；team 同样验证 read_all。 |
 | GET | `/stats/missing-today` | 北京时间今日提交情况；业务员仅自己，周日/配置非工作日不提示。 |
 | GET | `/stats/drilldown` | `kind=records/overdue/signal/plans`；支持 user_id、日期、followup_date、result_code、obstacle、state_change、quality，page/page_size（最多 100）；复用当前身份及统计名单范围。 |

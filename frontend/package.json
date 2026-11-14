@@ -10,7 +10,7 @@
     "check": "vite build",
     "audit:status-badges": "node scripts/auditStatusBadgeColumns.mjs",
     "test:task-center": "node --test tests/taskCenter.test.mjs",
-    "test:domestic-followup": "node --test tests/domesticFollowup.test.mjs tests/domesticFollowupOverview.test.mjs tests/domesticFollowupEdit.test.mjs tests/domesticFollowupStats.test.mjs",
+    "test:domestic-followup": "node --test tests/domesticFollowup.test.mjs tests/domesticFollowupOverview.test.mjs tests/domesticFollowupEdit.test.mjs tests/domesticFollowupStats.test.mjs tests/churnShipLayout.test.mjs",
     "test:invoice-layout": "node --test tests/invoiceLayout.test.mjs",
     "test:customer-workspace": "node --test tests/customerWorkspace.test.mjs",
     "test:client-desk": "node --experimental-vm-modules --test tests/clientDesk.test.mjs tests/clientDeskLoading.test.mjs tests/clientDeskBoard.test.mjs",
@@ -53,6 +53,7 @@
     "marked": "^16.4.2",
     "pinia": "^3.0.4",
     "qrcode": "^1.5.4",
+    "three": "0.170.0",
     "vue": "^3.4.0",
     "vue-router": "^4.4.0",
     "vuedraggable": "^4.1.0"

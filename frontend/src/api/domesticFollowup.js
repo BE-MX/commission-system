@@ -65,6 +65,7 @@ export const followupApi = {
   statsRhythm: params => get('/stats/rhythm', params),
   missingToday: () => get('/stats/missing-today'),
   statsDrilldown: params => get('/stats/drilldown', params),
+  churnMap: params => get('/stats/churn-map', params),
   insights: params => get('/insights', params),
   refreshInsights: body => post('/insights/refresh', body),
   insightRefreshStatus: id => get(`/insights/jobs/${id}`),

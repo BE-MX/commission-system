@@ -1327,6 +1327,12 @@ Agent 委派只允许现有 customer_order_copilot 的只读准备型工具。re
   - **已知盲区**：`no_autoflush` 下查不到同一次 flush 里刚 `add`、还没 flush 的任务。业务上不存在「同一个 flush 里新建跟进任务又改客户归属」的路径，接受这个盲区。
 - **时间线可读/可写分开判定**：客户时间线（`GET /customers/{id}/timeline`）按当前用户对该客户的数据范围分别判定可读和可写；不可读时隐藏发货事实和 AI 背景两块，只露跟进记录本身,避免越权用户拼出完整客户画像。
 - **关闭待办时校验操作人**：`resolve_item` 只允许当前 `handler_user_id` 本人关闭异常/意见条目，否则 `PermissionError("无权处理该条目")`；转交（`transfer_item`）改变 `handler_user_id` 后处理权随之转移。
+- **客户流失态势与公海双钟（2026-11-13）**：规格 `docs/requirements/2026-11-13-followup-churn-ship/`。坑与约定：
+  - 释放口径只在 `app/domestic/public_sea.py`，释放任务和 `/stats/churn-map` 都调它；图上的「距释放 N 天」用 `release_day` 正向搜索自然月，与任务的 `effective <= months_ago(today)` 逐日等价（有逐日对拍测试）。不要在别处写「加 90 天」。
+  - 旧 `_months_ago` 月末回退错到上上个月底（5-31 往前 1 月得 3-31），让判定在月末倒退一天；已改为目标月最后一天。
+  - 自动释放没有操作人，跟进协作事件表 `actor_user_id` 非空，所以因跟进钟结束责任时不写协作事件，只靠分析事件表与待办「客户释放」留痕。
+  - 近 30 天落海读 `domestic_decision.ownership_events.latest_releases`：事件表无时间索引，必须先给客户 ID 再查。
+  - 前端 three.js 只在沉浸层动态加载；`vite.config.js` 的 manualChunks 必须把 three 拆成 `vendor-three`，否则会并进全站 vendor 包。条目位置由 `shipLayout` 原地更新（非响应式），给侧栏的选中项要每次时间变化重新拷贝快照。
 - 推送走发件箱表 `ark_domestic_followup_digests`，`(user_id, digest_date, kind, ref_key)` 唯一键防重；未绑定钉钉的人不重试。紧急异常接收人在配置 `urgent_receiver_user_ids` 里维护，不设则只记日志、不推送。
 - **每日汇总补发**：`send_daily_digest_job` 在 09:00（mon-sat）正式发送，09:05 和 09:15 各跑一次同任务作为补发（钉钉抖动兜底），发件箱唯一键保证同人同日不会重复推送。
 - **停用用户不收推送**：发送前按 `ark_users.is_active` 过滤接收人，已停用账号不生成推送记录。

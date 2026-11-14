@@ -1,8 +1,6 @@
 """内贸客户 service —— 店名是业务主标识，下单时可就地新建"""
 
 import logging
-from datetime import timedelta
-
 from app.core.list_sort import apply_list_sort
 
 from sqlalchemy import func
@@ -29,19 +27,6 @@ CUSTOMER_PROFILE_FIELDS = (
     "owner_user_id", "first_contact_date", "first_order_date", "last_order_date",
     "total_order_count", "total_sales_amount", "remark",
 )
-
-PUBLIC_SEA_MONTHS = 3
-
-
-def _months_ago(today, months: int):
-    month_index = today.month - 1 - months
-    year = today.year + month_index // 12
-    month = month_index % 12 + 1
-    try:
-        return today.replace(year=year, month=month)
-    except ValueError:
-        return today.replace(year=year, month=month, day=1) - timedelta(days=1)
-
 
 def get_customer_options(db: Session) -> dict:
     """客户表单下拉值域：来源/门店类型/等级/客户状态（sys_dict）+ 归属销售（在职用户）。"""
@@ -85,77 +70,51 @@ def get_customer_options(db: Session) -> dict:
 
 
 def release_stale_private_customers(db: Session) -> int:
-    """超过 3 个月未下单的私海客户释放进公海，并把归属清空。"""
-    cutoff = _months_ago(beijing_today(), PUBLIC_SEA_MONTHS)
-    latest_order_dates = dict(
-        db.query(DomesticOrder.customer_id, func.max(DomesticOrder.order_date))
-        .filter(DomesticOrder.deleted_flag == 0,
-                DomesticOrder.status.notin_(C.ORDER_INACTIVE_STATUSES),
-                DomesticOrder.order_kind == "business")
-        .group_by(DomesticOrder.customer_id)
-        .all()
-    )
-    rows = (
-        db.query(
-            DomesticCustomer.id,
-            DomesticCustomer.last_order_date,
-            DomesticCustomer.first_contact_date,
-            DomesticCustomer.created_at,
-        )
-        .filter(DomesticCustomer.owner_user_id.isnot(None))
-        .all()
-    )
-    candidate_ids = [row[0] for row in rows]
+    """按公海口径释放私海客户：3 个月未下单，或（新规则生效后）1 个月未跟进。
+
+    口径只在 public_sea 里算。先不加锁筛出到期客户，再只锁这批并复算——列表接口每次加载都会调用，
+    不能把全部私海客户行锁到请求结束。因跟进钟释放的客户同时结束跟进责任（Q5）；
+    因订单钟释放的保持 11-09 D07：保留跟进责任。
+    """
+    from app.domestic import public_sea
+    from app.domestic_followup.public_sea_hooks import end_for_follow_release
+
+    today = beijing_today()
+    launch = public_sea.launch_date(db)
+    owned = db.query(DomesticCustomer).filter(DomesticCustomer.owner_user_id.isnot(None)).all()
+    clocks = public_sea.compute_clocks(db, owned, today, launch=launch, launch_known=True)
+    due_ids = [cid for cid, clock in clocks.items() if clock.due is not None and clock.due <= today]
+    if not due_ids:
+        return 0
     locked_rows = (
         db.query(DomesticCustomer)
-        .filter(
-            DomesticCustomer.id.in_(candidate_ids or {0}),
-            DomesticCustomer.owner_user_id.isnot(None),
-        )
+        .filter(DomesticCustomer.id.in_(due_ids), DomesticCustomer.owner_user_id.isnot(None))
+        .order_by(DomesticCustomer.id)
         .populate_existing()
         .with_for_update()
         .all()
     )
-    locked_ids = {row.id for row in locked_rows}
-    latest_order_dates = dict(
-        db.query(DomesticOrder.customer_id, func.max(DomesticOrder.order_date))
-        .filter(
-            DomesticOrder.customer_id.in_(locked_ids or {0}),
-            DomesticOrder.deleted_flag == 0,
-            DomesticOrder.status.notin_(C.ORDER_INACTIVE_STATUSES),
-            DomesticOrder.order_kind == "business",
-        )
-        .group_by(DomesticOrder.customer_id)
-        .all()
-    )
-    stale_ids = []
-    for customer in locked_rows:
-        customer_id = customer.id
-        order_dates = [
-            value for value in (
-                latest_order_dates.get(customer_id),
-                customer.last_order_date,
-                customer.first_contact_date,
-                customer.created_at.date() if customer.created_at else None,
-            )
-            if value is not None
-        ]
-        if not order_dates:
-            continue
-        effective_date = min(max(order_dates), beijing_today())
-        if effective_date <= cutoff:
-            stale_ids.append(customer_id)
-    if not stale_ids:
-        return 0
-
-    # ORM changes let the analysis event hook preserve before/after ownership
-    # in this transaction, including automatic public-pool release.
-    released = 0
-    for customer in locked_rows:
-        if customer.id in stale_ids and customer.owner_user_id is not None:
+    # 锁住后复算；聚合也用共享锁读（MySQL 可重复读下普通读停在第一轮的快照），防认领 / 跟进 / 下单抢先
+    clocks = public_sea.compute_clocks(db, locked_rows, today, launch=launch, launch_known=True, locking=True)
+    released, follow_ids = 0, []
+    try:
+        # ORM changes let the analysis event hook preserve before/after ownership
+        # in this transaction, including automatic public-pool release.
+        for customer in locked_rows:
+            clock = clocks[customer.id]
+            if clock.due is None or clock.due > today:
+                continue
             customer.owner_user_id = None
             released += 1
-    db.commit()
+            if clock.reason == public_sea.REASON_FOLLOW:
+                follow_ids.append(customer.id)
+        end_for_follow_release(db, follow_ids)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("公海释放失败: %s", exc)
+        print(f"[domestic] 公海释放失败: {exc}", flush=True)
+        raise
     return released
 
 
@@ -353,6 +312,36 @@ def create_customer(db: Session, payload: CustomerCreate, user_id: int, *, commi
         db.rollback()
         raise
     return customer
+
+
+def claim_customer(db: Session, customer_id: int, user_id: int) -> dict:
+    """从公海认领客户：归属给自己，记下认领时间。只重置跟进钟，订单钟不变（2026-11-13 亮哥定，防放掉再认领续期）。
+
+    返回订单钟释放日：已到期的客户下一次释放任务会被再次放回公海，除非期间下单，调用方要提示。
+    """
+    from app.core.time import beijing_now
+
+    db.info["domestic_actor_id"] = user_id
+    customer = (db.query(DomesticCustomer).filter(DomesticCustomer.id == customer_id)
+                .populate_existing().with_for_update().first())
+    if customer is None:
+        raise LookupError("客户不存在")
+    if customer.status != 1:
+        raise ValueError("客户已停用，不能认领")
+    if customer.owner_user_id is not None:
+        raise ValueError("客户已有归属人，可能刚被别人认领，请刷新")
+    from app.domestic_followup.public_sea_hooks import adopt_on_claim
+
+    customer.owner_user_id = user_id
+    customer.owner_claimed_at = beijing_now()
+    adopt_on_claim(db, customer.id, user_id)  # 跟进责任没人在跟时交给认领人，否则记不了跟进
+    db.commit()
+    from app.domestic import public_sea
+
+    today = beijing_today()
+    order_due = public_sea.compute_clocks(db, [customer], today)[customer.id].order_due
+    return {"id": customer.id, "order_due": order_due.isoformat() if order_due else None,
+            "order_expired": order_due is not None and order_due <= today}
 
 
 def update_customer(

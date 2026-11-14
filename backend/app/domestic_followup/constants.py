@@ -59,7 +59,9 @@ CONFIG_DEFAULTS = {
     "receipt_launch_date": None,
     "urgent_receiver_user_ids": [],
     "fallback_assignee_user_id": None,
-    "frequency_days": {"S级": 7, "A级": 14, "B级": 30, "C级": 60},  # 键 = sys_dict domestic_customer_level 的值（迁移 133）
+    # 键 = sys_dict domestic_customer_level 的值（迁移 133）。C 级不超过 30 天：1 个月未跟进即入公海（2026-11-13 Q3）
+    "frequency_days": {"S级": 7, "A级": 14, "B级": 30, "C级": 30},
+    "public_sea_follow_launch_date": None,  # 「1 个月未跟进入公海」生效日；None = 未启用，只在图上预演
     "stats_user_ids": [],
     "stats_non_workdays": [],
     "insight_generation_enabled": True,
