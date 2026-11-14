@@ -105,13 +105,7 @@ export class Manager {
       }
       this.cancelResume(uid)
       this.stop(uid)
-      this.store.configure(uid, auth)
-      if (request.fresh_credentials === true) {
-        // Explicit owner rebind: old still-valid credentials would silently reconnect the previous
-        // number without a QR. Clear them under a fenced lease so the new scan decides the number.
-        const lease = this.store.acquire(uid, this.holder, this.leaseTTL)
-        try { this.store.clearAuth(lease) } finally { this.store.release(lease) }
-      }
+      this.store.configure(uid, auth, { freshCredentials: request.fresh_credentials === true })
       const session = { bind_session_uid: bindUid, account_uid: uid, ark_user_id: request.ark_user_id,
         session_generation: auth.session_generation, consent_version: auth.consent_version,
         status: 'pending', created_at: new Date().toISOString() }
@@ -136,7 +130,20 @@ export class Manager {
     if (!account) throw error('account_not_found', 404)
     const safe = { ...account, connector_status: account.connection_state, last_error: account.last_error_code || null }
     delete safe.self_jid
+    if (safe.self_identity?.session_generation !== account.session_generation) delete safe.self_identity
     return safe
+  }
+  recordSelfIdentity(entry, me) {
+    const normalize = (value, domain) => {
+      if (typeof value !== 'string') return null
+      const id = value.replace(/:[0-9]+@/, '@').replace(/@c\.us$/, '@s.whatsapp.net')
+      return (domain === 'lid' ? /^[0-9]{1,30}@lid$/ : /^[0-9]{6,15}@s\.whatsapp\.net$/).test(id) ? id : null
+    }
+    const identity = { session_generation: entry.lease.generation,
+      pn_jid: normalize(me?.id, 'pn'), lid_jid: normalize(me?.lid, 'lid') }
+    if (JSON.stringify(this.store.account(entry.uid).self_identity) !== JSON.stringify(identity)) {
+      this.store.patchAccount(entry.lease, { self_identity: identity })
+    }
   }
   async readable(uid) {
     const account = this.store.account(uid)
@@ -191,6 +198,7 @@ export class Manager {
     if (entry.stopped) return
     const auth = authState(this.store, entry.lease, err => this.protect(entry, err.code || 'auth_store_failed'))
     entry.auth = auth.state
+    this.recordSelfIdentity(entry, auth.state.creds.me)
     const pairing = () => ({ registered: auth.state.creds.registered === true, has_identity: Boolean(auth.state.creds.me) })
     let lastPairing = pairing()
     this.diagnostic('socket_start', entry.uid, lastPairing)
@@ -221,6 +229,7 @@ export class Manager {
       if (entry.stopped) return
       try {
         auth.saveCreds(update)
+        this.recordSelfIdentity(entry, auth.state.creds.me)
         const current = pairing()
         if (current.registered !== lastPairing.registered || current.has_identity !== lastPairing.has_identity) {
           this.diagnostic('pairing_credentials', entry.uid, current)

@@ -1,3 +1,9 @@
+## 2026-11-14 WhatsApp 未关联客户排除本人及平台通知（Codex，待发布）
+
+- 用户要求排除 Rina 本人和 WhatsApp 平台通知，保留消息，5 组号码冲突不动，并适用于所有业务员。工作区 `D:/MyProgram/commission-system-codex-whatsapp-noncustomer-filter`，分支 `codex/whatsapp-noncustomer-filter`，基点 `c9d899ca`。
+- 连接器只从当前绑定凭据生成 `self_identity`，保留代次且不暴露凭据；后端默认未关联列表按精确 PN/LID 和 PSA 标识排除，筛选在计数/分页之前。名字、号码尾号、contact_phone 与 alias 不作本人判据；已有 linked/ignored 视图、消息、客户关联及5组冲突映射不变，无迁移。
+- 首轮回归旧实现7项后端/3项连接器失败；修复后受影响后端63项、连接器全套83项通过；独立审查的退出／重绑身份失效问题已修复复核。只读使用Rina当前生产数据模拟恰好排除2条，103→101，原两条224条消息及5组冲突保留；生产尚未应用本次排除规则。详见[实施记录](reports/2026-11-14-whatsapp-noncustomer-filter.md)。
+
 ## 2026-11-14 Rina WhatsApp 联系人名称与手机号同步（Codex，办公室已发布）
 
 - 用户授权仅办公室连接器发布并补全、核对 Rina 显示；`5c6e2704` 已经受管 `--whatsapp-connector-only` 入口发布成功。SQLite 一致性备份保留，schema262 不变；仅重启连接器，后端和北京未发布。Rina `active/connected`，无扫码要求。

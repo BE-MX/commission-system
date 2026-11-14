@@ -22,7 +22,7 @@ JWT 管理入口 POST `/api/alibaba-feed/sources`、PATCH `/api/alibaba-feed/sou
 
 入口 `/api/client-desk`，普通读写接口使用 `client_desk:read/write`，同时校验试点名单、本人 OKKI 私海和当前来源授权。`read_all` 仅预留，不扩展查询范围。
 
-客户读取包含 `/today`、`/customers`、`/customers/{company_id}`、详情下的 `/timeline` 和 `/timeline/events/{event_key}`。个人状态 PATCH `/state`，共享等级 PUT `/grade`，手工记录 POST `/followups`，重新分析 POST `/reanalyze`，建议反馈 POST `/suggestions/{id}/feedback`。会话入口 `/unlinked-conversations`、POST `/wa-links`、DELETE `/wa-links/{id}`。WhatsApp 跳转经 POST 客户下 `/wa-open` 复核。日期由 GET `/calendar/sample-followup` 计算。
+客户读取包含 `/today`、`/customers`、`/customers/{company_id}`、详情下的 `/timeline` 和 `/timeline/events/{event_key}`。个人状态 PATCH `/state`，共享等级 PUT `/grade`，手工记录 POST `/followups`，重新分析 POST `/reanalyze`，建议反馈 POST `/suggestions/{id}/feedback`。会话入口 `/unlinked-conversations`、POST `/wa-links`、DELETE `/wa-links/{id}`。 未关联会话默认视图按当前账号及接入代次的已验证本人 PN/LID 排除本人会话，并排除 WhatsApp PSA 平台通知；统计、未回复数与分页采用相同集合。已有 linked/ignored 视图、消息存储和号码冲突隔离不变，身份资料不足时不猜测排除。WhatsApp 跳转经 POST 客户下 `/wa-open` 复核。日期由 GET `/calendar/sample-followup` 计算。
 
 2026-11-12 读取优化（本地实现，待发布）：档案、时间轴、事件详情仅小满归属成功结果可复用 60 秒，本人私海清单可复用 45 秒；平台权限、来源授权和建议依赖仍逐请求检查。复制草稿使用 `GET /customers/{company_id}?fresh=true`，与写操作、`wa-open` 一样每次实时核验归属。`/customers` 普通列表按已存分数先分页，仅当前页实时判定建议，失效建议可能仍排前但不显示内容；`suggested` 与 `reason` 筛选仍先实时判定再计算总数和分页。
 

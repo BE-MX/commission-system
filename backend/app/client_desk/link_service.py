@@ -1,5 +1,7 @@
 """Versioned conversation association, serialized on the owned conversation."""
 
+import re
+
 from fastapi import HTTPException
 from app.client_desk.access import require_account, require_enabled
 from app.client_desk.private_scope import assert_company_access, user_id
@@ -108,12 +110,46 @@ def delete_link(db, user, link_id):
     return link_dto(row)
 
 
+def _personal_jid(value):
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r"([0-9]{1,30})(?::[0-9]+)?@(lid|s\.whatsapp\.net|c\.us)", value)
+    if not match:
+        return None
+    user, domain = match.groups()
+    return f"{user}@{'s.whatsapp.net' if domain == 'c.us' else domain}"
+
+
+def non_customer_reason(conv, account):
+    """Classify by exact provider identity; never by contact names or alias guesses."""
+    jid = _personal_jid(conv.chat_id)
+    if jid == "0@s.whatsapp.net":
+        return "platform_notice"
+    payload = account.raw_payload if isinstance(account.raw_payload, dict) else {}
+    identity = payload.get("self_identity")
+    conversation_payload = conv.raw_payload if isinstance(conv.raw_payload, dict) else {}
+    if (not jid or account.provider != "baileys" or not isinstance(identity, dict)
+            or account.status == "reconnect_required"
+            or str(conversation_payload.get("session_generation")) != str(account.session_generation)
+            or conv.account_uid != account.account_uid
+            or payload.get("account_uid") != account.account_uid
+            or str(payload.get("session_generation")) != str(account.session_generation)
+            or str(payload.get("consent_version")) != str(account.consent_version)
+            or str(identity.get("session_generation")) != str(account.session_generation)):
+        return None
+    if jid in {_personal_jid(identity.get("pn_jid")), _personal_jid(identity.get("lid_jid"))}:
+        return "self"
+    return None
+
+
 def conversations(db, user, keyword="", page=1, page_size=30, scope=None):
     require_enabled(db, user)
     from app.client_desk.sources import visible_wa
 
     result = []
     for conv, account, messages in visible_wa(db, user, owner_only=True):
+        if scope is None and non_customer_reason(conv, account):
+            continue
         link = (
             db.query(Link)
             .filter_by(
