@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>客户流失态势 · 原型</title>
+<style>
+  /* 原型自带一份与 tokens.css 同值的变量；3D 材质的颜色也从这里读（见 css()）。 */
+  :root {
+    --color-primary: #D4941C;
+    --color-primary-text: #895B0C;
+    --ink: #1f2a37;
+    --ink-2: #5b6878;
+    --ink-3: #8a96a5;
+    --line: #e3e8ee;
+    --surface: #ffffff;
+    --surface-2: #f5f7fa;
+    --chart-stable: #5f7791;
+    --chart-warn: #E0A12B;
+    --chart-crit: #DC3545;
+    --chart-sea: #c3ced3;
+    --sky: #dce7ee;
+    --sea: #2d7d8e;
+    --hull: #1f2d3d;
+    --hull-band: #8a3b2e;
+    --deck: #46586a;
+    --deck-alt: #3f5062;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.5 "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; color: var(--ink); background: var(--sky); overflow: hidden; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .app { display: grid; grid-template-columns: 1fr 348px; height: 100%; }
+  .stage { position: relative; overflow: hidden; }
+  #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #labels { position: absolute; inset: 0; pointer-events: none; }
+
+  .proto-bar { position: absolute; left: 0; right: 0; top: 0; height: 30px; background: #18222e; color: #c9d3de; font-size: 12px; display: flex; align-items: center; gap: 10px; padding: 0 14px; z-index: 5; }
+  .proto-bar b { color: #fff; font-weight: 600; }
+  .proto-bar button { background: transparent; border: 1px solid #3a4a5c; color: #c9d3de; border-radius: 4px; padding: 1px 9px; font-size: 12px; }
+  .proto-bar button[aria-pressed="true"] { background: var(--color-primary); border-color: var(--color-primary); color: #1b1305; }
+  .proto-bar .sp { flex: 1; }
+
+  .head { position: absolute; left: 16px; top: 44px; display: flex; gap: 10px; align-items: stretch; z-index: 4; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 18px rgba(24, 40, 60, 0.10); }
+  .title { padding: 10px 14px; }
+  .title h1 { margin: 0; font-size: 16px; font-weight: 650; }
+  .title p { margin: 2px 0 0; font-size: 12px; color: var(--ink-2); }
+  .kpis { display: flex; }
+  .kpi { padding: 9px 16px; border-left: 1px solid var(--line); min-width: 104px; }
+  .kpi:first-child { border-left: 0; }
+  .kpi .n { font-size: 22px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .kpi .l { font-size: 12px; color: var(--ink-2); }
+  .kpi.crit .n { color: var(--chart-crit); }
+  .kpi.warn .n { color: var(--color-primary-text); }
+
+  .filters { position: absolute; left: 16px; top: 118px; display: flex; gap: 6px; z-index: 4; }
+  .chip { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; font-size: 12px; color: var(--ink-2); transition: transform 140ms var(--ease-out); }
+  .chip:active { transform: scale(0.97); }
+  .chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
+
+  .watermark { position: absolute; left: 50%; bottom: 118px; transform: translateX(-50%); background: var(--ink); color: #fff; border-radius: 999px; padding: 5px 16px; font-size: 13px; z-index: 4; opacity: 0; transition: opacity 160ms ease; pointer-events: none; white-space: nowrap; }
+  .watermark.on { opacity: 1; }
+  .watermark.proj { background: var(--color-primary); color: #1b1305; font-weight: 600; }
+
+  .timeline { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(760px, calc(100% - 32px)); padding: 10px 14px 12px; z-index: 4; }
+  .tl-row { display: flex; align-items: center; gap: 8px; }
+  .tl-row .sp { flex: 1; }
+  .tl-date { font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tl-mode { font-size: 12px; color: var(--ink-2); }
+  .btn { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 4px 11px; font-size: 13px; transition: transform 140ms var(--ease-out), background-color 140ms ease; }
+  .btn:active { transform: scale(0.97); }
+  .btn.primary { background: var(--color-primary); border-color: var(--color-primary); color: #1b1305; font-weight: 600; }
+  .btn[disabled] { opacity: 0.45; cursor: default; }
+  @media (hover: hover) and (pointer: fine) { .btn:not([disabled]):hover { background: #eceff3; } .btn.primary:not([disabled]):hover { background: #c98a16; } }
+  .track { position: relative; margin-top: 10px; }
+  .track input { width: 100%; margin: 0; accent-color: var(--ink); }
+  .ticks { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+  .zone { position: absolute; top: -3px; height: 3px; border-radius: 2px; }
+  .zone.past { left: 0; width: 33.33%; background: var(--ink-3); }
+  .zone.future { left: 33.33%; right: 0; background: var(--color-primary); }
+
+  .lbl { position: absolute; left: 0; top: 0; white-space: nowrap; pointer-events: auto; will-change: transform; }
+  .region-lbl { background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 2px 9px; font-size: 12px; box-shadow: 0 2px 8px rgba(24, 40, 60, 0.12); transition: opacity 160ms ease; }
+  .region-lbl b { font-weight: 650; }
+  .region-lbl .c { color: var(--chart-crit); font-weight: 650; margin-left: 6px; }
+  .region-lbl[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .buoy-lbl { font-size: 11px; color: #fff; background: rgba(20, 52, 62, 0.82); border-radius: 5px; padding: 1px 7px; pointer-events: none; }
+  .buoy-lbl i { font-style: normal; color: #ffd98a; margin-left: 5px; }
+
+  #tip { position: absolute; left: 0; top: 0; z-index: 6; pointer-events: none; background: var(--ink); color: #fff; border-radius: 8px; padding: 7px 10px; font-size: 12px; line-height: 1.55; opacity: 0; transition: opacity 150ms ease; max-width: 260px; }
+  #tip.on { opacity: 1; }
+  #tip b { font-size: 13px; }
+  #tip .d { color: #ffd98a; }
+
+  .panel { background: var(--surface); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; padding-top: 30px; }
+  .panel h2 { margin: 0; font-size: 14px; font-weight: 650; }
+  .p-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+  .p-head .sp { flex: 1; }
+  .p-sub { font-size: 12px; color: var(--ink-2); }
+  .list { overflow: auto; flex: 1; padding: 6px 8px 16px; }
+  .grp { font-size: 12px; color: var(--ink-2); padding: 10px 8px 4px; }
+  .item { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; width: 100%; text-align: left; background: transparent; border: 0; border-radius: 7px; padding: 6px 8px; }
+  .item:focus-visible, .btn:focus-visible, .chip:focus-visible, .region-lbl:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+  @media (hover: hover) and (pointer: fine) { .item:hover { background: var(--surface-2); } }
+  .item[aria-current="true"] { background: #fbf3e2; }
+  .dot { width: 9px; height: 9px; border-radius: 2px; }
+  .dot.crit { background: var(--chart-crit); } .dot.warn { background: var(--chart-warn); } .dot.sea { background: var(--chart-sea); }
+  .item .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .meta { font-size: 12px; color: var(--ink-2); }
+  .item .days { font-variant-numeric: tabular-nums; font-weight: 650; }
+  .tag { display: inline-block; font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; color: var(--ink-2); margin-left: 4px; }
+  .empty { color: var(--ink-3); padding: 28px 12px; text-align: center; font-size: 13px; }
+
+  .detail { padding: 16px; overflow: auto; flex: 1; }
+  .detail h3 { margin: 0; font-size: 17px; }
+  .big { margin: 14px 0 4px; font-size: 30px; font-weight: 750; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .big small { font-size: 13px; font-weight: 500; color: var(--ink-2); margin-left: 6px; }
+  .big.crit { color: var(--chart-crit); } .big.warn { color: var(--color-primary-text); }
+  .clock { font-size: 13px; color: var(--ink-2); }
+  dl { display: grid; grid-template-columns: 84px 1fr; gap: 6px 8px; margin: 16px 0; font-size: 13px; }
+  dt { color: var(--ink-2); } dd { margin: 0; }
+  .note { background: var(--surface-2); border-radius: 8px; padding: 9px 11px; font-size: 13px; color: var(--ink-2); margin: 12px 0; }
+  .note.ok { background: #e9f6ef; color: #1e7d50; }
+  .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .legend { border-top: 1px solid var(--line); padding: 10px 16px 12px; font-size: 12px; color: var(--ink-2); display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .fail { position: absolute; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; color: var(--ink-2); }
+  @media (prefers-reduced-motion: reduce) { * { transition-duration: 0ms !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="stage" id="stage">
+    <canvas id="gl" aria-label="客户流失态势三维画面；右侧清单提供同样的信息"></canvas>
+    <div id="labels"></div>
+    <div class="proto-bar">
+      <b>原型专用</b><span>视角</span>
+      <button id="v-mgr" aria-pressed="true">管理者</button>
+      <button id="v-rep" aria-pressed="false">业务员 · 王倩</button>
+      <span>海面起伏</span>
+      <button id="sea-toggle" aria-pressed="true">开</button>
+      <span class="sp"></span><span>演示数据，非真实业务情况 · 真实页面没有这一条</span>
+    </div>
+    <div class="head">
+      <div class="card title"><h1>客户流失态势</h1><p id="stamp">数据时间 2026-11-13 09:30</p></div>
+      <div class="card kpis">
+        <div class="kpi crit"><div class="n" id="k-crit">0</div><div class="l">临界（3 天内）</div></div>
+        <div class="kpi warn"><div class="n" id="k-soon">0</div><div class="l">14 天内将落海</div></div>
+        <div class="kpi"><div class="n" id="k-fell">0</div><div class="l">近 30 天已落海</div></div>
+      </div>
+    </div>
+    <div class="filters">
+      <button class="chip" id="f-sa" aria-pressed="false">只看 S/A 级</button>
+      <button class="chip" id="f-crit" aria-pressed="false">只看临界</button>
+      <button class="chip" id="f-all" hidden>返回全景</button>
+    </div>
+    <div class="watermark" id="mark"></div>
+    <div class="card timeline">
+      <div class="tl-row">
+        <span class="tl-date" id="tl-date">11 月 13 日</span><span class="tl-mode" id="tl-mode">今天</span>
+        <span class="sp"></span>
+        <button class="btn" id="b-replay">回放近 7 天</button>
+        <button class="btn" id="b-proj">播放推演</button>
+        <button class="btn primary" id="b-today" disabled>回到今天</button>
+      </div>
+      <div class="track">
+        <span class="zone past"></span><span class="zone future"></span>
+        <input id="tl" type="range" min="-7" max="14" step="1" value="0" aria-label="时间：左侧回放，右侧推演">
+        <div class="ticks"><span>7 天前</span><span>今天</span><span>+7 天</span><span>+14 天</span></div>
+      </div>
+    </div>
+    <div id="tip"></div>
+    <div class="fail" id="fail">三维库没有加载成功（需要联网访问 CDN）。正式实现会打包进项目，并提供 2D 甲板图作为降级。</div>
+  </div>
+
+  <aside class="panel">
+    <div id="list-view" style="display:flex;flex-direction:column;min-height:0;flex:1">
+      <div class="p-head"><div><h2 id="list-title">需要处理的客户</h2><div class="p-sub" id="list-sub"></div></div></div>
+      <div class="list" id="list"></div>
+    </div>
+    <div id="detail-view" style="display:none;flex-direction:column;min-height:0;flex:1">
+      <div class="p-head"><button class="btn" id="back">‹ 返回清单</button><span class="sp"></span></div>
+      <div class="detail" id="detail"></div>
+    </div>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--chart-stable)"></i>稳固 &gt;14 天</span>
+      <span><i class="dot warn"></i>预警 4–14 天</span>
+      <span><i class="dot crit"></i>临界 ≤3 天</span>
+      <span><i class="dot sea"></i>已落海（近 30 天）</span>
+      <span>箱越大等级越高</span>
+      <span>绑带松开 = 已超跟进频率</span>
+    </div>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>window.THREE || document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>')</script>
+<script>
+(function () {
+  if (!window.THREE) { document.getElementById('fail').style.display = 'grid'; return }
+  const $ = id => document.getElementById(id)
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  const col = name => new THREE.Color(css(name))
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  // ---------- 演示数据 ----------
+  let seed = 20261113
+  const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296
+  const pick = arr => arr[Math.floor(rnd() * arr.length)]
+  const REGION_DEFS = [
+    ['华东', ['浙江', '江苏', '上海', '山东', '安徽', '福建'], 38, 86], ['华南', ['广东', '广西', '海南'], 30, 64],
+    ['华北', ['北京', '河北', '天津', '山西'], 22, 41], ['华中', ['河南', '湖北', '湖南'], 20, 37],
+    ['西南', ['四川', '重庆', '云南', '贵州'], 16, 29], ['东北', ['辽宁', '吉林', '黑龙江'], 10, 22],
+    ['西北', ['陕西', '甘肃', '新疆'], 8, 15], ['未填地区', ['—'], 6, 12],
+  ]
+  const OWNERS = ['王倩', '李哲', '陈晓', '赵敏', '孙磊']
+  const N1 = ['丝语', '黛妍', '锦绣', '青丝', '云鬓', '悦发', '芳华', '千丝', '美域', '尚发', '雅韵', '梵希', '初见', '艾薇', '漫步', '臻美', '卡诗', '花间']
+  const N2 = ['假发店', '发艺', '造型', '美发沙龙', '发制品', '假发工作室', '形象馆']
+  const FREQ = { S: 7, A: 14, B: 30, C: 30 }
+  const customers = []
+  let uid = 1
+  function level() { const r = rnd(); return r < 0.07 ? 'S' : r < 0.24 ? 'A' : r < 0.62 ? 'B' : r < 0.92 ? 'C' : '' }
+  function make(region, provs, fellAgo) {
+    const lv = level(), since = Math.floor(Math.pow(rnd(), 2.3) * 30)
+    const order = rnd() < 0.1 ? 1 + Math.floor(rnd() * 16) : 20 + Math.floor(rnd() * 70)
+    const c = { id: uid++, name: pick(N1) + pick(N2) + (rnd() < 0.3 ? '（' + pick(provs).slice(0, 2) + '店）' : ''), region, prov: pick(provs), level: lv,
+      owner: pick(OWNERS), since, follow: 30 - since, order, side: rnd() < 0.5 ? 1 : -1, h1: rnd(), h2: rnd(), tiltX: (rnd() - 0.5) * 0.5, tiltZ: (rnd() - 0.5) * 0.5 }
+    if (fellAgo != null) { c.fellAgo = fellAgo; c.reason = rnd() < 0.72 ? 'follow' : 'order'; c.since = 30 + Math.ceil(fellAgo); c.rem0 = -fellAgo }
+    else c.rem0 = Math.min(c.follow, c.order)
+    customers.push(c)
+  }
+  REGION_DEFS.forEach(([key, provs, n]) => { for (let i = 0; i < n; i++) make(key, provs) })
+  const fellAgos = [0.4, 0.6, 1.5, 2.5, 2.6, 3.5, 4.5, 5.5, 5.6, 6.5, 8, 9, 11, 12, 14, 15, 17, 19, 21, 22, 24, 26, 27, 29]
+  fellAgos.forEach(ago => { const d = REGION_DEFS[Math.floor(Math.pow(rnd(), 1.6) * REGION_DEFS.length)]; make(d[0], d[1], ago) })
+
+  const TODAY = new Date(2026, 10, 13)
+  const dayLabel = off => { const d = new Date(TODAY); d.setDate(d.getDate() + Math.round(off)); return (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日' }
+
+  // ---------- 场景 ----------
+  const W = 17, HALF = W / 2, DECK_Y = 1.6, PITCH = 1.7, GAP = 0.7
+  const ROWZ = [HALF - 0.35, HALF - 1.95, HALF - 3.4, HALF - 4.85, HALF - 6.3]
+  const DIM = { S: { w: 1.5, h: 0.98, d: 1.15 }, A: { w: 1.5, h: 0.98, d: 1.15 }, B: { w: 1.05, h: 0.9, d: 1.1 }, C: { w: 1.05, h: 0.9, d: 1.1 }, '': { w: 0.8, h: 0.7, d: 0.9 } }
+  const canvas = $('gl'), stage = $('stage')
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+  renderer.shadowMap.enabled = true
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap
+  const scene = new THREE.Scene()
+  scene.background = col('--sky')
+  scene.fog = new THREE.Fog(col('--sky'), 120, 300)
+  const camera = new THREE.PerspectiveCamera(30, 1, 1, 600)
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x35596a, 0.62))
+  const sun = new THREE.DirectionalLight(0xfff1d6, 0.62)
+  sun.position.set(-30, 70, 45); sun.castShadow = true
+  sun.shadow.mapSize.set(2048, 2048)
+  Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 40, bottom: -40, near: 10, far: 200 })
+  sun.shadow.bias = -0.0006
+  scene.add(sun)
+
+  // 海
+  const seaGeo = new THREE.PlaneGeometry(520, 360, 80, 56); seaGeo.rotateX(-Math.PI / 2)
+  const seaBase = seaGeo.attributes.position.array.slice()
+  const seaMesh = new THREE.Mesh(seaGeo, new THREE.MeshPhongMaterial({ color: col('--sea'), flatShading: true, shininess: 12, specular: 0x1c3a44 }))
+  seaMesh.receiveShadow = true; scene.add(seaMesh)
+  let seaOn = !reduced, seaTime = 0
+  const wave = (x, z, t) => Math.sin(x * 0.18 + t * 0.8) * 0.2 + Math.sin(z * 0.23 + t * 0.6) * 0.16 + Math.sin((x + z) * 0.07 + t * 0.4) * 0.24
+  function paintSea() {
+    const p = seaGeo.attributes.position.array
+    for (let i = 0; i < p.length; i += 3) p[i + 1] = wave(seaBase[i], seaBase[i + 2], seaTime)
+    seaGeo.attributes.position.needsUpdate = true; seaGeo.computeVertexNormals()
+  }
+  paintSea()
+
+  // 水花环
+  const rings = []
+  for (let i = 0; i < 10; i++) {
+    const m = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.72, 24), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }))
+    m.rotation.x = -Math.PI / 2; m.visible = false; scene.add(m); rings.push({ m, t: 1 })
+  }
+  function splash(x, z) { const r = rings.find(r => r.t >= 1) || rings[0]; r.t = 0; r.m.position.set(x, 0.42, z); r.m.visible = true }
+
+  // 箱面标记贴图
+  function markTex(ch) {
+    const c = document.createElement('canvas'); c.width = c.height = 64
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.beginPath(); g.arc(32, 32, 30, 0, 7); g.fill()
+    g.fillStyle = css('--ink'); g.font = '600 38px "Microsoft YaHei", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ch, 32, 35)
+    return new THREE.CanvasTexture(c)
+  }
+  const TEX = { follow: markTex('跟'), order: markTex('单') }
+  const C = { stable: col('--chart-stable'), warn: col('--chart-warn'), crit: col('--chart-crit'), sea: col('--chart-sea') }
+  const geoCache = {}
+  const boxGeo = lv => geoCache[lv] || (geoCache[lv] = (d => { const g = new THREE.BoxGeometry(d.w, d.h, d.d); g.userData.edges = new THREE.EdgesGeometry(g); return g })(DIM[lv]))
+  const strapMat = new THREE.MeshLambertMaterial({ color: 0x1c2733 })
+
+  let world = null, regions = [], view = [], boxes = [], pickables = [], labels = [], viewKey = 'mgr'
+  let t = 0, snap = true, selected = null, hovered = null, focus = null, fSA = false, fCrit = false, playing = null
+
+  function build() {
+    if (world) scene.remove(world)
+    world = new THREE.Group(); scene.add(world)
+    $('labels').innerHTML = ''; labels = []; boxes = []; pickables = []; selected = null; focus = null
+    view = customers.filter(c => viewKey === 'mgr' || c.owner === '王倩' || c.fellAgo != null)
+    regions = REGION_DEFS.map(([key, , , old]) => {
+      const mine = view.filter(c => c.region === key)
+      return { key, old: viewKey === 'mgr' ? old : old, owned: mine.filter(c => c.fellAgo == null), all: mine }
+    }).filter(r => r.all.length)
+    let x = 0
+    regions.forEach(r => {
+      r.cols = Math.max(viewKey === 'mgr' ? 4 : 3, Math.min(9, Math.ceil(r.owned.length / 5)))
+      r.len = r.cols * PITCH; r.x0 = x; r.xc = x + r.len / 2; x += r.len + GAP
+      const n = { 1: 0, '-1': 0 }
+      r.all.forEach(c => { c.col = n[c.side]++ % r.cols })
+    })
+    const L = x - GAP
+    regions.forEach(r => { r.x0 -= L / 2; r.xc -= L / 2 })
+    world.userData.L = L
+
+    // 船体
+    const s = new THREE.Shape(); const a = -L / 2 - 9, b = L / 2 + 1.5
+    s.moveTo(a, -HALF - 0.5); s.lineTo(b, -HALF - 0.5); s.lineTo(b + 10, 0); s.lineTo(b, HALF + 0.5); s.lineTo(a, HALF + 0.5); s.lineTo(a - 1.2, 0); s.closePath()
+    const hullGeo = new THREE.ExtrudeGeometry(s, { depth: 3.4, bevelEnabled: false }); hullGeo.rotateX(-Math.PI / 2)
+    const hull = new THREE.Mesh(hullGeo, new THREE.MeshLambertMaterial({ color: col('--hull') })); hull.position.y = DECK_Y - 3.4; hull.castShadow = true; world.add(hull)
+    const bandGeo = new THREE.ExtrudeGeometry(s, { depth: 1.5, bevelEnabled: false }); bandGeo.rotateX(-Math.PI / 2)
+    const band = new THREE.Mesh(bandGeo, new THREE.MeshLambertMaterial({ color: col('--hull-band') })); band.scale.set(1.003, 1, 1.01); band.position.y = DECK_Y - 3.6; world.add(band)
+    regions.forEach((r, i) => {
+      const d = new THREE.Mesh(new THREE.PlaneGeometry(r.len + GAP * 0.5, W), new THREE.MeshLambertMaterial({ color: col(i % 2 ? '--deck-alt' : '--deck') }))
+      d.rotation.x = -Math.PI / 2; d.position.set(r.xc, DECK_Y + 0.01, 0); d.receiveShadow = true; world.add(d)
+    })
+    // 驾驶楼
+    const white = new THREE.MeshLambertMaterial({ color: 0xf3f5f7 })
+    const b1 = new THREE.Mesh(new THREE.BoxGeometry(5.5, 4.2, W - 4), white); b1.position.set(-L / 2 - 4.6, DECK_Y + 2.1, 0); b1.castShadow = true; world.add(b1)
+    const b2 = new THREE.Mesh(new THREE.BoxGeometry(4, 1.6, W - 1.5), white); b2.position.set(-L / 2 - 4.2, DECK_Y + 5, 0); b2.castShadow = true; world.add(b2)
+    const win = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.7, W - 2.6), new THREE.MeshLambertMaterial({ color: 0x24384a })); win.position.set(-L / 2 - 2.18, DECK_Y + 5.1, 0); world.add(win)
+    const fun = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.2, 3.2, 12), new THREE.MeshLambertMaterial({ color: col('--color-primary') })); fun.position.set(-L / 2 - 6, DECK_Y + 6.6, 0); fun.castShadow = true; world.add(fun)
+
+    // 货箱
+    view.forEach(c => {
+      const g = boxGeo(c.level), dim = DIM[c.level]
+      const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: C.stable.clone() }))
+      mesh.castShadow = true; mesh.receiveShadow = true
+      const edges = new THREE.LineSegments(g.userData.edges, new THREE.LineBasicMaterial({ color: 0x0f1a24, transparent: true, opacity: 0.4 })); mesh.add(edges)
+      const straps = [-1, 1].map(k => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.035, dim.d + 0.03), strapMat); m.position.set(k * dim.w * 0.3, dim.h / 2 + 0.018, 0); mesh.add(m); return m })
+      const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.52, 0.52), new THREE.MeshBasicMaterial({ map: TEX.follow, transparent: true })); mark.rotation.x = -Math.PI / 2; mark.position.y = dim.h / 2 + 0.045; mesh.add(mark)
+      const bx = { c, mesh, edges, straps, mark, dim, mode: 'deck', pos: new THREE.Vector3(), rx: 0, ry: 0, rz: 0, scale: 1, fall: null, flash: 0 }
+      mesh.userData.box = bx; c.box = bx; mesh.visible = false; world.add(mesh); boxes.push(bx); pickables.push(mesh)
+    })
+    // 稳固箱垛（一箱 = 一家稳固的 B/C 级或未定级客户）
+    const stackGeo = boxGeo('B'), stackMat = new THREE.MeshLambertMaterial({ color: C.stable })
+    regions.forEach(r => {
+      r.stack = []
+      for (let layer = 0; layer < 4; layer++) for (let i = 0; i < r.cols; i++) {
+        const m = new THREE.Mesh(stackGeo, stackMat); m.position.set(r.x0 + (i + 0.5) * PITCH, DECK_Y + 0.45 + layer * 0.92, 0)
+        m.castShadow = true; m.receiveShadow = true; m.visible = false; m.userData.stack = r
+        m.add(new THREE.LineSegments(stackGeo.userData.edges, new THREE.LineBasicMaterial({ color: 0x0f1a24, transparent: true, opacity: 0.3 })))
+        world.add(m); r.stack.push(m); pickables.push(m)
+      }
+      // 浮标
+      const buoy = new THREE.Group()
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.5, 8), new THREE.MeshLambertMaterial({ color: col('--color-primary') })); cone.position.y = 0.9; buoy.add(cone)
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.4, 10), new THREE.MeshLambertMaterial({ color: 0xf3f5f7 })); base.position.y = 0.15; buoy.add(base)
+      buoy.position.set(r.xc, 0, HALF + 15.5); world.add(buoy); r.buoy = buoy
+      const rl = document.createElement('button'); rl.className = 'lbl region-lbl'; rl.setAttribute('aria-pressed', 'false'); rl.onclick = e => setFocus(focus === r ? null : r, e.detail === 0)
+      $('labels').appendChild(rl); r.lbl = rl; labels.push({ el: rl, p: new THREE.Vector3(r.xc, DECK_Y + (regions.indexOf(r) % 2 ? 6.6 : 4.2), -HALF), cx: true })
+      const bl = document.createElement('div'); bl.className = 'lbl buoy-lbl'; $('labels').appendChild(bl); r.blbl = bl
+      labels.push({ el: bl, p: new THREE.Vector3(r.xc, 3.2, HALF + 15.5), cx: true })
+    })
+    snap = true; fitCamera(true); applyTime(); showList()
+  }
+
+  // ---------- 布局：数据 → 目标位置（纯计算） ----------
+  function applyTime() {
+    const cells = new Map()
+    regions.forEach(r => { r.hidden = 0; r.crit = 0; r.recent = 0 })
+    const reg = Object.fromEntries(regions.map(r => [r.key, r]))
+    view.forEach(c => {
+      const r = c.rem0 - t, R = reg[c.region]
+      c.r = r; c.sea = r <= 0
+      c.tier = c.sea ? 'sea' : r <= 3 ? 'crit' : r <= 14 ? 'warn' : 'stable'
+      c.indiv = c.sea || r <= 14 || c.level === 'S' || c.level === 'A' || c.box === selected
+      c.loose = !c.sea && FREQ[c.level] != null && (c.since + t) > FREQ[c.level]
+      c.clock = c.fellAgo != null ? c.reason : (c.follow <= c.order ? 'follow' : 'order')
+      if (c.sea) { R.recent++; c.tx = R.xc + (c.h1 - 0.5) * R.len * 0.85; c.tz = c.side * (HALF + 3.6 + c.h2 * 9); c.ty = 0 }
+      else if (c.indiv) {
+        const row = r <= 3 ? 0 : r <= 7 ? 1 : r <= 14 ? 2 : r <= 22 ? 3 : 4, key = c.region + c.side + '_' + c.col + '_' + row, n = cells.get(key) || 0
+        cells.set(key, n + 1); if (c.tier === 'crit') R.crit++
+        c.tx = R.x0 + (c.col + 0.5) * PITCH; c.tz = c.side * ROWZ[row]; c.ty = DECK_Y + c.box.dim.h / 2 + n * 0.99
+      } else R.hidden++
+    })
+    regions.forEach(R => {
+      R.stack.forEach((m, i) => { m.visible = i < R.hidden })
+      R.lbl.innerHTML = '<b>' + R.key + '</b> ' + R.owned.filter(c => !c.sea).length + ' 家' + (R.crit ? '<span class="c">临界 ' + R.crit + '</span>' : '')
+      R.blbl.innerHTML = R.key + ' 公海 ' + (R.old + R.recent) + (R.recent ? '<i>近 30 天 +' + R.recent + '</i>' : '')
+    })
+    const owned = view.filter(c => !c.sea)
+    $('k-crit').textContent = owned.filter(c => c.tier === 'crit').length
+    $('k-soon').textContent = owned.filter(c => c.r <= 14).length
+    $('k-fell').textContent = view.filter(c => c.sea && -c.r <= 30).length
+    const d = Math.round(t)
+    $('tl').value = d; $('tl-date').textContent = dayLabel(t)
+    $('tl-mode').textContent = d === 0 ? '今天' : d < 0 ? '回放 · ' + (-d) + ' 天前' : '推演 · +' + d + ' 天'
+    $('b-today').disabled = d === 0 && !playing
+    const mark = $('mark')
+    mark.className = 'watermark' + (d !== 0 ? ' on' : '') + (d > 0 ? ' proj' : '')
+    if (d !== 0) mark.textContent = d < 0 ? '回放：' + dayLabel(t) + ' 的真实状态' : '推演：若期间不跟进不下单 · ' + dayLabel(t)
+    if ($('detail-view').style.display === 'none') showList(); else if (selected) showDetail(selected.c)
+  }
+
+  // ---------- 相机 ----------
+  const camDir = new THREE.Vector3(-0.16, 0.62, 0.77).normalize()
+  const cam = { target: new THREE.Vector3(), dist: 100, tTarget: new THREE.Vector3(), tDist: 100 }
+  function fitCamera(instant) {
+    const w = stage.clientWidth, h = stage.clientHeight
+    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix()
+    const L = world ? world.userData.L : 60, vf = camera.fov * Math.PI / 360, hf = Math.atan(Math.tan(vf) * camera.aspect)
+    const full = Math.max((L + 22) / 2 / Math.tan(hf), (W + 40) / 2 / Math.tan(vf) * 0.8)
+    if (focus) { cam.tTarget.set(focus.xc, 0, 1.5); cam.tDist = Math.max(full * 0.5, 62) } else { cam.tTarget.set(-1, 0, 5); cam.tDist = full }
+    if (instant) { cam.target.copy(cam.tTarget); cam.dist = reduced ? cam.tDist : cam.tDist * 0.82 }
+  }
+  function setFocus(r, instant) { // 键盘触发（instant）不播镜头动画
+    focus = r; regions.forEach(x => x.lbl.setAttribute('aria-pressed', String(x === r)))
+    $('f-all').hidden = !r; fitCamera(false); if (instant) { cam.target.copy(cam.tTarget); cam.dist = cam.tDist } showList()
+  }
+
+  // ---------- 逐帧 ----------
+  const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt))
+  let fallQueue = 0
+  function startFall(bx) {
+    const active = boxes.filter(b => b.mode === 'falling').length
+    if (snap || reduced || active >= 8) { bx.mode = 'sea'; bx.pos.set(bx.c.tx, 0.1, bx.c.tz); bx.flash = snap ? 0 : 1; return }
+    bx.mode = 'falling'; bx.fall = { t: -fallQueue++ * 0.08, p0: bx.pos.clone(), done: false }
+  }
+  function tick(dt, now) {
+    fallQueue = 0
+    const dimOn = fSA || fCrit
+    for (const bx of boxes) {
+      const c = bx.c, m = bx.mesh
+      if (!c.indiv) { m.visible = false; bx.mode = 'deck'; continue }
+      if (!m.visible || snap) {
+        m.visible = true; bx.scale = snap ? 1 : 0.9
+        if (c.sea) { bx.mode = 'sea'; bx.pos.set(c.tx, 0.1, c.tz); bx.rx = c.tiltX; bx.rz = c.tiltZ; bx.ry = c.h1 * 6 } else { bx.mode = 'deck'; bx.pos.set(c.tx, c.ty, c.tz); bx.rx = bx.rz = 0; bx.ry = 0 }
+      }
+      if (c.sea && bx.mode === 'deck') startFall(bx)
+      if (!c.sea && bx.mode !== 'deck') { bx.mode = 'deck'; bx.fall = null }
+      if (bx.mode === 'deck') {
+        bx.pos.x = damp(bx.pos.x, c.tx, 9, dt); bx.pos.y = damp(bx.pos.y, c.ty, 9, dt); bx.pos.z = damp(bx.pos.z, c.tz, 9, dt)
+        bx.rx = damp(bx.rx, 0, 10, dt); bx.rz = damp(bx.rz, 0, 10, dt); bx.ry = damp(bx.ry, c.loose ? (c.h2 - 0.5) * 0.36 : 0, 8, dt)
+      } else if (bx.mode === 'falling') {
+        const f = bx.fall; f.t += dt
+        if (f.t > 0) {
+          const u = Math.min(f.t / 1.25, 1), edge = c.side * (HALF + 0.75), out = edge + c.side * 1.7
+          if (u < 0.3) { const k = (u / 0.3) ** 2; bx.pos.z = f.p0.z + (edge - f.p0.z) * k }
+          else if (u < 0.62) { const k = (u - 0.3) / 0.32; bx.pos.z = edge + (out - edge) * k; bx.pos.y = f.p0.y + (-0.7 - f.p0.y) * k * k; bx.rx = c.side * 1.7 * k }
+          else {
+            if (!f.done) { f.done = true; splash(bx.pos.x, bx.pos.z) }
+            const k = (u - 0.62) / 0.38, e = 1 - (1 - k) ** 3
+            bx.pos.y = -0.7 + (wave(bx.pos.x, bx.pos.z, seaTime) + 0.1 + 0.7) * e; bx.pos.z = out + (c.tz - out) * 0.12 * e
+            bx.rx = c.side * 1.7 + (c.tiltX - c.side * 1.7) * e; bx.rz = c.tiltZ * e
+          }
+          if (u >= 1) { bx.mode = 'sea'; bx.fall = null }
+        }
+      } else {
+        bx.pos.x = damp(bx.pos.x, c.tx, 0.7, dt); bx.pos.z = damp(bx.pos.z, c.tz, 0.7, dt)
+        bx.pos.y = wave(bx.pos.x, bx.pos.z, seaTime) + 0.1
+        const bob = seaOn ? Math.sin(now * 0.9 + c.h1 * 9) * 0.05 : 0
+        bx.rx = damp(bx.rx, c.tiltX + bob, 3, dt); bx.rz = damp(bx.rz, c.tiltZ, 3, dt); bx.ry = damp(bx.ry, c.h1 * 6, 2, dt)
+      }
+      bx.scale = damp(bx.scale, 1, 12, dt)
+      m.position.copy(bx.pos); m.rotation.set(bx.rx, bx.ry, bx.rz); m.scale.setScalar(bx.scale)
+      // 颜色、绑带、标记
+      const mat = m.material
+      mat.color.lerp(C[bx.mode === 'deck' ? c.tier === 'sea' ? 'crit' : c.tier : bx.mode === 'falling' ? 'crit' : 'sea'], 1 - Math.exp(-8 * dt))
+      const pulse = c.tier === 'crit' && bx.mode === 'deck' ? (reduced ? 0.22 : 0.16 + 0.16 * (0.5 + 0.5 * Math.sin(now * 2.6))) : 0
+      bx.flash = Math.max(0, bx.flash - dt * 1.6)
+      mat.emissive.setRGB(pulse + bx.flash * 0.5, bx.flash * 0.5, bx.flash * 0.5)
+      const onDeck = bx.mode === 'deck', hasStrap = onDeck && FREQ[c.level] != null
+      bx.straps.forEach((s, i) => { s.visible = hasStrap; s.rotation.y = c.loose ? (i ? -0.5 : 0.38) : 0 })
+      bx.mark.visible = onDeck && c.tier !== 'stable'; if (bx.mark.visible) bx.mark.material.map = TEX[c.clock]
+      const dim = dimOn && !((!fSA || c.level === 'S' || c.level === 'A') && (!fCrit || c.tier === 'crit'))
+      mat.transparent = dim; mat.opacity = dim ? 0.14 : 1; m.castShadow = !dim
+      const hot = bx === selected || bx === hovered
+      bx.edges.material.color.setHex(hot ? 0xffffff : 0x0f1a24); bx.edges.material.opacity = hot ? 1 : dim ? 0.08 : 0.4
+    }
+    snap = false
+    for (const r of rings) if (r.t < 1) { r.t += dt / 0.75; const e = 1 - (1 - Math.min(r.t, 1)) ** 3; r.m.scale.setScalar(1 + e * 4.2); r.m.material.opacity = 0.75 * (1 - Math.min(r.t, 1)); if (r.t >= 1) r.m.visible = false }
+    regions.forEach(R => { R.buoy.position.y = wave(R.xc, HALF + 15.5, seaTime) - 0.05 })
+    cam.target.lerp(cam.tTarget, 1 - Math.exp(-7 * dt)); cam.dist = damp(cam.dist, cam.tDist, 7, dt)
+    camera.position.copy(cam.target).addScaledVector(camDir, cam.dist); camera.lookAt(cam.target)
+    const w = stage.clientWidth, h = stage.clientHeight, v = new THREE.Vector3()
+    for (const l of labels) { v.copy(l.p).project(camera); l.el.style.transform = 'translate(' + ((v.x + 1) / 2 * w).toFixed(1) + 'px,' + ((1 - v.y) / 2 * h).toFixed(1) + 'px) translate(-50%,-50%)' }
+  }
+  let last = performance.now(), frame = 0, raf = 0, stepClock = 0
+  function loop(nowMs) {
+    raf = requestAnimationFrame(loop)
+    const dt = Math.max(0, Math.min((nowMs - last) / 1000, 0.05)); last = nowMs
+    advance(dt, nowMs)
+  }
+  function advance(dt, nowMs) {
+    if (playing) {
+      t += dt * playing.dir * 2.1
+      if ((playing.dir > 0 && t >= playing.to) || (playing.dir < 0 && t <= playing.to)) { t = playing.to; playing = null; setPlayButtons() }
+      applyTime()
+    }
+    if (seaOn) { seaTime += dt; if (frame++ % 2 === 0) paintSea() }
+    tick(dt, nowMs / 1000); renderer.render(scene, camera)
+  }
+  document.addEventListener('visibilitychange', () => { cancelAnimationFrame(raf); if (!document.hidden) { last = performance.now(); raf = requestAnimationFrame(loop) } })
+  new ResizeObserver(() => fitCamera(false)).observe(stage)
+
+  // ---------- 时间条 ----------
+  function setPlayButtons() { $('b-replay').textContent = playing && playing.kind === 'replay' ? '停止' : '回放近 7 天'; $('b-proj').textContent = playing && playing.kind === 'proj' ? '停止' : '播放推演' }
+  function play(kind) {
+    if (playing && playing.kind === kind) { playing = null; t = Math.round(t); setPlayButtons(); applyTime(); return }
+    if (kind === 'replay') { t = -7; snap = true; playing = { kind, dir: 1, to: 0 } } else { if (t !== 0) { t = 0; snap = true } playing = { kind, dir: 1, to: 14 } }
+    setPlayButtons(); applyTime()
+  }
+  $('b-replay').onclick = () => play('replay'); $('b-proj').onclick = () => play('proj')
+  $('b-today').onclick = () => { playing = null; t = 0; snap = true; setPlayButtons(); applyTime() }
+  $('tl').oninput = e => { playing = null; setPlayButtons(); const nv = +e.target.value; if (Math.abs(nv - t) > 4) snap = true; t = nv; applyTime() }
+
+  // ---------- 指针 ----------
+  const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(); let ptrDirty = null
+  function hit(ev) {
+    const b = canvas.getBoundingClientRect(); ptr.set((ev.clientX - b.left) / b.width * 2 - 1, -(ev.clientY - b.top) / b.height * 2 + 1)
+    ray.setFromCamera(ptr, camera); const h = ray.intersectObjects(pickables.filter(m => m.visible), false)[0]; return h && h.object
+  }
+  const fmtR = c => c.sea ? '已落海 ' + Math.max(1, Math.round(-c.r)) + ' 天' : '距释放 ' + Math.ceil(c.r) + ' 天'
+  const anon = c => viewKey === 'rep' && c.owner !== '王倩'
+  canvas.addEventListener('pointermove', ev => {
+    if (ptrDirty) { ptrDirty = ev; return } ptrDirty = ev
+    requestAnimationFrame(() => {
+      const e = ptrDirty; ptrDirty = null; const o = hit(e), tip = $('tip'); hovered = o && o.userData.box || null
+      canvas.style.cursor = o && o.userData.box ? 'pointer' : 'default'
+      if (!o) { tip.classList.remove('on'); return }
+      if (o.userData.stack) { const R = o.userData.stack; tip.innerHTML = '<b>' + R.key + ' · 稳固 ' + R.hidden + ' 家</b><br>B/C 级与未定级，距释放均超过 14 天' }
+      else { const c = o.userData.box.c; tip.innerHTML = anon(c) ? '<b>公海客户</b><br>' + c.region + ' · ' + fmtR(c) : '<b>' + c.name + '</b>' + (c.level ? ' · ' + c.level + ' 级' : ' · 未定级') + '<br><span class="d">' + fmtR(c) + '</span>' + (c.sea ? '' : ' · ' + (c.clock === 'follow' ? '跟进钟' : '订单钟')) + '<br>上次跟进 ' + dayLabel(-c.since) + (c.loose ? ' · 已超跟进频率' : '') }
+      const b = stage.getBoundingClientRect(); let x = e.clientX - b.left + 14, y = e.clientY - b.top + 14
+      tip.classList.add('on'); x = Math.min(x, b.width - tip.offsetWidth - 8); y = Math.min(y, b.height - tip.offsetHeight - 8)
+      tip.style.transform = 'translate(' + x + 'px,' + y + 'px)'
+    })
+  })
+  canvas.addEventListener('pointerleave', () => { $('tip').classList.remove('on'); hovered = null })
+  canvas.addEventListener('click', ev => { const o = hit(ev); if (o && o.userData.box) select(o.userData.box.c); else if (o && o.userData.stack) setFocus(o.userData.stack) })
+  addEventListener('keydown', e => { if (e.key === 'Escape') { if ($('detail-view').style.display !== 'none') back(); else if (focus) setFocus(null) } })
+
+  // ---------- 侧栏 ----------
+  function showList() {
+    $('detail-view').style.display = 'none'; $('list-view').style.display = 'flex'
+    const pool = view.filter(c => !c.sea && c.tier !== 'stable' && (!focus || c.region === focus.key) && (!fSA || c.level === 'S' || c.level === 'A') && (!fCrit || c.tier === 'crit')).sort((a, b) => a.r - b.r)
+    const sea = view.filter(c => c.sea && (!focus || c.region === focus.key)).sort((a, b) => b.r - a.r).slice(0, 12)
+    $('list-title').textContent = focus ? focus.key + ' · 需要处理的客户' : '需要处理的客户'
+    $('list-sub').textContent = '临界 ' + pool.filter(c => c.tier === 'crit').length + ' · 预警 ' + pool.filter(c => c.tier === 'warn').length + (viewKey === 'rep' ? ' · 仅我的客户' : '')
+    const row = c => '<button class="item" data-id="' + c.id + '"><i class="dot ' + c.tier + '"></i><span><span class="nm">' + (anon(c) ? '公海客户' : c.name) + '</span><span class="tag">' + (c.level || '未定级') + '</span><br><span class="meta">' + c.region + (c.sea || anon(c) ? '' : ' · ' + (viewKey === 'mgr' ? c.owner + ' · ' : '') + (c.clock === 'follow' ? '跟进钟' : '订单钟')) + '</span></span><span class="days">' + (c.sea ? Math.max(1, Math.round(-c.r)) + ' 天前' : Math.ceil(c.r) + ' 天') + '</span></button>'
+    const crit = pool.filter(c => c.tier === 'crit'), warn = pool.filter(c => c.tier === 'warn')
+    $('list').innerHTML = (crit.length ? '<div class="grp">临界 · 3 天内落海</div>' + crit.map(row).join('') : '') + (warn.length ? '<div class="grp">预警 · 4–14 天</div>' + warn.map(row).join('') : '')
+      + (!pool.length ? '<div class="empty">这个范围内没有临界或预警客户</div>' : '') + (sea.length ? '<div class="grp">近期已落海</div>' + sea.map(row).join('') : '')
+    $('list').querySelectorAll('.item').forEach(b => b.onclick = () => select(view.find(c => c.id === +b.dataset.id)))
+  }
+  function select(c) { selected = c.box; applyTime(); showDetail(c) }
+  function back() { selected = null; applyTime(); showList() }
+  $('back').onclick = back
+  function showDetail(c, msg) {
+    $('list-view').style.display = 'none'; $('detail-view').style.display = 'flex'
+    const hidden = anon(c), live = Math.round(t) === 0
+    let h = '<h3>' + (hidden ? '公海客户' : c.name) + '</h3><div class="p-sub">' + c.region + (hidden ? '' : ' · ' + c.prov) + ' · ' + (c.level ? c.level + ' 级' : '未定级') + '</div>'
+    if (c.sea) h += '<div class="big">' + Math.max(1, Math.round(-c.r)) + '<small>天前落海</small></div><div class="clock">原因：' + (c.reason === 'order' || (c.fellAgo == null && c.clock === 'order') ? '3 个月未下单' : '1 个月未跟进') + '</div>'
+    else h += '<div class="big ' + c.tier + '">' + Math.ceil(c.r) + '<small>天后释放入公海</small></div><div class="clock">先到期的是' + (c.clock === 'follow' ? '跟进钟（1 个月未跟进）' : '订单钟（3 个月未下单）') + '</div>'
+    if (!hidden) h += '<dl><dt>归属人</dt><dd>' + (c.sea ? '（已释放）原 ' : '') + c.owner + '</dd><dt>上次跟进</dt><dd>' + dayLabel(-c.since) + '（' + c.since + ' 天前）' + (c.loose ? ' · 已超频率' : '') + '</dd><dt>跟进钟</dt><dd>' + (c.sea ? '—' : '剩 ' + Math.ceil(c.follow - t) + ' 天') + '</dd><dt>订单钟</dt><dd>' + (c.sea ? '—' : '剩 ' + Math.ceil(c.order - t) + ' 天') + '</dd><dt>最近跟进</dt><dd>客户说月底盘点后再定补货数量，对 35cm 头套有兴趣。</dd></dl>'
+    if (msg) h += '<div class="note ok">' + msg + '</div>'
+    if (!live) h += '<div class="note">当前是' + (t < 0 ? '回放' : '推演') + '画面，回到今天后才能操作。</div>'
+    h += '<div class="acts">' + (c.sea ? '<button class="btn primary" id="a-claim"' + (live ? '' : ' disabled') + '>认领</button>' : '<button class="btn primary" id="a-follow"' + (live ? '' : ' disabled') + '>记一条跟进</button><button class="btn" disabled>看时间线</button>') + '</div>'
+    $('detail').innerHTML = h
+    const f = $('a-follow'), k = $('a-claim')
+    if (f) f.onclick = () => { c.since = 0; c.follow = 30; c.rem0 = Math.min(c.follow, c.order); applyTime(); showDetail(c, c.order < 30 ? '跟进已记录，跟进钟重置为 30 天。订单钟还剩 ' + c.order + ' 天，需要下单才能重置。' : '跟进已记录，货箱已拉回，重新计 30 天。') }
+    if (k) k.onclick = () => { delete c.fellAgo; c.owner = viewKey === 'rep' ? '王倩' : c.owner; c.since = 0; c.follow = 30; c.order = 92; c.rem0 = 30; applyTime(); showDetail(c, '已认领，两个钟都已重置，货箱吊回甲板。') }
+  }
+
+  // ---------- 顶部开关 ----------
+  const press = (el, on) => el.setAttribute('aria-pressed', String(on))
+  $('v-mgr').onclick = () => { viewKey = 'mgr'; press($('v-mgr'), true); press($('v-rep'), false); build() }
+  $('v-rep').onclick = () => { viewKey = 'rep'; press($('v-mgr'), false); press($('v-rep'), true); build() }
+  $('sea-toggle').onclick = () => { seaOn = !seaOn; press($('sea-toggle'), seaOn); $('sea-toggle').textContent = seaOn ? '开' : '关' }
+  if (reduced) { press($('sea-toggle'), false); $('sea-toggle').textContent = '关' }
+  $('f-sa').onclick = () => { fSA = !fSA; press($('f-sa'), fSA); showList() }
+  $('f-crit').onclick = () => { fCrit = !fCrit; press($('f-crit'), fCrit); showList() }
+  $('f-all').onclick = e => setFocus(null, e.detail === 0)
+
+  build()
+  // 进入时：从昨天播到今天，展示「昨天至今落海」的客户
+  if (!reduced) { t = -1; snap = true; applyTime(); setTimeout(() => { playing = { kind: 'intro', dir: 1, to: 0 } }, 700) }
+  window.__proto = { get t() { return t }, customers, get boxes() { return boxes }, camera, cam, renderer, step(sec) { for (let i = 0, n = Math.round(sec * 30); i < n; i++) advance(1 / 30, (stepClock += 33.3)) } }
+  raf = requestAnimationFrame(loop)
+})()
+</script>
+</body>
+</html>
