@@ -1,9 +1,12 @@
 import ast
+import base64
+import json
 from pathlib import Path
 
+import httpx
 import pytest
 
-from app.ai import image_service
+from app.ai import image_job_runtime, image_service
 from app.ai import service as ai_service
 from app.ai.models import AiCallLog, AiPreset, AiProvider
 
@@ -52,6 +55,63 @@ def test_image_functions_are_exported_from_service_facade():
     assert ai_service.build_image_config_version is image_service.build_image_config_version
     assert "from app.ai.service import" in ai_service.__doc__
     assert "directly import submodules" not in ai_service.__doc__
+
+
+@pytest.mark.parametrize(("reference_count", "use_url"), [(0, False), (1, False), (2, False), (1, True)])
+def test_native_seedream_studio_sends_json_and_reads_image(db, monkeypatch, reference_count, use_url):
+    request_parameters = {"background": "transparent", "output_format": "png", "watermark": True}
+    if use_url:
+        request_parameters["response_format"] = "url"
+    preset = _create_image_preset(
+        db, preset_name="jiemng", model="doubao-seedream-5-5-261028",
+        parameters={"studio": {"enabled": True}, "request_parameters": request_parameters},
+    )
+    endpoint = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
+    db.get(AiProvider, preset.provider_id).api_base = endpoint
+    generated_png = b"\x89PNG\r\n\x1a\nprovider image bytes"
+    download_hosts = frozenset({"ark-acg-cn-beijing.tos-cn-beijing.volces.com"})
+    image_url = "https://ark-acg-cn-beijing.tos-cn-beijing.volces.com/generated.png"
+    references = tuple(
+        image_job_runtime.ImageInput(f"ref-{i}.png", f"reference-{i}".encode(), "image/png")
+        for i in range(reference_count)
+    )
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        data = {"url": image_url} if use_url else {"b64_json": base64.b64encode(generated_png).decode()}
+        return httpx.Response(200, json={"data": [data]})
+
+    def download(url, allowed_hosts):
+        assert use_url and url == image_url and allowed_hosts == download_hosts
+        return generated_png
+
+    client_class = httpx.Client
+    monkeypatch.setattr(image_service, "decrypt_key", lambda _: "test-key")
+    monkeypatch.setattr(image_service.httpx, "Client", lambda **kw: client_class(transport=httpx.MockTransport(respond), **kw))
+    job_request = image_job_runtime.ImageJobRequest(
+        preset_name="jiemng", prompt="change the background", caller_module="design_image",
+        caller_user_id=9, size="1024x1024", quality="medium", input_images=references,
+        expected_config_version=None, download_hosts=download_hosts if use_url else frozenset(), pricing_snapshot=None,
+    )
+    result = image_job_runtime.call_image_provider(db, job_request, download_image=download)
+
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.url == endpoint
+    assert request.headers["content-type"] == "application/json"
+    assert request.headers["authorization"] == "Bearer test-key"
+    payload = {
+        "model": preset.model, "prompt": "change the background", "size": "1024x1024",
+        "background": "transparent", "output_format": "png", "watermark": True,
+        "response_format": "url" if use_url else "b64_json",
+    }
+    if references:
+        data_urls = [f"data:image/png;base64,{base64.b64encode(ref.content).decode()}" for ref in references]
+        payload["image"] = data_urls[0] if reference_count == 1 else data_urls
+    assert json.loads(request.content) == payload
+    assert result.image == image_job_runtime.ImagePayload(generated_png, "image/png")
+    assert db.get(AiCallLog, result.log_id).status == "success"
 
 
 def test_generate_image_posts_whitelisted_json_and_records_metadata(db, monkeypatch):
@@ -645,8 +705,9 @@ def test_image_transport_rejects_oversized_content_length_before_json(monkeypatc
     assert json_calls == []
 
 
-def test_edit_image_posts_openai_compatible_image_edit_request(db, monkeypatch):
-    _create_image_preset(db)
+@pytest.mark.parametrize("model", ["gpt-image-2", "doubao-seedream-5-5-261028"])
+def test_edit_image_posts_openai_compatible_image_edit_request(db, monkeypatch, model):
+    _create_image_preset(db, model=model)
 
     captured = {}
 
@@ -708,7 +769,7 @@ def test_edit_image_posts_openai_compatible_image_edit_request(db, monkeypatch):
     assert captured["headers"]["Authorization"] == "Bearer sk-test"
     assert "Content-Type" not in captured["headers"]
     assert captured["data"] == {
-        "model": "gpt-image-2",
+        "model": model,
         "prompt": "replace hair",
         "size": "1024x1024",
         "quality": "high",
