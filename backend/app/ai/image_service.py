@@ -9,6 +9,7 @@ import time
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Optional, TypedDict
+from urllib.parse import urlsplit
 
 from app.ai.provider_config import request_timeout, transport_options, image_request_timeout
 
@@ -88,7 +89,7 @@ IMAGE_PARAMETER_KEYS = {
     "user",
 }
 GENERATION_PARAMETER_KEYS = IMAGE_PARAMETER_KEYS - {"input_fidelity", "stream", "partial_images"}
-# ── 生图有两种 API 契约，按模型家族分（2026-07-27）──
+# ── 通用生图 API 契约 ──
 # OpenAI 系（gpt-image-*/dall-e-*）走 /v1/images/edits：multipart 上传，size/quality 是请求参数。
 # Google 系（gemini-*-image 等）不认这个端点——中转站会以 500 + code=local:convert_request_failed
 # 拒绝，因为它压根无法把 multipart 转成 Gemini 的入参；这些模型走 /v1/chat/completions，
@@ -547,6 +548,39 @@ def _uses_chat_style(preset: AiPreset) -> bool:
     return str((preset.parameters or {}).get(API_STYLE_KEY, "")).strip().lower() == API_STYLE_CHAT
 
 
+def _uses_native_seedream(preset: ImagePresetCallConfig, provider: ImageProviderCallConfig) -> bool:
+    # Only the official Ark endpoint uses this native contract. Gateways can
+    # expose the same model name through their own configured API style.
+    return (
+        preset.model.startswith("doubao-seedream-5-5-")
+        and urlsplit(provider.api_base).hostname == "ark.cn-beijing.volces.com"
+    )
+
+
+def _post_seedream_image(
+    preset: ImagePresetCallConfig, provider: ImageProviderCallConfig, headers: dict,
+    prompt: str, size: str | None, images: list[ImageInput], timeout_sec: int,
+    caller_module: str, *, options: dict | None = None, max_attempts: int | None = None,
+) -> ImageTransportResult:
+    payload = _generation_params(preset, prompt, size)
+    payload.pop("quality", None)
+    payload.setdefault("response_format", "b64_json")
+    if "watermark" in preset.parameters:
+        payload.setdefault("watermark", preset.parameters["watermark"])
+    if images:
+        references = [
+            f"data:{image['content_type'].lower()};base64,{base64.b64encode(image['content']).decode('ascii')}"
+            for image in images
+        ]
+        payload["image"] = references[0] if len(references) == 1 else references
+
+    url = build_image_url(provider.api_base, "generations", provider=provider)
+    return _send_with_retry(
+        lambda client: _build_request(client, "POST", url, headers=headers, json=payload),
+        timeout_sec, caller_module, "Seedream image", max_attempts=max_attempts, options=options,
+    )
+
+
 def _chat_image_prompt(
     prompt: str,
     size: Optional[str] = None,
@@ -754,6 +788,10 @@ def generate_image(
                 caller_module,
                 **transport_kwargs,
             )
+        elif _uses_native_seedream(preset, provider):
+            transport = _post_seedream_image(
+                preset, provider, headers, prompt, size, [], timeout_sec, caller_module, options=options,
+            )
         else:
             url = build_image_url(provider.api_base, "generations", provider=provider)
             transport = _send_with_retry(
@@ -876,6 +914,13 @@ def edit_image(
             )
             result = transport.json
             content = _extract_chat_image_content(result)
+        elif _uses_native_seedream(preset, provider):
+            transport = _post_seedream_image(
+                preset, provider, headers, prompt, size, images, timeout_sec, caller_module,
+                options=options, max_attempts=transport_max_attempts,
+            )
+            result = transport.json
+            content = _extract_image_content(result, _configured_output_format(preset))
         else:
             headers.pop("Content-Type", None)  # multipart 的 boundary 交给 httpx 生成
 

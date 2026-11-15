@@ -1361,6 +1361,7 @@ Agent 委派只允许现有 customer_order_copilot 的只读准备型工具。re
 - AI 生图目录从 Preset 实时读取，取消型号枚举及 TeamRouter/Openlux 域名绑定。已有 `design_image_generation` / `design_image_generation_*` 自动归入目录；其他预设勾选「在 AI 生图中使用」写入 `parameters.studio.enabled=true`，设 false 从目录移除。只允许启用、未删除的 direct/OpenAI、HTTPS 和有效认证配置。凭据及安全下载校验仍留在服务端。
 - `studio.label` 控制名称；`studio.sizes/qualities` 控制选项，根层 `size/quality` 控制默认值（必须在列表中，否则取首项）。客户端本轮选择覆盖默认。`api_style=images/chat` 决定调用协议；`size_parameter=aspect_ratio` 将尺寸或比例转成 `W:H`，配置阶段校验格式。`max_reference_images` 为 0～5，可限制纯文生成或参考图数量。
 - `request_parameters` 放供应商扩展参数，Images 编辑的对象/数组按 JSON 字符串写入 multipart；不能覆盖模型、消息、提示词、图像输入、工具、stream 或 n。管理元数据不发给模型；文本流和非流共用参数提取。Anthropic max_tokens 和响应图片格式使用合并后的有效值，编辑摘参重试使用最终请求格式。Studio 单任务只接受单张非流式结果。
+- 直连北京火山方舟的 Seedream 5.5 使用同一个 JSON `images/generations` 端点处理文生图和参考图编辑。工作台尺寸继续透传，生成质量使用上游默认值。预设可在 `request_parameters` 配置 `background: "transparent"` 与 `output_format: "png"`；默认接收 `b64_json`，显式使用 `url` 时仍需配置实际的 `download_hosts`。
 - 方案对话和客户生图不再检查固定型号。OCR、知识 AI、展会、翻译等原有业务仍按自己的预设名调用统一 facade；保留业务输出结构、Agent 工具/预算、对外 Gateway 文本参数白名单，不把换型号等同于供应商自动支持新协议。Agent 允许的参数仍服从 Profile 上限；Gateway 可识别管理元数据和嵌套的受允许文本参数。
 - 不再于启动时自动改写已存在的 TeamRouter 地址或发票截图预设模型；种子缺失初始化继续工作。历史提示词升级的原有签名保护保持不变。换型号保留业务预设名；新建任意名称并不会自动重绑已有业务。
 - 新请求用当前配置；排队图片任务继续校验配置指纹，漂移明确失败而非无声换模型。重试是新请求，使用同一预设的当前配置。预设参数 JSON 非法时禁止保存，不再清空原参数。
