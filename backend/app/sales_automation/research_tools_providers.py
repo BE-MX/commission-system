@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException, InvalidOperation, ROUND_CEILING, localcontext
 from time import monotonic
 from urllib.parse import urlsplit
 
@@ -171,16 +171,32 @@ def monid_client(settings):
                         follow_redirects=False, headers={"Authorization": f"Bearer {settings.PRIVATE_RESEARCH_MONID_API_KEY}"})
 
 
+def _quoted_usd_amount(value, currency):
+    if isinstance(value, dict):
+        nested_currency = value.get("currency")
+        if currency is not None and currency != nested_currency:
+            return None
+        currency = nested_currency
+        value = value.get("value")
+    if currency != "USD":
+        return None
+    amount = Decimal(str(value))
+    return amount if amount.is_finite() and amount >= 0 else None
+
+
 def _expected_max_price(price):
-    if not isinstance(price, dict) or price.get("currency") != "USD" or price.get("type") not in {"PER_CALL", "PER_RESULT"}:
+    if not isinstance(price, dict) or price.get("type") not in ("PER_CALL", "PER_RESULT"):
         return None
     try:
-        amount = Decimal(str(price["amount"]))
-        fee = Decimal(str(price.get("flatFee") or 0))
-        if amount.is_finite() and fee.is_finite() and amount >= 0 and fee >= 0:
-            # Each allowlisted adapter requests at most one result.
-            return (amount + fee) * 1_000_000
-    except (KeyError, InvalidOperation):
+        currency = price.get("currency")
+        amount = _quoted_usd_amount(price["amount"], currency)
+        flat_fee = price.get("flatFee")
+        fee = Decimal(0) if flat_fee is None else _quoted_usd_amount(flat_fee, currency)
+        if amount is not None and fee is not None:
+            # Each allowlisted adapter requests at most one result. Never round a quote down.
+            with localcontext(rounding=ROUND_CEILING):
+                return (amount + fee) * 1_000_000
+    except (KeyError, DecimalException):
         logger.warning("Private research provider returned unsupported price data")
     return None
 
