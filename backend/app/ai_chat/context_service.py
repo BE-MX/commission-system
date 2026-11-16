@@ -4,6 +4,7 @@ import base64
 import logging
 
 from sqlalchemy import and_, or_
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm import Session
 
 from app.ai.models import AiPreset, AiProvider
@@ -26,6 +27,7 @@ def _require_session(
         .filter(
             AiChatSession.id == session_id,
             AiChatSession.owner_user_id == owner_user_id,
+            AiChatSession.deleted_at.is_(None),
         )
         .first()
     )
@@ -63,6 +65,7 @@ def build_context(
     session_id: int,
     *,
     exclude_assistant_id: int | None = None,
+    through_user_id: int | None = None,
 ) -> list[dict]:
     session = _require_session(db, session_id, owner_user_id)
     allowed_status = or_(
@@ -70,11 +73,23 @@ def build_context(
         and_(
             AiChatMessage.role == "assistant",
             AiChatMessage.status.in_(("completed", "stopped")),
+            AiChatMessage.content != "",
         ),
     )
     query = db.query(AiChatMessage).filter(
         AiChatMessage.session_id == session_id, allowed_status
     )
+    newer = aliased(AiChatMessage)
+    superseded = db.query(newer.id).filter(
+        newer.session_id == AiChatMessage.session_id,
+        newer.reply_to_message_id == AiChatMessage.reply_to_message_id,
+        newer.role == "assistant", newer.status.in_(("completed", "stopped")),
+        newer.content != "",
+        newer.id > AiChatMessage.id,
+    ).exists()
+    query = query.filter(~superseded)
+    if through_user_id is not None:
+        query = query.filter(AiChatMessage.id <= through_user_id)
     if exclude_assistant_id is not None:
         query = query.filter(AiChatMessage.id != exclude_assistant_id)
         original = db.query(AiChatMessage).filter(

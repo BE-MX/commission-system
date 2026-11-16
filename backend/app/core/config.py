@@ -281,6 +281,7 @@ class Settings(BaseSettings):
     AI_CHAT_STORAGE_ROOT: str = r"D:\WORKSOURCE\ai-chat"
     AI_CHAT_MAX_UPLOAD_BYTES: _PositiveInt = 4 * 1024 * 1024
     AI_CHAT_MAX_ATTACHMENTS: _PositiveInt = 5
+    AI_CHAT_DAILY_TURN_LIMIT: _PositiveInt = 100
     AI_CHAT_MAX_ATTACHMENT_CHARS: _PositiveInt = 60_000
     AI_CHAT_MAX_TURN_ATTACHMENT_CHARS: _PositiveInt = 120_000
 

@@ -22,6 +22,7 @@ from app.ai.log_snapshot import serialize_response_snapshot
 from app.ai.preset_config import text_request_parameters
 from app.ai.models import AiCallLog, AiPreset
 from app.ai.provider_service import get_provider
+from app.ai.text_snapshot import TextChatSnapshot, freeze_text_call_config
 
 logger = logging.getLogger("commission.ai")
 
@@ -116,6 +117,8 @@ def parse_provider_stream(api_type: str, lines: Iterable[str]) -> Iterator[dict]
                     yield {"type": "meta", "model": model}
             elif event_type == "content_block_delta":
                 delta = data.get("delta") or {}
+                if delta.get("type") == "thinking_delta" and isinstance(delta.get("thinking"), str):
+                    yield {"type": "reasoning", "text": delta["thinking"]}
                 text = delta.get("text") if delta.get("type") == "text_delta" else None
                 if isinstance(text, str) and text:
                     yield {"type": "delta", "text": text}
@@ -146,9 +149,10 @@ def parse_provider_stream(api_type: str, lines: Iterable[str]) -> Iterator[dict]
                 if choices[0].get("finish_reason"):
                     finish = {"finish_reason": choices[0]["finish_reason"]}
                 delta = choices[0].get("delta") or {}
+                reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                if isinstance(reasoning, str) and reasoning:
+                    yield {"type": "reasoning", "text": reasoning}
                 text = delta.get("content")
-                if not text:
-                    text = delta.get("reasoning_content") or delta.get("reasoning")
                 if isinstance(text, str) and text:
                     yield {"type": "delta", "text": text}
 
@@ -326,9 +330,15 @@ def chat_stream(
     messages: list,
     caller_module: str,
     caller_user_id: Optional[int] = None,
+    *,
+    config_snapshot: TextChatSnapshot | None = None,
 ) -> Iterator[dict]:
     """Stream a direct model call and finalize its log on every exit path."""
-    preset, provider = _load_direct_preset(db, preset_name)
+    if config_snapshot is None:
+        config_snapshot = freeze_text_call_config(*_load_direct_preset(db, preset_name))
+    if not isinstance(config_snapshot, TextChatSnapshot) or config_snapshot.preset.preset_name != preset_name:
+        raise ValueError("Invalid trusted stream configuration")
+    preset, provider = config_snapshot.preset, config_snapshot.provider
     full_messages = []
     if preset.system_prompt:
         full_messages.append({"role": "system", "content": preset.system_prompt})
@@ -374,7 +384,9 @@ def chat_stream(
                     event_type = event["type"]
                     if event_type == "meta":
                         continue
-                    if event_type == "delta":
+                    if event_type == "reasoning":
+                        yield event
+                    elif event_type == "delta":
                         text_length = _append_bounded_text(
                             text_parts, event["text"], text_length
                         )

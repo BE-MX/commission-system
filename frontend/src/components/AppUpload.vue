@@ -132,7 +132,7 @@ async function uploadFiles(files) {
     if (!beforeUpload(file)) return
     try { await doUpload({ file }) }
     catch (error) {
-      if (!error?.isAxiosError) msgError('截图上传失败，请重试', error)
+      if (!error?.isAxiosError) msgError(error?.message || '文件上传失败，请重试', error)
     }
   }))
 }
@@ -154,6 +154,7 @@ function remove(index) {
   next.splice(index, 1)
   emit('update:modelValue', next)
 }
+defineExpose({ uploadFiles })
 </script>
 
 <style scoped>

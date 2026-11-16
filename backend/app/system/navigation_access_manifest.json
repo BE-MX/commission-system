@@ -1,5 +1,5 @@
 {
-  "source_sha256": "6f522935ecf25c8ce36441682f12ee55b922b21b118cfbc2d75fa3306b206b9f",
+  "source_sha256": "cee7c0c072f00ef605c28e22d4432ab963366eed126e32ed84b388b45acc640d",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -2861,10 +2861,7 @@
         ]
       },
       {
-        "anyPermission": [
-          "design_image:read",
-          "ai_chat:read"
-        ]
+        "permission": "design_image:read"
       },
       {
         "anyPermission": [
@@ -2923,6 +2920,14 @@
           "customer_media_portal:read",
           "customer_media_account:read"
         ]
+      }
+    ],
+    "DesignAiChat": [
+      {
+        "permission": "ai_chat:read"
+      },
+      {
+        "permission": "ai_chat:read"
       }
     ],
     "DesignGantt": [

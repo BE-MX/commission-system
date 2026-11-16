@@ -7,7 +7,7 @@
 import {
   Aim, Box, Brush, Camera, DataAnalysis, DataLine, Document, Finished, Money, Monitor,
   Notebook, OfficeBuilding, Picture, Reading, Setting, Shop, Tickets, User, Van, Wallet,
-  MagicStick,
+  MagicStick, ChatDotRound,
 } from '@element-plus/icons-vue'
 
 export const KUBAI_GROUP_ICONS = {
@@ -39,6 +39,7 @@ export const KUBAI_GROUP_ICONS = {
 // Top-level pages that sit beside the groups, keyed by route name.
 export const KUBAI_TOP_LEVEL_ICONS = {
   Dashboard: ['主页', DataAnalysis],
+  DesignAiChat: ['聊天', ChatDotRound],
   Announcements: ['通知', Document],
   AgentTaskCenter: ['机器人', Monitor],
 }

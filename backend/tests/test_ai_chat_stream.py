@@ -361,7 +361,7 @@ def test_openai_stream_options_allow_explicit_preset_override(db, monkeypatch):
     assert json.loads(requests[0].content)["stream_options"] == {"include_usage": False}
 
 
-def test_openai_reasoning_delta_becomes_text_and_is_snapshotted(db, monkeypatch):
+def test_openai_reasoning_is_separate_from_answer_and_not_in_answer_snapshot(db, monkeypatch):
     preset, _ = _configured_preset(db, "openai")
     payload = (
         _sse({"choices": [{"delta": {"content": "", "reasoning_content": "推理答案"}}]})
@@ -377,9 +377,10 @@ def test_openai_reasoning_delta_becomes_text_and_is_snapshotted(db, monkeypatch)
 
     events = list(chat_stream(db, preset.preset_name, [{"role": "user", "content": "hi"}], "ai_chat"))
 
-    assert [event["text"] for event in events if event["type"] == "delta"] == ["推理答案", "补充"]
+    assert [event["text"] for event in events if event["type"] == "reasoning"] == ["推理答案", "补充"]
+    assert not [event for event in events if event["type"] == "delta"]
     log = db.query(AiCallLog).filter_by(preset_name=preset.preset_name).one()
-    assert "推理答案补充" in log.response_snapshot
+    assert "推理答案补充" not in log.response_snapshot
 
 
 def test_anthropic_stream_uses_key_and_stream_body_and_redacts_response(db, monkeypatch):
@@ -488,3 +489,29 @@ def test_final_log_commit_retries_once_and_still_emits_done(db, monkeypatch):
     assert attempts == 2
     assert log.status == "success"
     assert "complete" in log.response_snapshot
+
+
+@pytest.mark.parametrize("api_type", ["openai", "anthropic"])
+def test_stream_uses_validated_snapshot_after_admin_edit(db, monkeypatch, api_type):
+    preset, provider = _configured_preset(db, api_type)
+    snapshot = service.freeze_text_call_config(preset, provider)
+    preset.model = "replacement-model"
+    preset.parameters = {"max_tokens": 999}
+    provider.api_base = "https://replacement.invalid"
+    db.commit()
+    requests = []
+    if api_type == "openai":
+        payload = b'data: [DONE]\n\n'
+    else:
+        payload = (_sse({"type": "message_stop"}) + "\n\n").encode()
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, stream=_ChunkStream([payload]))
+    _install_transport(monkeypatch, handler)
+    events = list(chat_stream(db, preset.preset_name, [{"role": "user", "content": "hello"}],
+                             "ai_chat", config_snapshot=snapshot))
+    assert events[-1]["type"] == "done"
+    assert requests[0].url.host == "provider.example"
+    body = json.loads(requests[0].content)
+    assert body["model"] == "stream-model"
+    assert body["max_tokens"] == 64

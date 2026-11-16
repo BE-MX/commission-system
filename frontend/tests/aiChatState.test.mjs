@@ -93,13 +93,17 @@ function loadChat(api = {}) {
   const bindings = { computed, ref, watch, useAsyncResource, onMounted() {}, onBeforeUnmount() {},
     useAuthStore: () => ({ user: { id: 1 }, hasPermission: () => true }),
     createSession: async () => ({ data: { id: 99 } }), deleteAttachment: async () => {},
-    getConfig: async () => ({ data: { configured: true } }),
+    getConfig: api.getConfig || (async () => ({ data: { configured: true, models: [{ preset_id: 1, label: 'Test', model: 'test', vision: true }], default_preset_id: 1 } })),
+    renameSession: api.renameSession || (async (id, title) => ({ data: { id, title } })), deleteSession: api.deleteSession || (async () => {}),
     getSession: api.getSession, listSessions: async () => ({ data: { items: [] } }),
-    streamRetry: async () => {}, streamTurn: api.streamTurn || (async () => {}), uploadAttachment: async () => {},
+    streamRetry: api.streamRetry || (async () => {}), streamTurn: api.streamTurn || (async () => {}), uploadAttachment: async () => {},
     requestId, modeCanSubmit: chatState.modeCanSubmit, useChatModes: modeFactory, useChatDrafts,
     msgError() {}, sessionStorage: { getItem() {}, setItem() {}, removeItem() {} },
   }
-  return new Function(...Object.keys(bindings), `${code}; return useAiChat()`)(...Object.values(bindings))
+  const chat = new Function(...Object.keys(bindings), `${code}; return useAiChat()`)(...Object.values(bindings))
+  chat.config.value = { configured: true, models: [{ preset_id: 1, model: 'test', label: 'Test', vision: true }], default_preset_id: 1 }
+  chat.selectedPresetId.value = 1
+  return chat
 }
 
 const detail = id => ({ data: { session: { id, mode: null }, messages: [], attachments: [] } })
@@ -193,11 +197,11 @@ test('exposes one AI workspace menu with permission-safe image and chat routes',
 
   assert.equal(visibleMenus.length, 1)
   assert.match(imageRoute, /anyPermission:\s*\[\s*['"]design_image:read['"]\s*,\s*['"]ai_chat:read['"]\s*\]/)
-  assert.doesNotMatch(imageRoute, /\n\s*permission:\s*['"]design_image:read['"]/)
+  assert.match(imageRoute, /menu:\s*\{[^}]*permission:\s*['"]design_image:read['"]/)
   assert.match(chatRoute, /name:\s*['"]DesignAiChat['"]/)
   assert.match(chatRoute, /permission:\s*['"]ai_chat:read['"]/)
-  assert.match(chatRoute, /hideInMenu:\s*true/)
-  assert.doesNotMatch(chatRoute, /\n\s*menu:\s*\{/)
+  assert.doesNotMatch(chatRoute, /hideInMenu:\s*true/)
+  assert.match(chatRoute, /menu:\s*\{[^}]*permission:\s*['"]ai_chat:read['"]/)
 })
 
 test('shares route-backed workspace tabs across both AI pages', () => {
@@ -214,13 +218,14 @@ test('shares route-backed workspace tabs across both AI pages', () => {
   assert.match(chatPage, /<AiWorkspaceTabs\s*\/>/)
 })
 
-test('keeps the visible AI workspace menu active on the hidden chat route', () => {
+test('keeps the platform chat menu independent from design permissions', () => {
   const navigation = readSource('../src/config/navigation.js')
   const router = readSource('../src/router/index.js')
   const layout = readSource('../src/views/layout/SidebarNavigation.vue')
   const chatRoute = routeEntry(navigation, '/design/ai-chat')
 
-  assert.match(chatRoute, /activeMenu:\s*['"]\/design\/image-studio['"]/)
+  assert.doesNotMatch(chatRoute, /activeMenu:/)
+  assert.match(chatRoute, /menu:/)
   assert.match(router, /activeMenu:\s*entry\.activeMenu/)
   assert.match(layout, /:default-active="route\.meta\.activeMenu \|\| route\.path"/)
 })
@@ -231,7 +236,9 @@ test('starter cards fill without sending and Markdown is sanitized before inject
 
   assert.match(starters, /emit\(['"]select['"]/)
   assert.doesNotMatch(starters, /emit\(['"](?:send|submit)['"]/)
-  assert.match(thread, /DOMPurify\.sanitize\(marked\.parse\(raw\)\)/)
+  const markdown = readSource('../src/views/design/ai-chat/markdown.js')
+  assert.match(markdown, /DOMPurify\.sanitize\(markdown\.parse/)
+  assert.match(thread, /renderChatMarkdown\(message\.content\)/)
   assert.match(thread, /copyText\(message\.content/)
 })
 
@@ -566,4 +573,83 @@ test('API source uses the shared client, complete routes, and native fetch strea
   assert.match(api, /clearAuthState\(\)/)
   assert.doesNotMatch(api, /catch\s*\([^)]*\)\s*\{[^}]*AbortError/s)
   assert.doesNotMatch(api, /axios\.create|createApiClient/)
+})
+
+
+test('lost pre-meta response retries the same idempotency key', async () => {
+  const bodies = []
+  const chat = loadChat({ getSession: async () => { throw new Error('offline') }, streamTurn: async (_id, body) => {
+    bodies.push(body)
+    throw new Error('offline')
+  } })
+  chat.prompt.value = 'question'
+  await chat.send()
+  await chat.send()
+  assert.equal(bodies.length, 2)
+  assert.equal(bodies[0].request_id, bodies[1].request_id)
+  assert.equal(bodies[0].preset_id, 1)
+  assert.equal(chat.prompt.value, 'question')
+})
+
+test('accepted pre-meta turn is reconciled and its sent attachments leave the draft', async () => {
+  let sent
+  const chat = loadChat({ getSession: async id => ({ data: { session: { id }, attachments: [{ id: 5, message_id: 10 }], messages: [{ id: 10, role: 'user', content: 'question', request_id: sent.request_id }] } }),
+    streamTurn: async (_id, body) => { sent = body; throw new Error('lost response') } })
+  chat.prompt.value = 'question'
+  chat.draftAttachments.value = [{ id: 5 }]
+  await chat.send()
+  assert.equal(chat.prompt.value, '')
+  assert.deepEqual(chat.draftAttachments.value, [])
+  assert.equal(chat.messages.value[0].id, 10)
+})
+
+test('deleting the active session preserves drafts belonging to other sessions', async () => {
+  const chat = loadChat({ getSession: async id => detail(id) })
+  await chat.selectSession(1)
+  chat.prompt.value = 'keep first draft'
+  await chat.selectSession(2)
+  chat.prompt.value = 'remove second draft'
+  await chat.deleteConversation(2)
+  await chat.selectSession(1)
+  assert.equal(chat.prompt.value, 'keep first draft')
+})
+
+test('model availability, capability and quota prevent unsupported submissions', () => {
+  const chat = loadChat()
+  chat.prompt.value = 'question'
+  assert.equal(chat.canSubmit.value, true)
+  chat.selectedPresetId.value = 99
+  assert.equal(chat.canSubmit.value, false)
+  chat.selectedPresetId.value = 1
+  chat.config.value.models[0].vision = false
+  chat.draftAttachments.value = [{ id: 5, attachment_type: 'image' }]
+  assert.equal(chat.canSubmit.value, false)
+  chat.draftAttachments.value = []
+  chat.config.value.usage = { used: 100, limit: 100, remaining: 0 }
+  assert.equal(chat.canSubmit.value, false)
+})
+
+
+test('a previous refresh cannot discard the next unresolved request key', async () => {
+  let finishRefresh
+  let reads = 0
+  const bodies = []
+  const chat = loadChat({
+    getSession: id => ++reads === 1 ? Promise.resolve(detail(id)) : Promise.reject(new Error('offline')),
+    getConfig: () => new Promise(resolve => { finishRefresh = () => resolve({ data: chat.config.value }) }),
+    streamTurn: async (_id, body) => {
+      bodies.push(body)
+      if (bodies.length > 1) throw new Error('offline')
+    },
+  })
+  chat.prompt.value = 'first'
+  const first = chat.send()
+  while (!finishRefresh) await new Promise(resolve => setImmediate(resolve))
+  chat.prompt.value = 'second'
+  await chat.send()
+  finishRefresh()
+  await first
+  await chat.send()
+  assert.equal(bodies.length, 3)
+  assert.equal(bodies[1].request_id, bodies[2].request_id)
 })

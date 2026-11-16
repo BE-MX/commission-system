@@ -107,7 +107,7 @@ def test_config_shows_the_failed_rule_to_admins_only(engine, db):
     business = TestClient(_app(engine, _claims(owner.id, "ai_chat:read")))
     payload = business.get("/api/ai-chat/config").json()["data"]
     assert payload["configured"] is False
-    assert payload["message"] == "方案对话服务尚未配置，请联系管理员"
+    assert payload["message"] == "暂无可用的聊天模型，请联系管理员"
     assert "diagnostic" not in payload
     assert "claude-fable-5-1" not in business.get("/api/ai-chat/config").text
 
@@ -139,7 +139,9 @@ def test_config_diagnostic_disappears_once_the_preset_matches(engine, db):
     preset.model = "claude-fable-5"
     db.commit()
     payload = client.get("/api/ai-chat/config").json()["data"]
-    assert payload == {"configured": True, "model": "claude-fable-5", "message": None}
+    assert payload == {"configured": True, "model": "claude-fable-5", "message": None,
+                       "models": [{"preset_id": preset.id, "label": "claude-fable-5", "model": "claude-fable-5", "vision": True}],
+                       "default_preset_id": preset.id, "usage": {"used": 0, "limit": 100, "remaining": 100}}
 
 
 def test_mode_catalog_loads_real_files_and_requires_permission(engine, db):
@@ -301,8 +303,9 @@ def test_unconfigured_and_provider_failure_emit_actionable_sanitized_error(
         f"/api/ai-chat/sessions/{conversation.id}/turns/stream",
         json={"request_id": "router_error_1", "content": "question"},
     )
-    assert "event: error" in response.text
-    assert "方案对话服务尚未配置，请联系管理员" in response.text
+    assert response.status_code == 503
+    assert "暂无可用的聊天模型，请联系管理员" in response.text
+    assert db.query(AiChatMessage).filter_by(session_id=conversation.id).count() == 0
 
     _configured(db)
 

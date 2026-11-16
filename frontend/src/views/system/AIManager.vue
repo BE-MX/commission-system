@@ -339,6 +339,7 @@
           <el-input v-model="presetForm.model" placeholder="gpt-4o" :disabled="isAccioProvider" />
         </el-form-item>
         <AiPresetImageFields v-model="presetForm.parameters" :preset-name="presetForm.preset_name" />
+        <AiPresetChatFields v-model="presetForm.parameters" :preset-name="presetForm.preset_name" :disabled="isAccioProvider" />
         <el-collapse>
           <el-collapse-item title="文本、测试与运行参数" name="preset-runtime">
             <AiConfigFields v-model="presetForm.parameters" :fields="presetFields" @validity="presetFieldsValid = $event" />
@@ -454,6 +455,7 @@ import { ref, watch } from 'vue'
 import AiConfigFields from './components/AiConfigFields.vue'
 import { providerFields, presetFields, imageFields } from './aiConfigFields'
 import AiPresetImageFields from './components/AiPresetImageFields.vue'
+import AiPresetChatFields from './components/AiPresetChatFields.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import ListPageStatus from '@/components/ListPageStatus.vue'
 

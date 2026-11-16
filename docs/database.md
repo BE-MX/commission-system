@@ -601,11 +601,13 @@ worker 通过 queued/running、lease 与 claim 字段实现可恢复领取。失
 
 业务员客户切换与预览复用以上表，不新增副本或迁移。客户范围实时联结 active `ark_user_external_bindings(provider='okki')` 与当前 `customer_commission_snapshot.salesperson_id`；门户内容仍由 `ark_customer_media_batches.status='published'` 和素材 `deleted_at IS NULL` 决定，因此业务预览与客户实际可见内容保持同一真相源。
 
-## 客户 AI 方案对话（迁移 100，2026-08-09）
+## 通用 AI 工作台（迁移 100/124/265）
 
 - `ark_ai_chat_sessions`：owner 会话；`owner_user_id → ark_users.id RESTRICT`，索引 `idx_ai_chat_session_owner_updated(owner_user_id, updated_at)` 支撑最近会话分页。
   - 迁移 `124_ai_chat_modes` 新增可空 JSON `mode_snapshot`：首次发送时保存固定方式 ID、显示元数据、完整规则正文及 SHA-256 版本；已发送会话不可更换方式，重试/历史预览均读取此快照。原有会话保持 NULL，仍为普通聊天；内置规则不复用附件表。
-- `ark_ai_chat_messages`：用户/助手 Markdown 消息，状态为 `completed/streaming/stopped/failed`。`session_id → ark_ai_chat_sessions.id RESTRICT`，`ai_call_log_id → ark_ai_call_logs.id RESTRICT`；`uq_ai_chat_message_session_request(session_id, request_id)` 保证会话内发送幂等，`uq_ai_chat_message_session_id(session_id, id)` 是复合外键目标。助手消息用 `reply_to_message_id` 指向触发它的用户消息；重试助手消息用 `retry_of_message_id` 指向原 stopped/failed 助手消息。两条自引用均通过 `(session_id, message_id)` 复合 FK 限定在同一会话，禁止跨会话串链。
+- `ark_ai_chat_messages`：用户/助手 Markdown 消息，状态为 `completed/streaming/stopped/failed`。`session_id → ark_ai_chat_sessions.id RESTRICT`，`ai_call_log_id → ark_ai_call_logs.id RESTRICT`；`uq_ai_chat_message_session_request(session_id, request_id)` 保证会话内发送幂等，`uq_ai_chat_message_session_id(session_id, id)` 是复合外键目标。助手消息用 `reply_to_message_id` 指向触发它的用户消息；重生成助手消息用 `retry_of_message_id` 指向原 completed/stopped/failed 助手消息。两条自引用均通过 `(session_id, message_id)` 复合 FK 限定在同一会话，禁止跨会话串链。
+  - 迁移 `265_universal_ai_chat` 新增消息 `model_snapshot` JSON（模型标识、能力、配置摘要哈希；不含密钥、URL、私有提示词或参数）、`reasoning_content` MEDIUMTEXT。MySQL 正文 `content` 由 TEXT 扩至 MEDIUMTEXT；SQLite 仍用 Text。旧记录保留，新增字段 NULL，不猜测历史模型。
+  - 同迁移增加会话 `selected_preset_id`（最近模型选择，不设 FK，以便预设下架后保留历史）、`deleted_at`（北京时间软删除）。访问统一排除软删除会话，额度统计保留其消息。没有删除业务数据或缩小正文列的自动 downgrade。
 - `ark_ai_chat_attachments`：私有附件元数据与抽取正文；`session_id → ark_ai_chat_sessions.id RESTRICT`、`created_by → ark_users.id RESTRICT`。发送前 `message_id=NULL/status=draft`，发送事务绑定用户消息后为 `attached`，状态值域为 `draft/attached/failed`；`fk_ai_chat_attachment_message_session(session_id, message_id)` 强制附件只能绑定同一会话内的消息。
 
 owner 真相在 session；消息访问必须经 session 的 `owner_user_id`，附件访问同时校验 session owner 与 `created_by`，跨 owner 与不存在统一 404。数据库 FK/复合 FK 保证引用边界，service 在绑定附件的同一事务中再校验 owner、session 与 draft 状态。

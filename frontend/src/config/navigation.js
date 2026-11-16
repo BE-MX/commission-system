@@ -1391,8 +1391,8 @@ export const NAV_ENTRIES = [
     title: 'AI 工作台',
     anyPermission: ['design_image:read', 'ai_chat:read'],
     menu: {
-      group: 'design', title: 'AI 工作台', icon: Picture, order: 5,
-      anyPermission: ['design_image:read', 'ai_chat:read'],
+      group: 'design', title: 'AI 生图', icon: Picture, order: 5,
+      permission: 'design_image:read',
     },
   },
   {
@@ -1412,8 +1412,7 @@ export const NAV_ENTRIES = [
     component: () => import('@/views/design/ai-chat/AiChat.vue'),
     title: 'AI 工作台',
     permission: 'ai_chat:read',
-    activeMenu: '/design/image-studio',
-    hideInMenu: true,
+    menu: { title: 'AI 工作台', icon: ChatDotRound, order: 4, permission: 'ai_chat:read' },
   },
   {
     path: '/design/gantt',

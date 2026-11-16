@@ -50,6 +50,8 @@ class AiChatSession(Base):
     )
     title = Column(String(200), nullable=False, comment="会话标题")
     mode_snapshot = Column(JSON, nullable=True, comment="首次发送选定的内置规则及版本快照")
+    selected_preset_id = Column(Integer, nullable=True, comment="最近选择的聊天预设编号")
+    deleted_at = Column(DateTime, nullable=True, comment="用户删除会话的北京时间")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
         DateTime,
@@ -83,7 +85,9 @@ class AiChatMessage(Base):
     )
     role = Column(String(16), nullable=False, comment="消息角色")
     request_id = Column(String(64), nullable=True, comment="会话内客户端幂等键")
-    content = Column(Text, nullable=False, default="", comment="Markdown 消息正文")
+    content = Column(Text().with_variant(mysql.MEDIUMTEXT(), "mysql"), nullable=False, default="", comment="Markdown 消息正文")
+    model_snapshot = Column(JSON, nullable=True, comment="本轮获授权的模型与配置版本快照")
+    reasoning_content = Column(Text().with_variant(mysql.MEDIUMTEXT(), "mysql"), nullable=True, comment="供应商返回的推理内容，不进入历史提示词")
     status = Column(
         String(16), nullable=False, default="completed", comment="消息状态"
     )

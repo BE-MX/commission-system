@@ -1352,3 +1352,10 @@ Annual amount release b59 hit the existing 30-second startup budget, followed by
 - 候选迁移227–245下接主线214，已发布208–214保持不变；安装仍为legacy_only、独立对比默认关闭。本次不执行生产迁移或部署。
 - 本轮集成冲突处理、复验及Git状态以[集成记录](reports/2026-10-31-commerce-transition-integration.md)为准；原实现与隔离验收证据见[开发报告](reports/2026-10-28-commerce-dual-route-implementation.md)。
 - 主目录其他任务的未提交内容另行备份和恢复，不纳入本次开发提交。
+
+
+## 2026-11-16 通用 AI 工作台首版（Codex，Git 交付，未部署）
+
+- 独立分支 `codex/universal-ai-chat` / `D:/MyProgram/commission-system-codex-universal-ai-chat`：平台入口、每轮选模型、回答模型标识、推理折叠、复制/重生成、会话分页/改名/软删除和每日额度已实现。管理端通过预设开放模型、图片能力和角色。
+- 迁移 265 保留旧历史；生成前重新核验模型配置及角色。隔离 MySQL 4 项、最终模型/生命周期/共享调用 80 项、补充模型/时区 20 项、前端状态与导航 46 项通过；批次有重叠，不累加唯一数量。构建、桌面/窄屏浏览器验收通过。两项原有草稿附件清理失败单列。
+- 用户已授权提交、合并 main 并推送 origin，结果以远端回读为准；明确暂不部署，未接生产或真实模型。进程强杀后的 streaming 恢复仍是已知边界。临时数据库已停止，目录清理被自动审批审查拒绝后保留。配置、证据与发布前置见 [交付记录](reports/2026-11-16-universal-ai-chat.md)。

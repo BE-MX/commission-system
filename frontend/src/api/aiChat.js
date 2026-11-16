@@ -5,6 +5,9 @@ import { consumeSseStream } from '@/views/design/ai-chat/state'
 const API_BASE = '/api/ai-chat'
 
 export const getConfig = () => aiChatClient.get('/config')
+export const listChatRoles = () => aiChatClient.get('/admin/roles', { showLoading: false })
+export const renameSession = (sessionId, title) => aiChatClient.patch(`/sessions/${sessionId}`, { title })
+export const deleteSession = sessionId => aiChatClient.delete(`/sessions/${sessionId}`)
 export const listModes = () => aiChatClient.get('/modes', { showLoading: false, suppressToast: true })
 export const getMode = modeId => aiChatClient.get(`/modes/${modeId}`, { showLoading: false, suppressToast: true })
 export const getSessionMode = sessionId => aiChatClient.get(`/sessions/${sessionId}/mode`, { showLoading: false, suppressToast: true })

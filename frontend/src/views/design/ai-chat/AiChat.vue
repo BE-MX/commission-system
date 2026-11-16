@@ -20,6 +20,8 @@
         :can-write="chat.canWrite.value"
         @new="startConversation"
         @select="chat.selectSession"
+        :busy="chat.busy.value" :has-more="Boolean(chat.nextCursor.value)" :loading-more="chat.loadingMore.value"
+        @more="chat.loadMore" @rename="renameConversation" @delete="deleteConversation"
       />
 
       <main class="chat-main lg-card is-static">
@@ -31,11 +33,12 @@
           <div class="chat-title">
             <span class="title-mark" aria-hidden="true"><el-icon><ChatLineRound /></el-icon></span>
             <div>
-              <h2>{{ chat.currentSession.value?.title || '方案对话' }}</h2>
-              <p v-if="!chat.modes.locked.value">把问题与目标讲清楚，一起找到下一步</p>
+              <h2>{{ chat.currentSession.value?.title || 'AI 工作台' }}</h2>
+
             </div>
           </div>
-          <span class="privacy-label"><el-icon aria-hidden="true"><Lock /></el-icon> 仅自己可见</span>
+          <ChatModelPicker v-model="chat.selectedPresetId.value" :models="chat.config.value.models || []"
+            :disabled="chat.busy.value || chat.sessionLoading.value || !chat.canWrite.value" @refresh="chat.reloadConfig" />
           <div v-if="chat.modes.locked.value && chat.modes.selected.value" class="header-mode-row">
             <button class="header-mode" type="button" @click="chat.modes.showDetails">{{ chat.modes.selected.value.title }} · 查看说明</button>
             <button v-if="chat.canWrite.value" class="header-mode" type="button" :disabled="chat.busy.value" @click="startConversation">新对话换方式</button>
@@ -43,16 +46,17 @@
         </header>
 
         <div
-          v-if="!chat.config.value.configured"
+          v-if="!chat.initializing.value && !chat.config.value.configured"
           class="notice-banner"
           :class="{ 'is-diagnostic': chat.config.value.diagnostic }"
           role="alert"
         >
-          <span>{{ chat.config.value.message || '方案助手尚未配置，请联系管理员。' }}</span>
+          <span>{{ chat.config.value.message || '暂无可用模型，请联系管理员。' }}</span>
           <span v-if="chat.config.value.diagnostic" class="notice-diagnostic">
             配置诊断：{{ chat.config.value.diagnostic.detail }}
           </span>
         </div>
+        <div v-if="chat.modelIssue.value" class="notice-banner" role="status">{{ chat.modelIssue.value }}</div>
         <div v-if="chat.error.value" class="error-banner" role="alert">
           <span>{{ chat.error.value.message }}</span>
           <button v-if="chat.currentSessionId.value" type="button" @click="chat.refreshCurrent">刷新会话</button>
@@ -62,6 +66,7 @@
           :messages="chat.messages.value"
           :loading="chat.initializing.value || chat.sessionLoading.value"
           :can-write="chat.canWrite.value"
+          :busy="chat.busy.value" :can-regenerate="Boolean(chat.selectedModel.value) && !chat.modelIssue.value"
           :modes="chat.modes.items.value"
           :selected-mode-id="chat.modes.selected.value?.id || ''"
           :mode-disabled="chat.busy.value || !chat.config.value.configured"
@@ -76,9 +81,11 @@
           v-model:prompt="chat.prompt.value"
           :attachments="chat.draftAttachments.value"
           :upload-fn="chat.uploadDraft"
-          :can-write="chat.canWrite.value && chat.config.value.configured"
+          :can-write="chat.canWrite.value"
+          :can-attach="Boolean(chat.selectedModel.value) && !chat.busy.value"
           :can-submit="chat.canSubmit.value && chat.config.value.configured"
           :streaming="chat.streaming.value"
+          :vision="Boolean(chat.selectedModel.value?.vision)" :usage="chat.config.value.usage"
           :placeholder="chat.modes.locked.value ? '继续补充或回答…' : chat.modes.selected.value?.placeholder || '描述你的问题、目标和约束…'"
           :send-label="!chat.modes.locked.value && chat.modes.selected.value?.id === 'talent' ? '开始探索' : '发送'"
           @remove="chat.removeDraft"
@@ -103,9 +110,11 @@
 
 <script setup>
 import { nextTick, ref } from 'vue'
-import { ChatLineRound, Lock, Menu } from '@element-plus/icons-vue'
+import { ChatLineRound, Menu } from '@element-plus/icons-vue'
 import AiWorkspaceTabs from '../ai-workspace/AiWorkspaceTabs.vue'
 import ChatComposer from './components/ChatComposer.vue'
+import ChatModelPicker from './components/ChatModelPicker.vue'
+import { promptAction, confirmDanger, isFeedbackCancelled, msgError } from '@/utils/feedback'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatThread from './components/ChatThread.vue'
 import ChatModeBar from './components/ChatModeBar.vue'
@@ -126,6 +135,18 @@ async function startConversation() {
   chat.newConversation()
   await nextTick()
   composerRef.value?.focus()
+}
+async function renameConversation(session) {
+  try {
+    const { value } = await promptAction('给这段对话起个名字', '重命名', { inputValue: session.title, inputValidator: value => Boolean(value?.trim()) && value.trim().length <= 200 || '请输入 1–200 个字', confirmButtonText: '保存', cancelButtonText: '取消' })
+    await chat.renameConversation(session.id, value.trim())
+  } catch (error) { if (!isFeedbackCancelled(error)) msgError('重命名失败，请重试', error) }
+}
+async function deleteConversation(session) {
+  try {
+    await confirmDanger('删除', session.title, '删除后将无法再打开这段对话及其附件。')
+    await chat.deleteConversation(session.id)
+  } catch (error) { if (!isFeedbackCancelled(error)) msgError(error?.response?.data?.detail || '删除失败，请重试', error) }
 }
 </script>
 
@@ -156,8 +177,10 @@ async function startConversation() {
   display: flex;
   min-height: 0;
   flex: 1;
-  gap: 18px;
-  animation: workspace-in 280ms var(--ease-out-strong);
+  gap: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  overflow: hidden;
 }
 
 @keyframes workspace-in {
@@ -171,9 +194,10 @@ async function startConversation() {
   flex: 1;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--dash-glass-border);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-highlight), var(--dash-glass-shadow);
+  border: 0;
+  border-radius: 0;
+  background: var(--dash-glass-bg-strong);
+  box-shadow: none;
 }
 
 .chat-header {
@@ -308,4 +332,8 @@ async function startConversation() {
   .notice-banner,
   .error-banner { animation: none; }
 }
+</style>
+
+<style scoped>
+@media (max-width: 640px) { .chat-header { grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding: 10px 12px; } .chat-header :deep(.model-picker) { grid-column: 1 / -1; } .chat-title { min-width: 0; } .chat-title h2 { font-size: 14px; } .title-mark { display: none; } }
 </style>

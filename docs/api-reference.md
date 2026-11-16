@@ -1425,7 +1425,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 当前界面只有“上传素材”一个上传入口：设计师先选至少一个当前客户标签，再选多个文件或拖入文件夹。标签可在客户确认后新建、重命名或删除；删除时同步移除该客户素材的关联。文件夹只用于提取文件，不从名称识别、新建标签或目录；文件加入清单时固定本次选中标签。工作台素材按产品类型分组，再按 Color names + Textures type 逐行显示。旧目录弹框仅用于维护既有目录与素材。送审按钮旁的“客户效果预览”在同源 iframe 中复用外部站渲染当前批素材，不调用客户门户登录及已发布素材接口，也不改变批次发布状态。审核弹框、业务预览和客户外部站按产品类型分组并提供标签筛选。内部签名 URL 返回 `/api/customer-media/...` 相对地址，前端跟随素材 API origin 解析，兼容同源代理及 `VITE_CUSTOMER_MEDIA_API_BASE` 云端直传。
 
-## 客户 AI 方案对话（`/api/ai-chat`，100 迁移，2026-08-09）
+## 通用 AI 工作台（`/api/ai-chat`，迁移 100/124/265）
 
 ### 内置对话方式（2026-08-26，迁移 124）
 
@@ -1437,23 +1437,31 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 - 内置方式保留至多 200 条有效历史消息、120,000 字符对话正文；超出上限或参考文档被截断时返回明确的 `context_limit` SSE 错误，不丢失早期经历继续报告。普通聊天仍取最近 20 条有效消息。重试只使用原问题及之前的上下文。
 - 上游因输出长度结束时，SSE 追加明确的“内容尚未完成，回复继续”提示并持久保存，`done.finish_reason` 保留上游终止原因。
 
-共 11 个 URL pattern、12 个 HTTP 操作（含上述 3 个方式读取操作，`/sessions` 同时提供 GET/POST）。资源按当前用户 owner 隔离；跨账号与不存在资源统一返回 404。`ai_chat:read` 用于配置、会话和附件内容读取，`ai_chat:write` 用于建会话、上传/删除草稿附件、发送和重试；`ai_chat:admin` 已登记但不绕过 owner，也没有 MVP 管理端点。
+共 13 个 URL pattern、16 个 HTTP 操作（含方式读取、模型目录、管理角色选项以及会话 GET/PATCH/DELETE）。资源按当前用户 owner 隔离；跨账号与不存在资源统一返回 404。`ai_chat:read` 用于配置、会话和附件内容读取，`ai_chat:write` 用于建会话、上传/删除草稿附件、发送和重试；`ai_chat:admin` 已登记但不绕过 owner，也没有 MVP 管理端点。
 
 | 方法 | 路径 | 权限 | 契约 |
 |---|---|---|---|
-| GET | `/config` | read | 返回严格配置状态；不暴露 Provider、API 地址或密钥 |
+| GET | `/config` | read | 返回配置状态、可用 `models`、`default_preset_id`、今日 `usage`；不暴露 Provider、API 地址、密钥或私有参数 |
+| GET | `/models` | read | 仅返回当前用户获准使用的模型摘要 |
+| GET | `/admin/roles` | `ai:admin` | AI 接入管理页的角色选项（name/label） |
 | POST | `/sessions` | write | 创建 owner 会话，body `{title?}` |
 | GET | `/sessions` | read | `limit=30`（1～100）与不透明 `cursor` 的 owner 会话分页 |
-| GET | `/sessions/{session_id}` | read | 返回会话、完整展示历史和该会话附件 |
+| GET | `/sessions/{session_id}` | read | 返回会话、完整展示历史和该会话附件；助手含 `model`、`reasoning_content`、`reply_to_message_id` |
+| PATCH | `/sessions/{session_id}` | write | body `{title}`，重命名本人会话 |
+| DELETE | `/sessions/{session_id}` | write | 软删除本人会话；生成中返回 409；删除后消息和附件入口均为 404 |
 | POST | `/sessions/{session_id}/attachments` | write | multipart 字段 `file`；上传一个私有附件 |
 | DELETE | `/attachments/{attachment_id}` | write | 仅本人尚未发送的 draft 附件可删 |
 | GET | `/attachments/{attachment_id}/content` | read | owner 鉴权后的二进制预览/下载，不使用 `ok()` 信封 |
-| POST | `/sessions/{session_id}/turns/stream` | write | SSE；body `{request_id, content, attachment_ids}`，文字与附件至少一项非空 |
-| POST | `/messages/{assistant_id}/retry/stream` | write | SSE；body `{request_id}`，仅本人 stopped/failed 助手消息可重试 |
+| POST | `/sessions/{session_id}/turns/stream` | write | SSE；body `{request_id, content, attachment_ids, preset_id?}`，文字与附件至少一项非空 |
+| POST | `/messages/{assistant_id}/retry/stream` | write | SSE；body `{request_id, preset_id?}`，仅最后一个用户问题的 completed/stopped/failed 助手回答可重新生成 |
 
-除附件二进制和 SSE 外，成功响应统一使用 `{code, message, data}` 的 `ok()` 信封。SSE 不套信封，事件顺序为 `meta` → 初始 `heartbeat` → 若干 `delta` → `done` 或 `error`：`meta` 给出会话、用户消息和助手消息 ID；`delta` 是文本增量；`done` 给出最终状态及可用的 token/耗时摘要；`error` 只给可行动错误，不透传供应商原始异常。当前只在 `meta` 后发送一次初始 `heartbeat`，不发送定时心跳；这是同步 AI facade 与断连后可靠保存 `stopped`/关闭上游之间的取舍，网关空闲超时不能依赖周期心跳规避。
+除附件二进制和 SSE 外，成功响应统一使用 `{code, message, data}` 的 `ok()` 信封。SSE 不套信封，事件顺序为 `meta` → 初始 `heartbeat` → 若干 `reasoning` / `delta` → `done` 或 `error`：`meta` 给出会话、用户消息和助手消息 ID；`reasoning` 是独立推理增量、不进入历史提示词；`meta.model` 是获授权的本轮模型摘要；`delta` 是文本增量；`done` 给出最终状态及可用的 token/耗时摘要；`error` 只给可行动错误，不透传供应商原始异常。当前只在 `meta` 后发送一次初始 `heartbeat`，不发送定时心跳；这是同步 AI facade 与断连后可靠保存 `stopped`/关闭上游之间的取舍，网关空闲超时不能依赖周期心跳规避。
 
-发送幂等键在同一会话内生效：同一 `request_id` 与同一正文/附件集合重复提交时复用既有用户/助手消息并返回已保存终态，不再次调用模型；同一键改了正文、附件或用于其他重试时，在建立 SSE 响应前返回 HTTP 409。停止只表示关闭当前连接、保存已收到的部分内容并将消息标记为 `stopped`，不承诺供应商侧停止计费。
+发送幂等键在同一会话内生效：同一 `request_id` 与同一正文/附件集合重复提交时复用既有用户/助手消息并返回已保存终态，不再次调用模型；同一键改了正文、附件、显式模型或用于其他重试时，在建立 SSE 响应前返回 HTTP 409。停止只表示关闭当前连接、保存已收到的部分内容并将消息标记为 `stopped`，不承诺供应商侧停止计费。
+
+聊天模型由已有 AI 接入预设的 `parameters.chat` 发布：`enabled`、`label`、`vision`、`allowed_roles`。仅直连 OpenAI/Anthropic 文本预设可用；未发布业务预设、生图与 agent 不进入目录。原 `customer_ai_chat` 默认保留，显式关闭优先。发送、重生成及真正开始上游前重新核验账号、角色和配置版本；业务专用模型的调用权限不会因此开放。带图片历史切换到纯文本模型返回 400。
+
+`AI_CHAT_DAILY_TURN_LIMIT` 默认每用户 100 次，北京时间零点恢复；失败、停止、已删除会话的已受理生成仍计数，重复幂等请求不重复计数。额度预留按用户行锁串行，同会话只允许一个生成。模型变更与状态冲突返回 409、额度耗尽 429、无模型 503；客户端不能自填供应商地址或模型参数。
 
 ## 薪资计算（`/api/salary`，092/097 迁移，2026-08-06，M1 主数据 + M2 批次/考勤/导入 + M3 计算引擎）
 
