@@ -1,0 +1,976 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>跟进闭环原型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap">
+<style>
+/* 跟进闭环原型：准备卡 → 引导录入 → 核对与下一步 → 待办。单一浅色主题，与方舟主站一致；示例数据均为虚构、去身份化。
+   这里的颜色是为原型独立运行写的裸 hex；开发时一律用 frontend/src/styles/tokens.css 变量与 GlassButton / Element Plus，不要照抄样式。 */
+:root {
+  --page: #f0f2f7; --card: #ffffff; --toolbar: #fafbfe;
+  --border: #e2e5ef; --border-h: #c5cce0;
+  --text: #1a1a2e; --text2: #4a5568; --text3: #718096; --placeholder: #a0aec0;
+  --gold: #D4941C; --gold-soft: #FDF4DC; --gold-accent: #F5CB5C; --row-hover: #fef9f0;
+  --btn: #E0A50B; --btn-h: #C9930A; --btn-a: #A87C08; --btn-ink: #211903; --link: #8F6508;
+  --danger: #D5363C; --danger-ink: #C62A30; --danger-bg: rgba(213,54,60,.09);
+  --success: #0F8479; --success-ink: #0B6E63; --success-bg: rgba(15,132,121,.09);
+  --warn: #B75B09; --warn-ink: #9A4E08; --warn-bg: rgba(183,91,9,.09);
+  --flag-bg: #FFF6D6; --flag-line: #F0C24B;
+  --ai: #4F5D95; --ai-bg: #eef0f8;
+  --side-from: #141210; --side-to: #1E1B18; --side-text: #9C9590;
+  --shadow: 0 1px 2px rgba(26,26,46,.04), 0 4px 16px rgba(26,26,46,.06);
+  --shadow-lg: 0 12px 48px rgba(26,26,46,.18);
+  --f-display: "Outfit", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --f-body: "DM Sans", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--page); color: var(--text); font: 500 14px/1.55 var(--f-body); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+h1, h2, h3, h4 { font-family: var(--f-display); margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.tnum { font-variant-numeric: tabular-nums; }
+.muted { color: var(--text3); }
+.small { font-size: 12px; }
+
+/* ---------- 原型切换条 ---------- */
+.proto-bar { position: sticky; top: 0; z-index: 120; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; background: var(--text); color: #fff; }
+.proto-bar .brand { font: 700 14px var(--f-display); display: flex; align-items: center; gap: 8px; }
+.proto-bar .brand i { font-style: normal; font: 700 10px var(--f-display); letter-spacing: .12em; padding: 2px 6px; border-radius: 4px; background: var(--gold-accent); color: var(--btn-ink); }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; background: rgba(255,255,255,.08); padding: 3px; border-radius: 10px; }
+.seg button { border: 0; background: transparent; color: #cfd3dd; padding: 6px 11px; border-radius: 8px; font: 600 13px var(--f-display); transition: background-color 120ms ease, color 120ms ease; }
+.seg button[aria-selected="true"] { background: #fff; color: var(--text); }
+.proto-bar .spacer { flex: 1; }
+
+/* ---------- 主站壳 ---------- */
+.shell { display: grid; grid-template-columns: 216px minmax(0, 1fr); min-height: calc(100vh - 52px); }
+.side { background: linear-gradient(180deg, var(--side-from), var(--side-to)); color: var(--side-text); padding: 16px 10px; font-size: 13px; }
+.side .logo { font: 800 15px var(--f-display); color: var(--gold-accent); padding: 4px 10px 16px; letter-spacing: .04em; }
+.side .grp { font: 700 10px var(--f-display); letter-spacing: .14em; color: #6f6862; padding: 14px 10px 6px; }
+.side a { display: block; padding: 8px 10px; border-radius: 10px; color: inherit; text-decoration: none; }
+.side a.on { color: var(--gold-accent); background: rgba(245,203,92,.1); font-weight: 700; }
+.main { min-width: 0; padding: 20px 28px 48px; }
+.crumb { font-size: 12px; color: var(--text3); }
+.page-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 4px 0 16px; }
+.page-head h1 { font-size: 20px; font-weight: 700; }
+.spacer { flex: 1; }
+
+/* ---------- 基础组件 ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--card); color: var(--text); font: 600 13px var(--f-display); white-space: nowrap;
+  transition: transform 160ms var(--ease-out), background-color 160ms ease, border-color 160ms ease; }
+.btn:active { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) { .btn:hover { border-color: var(--border-h); } .btn-primary:hover { background: var(--btn-h); border-color: var(--btn-h); } }
+.btn-primary { background: var(--btn); border-color: var(--btn); color: var(--btn-ink); }
+.btn-primary:active { background: var(--btn-a); }
+.btn-success { background: var(--success); border-color: var(--success); color: #fff; }
+.btn-ghost { border-color: transparent; background: transparent; color: var(--link); padding: 0 8px; }
+.btn-sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+.btn[disabled] { opacity: .45; pointer-events: none; }
+.tag { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 6px; font: 600 12px var(--f-body); background: #eef1f7; color: var(--text2); white-space: nowrap; }
+.tag.gold { background: var(--gold-soft); color: var(--link); }
+.tag.ok { background: var(--success-bg); color: var(--success-ink); }
+.tag.warn { background: var(--warn-bg); color: var(--warn-ink); }
+.tag.bad { background: var(--danger-bg); color: var(--danger-ink); }
+.tag.ai { background: var(--ai-bg); color: var(--ai); }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > label, .lbl { font: 600 12px var(--f-display); color: var(--text2); }
+.input, .select, .textarea { width: 100%; border: 1px solid var(--border); border-radius: 8px; background: #fff; padding: 7px 10px; font-size: 13px; transition: border-color 160ms ease, box-shadow 200ms ease; }
+.input:focus, .select:focus, .textarea:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(212,148,28,.12); }
+.textarea { resize: vertical; min-height: 72px; line-height: 1.6; }
+.row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.hint { font-size: 12px; color: var(--text3); }
+.section-t { font: 700 13px var(--f-display); color: var(--text); display: flex; align-items: center; gap: 8px; }
+.section-t .count { font: 600 12px var(--f-body); color: var(--text3); }
+details > summary { cursor: pointer; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+.chev { display: inline-block; transition: transform 160ms var(--ease-out); color: var(--text3); }
+details[open] > summary .chev { transform: rotate(90deg); }
+
+/* ---------- 待办工作台 ---------- */
+.tasks { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.task { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.task .t-head { display: flex; align-items: center; gap: 8px; }
+.task .t-shop { font: 700 14px var(--f-display); }
+.task .t-title { font-size: 13px; color: var(--text2); }
+.task .t-meta { font-size: 12px; color: var(--text3); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.task .t-act { display: flex; gap: 8px; margin-top: 4px; }
+.task.overdue { border-color: rgba(213,54,60,.35); }
+.filter-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.chip { height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border); background: #fff; font: 600 12px var(--f-display); color: var(--text2); transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease; }
+.chip[aria-pressed="true"] { background: var(--gold-soft); border-color: var(--gold); color: var(--link); }
+
+/* ---------- 抽屉 ---------- */
+.scrim { position: fixed; inset: 0; z-index: 80; background: rgba(20,18,16,.32); opacity: 0; pointer-events: none; transition: opacity 200ms ease; }
+.scrim.on { opacity: 1; pointer-events: auto; }
+.drawer { position: fixed; z-index: 90; top: 52px; right: 0; bottom: 0; width: min(600px, 100vw); background: var(--card); border-radius: 16px 0 0 16px; box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column; transform: translateX(100%); visibility: hidden; transition: transform 180ms var(--ease-out), visibility 0s linear 180ms; }
+.drawer.open { transform: translateX(0); visibility: visible; transition: transform 240ms var(--ease-drawer); }
+.drawer-h { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.drawer-h h2 { font-size: 16px; font-weight: 700; }
+.drawer-h .sub { font-size: 12px; color: var(--text3); }
+.drawer-b { flex: 1; overflow-y: auto; padding: 16px 18px 24px; display: flex; flex-direction: column; gap: 16px; }
+.drawer-f { border-top: 1px solid var(--border); padding: 12px 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--toolbar); border-radius: 0 0 0 16px; }
+.x { width: 30px; height: 30px; border-radius: 8px; border: 0; background: transparent; color: var(--text3); font-size: 18px; }
+@media (hover: hover) and (pointer: fine) { .x:hover { background: #f1f3f8; } }
+
+/* 步骤条 */
+.steps { display: flex; gap: 6px; }
+.steps span { flex: 1; height: 4px; border-radius: 4px; background: var(--border); transition: background-color 200ms ease; }
+.steps span.on { background: var(--gold); }
+.step-label { font: 600 12px var(--f-display); color: var(--text3); }
+
+/* 场景选择 */
+.scenes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.scene { text-align: left; border: 1px solid var(--border); background: #fff; border-radius: 10px; padding: 9px 12px; display: flex; flex-direction: column; gap: 2px; transition: border-color 120ms ease, background-color 120ms ease, transform 160ms var(--ease-out); }
+.scene:active { transform: scale(0.98); }
+.scene b { font: 700 13px var(--f-display); }
+.scene small { font-size: 12px; color: var(--text3); }
+.scene[aria-pressed="true"] { border-color: var(--gold); background: var(--gold-soft); }
+.recommend { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--gold-soft); font-size: 13px; }
+.recommend b { font-family: var(--f-display); }
+
+/* 事实列表 */
+.facts { display: flex; flex-direction: column; gap: 6px; }
+.fact { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.fact .src { grid-column: 1 / -1; font-size: 12px; color: var(--text3); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.fact.stale { border-style: dashed; }
+.add-line { border: 1px dashed var(--border-h); background: transparent; border-radius: 8px; height: 34px; color: var(--text3); font: 600 12px var(--f-display); }
+
+/* 策略卡 */
+.strategy { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.strategy .s-top { padding: 14px 16px; background: linear-gradient(160deg, #fffaf0, #fff); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.strategy .s-headline { font: 700 16px var(--f-display); }
+.strategy .s-why { font-size: 13px; color: var(--text2); }
+.strategy .s-ev { display: flex; flex-wrap: wrap; gap: 6px; }
+.strategy .s-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.opening { position: relative; padding: 10px 64px 10px 12px; border-radius: 10px; background: #f6f7fb; font-size: 14px; line-height: 1.7; }
+.opening .copy { position: absolute; top: 8px; right: 8px; }
+.q-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; counter-reset: q; }
+.q-list li { counter-increment: q; display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 8px; }
+.q-list li::before { content: counter(q); width: 22px; height: 22px; border-radius: 50%; background: var(--gold-soft); color: var(--link); font: 700 12px var(--f-display); display: grid; place-items: center; }
+.q-list .why { font-size: 12px; color: var(--text3); }
+.more { border-top: 1px solid var(--border); }
+.more > summary { padding: 10px 16px; font: 600 13px var(--f-display); color: var(--text2); display: flex; gap: 6px; align-items: center; }
+.more .more-b { padding: 0 16px 14px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+.kv { display: grid; grid-template-columns: 72px minmax(0,1fr); gap: 6px 10px; }
+.kv dt { font: 600 12px var(--f-display); color: var(--text3); }
+.kv dd { margin: 0; }
+.branches { width: 100%; border-collapse: collapse; font-size: 13px; }
+.branches th, .branches td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.branches th { font: 600 12px var(--f-display); color: var(--text3); background: var(--toolbar); }
+.flag { background: var(--flag-bg); box-shadow: inset 0 -2px 0 var(--flag-line); border-radius: 3px; padding: 0 2px; cursor: help; }
+.flag-note { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--warn-ink); background: var(--flag-bg); border-radius: 8px; padding: 8px 10px; }
+.mode-banner { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; font-size: 13px; }
+.mode-banner.stop { background: var(--danger-bg); color: var(--danger-ink); }
+.mode-banner.handle { background: var(--warn-bg); color: var(--warn-ink); }
+.mode-banner b { font-family: var(--f-display); }
+.feedback { display: flex; gap: 8px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--toolbar); font-size: 12px; color: var(--text3); }
+.skeleton { height: 12px; border-radius: 6px; background: linear-gradient(90deg, #eef0f5 0%, #f7f8fb 50%, #eef0f5 100%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* 引导录入 */
+.context-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border-radius: 10px; background: #f6f7fb; font-size: 13px; }
+.context-bar b { font-family: var(--f-display); }
+.pq { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.pq .q { font-weight: 600; }
+.pq .states { display: flex; flex-wrap: wrap; gap: 6px; }
+.pq .states button { height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border); background: #fff; font: 600 12px var(--f-display); color: var(--text2); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.pq .states button[aria-pressed="true"] { background: var(--gold-soft); border-color: var(--gold); color: var(--link); }
+.pq .answer { display: none; }
+.pq.asked .answer { display: block; }
+.quick { display: none; padding: 10px 12px; border-radius: 10px; background: var(--ai-bg); color: var(--ai); font-size: 13px; }
+.composer.is-quick .quick { display: block; }
+.composer.is-quick .guide-only { display: none !important; }
+.amount { display: grid; grid-template-columns: 1.2fr .8fr 1.4fr; gap: 8px; }
+.shots { display: flex; gap: 8px; flex-wrap: wrap; }
+.shot { width: 64px; height: 84px; border-radius: 8px; border: 1px solid var(--border); background: linear-gradient(180deg, #f3f3f3 0 18%, #fff 18% 30%, #95ec69 30% 42%, #fff 42% 58%, #f3f3f3 58%); position: relative; }
+.shot span { position: absolute; bottom: 4px; left: 4px; font: 700 10px var(--f-display); color: var(--text3); }
+
+/* 核对页 */
+.groups { display: flex; flex-direction: column; gap: 10px; }
+.grp-card { border: 1px solid var(--border); border-radius: 10px; }
+.grp-card > summary { padding: 10px 12px; display: flex; align-items: center; gap: 8px; font: 700 13px var(--f-display); }
+.grp-card .items { padding: 0 12px 10px; display: flex; flex-direction: column; gap: 6px; }
+.item { padding: 8px 10px; border-radius: 8px; background: #f8f9fc; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.item .src-line { font-size: 12px; color: var(--text3); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.item .quote { font-size: 12px; color: var(--text2); background: #fff; border-left: 3px solid var(--border-h); padding: 4px 8px; border-radius: 0 6px 6px 0; }
+.gap-q { display: grid; grid-template-columns: minmax(0,1fr); gap: 6px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(79,93,149,.25); background: #fbfbfe; }
+.gap-q .q { font-size: 13px; font-weight: 600; }
+.gap-q .acts { display: flex; gap: 6px; }
+.steps-list { display: flex; flex-direction: column; gap: 8px; }
+.ns { display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; transition: border-color 120ms ease, background-color 120ms ease; }
+.ns.checked { border-color: var(--gold); background: #fffcf4; }
+.ns input[type=checkbox] { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--gold); }
+.ns .ns-text { font-weight: 600; font-size: 13px; }
+.ns .ns-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; font-size: 12px; color: var(--text3); }
+.ns .ns-edit { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px; }
+.ns .ns-need { margin-top: 6px; font-size: 12px; color: var(--warn-ink); }
+.ns .primary-pick { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text2); }
+.ns .primary-pick input { accent-color: var(--gold); }
+.ns .ns-advice { margin-top: 6px; font-size: 12px; color: var(--link); }
+.ns.checked .ns-advice { display: none; }
+.ns .ns-primary { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+.ns .ns-purpose { width: auto; height: 28px; padding: 0 8px; font-size: 12px; }
+.ns .ns-kind { font: 600 12px var(--f-display); color: var(--link); }
+.disposition { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 10px; background: #f6f7fb; }
+.disposition .states { display: flex; gap: 6px; flex-wrap: wrap; }
+.submit-sum { font-size: 12px; color: var(--text2); }
+
+/* 只读历史卡 */
+.readonly-banner { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; background: #f1f3f8; font-size: 13px; color: var(--text2); }
+.hist-list { display: flex; flex-direction: column; gap: 8px; }
+.hist { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 4px 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; text-align: left; transition: border-color 120ms ease; }
+.hist[aria-current="true"] { border-color: var(--gold); }
+.hist .h-meta { font-size: 12px; color: var(--text3); }
+
+/* 模板后台 */
+.tpl-layout { display: grid; grid-template-columns: 260px minmax(0,1fr); gap: 16px; align-items: start; }
+.tpl-nav { padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.tpl-nav button { text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 13px; transition: background-color 120ms ease; }
+.tpl-nav button[aria-current="true"] { background: var(--gold-soft); font-weight: 700; }
+.tpl-nav code { font: 700 11px var(--f-display); color: var(--link); }
+.tpl-edit { padding: 16px 18px; display: flex; flex-direction: column; gap: 16px; }
+.tpl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tpl-table th, .tpl-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+.tpl-table th { font: 600 13px var(--f-display); color: var(--text2); background: var(--toolbar); }
+.tpl-table tr:hover td { background: var(--row-hover); }
+.pill-input { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; border: 1px solid var(--border); border-radius: 8px; }
+.ver-list { font-size: 12px; color: var(--text2); display: flex; flex-direction: column; gap: 6px; }
+
+/* 对话框 */
+.dialog-wrap { position: fixed; inset: 0; z-index: 130; display: grid; place-items: center; padding: 16px; background: rgba(20,18,16,.32); opacity: 0; pointer-events: none; transition: opacity 160ms ease; }
+.dialog-wrap.on { opacity: 1; pointer-events: auto; }
+.dialog { width: min(420px, 100%); background: #fff; border-radius: 16px; box-shadow: var(--shadow-lg); padding: 18px; display: flex; flex-direction: column; gap: 12px; transform: scale(.96); transition: transform 200ms var(--ease-out); }
+.dialog-wrap.on .dialog { transform: scale(1); }
+.dialog h3 { font-size: 16px; }
+.dialog .acts { display: flex; justify-content: flex-end; gap: 8px; }
+.toast { position: fixed; left: 50%; bottom: 24px; z-index: 140; transform: translate(-50%, 16px); opacity: 0; background: var(--text); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; transition: transform 200ms var(--ease-out), opacity 200ms ease; pointer-events: none; }
+.toast.on { transform: translate(-50%, 0); opacity: 1; }
+
+/* 手机预览：把抽屉改成底部抽屉 */
+body.mobile .shell { grid-template-columns: minmax(0,1fr); }
+body.mobile .side { display: none; }
+body.mobile .main { max-width: 390px; margin: 0 auto; padding: 16px; }
+body.mobile .drawer { top: auto; left: 50%; right: auto; width: min(390px, 100vw); height: 88vh; border-radius: 16px 16px 0 0; transform: translate(-50%, 100%); }
+body.mobile .drawer.open { transform: translate(-50%, 0); }
+body.mobile .drawer-f { border-radius: 0; }
+body.mobile .scenes, body.mobile .row-2, body.mobile .ns .ns-edit, body.mobile .amount { grid-template-columns: minmax(0,1fr); }
+body.mobile .tpl-layout { grid-template-columns: minmax(0,1fr); }
+.more-scenes { display: none; }
+body.mobile .scenes:not(.all) .scene:not([data-common]) { display: none; }
+body.mobile .scenes:not(.all) + .more-scenes { display: block; }
+@media (max-width: 760px) {
+  .shell { grid-template-columns: minmax(0,1fr); } .side { display: none; } .main { padding: 16px; }
+  .scenes, .row-2, .ns .ns-edit, .amount, .tpl-layout { grid-template-columns: minmax(0,1fr); }
+  .drawer { top: auto; height: 88vh; width: 100vw; border-radius: 16px 16px 0 0; transform: translateY(100%); }
+  .drawer.open { transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer, .drawer.open, .dialog, .toast, .chev { transition-property: opacity, visibility; }
+  .skeleton { animation: none; }
+}
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="proto-bar">
+  <div class="brand">跟进闭环 <i>原型</i></div>
+  <div class="seg" role="tablist" aria-label="原型画面">
+    <button role="tab" data-screen="tasks" aria-selected="true">待办工作台</button>
+    <button role="tab" data-screen="prep" aria-selected="false">① 准备卡</button>
+    <button role="tab" data-screen="record" aria-selected="false">② 记录结果</button>
+    <button role="tab" data-screen="review" aria-selected="false">③ 核对与下一步</button>
+    <button role="tab" data-screen="history" aria-selected="false">历史准备卡</button>
+    <button role="tab" data-screen="tpl" aria-selected="false">模板后台</button>
+  </div>
+  <span class="spacer"></span>
+  <div class="seg" aria-label="设备">
+    <button data-device="desktop" aria-selected="true">桌面</button>
+    <button data-device="mobile" aria-selected="false">手机</button>
+  </div>
+</div>
+
+<div class="shell">
+  <nav class="side" aria-label="主导航">
+    <div class="logo">LESHINE ARK</div>
+    <div class="grp">内贸</div>
+    <a href="#">内贸订单</a>
+    <a href="#" class="on">客户跟进</a>
+    <a href="#">内贸客户</a>
+    <div class="grp">系统</div>
+    <a href="#" data-goto="tpl">跟进模板</a>
+  </nav>
+
+  <main class="main">
+    <!-- ========== 待办工作台 ========== -->
+    <section data-view="tasks">
+      <div class="crumb">内贸 / 客户跟进</div>
+      <div class="page-head">
+        <h1>我的待办</h1><span class="spacer"></span>
+        <button class="btn">记一条跟进</button>
+      </div>
+      <div class="filter-row" role="group" aria-label="待办类型">
+        <button class="chip" aria-pressed="true">全部 5</button>
+        <button class="chip" aria-pressed="false">约定跟进 2</button>
+        <button class="chip" aria-pressed="false">行动 2</button>
+        <button class="chip" aria-pressed="false">收货回访 1</button>
+        <button class="chip" aria-pressed="false">异常意见 0</button>
+      </div>
+      <div class="tasks">
+        <article class="card task overdue">
+          <div class="t-head"><span class="t-shop">城南·悦发工作室</span><span class="spacer"></span><span class="tag bad">逾期 1 天</span></div>
+          <div class="t-title">约定跟进：确认刘海处理方案是否解决</div>
+          <div class="t-meta"><span>11-15 到期</span><span>来自 11-12 跟进</span><span>微信</span></div>
+          <div class="t-act"><button class="btn btn-primary btn-sm" data-goto="prep">准备</button><button class="btn btn-sm" data-goto="record">直接记录</button><span class="spacer"></span><button class="btn btn-ghost btn-sm">顺延</button></div>
+        </article>
+        <article class="card task">
+          <div class="t-head"><span class="t-shop">城南·悦发工作室</span><span class="spacer"></span><span class="tag gold">行动</span></div>
+          <div class="t-title">协调技术给出刘海调整方案，并告知客户反馈时间</div>
+          <div class="t-meta"><span>11-17 到期</span><span>完成标准：客户收到方案和时间</span></div>
+          <div class="t-act"><button class="btn btn-success btn-sm" data-complete>完成</button><button class="btn btn-sm" data-dialog="dlg-resched">改日期</button><span class="spacer"></span><button class="btn btn-ghost btn-sm" data-goto="record">发起记录</button><button class="btn btn-ghost btn-sm" data-dialog="dlg-cancel">取消</button></div>
+        </article>
+        <article class="card task">
+          <div class="t-head"><span class="t-shop">北街发型馆</span><span class="spacer"></span><span class="tag gold">行动</span></div>
+          <div class="t-title">寄 35cm 卷发样品 1 顶</div>
+          <div class="t-meta"><span>11-18 到期</span><span>完成标准：录入快递单号</span></div>
+          <div class="t-act"><button class="btn btn-success btn-sm" data-complete>完成</button><button class="btn btn-sm" data-dialog="dlg-resched">改日期</button><span class="spacer"></span><button class="btn btn-ghost btn-sm" data-goto="record">发起记录</button><button class="btn btn-ghost btn-sm" data-dialog="dlg-cancel">取消</button></div>
+        </article>
+        <article class="card task">
+          <div class="t-head"><span class="t-shop">北街发型馆</span><span class="spacer"></span><span class="tag">约定跟进</span></div>
+          <div class="t-title">客户回店洗护后确认样品效果</div>
+          <div class="t-meta"><span>11-21 到期</span><span>客户约定</span></div>
+          <div class="t-act"><button class="btn btn-primary btn-sm" data-goto="prep">准备</button><button class="btn btn-sm" data-goto="record">直接记录</button></div>
+        </article>
+        <article class="card task">
+          <div class="t-head"><span class="t-shop">西城假发体验店</span><span class="spacer"></span><span class="tag ok">收货回访</span></div>
+          <div class="t-title">回访 11-13 发出的 2 批货</div>
+          <div class="t-meta"><span>11-16 到期</span></div>
+          <div class="t-act"><button class="btn btn-primary btn-sm" data-goto="prep">准备</button><button class="btn btn-sm">无问题</button></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ========== 模板后台 ========== -->
+    <section data-view="tpl" hidden>
+      <div class="crumb">系统 / 跟进模板</div>
+      <div class="page-head"><h1>跟进模板</h1><span class="spacer"></span><span class="hint">改动保存为新版本，历史记录仍按当时版本展示</span></div>
+      <div class="tpl-layout">
+        <div class="card tpl-nav" role="list">
+          <button aria-current="false"><code>T01</code>未接通 / 未回复 / 忙碌</button>
+          <button aria-current="false"><code>T02</code>首次有效接触</button>
+          <button aria-current="true"><code>T03</code>价格异议 / 报价后犹豫</button>
+          <button aria-current="false"><code>T04</code>询单、报价与规格确认</button>
+          <button aria-current="false"><code>T05</code>寄样、收货与试戴回访</button>
+          <button aria-current="false"><code>T06</code>售后、投诉与技术问题</button>
+          <button aria-current="false"><code>T07</code>短视频 / 直播 / 经营支持</button>
+          <button aria-current="false"><code>T08</code>老客户维护与复购</button>
+          <button aria-current="false"><code>T09</code>休眠激活 / 开新店</button>
+          <button aria-current="false"><code>T10</code>拒绝、不适配或交接</button>
+        </div>
+        <div class="card tpl-edit">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <h2 style="font-size:16px">T03 价格异议 / 报价后犹豫</h2><span class="tag">v3 · 生效中</span><span class="spacer"></span>
+            <button class="btn btn-sm">版本历史</button><button class="btn btn-primary btn-sm" data-toast="已保存为 v4，新准备卡立即使用">保存为新版本</button>
+          </div>
+          <div class="field"><label>给 AI 的场景要点</label>
+            <textarea class="textarea" rows="3">同样说贵，原因不同。先分清采购价、终端售价、比较价格，再问比较的是哪一款、什么规格；不要直接给降价方案。</textarea></div>
+          <div>
+            <div class="section-t" style="margin-bottom:8px">录入字段 <span class="count">5 项</span><span class="spacer"></span><button class="btn btn-ghost btn-sm">+ 添加字段</button></div>
+            <table class="tpl-table">
+              <thead><tr><th>名称</th><th>类型</th><th>展示</th><th>默认性质</th><th></th></tr></thead>
+              <tbody>
+                <tr><td>涉及产品</td><td>文本</td><td><span class="tag gold">重点</span></td><td>业务事实</td><td><button class="btn btn-ghost btn-sm">编辑</button></td></tr>
+                <tr><td>金额及含义</td><td>金额三件套</td><td><span class="tag gold">重点</span></td><td>待确认</td><td><button class="btn btn-ghost btn-sm">编辑</button></td></tr>
+                <tr><td>已确认的顾虑</td><td>多选</td><td><span class="tag gold">重点</span></td><td>客户陈述</td><td><button class="btn btn-ghost btn-sm">编辑</button></td></tr>
+                <tr><td>本次回应及客户反应</td><td>长文本</td><td><span class="tag">折叠</span></td><td>业务事实</td><td><button class="btn btn-ghost btn-sm">编辑</button></td></tr>
+                <tr><td>比较对象</td><td>文本</td><td><span class="tag">折叠</span></td><td>客户陈述</td><td><button class="btn btn-ghost btn-sm">编辑</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="row-2">
+            <div class="field"><label>准备时长（分钟）</label><div style="display:flex;gap:6px;align-items:center"><input class="input tnum" value="3"> — <input class="input tnum" value="5"></div></div>
+            <div class="field"><label>通话预算（分钟）</label><div style="display:flex;gap:6px;align-items:center"><input class="input tnum" value="5"> — <input class="input tnum" value="8"></div></div>
+          </div>
+          <div class="field"><label>不能补成（命中关键词会在 AI 输出中标黄）</label>
+            <div class="ver-list">
+              <div class="pill-input"><span class="tag bad">规则</span>客户说贵 ≠ 预算不足 <span class="tag">预算不足</span><span class="tag">买不起</span><span class="tag">没预算</span></div>
+              <div class="pill-input"><span class="tag bad">规则</span>解释过价值 ≠ 客户已接受 <span class="tag">已接受</span><span class="tag">认可价格</span></div>
+            </div>
+          </div>
+          <div class="field"><label>最短写法</label><input class="input" value="客户觉得价格高，比较对象和金额含义待确认；下一步先核实比较口径。"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+
+<!-- ========== ① 准备卡抽屉 ========== -->
+<aside class="drawer" id="d-prep" aria-label="准备跟进">
+  <div class="drawer-h">
+    <div><h2>准备跟进 · 城南·悦发工作室</h2><div class="sub">来自待办「确认刘海处理方案是否解决」</div></div>
+    <span class="spacer"></span><button class="x" aria-label="关闭" data-close>×</button>
+  </div>
+  <div class="drawer-b">
+    <div>
+      <div class="steps" aria-hidden="true"><span class="on" data-s="1"></span><span data-s="2"></span><span data-s="3"></span></div>
+      <div class="step-label" id="prep-step-label" style="margin-top:6px">第 1 步 · 选场景</div>
+    </div>
+
+    <!-- 步骤 1 -->
+    <div data-prep-step="1" style="display:flex;flex-direction:column;gap:12px">
+      <div class="recommend"><span class="tag gold">推荐</span><div><b>T06 售后 / 技术问题</b><div class="small muted">该客户有 1 条未处理完的异常：刘海太贴、打理费劲（11-12）</div></div></div>
+      <div class="scenes" role="group" aria-label="场景">
+        <button class="scene" aria-pressed="false" data-scene="T01" data-common><b>T01 未接通 / 未回复</b><small>只记触达事实</small></button>
+        <button class="scene" aria-pressed="false" data-scene="T02"><b>T02 首次有效接触</b><small>了解门店需求</small></button>
+        <button class="scene" aria-pressed="false" data-scene="T03" data-common><b>T03 价格异议</b><small>报价后犹豫</small></button>
+        <button class="scene" aria-pressed="false" data-scene="T04"><b>T04 询单与规格</b><small>确认订单要素</small></button>
+        <button class="scene" aria-pressed="false" data-scene="T05" data-common><b>T05 样品与回访</b><small>试戴、洗护反馈</small></button>
+        <button class="scene" aria-pressed="true" data-scene="T06" data-common><b>T06 售后 / 技术</b><small>先处理问题</small></button>
+        <button class="scene" aria-pressed="false" data-scene="T07"><b>T07 经营支持</b><small>视频、直播</small></button>
+        <button class="scene" aria-pressed="false" data-scene="T08"><b>T08 复购维护</b><small>补货、上批反馈</small></button>
+        <button class="scene" aria-pressed="false" data-scene="T09"><b>T09 激活 / 新店</b><small>真实经营节点</small></button>
+        <button class="scene" aria-pressed="false" data-scene="T10"><b>T10 拒绝 / 交接</b><small>正确结束</small></button>
+      </div>
+      <button class="add-line more-scenes" data-more-scenes>更多场景</button>
+      <div class="field"><label for="goal">本次只解决一件事</label>
+        <input class="input" id="goal" value="确认刘海问题现在是否还影响销售"></div>
+    </div>
+
+    <!-- 步骤 2 -->
+    <div data-prep-step="2" hidden style="display:flex;flex-direction:column;gap:14px">
+      <div class="readonly-banner"><span>该客户有 2 张历史准备卡（含前任负责人）</span><span class="spacer"></span><button class="btn btn-sm" data-goto="history">查看</button></div>
+      <div>
+        <div class="section-t" style="margin-bottom:8px">已知 <span class="count">从上一张准备卡带出，可改可删</span></div>
+        <div class="facts">
+          <div class="fact"><span>主做女士整头，近期在推刘海款</span><button class="btn btn-ghost btn-sm">删除</button>
+            <div class="src"><span class="tag">业务员观察</span>视频号近期作品 · 观察于 11-02</div></div>
+          <div class="fact"><span>曾比较其他家同类款的采购价，认为我方价位优势不足</span><button class="btn btn-ghost btn-sm">删除</button>
+            <div class="src"><span class="tag ok">客户陈述</span>跟进 #55 · 11-12</div></div>
+          <div class="fact stale"><span>老板负责采购，店员负责试戴和拍视频</span><button class="btn btn-ghost btn-sm">删除</button>
+            <div class="src"><span class="tag">业务员判断</span>准备卡 · 08-06 <span class="tag warn">可能过期</span></div></div>
+          <button class="add-line">+ 补一条已知</button>
+        </div>
+      </div>
+      <div class="field"><label>待确认</label>
+        <textarea class="textarea" rows="2">技术方案是否已经发给客户；比较的那款是否同规格</textarea>
+        <span class="hint">1–2 点即可，不用凑齐画像</span></div>
+      <div class="row-2">
+        <div class="field"><label>联系依据</label><select class="select"><option>上次记录</option><option>客户主动询问</option><option>公开动态</option><option>其他</option></select></div>
+        <div class="field"><label>依据日期</label><input class="input tnum" type="date" value="2026-11-12"></div>
+      </div>
+      <div class="field"><label>本场景要准备的</label>
+        <input class="input" value="问题款式：刘海 15cm 整头，批次 11-08" aria-label="受影响产品"></div>
+    </div>
+
+    <!-- 步骤 3 -->
+    <div data-prep-step="3" hidden style="display:flex;flex-direction:column;gap:12px">
+      <div class="seg" style="background:#f1f3f8;align-self:flex-start" aria-label="策略状态演示">
+        <button data-mode="handle" aria-selected="true" style="color:var(--text2)">先处理售后</button>
+        <button data-mode="normal" aria-selected="false" style="color:var(--text2)">常规</button>
+        <button data-mode="stop" aria-selected="false" style="color:var(--text2)">已拒绝</button>
+        <button data-mode="stale" aria-selected="false" style="color:var(--text2)">资料有更新</button>
+        <button data-mode="loading" aria-selected="false" style="color:var(--text2)">生成中</button>
+        <button data-mode="failed" aria-selected="false" style="color:var(--text2)">失败</button>
+      </div>
+
+      <div data-mode-view="loading" hidden class="strategy" aria-busy="true">
+        <div class="s-top"><div class="small muted">正在读取 5 条记录、1 条未处理异常…</div><div class="skeleton" style="width:70%"></div><div class="skeleton" style="width:45%"></div></div>
+        <div class="s-body"><div class="skeleton"></div><div class="skeleton" style="width:85%"></div><div class="skeleton" style="width:60%"></div></div>
+      </div>
+
+      <div data-mode-view="failed" hidden class="mode-banner handle">
+        <div><b>策略没生成出来</b><div>准备内容已保存。可以重试，或直接去沟通。</div></div>
+        <span class="spacer"></span><button class="btn btn-sm" data-mode-jump="handle">重试</button>
+      </div>
+
+      <div data-mode-view="stop" hidden style="display:flex;flex-direction:column;gap:12px">
+        <div class="mode-banner stop"><div><b>建议暂停营销联系</b><div>11-10 有同事记录：客户明确表示不要再打电话推销。</div></div></div>
+        <div class="strategy">
+          <div class="s-body">
+            <dl class="kv"><dt>先做</dt><dd>核对拒绝范围：是只拒绝电话，还是所有营销联系</dd>
+            <dt>仍需处理</dt><dd>无未结售后和我方承诺</dd>
+            <dt>记录要点</dt><dd>拒绝范围、时间、原话或准确转述</dd>
+            <dt>重新评估</dt><dd>客户主动联系，或限制解除时</dd></dl>
+          </div>
+        </div>
+      </div>
+
+      <div class="mode-banner handle" id="stale-banner" hidden>
+        <div><b>资料有更新</b><div>生成后同事又记了 1 条跟进（11-16），建议重新生成。</div></div>
+        <span class="spacer"></span><button class="btn btn-sm" data-mode-jump="loading">重新生成</button>
+      </div>
+      <div data-mode-view="handle" class="strategy">
+        <div class="s-top">
+          <div style="display:flex;gap:8px;align-items:center"><span class="tag warn">先处理售后</span><span class="small muted">v3 规则 · 11-16 10:42 生成</span></div>
+          <div class="s-headline">先确认刘海问题是否还在，再谈价格</div>
+          <div class="s-why">客户 11-12 说刘海太贴、打理费劲，还没看到处理结果；价格顾虑和这件事连在一起。</div>
+          <div class="s-ev"><span class="tag">#55 · 11-12 · v2</span><span class="tag">#61 · 11-14 · v1</span></div>
+        </div>
+        <div class="s-body">
+          <div>
+            <div class="lbl" style="margin-bottom:6px">开场白</div>
+            <div class="opening" id="opening">您上次说刘海太贴、吹起来费劲，这件事我想先跟完。现在还是主要影响这一点吗？<button class="btn btn-sm copy" data-toast="已复制开场白">复制</button></div>
+          </div>
+          <div>
+            <div class="lbl" style="margin-bottom:6px">关键问题</div>
+            <ol class="q-list">
+              <li><div>现在最影响上头效果的是刘海贴头皮，还是吹完不蓬？<div class="why">先定位一个具体问题，再找技术</div></div></li>
+              <li><div>方便发一张同角度的佩戴照片吗？<div class="why">技术核实需要</div></div></li>
+              <li><div>您说其他家更便宜，比的是同样长度和网底的款吗？<div class="why">价格要放到同规格下比</div></div></li>
+            </ol>
+          </div>
+          <div class="flag-note"><span>⚠</span><span>有 1 处数字没在资料里出现，已标黄，请核实后再用。</span></div>
+        </div>
+        <details class="more">
+          <summary><span class="chev">›</span>渠道、时长、回复分支、停止条件</summary>
+          <div class="more-b">
+            <dl class="kv">
+              <dt>渠道</dt><dd>先微信问方便的沟通方式；对方愿意再约电话</dd>
+              <dt>时长</dt><dd class="tnum">准备 3–5 分钟 · 通话 5–8 分钟（规划用，不是考核线）</dd>
+              <dt>准备</dt><dd>查技术是否已有反馈；准备同规格的处理方案。不要先许诺免费调整</dd>
+            </dl>
+            <table class="branches">
+              <thead><tr><th style="width:28%">客户如果</th><th>怎么接</th></tr></thead>
+              <tbody>
+                <tr><td>仍不满意</td><td>请对方给具体款式和照片，交技术核实，说清谁在什么时候回复</td></tr>
+                <tr><td>已经调好</td><td>记下处理方式，再回到价格：比较的是不是同规格</td></tr>
+                <tr><td>担心后期状态</td><td>约定一个可验证的使用反馈，比如洗护 <span class="flag" title="此数字未在资料中出现，请核实">3 次</span>后看状态</td></tr>
+                <tr><td>正忙</td><td>礼貌结束，按客户意愿另约；没约定就记「我方待安排」</td></tr>
+              </tbody>
+            </table>
+            <dl class="kv"><dt>停止</dt><dd>客户明确不想再谈这件事，或要求不再联系</dd></dl>
+          </div>
+        </details>
+        <div class="feedback"><span>这份策略</span><button class="btn btn-sm" data-toast="已记录：有用">有用</button><button class="btn btn-sm" data-toast="已记录：不准">不准</button><span class="spacer"></span><span>还可重新生成 4 次</span></div>
+      </div>
+
+      <div data-mode-view="normal" hidden class="strategy">
+        <div class="s-top">
+          <div style="display:flex;gap:8px;align-items:center"><span class="tag gold">常规</span><span class="small muted">T03 价格异议 · v3</span></div>
+          <div class="s-headline">先弄清「贵」是跟哪一款比</div>
+          <div class="s-why">客户只说价位优势不足，比较对象和规格都不清楚，直接解释价值容易各说各的。</div>
+          <div class="s-ev"><span class="tag">#55 · 11-12 · v2</span></div>
+        </div>
+        <div class="s-body">
+          <div class="opening">上次那款报价后还没确认，我不确定卡在哪。是终端顾客还没定款，还是价格／交期没达到要求？<button class="btn btn-sm copy" data-toast="已复制开场白">复制</button></div>
+          <ol class="q-list">
+            <li><div>您说超出预期，是这次顾客的预算，还是门店平时拿货价？</div></li>
+            <li><div>比的那款是同样长度、同样网底吗？</div></li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="drawer-f">
+    <button class="btn" id="prep-back" hidden>上一步</button>
+    <span class="hint" id="prep-save">草稿已自动保存</span>
+    <span class="spacer"></span>
+    <button class="btn" id="prep-regen" hidden data-mode-jump="loading">重新生成</button>
+    <button class="btn btn-primary" id="prep-next">下一步</button>
+  </div>
+</aside>
+
+<!-- ========== ② 记录结果抽屉 ========== -->
+<aside class="drawer" id="d-record" aria-label="记录结果">
+  <div class="drawer-h">
+    <div><h2>记录结果 · 城南·悦发工作室</h2><div class="sub" id="prep-link">已关联今天的准备卡 · <button class="btn btn-ghost btn-sm" style="height:20px;padding:0 4px" id="unlink-prep">解除关联</button></div></div>
+    <span class="spacer"></span><button class="x" aria-label="关闭" data-close>×</button>
+  </div>
+  <div class="drawer-b composer" id="composer">
+    <div class="context-bar"><span class="tag warn">T06 售后 / 技术</span><b>本次目标：</b>确认刘海问题现在是否还影响销售<span class="spacer"></span><button class="btn btn-ghost btn-sm">换场景</button></div>
+    <div class="row-2">
+      <div class="field"><label>跟进日期</label><input class="input tnum" type="date" value="2026-11-16"></div>
+      <div class="field"><label>沟通方式</label><select class="select"><option>微信</option><option>电话</option><option>到店</option></select></div>
+    </div>
+    <div class="field"><label for="result">本次结果</label>
+      <select class="select" id="result">
+        <option>有效沟通</option><option>未接通</option><option>未回复</option><option>已报价</option><option>已寄样</option><option>客户拒绝</option><option>其他</option>
+      </select></div>
+    <div class="quick">已切到一句话写法，没有新信息就不用多写。<button class="btn btn-ghost btn-sm" id="use-short">用一句话写法替换原文</button></div>
+
+    <div class="guide-only" style="display:flex;flex-direction:column;gap:10px">
+      <div class="section-t">准备的问题 <span class="count">选一下就行</span></div>
+      <div class="pq asked">
+        <div class="q">1. 现在最影响上头效果的是刘海贴头皮，还是吹完不蓬？</div>
+        <div class="states"><button aria-pressed="true">问到了</button><button aria-pressed="false">没问到</button><button aria-pressed="false">客户没回</button></div>
+        <input class="input answer" value="还是贴头皮，店员说吹完半天就塌" aria-label="客户怎么说">
+      </div>
+      <div class="pq asked">
+        <div class="q">2. 方便发一张同角度的佩戴照片吗？</div>
+        <div class="states"><button aria-pressed="true">问到了</button><button aria-pressed="false">没问到</button><button aria-pressed="false">客户没回</button></div>
+        <input class="input answer" value="发了 2 张，见截图" aria-label="客户怎么说">
+      </div>
+      <div class="pq">
+        <div class="q">3. 您说其他家更便宜，比的是同样长度和网底的款吗？</div>
+        <div class="states"><button aria-pressed="false">问到了</button><button aria-pressed="true">没问到</button><button aria-pressed="false">客户没回</button></div>
+        <input class="input answer" placeholder="客户怎么说" aria-label="客户怎么说">
+      </div>
+    </div>
+
+    <div class="guide-only" style="display:flex;flex-direction:column;gap:10px">
+      <div class="section-t">售后要记清的</div>
+      <div class="row-2">
+        <div class="field"><label>受影响产品 / 批次</label><input class="input" value="刘海 15cm 整头 · 11-08 批"></div>
+        <div class="field"><label>受影响数量</label><input class="input" placeholder="不知道就空着"></div>
+      </div>
+      <div class="field"><label>客户诉求</label>
+        <select class="select"><option>调整 / 维修</option><option>退</option><option>换</option><option>说明</option><option selected>尚未提出</option></select></div>
+      <details>
+        <summary class="small" style="color:var(--link);font-weight:600"><span class="chev">›</span> 更多：已做处理、验收标准、待客户配合</summary>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+          <div class="field"><label>已做的处理</label><input class="input" placeholder="例如：已转技术，等方案"></div>
+          <div class="field"><label>怎样算解决</label><input class="input" placeholder="以客户确认为准"></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="field"><label for="raw">沟通内容</label>
+      <textarea class="textarea" id="raw" rows="4">微信问了刘海的事，店员说还是贴，吹完半天就塌，老板说先别急着补货。发了两张照片。我说会转技术看，周四前给方案。</textarea></div>
+    <div class="field"><label>沟通截图</label>
+      <div class="shots"><div class="shot"><span>1</span></div><div class="shot"><span>2</span></div><button class="add-line" style="width:64px;height:84px">+</button></div></div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="section-t">顺便完成 <span class="count">该客户由你承办的行动待办</span></div>
+      <div class="fact"><span>协调技术给出刘海调整方案，并告知客户反馈时间<div class="small muted">11-17 到期 · 完成标准：客户收到方案和时间</div></span><button class="btn btn-success btn-sm" data-complete>完成</button></div>
+    </div>
+  </div>
+  <div class="drawer-f">
+    <span class="hint">原文和截图都保留，AI 只整理不覆盖</span>
+    <span class="spacer"></span>
+    <button class="btn">直接保存</button>
+    <button class="btn btn-primary" data-goto="review">AI 整理</button>
+  </div>
+</aside>
+
+<!-- ========== ③ 核对抽屉 ========== -->
+<aside class="drawer" id="d-review" aria-label="核对与下一步">
+  <div class="drawer-h">
+    <div><h2>核对 · 城南·悦发工作室</h2><div class="sub">AI 整理完成，确认后提交</div></div>
+    <span class="spacer"></span><button class="x" aria-label="关闭" data-close>×</button>
+  </div>
+  <div class="drawer-b">
+    <div class="context-bar"><span class="tag warn">T06 售后 / 技术</span>结果：有效沟通 · 微信 · 11-16</div>
+
+    <div class="groups">
+      <details class="grp-card" open>
+        <summary><span class="chev">›</span>客户说的 <span class="count small muted">3</span></summary>
+        <div class="items">
+          <div class="item">刘海还是贴头皮，吹完半天就塌
+            <div class="src-line"><span class="tag ok">店员</span><span>业务员转述</span><button class="btn btn-ghost btn-sm" data-quote>看出处</button></div>
+            <div class="quote" hidden>原文：「店员说还是贴，吹完半天就塌」</div></div>
+          <div class="item">先别急着补货
+            <div class="src-line"><span class="tag ok">老板</span><span>业务员转述</span><button class="btn btn-ghost btn-sm" data-quote>看出处</button></div>
+            <div class="quote" hidden>原文：「老板说先别急着补货」</div></div>
+          <div class="item">周四前给方案就行
+            <div class="src-line"><span class="tag warn">截图转写 · 待核</span><span>截图 2</span><button class="btn btn-ghost btn-sm" data-quote>看出处</button></div>
+            <div class="quote" hidden>截图 2 转写：「行 你们周四前给个方案」—— 转写由 AI 生成，请对照截图确认</div></div>
+        </div>
+      </details>
+      <details class="grp-card">
+        <summary><span class="chev">›</span>业务事实 <span class="count small muted">2</span></summary>
+        <div class="items">
+          <div class="item">客户发来 2 张佩戴照片<div class="src-line"><span>截图 1、2</span></div></div>
+          <div class="item">我方答应转技术，周四前给方案<div class="src-line"><span>原文</span></div></div>
+        </div>
+      </details>
+      <details class="grp-card">
+        <summary><span class="chev">›</span>待确认 <span class="count small muted">2</span></summary>
+        <div class="items">
+          <div class="item">比较的其他家产品是否同规格</div>
+          <div class="item">「先别急着补货」是因为刘海问题，还是库存还多</div>
+        </div>
+      </details>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="section-t">AI 想再确认 <span class="count">2 个，可跳过</span></div>
+      <div class="gap-q"><div class="q">「周四前」是客户提的时间，还是你答应的？</div>
+        <div class="acts"><button class="btn btn-sm">客户提的</button><button class="btn btn-sm">我答应的</button><button class="btn btn-ghost btn-sm">跳过</button></div></div>
+      <div class="gap-q"><div class="q">受影响的有几顶？</div>
+        <div class="acts"><input class="input" style="max-width:120px" placeholder="例如 2"><button class="btn btn-ghost btn-sm">不清楚</button></div></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="section-t">下一步 <span class="count">勾选的会生成待办</span></div>
+      <div class="steps-list" id="steps-list">
+        <div class="ns">
+          <input type="checkbox" data-step aria-label="采纳">
+          <div>
+            <div class="ns-text">协调技术给出刘海调整方案，周四前告知客户</div>
+            <div class="ns-meta"><span class="tag gold">我方承诺</span><span>我</span><span class="tnum">11-19 周四</span><span>完成标准：客户收到方案</span>
+              <span class="spacer"></span><span class="ns-kind"></span></div>
+            <div class="ns-advice">原文里你已向客户承诺，建议采纳</div>
+            <div class="ns-primary" hidden>
+              <label class="primary-pick"><input type="radio" name="primary"> 主下一步</label>
+              <select class="select ns-purpose" aria-label="计划用途"><option value="">计划用途（必选）</option><option>维护</option><option>开发</option><option>其他</option></select>
+            </div>
+          </div>
+        </div>
+        <div class="ns">
+          <input type="checkbox" data-step data-need-date aria-label="采纳">
+          <div>
+            <div class="ns-text">客户收到方案后，确认是否继续补货</div>
+            <div class="ns-meta"><span class="tag ok">客户约定 · 事件</span><span>事件：方案发出后</span><span class="spacer"></span><span class="ns-kind"></span></div>
+            <div class="ns-need">选一个核实日期即可采纳</div>
+            <div class="ns-edit" hidden>
+              <input class="input tnum" type="date" aria-label="核实日期">
+              <select class="select" aria-label="承办人"><option>我</option></select>
+              <select class="select" aria-label="方式"><option>微信</option><option>电话</option></select>
+            </div>
+            <div class="ns-primary" hidden>
+              <label class="primary-pick"><input type="radio" name="primary"> 主下一步</label>
+              <select class="select ns-purpose" aria-label="计划用途"><option value="">计划用途（必选）</option><option>维护</option><option>开发</option><option>其他</option></select>
+            </div>
+          </div>
+        </div>
+        <div class="ns">
+          <input type="checkbox" data-step aria-label="采纳">
+          <div>
+            <div class="ns-text">请技术核对同批次其他发出的刘海款是否有同样问题</div>
+            <div class="ns-meta"><span class="tag ai">AI 建议</span>
+              <select class="select" style="width:auto;height:26px;padding:0 6px" aria-label="承办人"><option>我</option><option>小林（技术）</option></select>
+              <span class="tnum">11-18</span><span class="spacer"></span><span class="ns-kind"></span></div>
+            <div class="ns-primary" hidden>
+              <label class="primary-pick"><input type="radio" name="primary"> 主下一步</label>
+              <select class="select ns-purpose" aria-label="计划用途"><option value="">计划用途（必选）</option><option>维护</option><option>开发</option><option>其他</option></select>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="disposition" id="disposition">
+        <div class="lbl">不安排下一步的话，现在是什么状态？（选填）</div>
+        <div class="states">
+          <button type="button" class="chip" aria-pressed="false">等待客户</button>
+          <button type="button" class="chip" aria-pressed="false">暂停</button>
+          <button type="button" class="chip" aria-pressed="false">关闭</button>
+        </div>
+        <input class="input" placeholder="一句理由，例如：客户说等顾客回店再定">
+      </div>
+    </div>
+  </div>
+  <div class="drawer-f">
+    <span class="submit-sum" id="submit-sum">将生成 1 张约定跟进</span>
+    <span class="spacer"></span>
+    <button class="btn" data-goto="record">返回修改</button>
+    <button class="btn btn-primary" id="submit-ok" data-toast="已提交，生成待办" data-goto="tasks">确认提交</button>
+  </div>
+</aside>
+
+<!-- ========== 历史准备卡（只读） ========== -->
+<aside class="drawer" id="d-history" aria-label="历史准备卡">
+  <div class="drawer-h">
+    <div><h2>历史准备卡 · 城南·悦发工作室</h2><div class="sub">当前负责人可查看，只有作者能修改</div></div>
+    <span class="spacer"></span><button class="x" aria-label="关闭" data-close>×</button>
+  </div>
+  <div class="drawer-b">
+    <div class="hist-list">
+      <button class="hist" aria-current="true"><b>T03 价格异议 · 已用于 11-12 跟进</b><span class="tag">前任</span><span class="h-meta">小周 · 11-12 · 策略 v3</span></button>
+      <button class="hist" aria-current="false"><b>T02 首次有效接触 · 已用于 08-06 跟进</b><span class="tag">前任</span><span class="h-meta">小周 · 08-06</span></button>
+    </div>
+    <div class="readonly-banner"><span>只读 · 小周 写于 11-12 · 当时的资料范围按小周的权限生成</span></div>
+    <div class="strategy">
+      <div class="s-top">
+        <div class="s-headline">先弄清「贵」是跟哪一款比</div>
+        <div class="s-why">客户只说价位优势不足，比较对象和规格都不清楚。</div>
+      </div>
+      <div class="s-body">
+        <dl class="kv"><dt>目标</dt><dd>确认比较对象与规格</dd><dt>开场</dt><dd>上次那款报价后还没确认，我不确定卡在哪……</dd><dt>已知</dt><dd>主做女士整头；曾比较其他家采购价</dd><dt>结果</dt><dd>11-12 有效沟通：客户提出刘海太贴、打理费劲</dd></dl>
+      </div>
+    </div>
+  </div>
+  <div class="drawer-f">
+    <span class="hint">新卡会复制背调和事实，策略重新生成</span><span class="spacer"></span>
+    <button class="btn" data-close>关闭</button>
+    <button class="btn btn-primary" data-goto="prep">基于此卡新建</button>
+  </div>
+</aside>
+
+<!-- 完成行动待办 -->
+<div class="dialog-wrap" id="dlg-complete" role="dialog" aria-modal="true" aria-labelledby="dlg-t">
+  <div class="dialog">
+    <h3 id="dlg-t">完成行动待办</h3>
+    <div class="small muted">完成标准：客户收到方案和时间</div>
+    <div class="field"><label for="done-note">做了什么</label>
+      <textarea class="textarea" id="done-note" rows="3" placeholder="例如：技术方案已微信发给老板，约定 11-21 回店试"></textarea></div>
+    <div class="acts"><button class="btn" data-dlg-close>取消</button><button class="btn btn-success" id="done-ok" disabled>完成</button></div>
+  </div>
+</div>
+<div class="dialog-wrap" id="dlg-resched" role="dialog" aria-modal="true" aria-labelledby="dlg-r">
+  <div class="dialog">
+    <h3 id="dlg-r">改日期</h3>
+    <div class="field"><label for="resched-date">新的到期日</label><input class="input tnum" id="resched-date" type="date" value="2026-11-20"></div>
+    <div class="acts"><button class="btn" data-dlg-close>取消</button><button class="btn btn-primary" data-dlg-close data-toast="已改到 11-20">保存</button></div>
+  </div>
+</div>
+<div class="dialog-wrap" id="dlg-cancel" role="dialog" aria-modal="true" aria-labelledby="dlg-c">
+  <div class="dialog">
+    <h3 id="dlg-c">取消行动待办</h3>
+    <div class="field"><label for="cancel-note">为什么不做了</label>
+      <textarea class="textarea" id="cancel-note" rows="2" placeholder="例如：客户改为到店自取样品"></textarea></div>
+    <div class="acts"><button class="btn" data-dlg-close>返回</button><button class="btn btn-primary" id="cancel-ok" disabled data-dlg-close data-toast="已取消">确认取消</button></div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const drawers = { prep: $('#d-prep'), record: $('#d-record'), review: $('#d-review'), history: $('#d-history') };
+  const scrim = $('#scrim');
+
+  function toast(msg) {
+    const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+    clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('on'), 1800);
+  }
+
+  function show(screen) {
+    const pageScreen = screen === 'tpl' ? 'tpl' : 'tasks';
+    $$('[data-view]').forEach(v => { v.hidden = v.dataset.view !== pageScreen; });
+    Object.entries(drawers).forEach(([k, d]) => d.classList.toggle('open', k === screen));
+    scrim.classList.toggle('on', !!drawers[screen]);
+    $$('.proto-bar [data-screen]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.screen === screen)));
+  }
+
+  document.addEventListener('click', (e) => {
+    const go = e.target.closest('[data-goto]');
+    const tst = e.target.closest('[data-toast]');
+    if (tst) toast(tst.dataset.toast);
+    if (go) { e.preventDefault(); show(go.dataset.goto); return; }
+    if (e.target.closest('[data-close]') || e.target === scrim) show('tasks');
+    const tab = e.target.closest('.proto-bar [data-screen]');
+    if (tab) show(tab.dataset.screen);
+    const dev = e.target.closest('[data-device]');
+    if (dev) {
+      document.body.classList.toggle('mobile', dev.dataset.device === 'mobile');
+      $$('[data-device]').forEach(b => b.setAttribute('aria-selected', String(b === dev)));
+    }
+    const q = e.target.closest('[data-quote]');
+    if (q) { e.preventDefault(); const box = q.closest('.item').querySelector('.quote'); box.hidden = !box.hidden; q.textContent = box.hidden ? '看出处' : '收起'; }
+    if (e.target.closest('[data-complete]')) { $('#dlg-complete').classList.add('on'); $('#done-note').focus(); }
+    const dlg = e.target.closest('[data-dialog]');
+    if (dlg) $('#' + dlg.dataset.dialog).classList.add('on');
+    if (e.target.closest('[data-dlg-close]') || e.target.classList.contains('dialog-wrap')) $$('.dialog-wrap').forEach(d => d.classList.remove('on'));
+    if (e.target.id === 'done-ok') { $('#dlg-complete').classList.remove('on'); toast('行动待办已完成'); }
+    const chip = e.target.closest('.chip');
+    if (chip) $$('.chip', chip.parentElement).forEach(c => c.setAttribute('aria-pressed', String(c === chip)));
+    if (e.target.closest('[data-more-scenes]')) $('.scenes').classList.add('all');
+    const sc = e.target.closest('.scene');
+    if (sc) $$('.scene').forEach(c => c.setAttribute('aria-pressed', String(c === sc)));
+    const tplBtn = e.target.closest('.tpl-nav button');
+    if (tplBtn) $$('.tpl-nav button').forEach(c => c.setAttribute('aria-current', String(c === tplBtn)));
+    const hist = e.target.closest('.hist');
+    if (hist) $$('.hist').forEach(c => c.setAttribute('aria-current', String(c === hist)));
+    const st = e.target.closest('.pq .states button');
+    if (st) {
+      const pq = st.closest('.pq');
+      $$('button', st.parentElement).forEach(b => b.setAttribute('aria-pressed', String(b === st)));
+      pq.classList.toggle('asked', st.textContent === '问到了');
+    }
+    const mode = e.target.closest('[data-mode]');
+    if (mode) setMode(mode.dataset.mode);
+    const jump = e.target.closest('[data-mode-jump]');
+    if (jump) { if (jump.dataset.modeJump === 'loading') simulateGenerate(); else setMode(jump.dataset.modeJump); }
+  });
+
+  $('#done-note').addEventListener('input', (e) => { $('#done-ok').disabled = !e.target.value.trim(); });
+  $('#cancel-note').addEventListener('input', (e) => { $('#cancel-ok').disabled = !e.target.value.trim(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $$('.dialog-wrap').forEach(d => d.classList.remove('on')); });
+
+  let modeTimer = null;
+  function simulateGenerate() { setMode('loading'); modeTimer = setTimeout(() => setMode('handle'), 1200); }
+  function setMode(m) {
+    clearTimeout(modeTimer);
+    const view = m === 'stale' ? 'handle' : m;
+    $$('[data-mode-view]').forEach(v => { v.hidden = v.dataset.modeView !== view; });
+    $('#stale-banner').hidden = m !== 'stale';
+    $$('[data-mode]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.mode === m)));
+  }
+
+  // 准备卡步骤
+  let step = 1;
+  const labels = { 1: '第 1 步 · 选场景', 2: '第 2 步 · 背调', 3: '第 3 步 · 策略' };
+  function setStep(n) {
+    step = n;
+    $$('[data-prep-step]').forEach(s => { s.hidden = Number(s.dataset.prepStep) !== n; });
+    $$('.steps span[data-s]').forEach(s => s.classList.toggle('on', Number(s.dataset.s) <= n));
+    $('#prep-step-label').textContent = labels[n];
+    $('#prep-back').hidden = n === 1;
+    $('#prep-regen').hidden = n !== 3;
+    const next = $('#prep-next');
+    next.textContent = n === 1 ? '下一步' : n === 2 ? '生成策略' : '沟通完了，记结果';
+  }
+  $('#prep-next').addEventListener('click', () => {
+    if (step === 1) setStep(2);
+    else if (step === 2) { setStep(3); simulateGenerate(); }
+    else show('record');
+  });
+  $('#prep-back').addEventListener('click', () => setStep(Math.max(1, step - 1)));
+  setStep(1);
+
+  // 引导录入：未接通 / 未回复切到一句话
+  $('#result').addEventListener('change', (e) => {
+    const quick = ['未接通', '未回复'].includes(e.target.value);
+    $('#composer').classList.toggle('is-quick', quick);
+    if (quick && !$('#raw').value.trim()) $('#raw').value ='微信询问刘海处理后的情况，' + (e.target.value === '未接通' ? '拨打未接通' : '尚未回复') + '；当前未确认使用情况。下一步：我方待安排。';
+  });
+
+  $('#unlink-prep').addEventListener('click', () => { $('#prep-link').textContent = '未关联准备卡'; toast('已解除关联，准备卡保留为未使用'); });
+  $('#use-short').addEventListener('click', () => {
+    $('#raw').value = '微信询问刘海处理后的情况，' + ($('#result').value === '未接通' ? '拨打未接通' : '尚未回复') + '；当前未确认使用情况。下一步：我方待安排。';
+  });
+
+  // 核对页：下一步勾选
+  // 规则：采纳了任何一条就必须有主下一步（默认第一条勾选的，可改）；主下一步 → 约定跟进，其余 → 行动待办；
+  // 示例客户有跟进责任，所以主下一步必须选计划用途。
+  function syncSteps() {
+    const rows = $$('#steps-list .ns');
+    const checked = rows.filter(ns => $('input[type=checkbox]', ns).checked);
+    let primary = checked.find(ns => $('input[type=radio]', ns).checked);
+    if (!primary && checked.length) { primary = checked[0]; $('input[type=radio]', primary).checked = true; }
+    let missingDate = 0, missingPurpose = 0;
+    rows.forEach(ns => {
+      const cb = $('input[type=checkbox]', ns);
+      const on = cb.checked;
+      ns.classList.toggle('checked', on);
+      const radio = $('input[type=radio]', ns);
+      if (!on) radio.checked = false;
+      $('.ns-primary', ns).hidden = !on;
+      $('.ns-purpose', ns).hidden = ns !== primary;
+      $('.ns-kind', ns).textContent = on ? (ns === primary ? '→ 约定跟进' : '→ 行动') : '';
+      const edit = $('.ns-edit', ns);
+      if (edit) edit.hidden = !on;
+      const need = $('.ns-need', ns);
+      const dateMissing = on && cb.hasAttribute('data-need-date') && !edit.querySelector('input').value;
+      if (need) need.textContent = on ? (dateMissing ? '请选核实日期，否则不能提交' : '') : '选一个核实日期即可采纳';
+      if (dateMissing) missingDate++;
+      if (ns === primary && !$('.ns-purpose', ns).value) missingPurpose++;
+    });
+    $('#disposition').hidden = checked.length > 0;
+    let msg;
+    if (missingDate) msg = '有 ' + missingDate + ' 条下一步还没选日期';
+    else if (missingPurpose) msg = '主下一步还没选计划用途';
+    else if (!checked.length) msg = '不生成待办';
+    else msg = '将生成 1 张约定跟进' + (checked.length > 1 ? '、' + (checked.length - 1) + ' 张行动待办' : '');
+    $('#submit-sum').textContent = msg;
+    $('#submit-ok').disabled = missingDate + missingPurpose > 0;
+  }
+  $('#steps-list').addEventListener('change', syncSteps);
+  $('#steps-list').addEventListener('input', syncSteps);
+  syncSteps();
+})();
+</script>
+</body>
+</html>
