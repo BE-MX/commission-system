@@ -256,24 +256,7 @@ def build_customer_sources(
             ).mappings()
         ]
     card["created_at"] = _parse_ts(raw.get("create_time") or raw.get("created_at"))
-    order_days, in_transit, gaps = classify_orders(orders, raw)
-    from app.core.config import get_settings
-
-    status_map = (
-        get_settings()
-        .CLIENT_DESK_RULES.get("order_classification", {})
-        .get("status_map", {})
-    )
-    last_non_cancelled = max(
-        [
-            o["account_date"]
-            for o in orders
-            if o.get("account_date")
-            and status_map.get(str(o.get("status"))) in ("completed", "in_transit")
-            and o.get("valid_business")
-        ],
-        default=None,
-    )
+    order_days, last_non_cancelled, in_transit, gaps = classify_orders(orders)
     orders = [o for o in orders if o.get("valid_business")]
     for o in orders:
         o["id"] = str(o.pop("order_id"))
@@ -560,7 +543,24 @@ def grade_options(db):
     ]
 
 
-def classify_orders(orders, raw):
+def _sample_value(order, field):
+    if not field:
+        return None
+    root, separator, key = field.partition(".")
+    if not separator:
+        return order.get(root)
+    if root != "custom_fields" or not key:
+        return None
+    custom = order.get(root)
+    if isinstance(custom, str):
+        try:
+            custom = json.loads(custom)
+        except (ValueError, RecursionError):
+            return None
+    return custom.get(key) if isinstance(custom, dict) else None
+
+
+def classify_orders(orders):
     """Only a versioned, explicitly calibrated mapping may classify sample/in-flight status."""
     from app.core.config import get_settings
 
@@ -569,33 +569,43 @@ def classify_orders(orders, raw):
     sample_values = config.get("sample_values", [])
     bulk_values = config.get("bulk_values", [])
     statuses = config.get("status_map", {})
+    status_field = config.get("status_field", "status")
     days = []
+    last = None
     unknown = False
     in_transit = False
     for order in orders:
-        status = statuses.get(str(order.get("status")))
+        status = (
+            statuses.get(str(order.get(status_field)))
+            if status_field in ("status", "status_name") else None
+        )
         if status not in ("cancelled", "in_transit", "completed"):
             unknown = True
         if status == "in_transit":
             in_transit = True
         if status == "cancelled":
             continue
-        sample = order.get(sample_field) if sample_field else None
+        sample = _sample_value(order, sample_field)
+        account_date = order.get("account_date")
+        if account_date and order.get("valid_business", True) and status in ("in_transit", "completed"):
+            if last is None or account_date > last:
+                last = account_date
         if (
-            sample in bulk_values
+            sample is not None
+            and sample in bulk_values
             and status == "completed"
-            and order.get("account_date")
+            and account_date
             and order.get("valid_business", True)
         ):
-            days.append(order["account_date"])
-        elif sample not in sample_values and sample not in bulk_values:
+            days.append(account_date)
+        elif sample is None or (sample not in sample_values and sample not in bulk_values):
             unknown = True
     gaps = (
         ["部分订单样品或物流状态未校准，暂不推断复购"]
         if unknown or (orders and not sample_field)
         else []
     )
-    return ([] if gaps else days), (None if gaps else in_transit), gaps
+    return ([], None, None, gaps) if gaps else (days, last, in_transit, [])
 
 
 def message_fingerprint(message):

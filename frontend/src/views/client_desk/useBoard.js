@@ -1,7 +1,7 @@
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { clientDeskApi as api } from '@/api/clientDesk'
 import { errorText, latestRequestGate } from './deskController'
-import { DIMENSIONS, filterCards, groupLanes, tagOptions } from './boardModel'
+import { DIMENSIONS, filterCards, groupLanes, tagOptions, todayLanes } from './boardModel'
 
 const STORAGE_KEY = 'client-desk-board-v1'
 
@@ -14,15 +14,16 @@ export function useBoard() {
   const data = ref(null), loading = ref(false), error = ref('')
   const groupBy = ref(DIMENSIONS[prefs.groupBy] ? prefs.groupBy : 'stage')
   const subBy = ref(prefs.subBy === '' || DIMENSIONS[prefs.subBy] ? prefs.subBy ?? 'type' : 'type')
-  const tagCodes = ref([]), todoOnly = ref(false), keyword = ref('')
+  const tagCodes = ref([]), todoOnly = ref(true), keyword = ref('')
   const openLanes = ref(new Set())
+  const closedTodayLanes = ref(new Set())
   const gate = latestRequestGate()
   let aborter
 
   const cards = computed(() => data.value?.items || [])
   const visible = computed(() => filterCards(cards.value, { tagCodes: tagCodes.value, todoOnly: todoOnly.value, keyword: keyword.value }))
   const options = computed(() => ({ grades: data.value?.grade_options || [], vocabulary: data.value?.tag_vocabulary || {} }))
-  const lanes = computed(() => groupLanes(visible.value, groupBy.value, options.value))
+  const lanes = computed(() => todoOnly.value ? todayLanes(visible.value) : groupLanes(visible.value, groupBy.value, options.value))
   const filters = computed(() => tagOptions(cards.value))
   const todoCount = computed(() => cards.value.filter(c => c.todo).length)
 
@@ -36,11 +37,19 @@ export function useBoard() {
     finally { if (gate.current(token)) loading.value = false }
   }
   function toggleLane(key) {
-    const next = new Set(openLanes.value)
+    const target = todoOnly.value ? closedTodayLanes : openLanes
+    const next = new Set(target.value)
     next.has(key) ? next.delete(key) : next.add(key)
-    openLanes.value = next
+    target.value = next
   }
-  function setAll(open) { openLanes.value = open ? new Set(lanes.value.map(l => l.key)) : new Set() }
+  function setAll(open) {
+    const keys = lanes.value.map(l => l.key)
+    if (todoOnly.value) closedTodayLanes.value = new Set(open ? [] : keys)
+    else openLanes.value = new Set(open ? keys : [])
+  }
+  function isLaneOpen(key) {
+    return todoOnly.value ? !closedTodayLanes.value.has(key) : openLanes.value.has(key)
+  }
   function toggleTag(code) {
     tagCodes.value = tagCodes.value.includes(code) ? tagCodes.value.filter(c => c !== code) : [...tagCodes.value, code]
   }
@@ -51,5 +60,5 @@ export function useBoard() {
   })
   onBeforeUnmount(() => { aborter?.abort(); gate.invalidate() })
 
-  return { data, loading, error, groupBy, subBy, tagCodes, todoOnly, keyword, openLanes, cards, visible, options, lanes, filters, todoCount, load, toggleLane, setAll, toggleTag }
+  return { data, loading, error, groupBy, subBy, tagCodes, todoOnly, keyword, cards, visible, options, lanes, filters, todoCount, isLaneOpen, load, toggleLane, setAll, toggleTag }
 }

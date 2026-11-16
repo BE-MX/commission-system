@@ -183,7 +183,7 @@ def test_runner_pins_selection_and_does_not_publish_automatic_state(
     monkeypatch.setattr(
         runner,
         "prepare_text_chat",
-        lambda *a: SimpleNamespace(
+        lambda *a, **kw: SimpleNamespace(
             provider=SimpleNamespace(id=5), preset=SimpleNamespace(system_prompt=None)
         ),
     )
@@ -373,7 +373,7 @@ def test_next_day_or_unselected_manual_run_never_rewrites_restricted_brief(
     monkeypatch.setattr(
         runner,
         "prepare_text_chat",
-        lambda *a: SimpleNamespace(
+        lambda *a, **kw: SimpleNamespace(
             provider=SimpleNamespace(id=5), preset=SimpleNamespace(system_prompt=None)
         ),
     )

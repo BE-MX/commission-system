@@ -26,6 +26,8 @@ JWT 管理入口 POST `/api/alibaba-feed/sources`、PATCH `/api/alibaba-feed/sou
 
 2026-11-12 读取优化（本地实现，待发布）：档案、时间轴、事件详情仅小满归属成功结果可复用 60 秒，本人私海清单可复用 45 秒；平台权限、来源授权和建议依赖仍逐请求检查。复制草稿使用 `GET /customers/{company_id}?fresh=true`，与写操作、`wa-open` 一样每次实时核验归属。`/customers` 普通列表按已存分数先分页，仅当前页实时判定建议，失效建议可能仍排前但不显示内容；`suggested` 与 `reason` 筛选仍先实时判定再计算总数和分页。
 
+2026-11-16 今日建议分组在 `GET /board` 的客户卡增加 `todo_rule_codes` 和 `todo_rank_score`。分组依据是当天规则快照与个人跟进状态，档案打开后重新校验建议来源。手动分析的 `steps` 可返回 `attempt`、`finish_reason`、`reasoning_emitted` 和校验诊断 `code/issues`，终态仍以 `error_code=validation_failed` 表达校验失败。
+
 GET `/reports/handoff` 仅公开无敏感内容壳。POST `/reports/redeem` 需登录和收件人匹配，原子消费短时签名票据。不会兑换全平台登录态。请求字段、并发和响应说明见[私海接口契约](requirements/2026-11-04-private-sea-assistant/contracts.md)，实际字段以 `app/client_desk/router.py` 和 `report_router.py` 为准。
 
 ## 全局导航配置（2026-11-03，待部署）

@@ -18,13 +18,24 @@ from .models import ClientDeskSuggestion as Row, ClientDeskState as State
 from . import agent_tools, sources
 from .board import tag_vocabulary
 from .pack import build_pack, digest, PROTOCOL_HASH, PROTOCOL_VERSION
-from .queue import active, auto_done, effective_snooze, state_data
+from .queue import active, auto_done, effective_snooze, missing_routine_material, state_data
 from .rules import R1, R3, R6, R7, evaluate
-from .validator import validate
+from .validator import InvalidResult, unwrapped_json, validate
 
 logger = logging.getLogger(__name__)
 LEASE = timedelta(minutes=4)
-CORRECTION = "上次结果未通过结构、证据或安全检查。请不要再调用工具，直接严格按协议输出最终结果 JSON。"
+MAX_OUTPUT_TOKENS = 4000
+CORRECTIONS = {
+    "truncated": "输出超长被截断，请缩短画像、标签和草稿，保留必填键",
+    "non_json": "结果不是有效 JSON，请只返回一个 JSON 对象",
+    "invalid_structure": "结果结构不符，请按字段路径和错误类型修正",
+    "invalid_recheck": "复核必须是今天之后 30 天内的有效日历日期",
+    "missing_recheck": "建议跳过时必须填写复核日期与条件",
+    "invalid_grade": "分级必须使用本次提供的等级",
+    "invalid_tags": "标签必须唯一并使用本次提供的编码",
+    "invalid_cites": "引用必须使用 refs 或工具结果中的真实证据键",
+    "unsafe_output": "去除未验证联系方式、收款信息、外部链接或其他不安全内容",
+}
 
 
 def recover_expired(db, now):
@@ -154,6 +165,9 @@ def run_job(db, job):
             ):
                 _stop(db, job, "rule_only", "feedback_recorded")
                 return
+            if row.run_seq == 0 and missing_routine_material(source, codes):
+                _stop(db, job, "rule_only", "no_analysis_material")
+                return
             if conversation is None:
                 removed = set(personal.get("tag_overrides") or [])
                 vocabulary = [
@@ -168,7 +182,9 @@ def run_job(db, job):
             work = replace(
                 base, messages=list(conversation), refs=dict(refs), hash=digest(conversation)
             )
-            snapshot = prepare_text_chat(db, cfg.CLIENT_DESK_PRESET_NAME, 1800)
+            snapshot = prepare_text_chat(
+                db, cfg.CLIENT_DESK_PRESET_NAME, MAX_OUTPUT_TOKENS, deepseek_json=True
+            )
             if (
                 snapshot.provider.id not in cfg.CLIENT_DESK_ALLOWED_PROVIDER_IDS
                 or snapshot.preset.system_prompt
@@ -206,8 +222,16 @@ def run_job(db, job):
             usage["input"] += response.get("tokens_prompt") or 0
             usage["output"] += response.get("tokens_completion") or 0
             content = response.get("content")
-            action = agent_tools.parse_action(content)
-            if action and steps_left > 0:
+            finish_reason = response.get("finish_reason")
+            call_info = {
+                "attempt": calls,
+                "finish_reason": finish_reason,
+                "reasoning_emitted": bool(response.get("reasoning_emitted")),
+            }
+            action = None
+            if steps_left > 0 and finish_reason not in ("length", "max_tokens"):
+                action = agent_tools.parse_action(unwrapped_json(content))
+            if action:
                 name, args = action
                 payload, new_refs, status = agent_tools.run_tool(
                     db, source, refs, name, args
@@ -228,7 +252,7 @@ def run_job(db, job):
                 refs.update(new_refs)
                 conversation += [{"role": "assistant", "content": content}, reply]
                 trace.append(
-                    agent_tools.trace_step(name, status, beijing_now(), args)
+                    agent_tools.trace_step(name, status, beijing_now(), args) | call_info
                 )
                 guarded(db, job, beijing_now()).update(
                     {Row.token_usage: usage, Row.agent_trace: trace},
@@ -237,23 +261,34 @@ def run_job(db, job):
                 db.commit()
                 continue
             try:
-                result = validate(content, work, day)
-            except ValueError:
+                result = validate(content, work, day, finish_reason=finish_reason)
+            except InvalidResult as exc:
+                code = str(exc)
+                trace.append(
+                    agent_tools.trace_step("final", "invalid", beijing_now())
+                    | call_info | {"code": code, "issues": exc.issues}
+                )
                 guarded(db, job, beijing_now()).update(
-                    {Row.token_usage: usage}, synchronize_session=False
+                    {Row.token_usage: usage, Row.agent_trace: trace},
+                    synchronize_session=False,
                 )
                 db.commit()
                 if corrections == 0:
                     corrections = 1
-                    conversation += [
-                        {"role": "assistant", "content": str(content or "")[:4000]},
-                        {"role": "user", "content": CORRECTION},
-                    ]
+                    steps_left = 0
+                    detail = "；".join(f"{issue['field']} ({issue['type']})" for issue in exc.issues)
+                    correction = CORRECTIONS[code]
+                    if detail:
+                        correction += f"。{detail}"
+                    conversation.append({
+                        "role": "user",
+                        "content": f"上次检查结果：{correction}。请直接输出最终 JSON。",
+                    })
                     continue
                 _stop(db, job, "rule_only", "validation_failed")
                 return
         pack = work
-        trace.append(agent_tools.trace_step("final", "ok", beijing_now()))
+        trace.append(agent_tools.trace_step("final", "ok", beijing_now()) | call_info)
         db.rollback()
         active(db, uid)
         current_row = guarded(db, job, beijing_now()).populate_existing().first()

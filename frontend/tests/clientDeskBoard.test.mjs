@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { fanSeats, filterCards, groupLanes, laneValues, sortCards, tagOptions } from '../src/views/client_desk/boardModel.js'
+import { fanSeats, filterCards, groupLanes, laneValues, sortCards, tagOptions, todayLanes } from '../src/views/client_desk/boardModel.js'
 
 const card = (id, extra = {}) => ({ company_id: String(id), name: `C${id}`, grade: null, todo: false, orders: { amount_usd: 0 }, tags: [], ...extra })
 const tag = (kind, code, label = code) => ({ kind, code, label })
@@ -27,6 +27,22 @@ test('stage lanes use the fixed business order', () => {
 test('todo cards come first, then larger accounts', () => {
   const sorted = sortCards([card(1, { orders: { amount_usd: 900 } }), card(2, { todo: true }), card(3, { orders: { amount_usd: 5000 } })])
   assert.deepEqual(sorted.map(c => c.company_id), ['2', '3', '1'])
+})
+
+test('today ranks customers by rule score and puts each customer in one actionable group', () => {
+  const todo = (id, score, ...codes) => card(id, { todo: true, todo_rank_score: score, todo_rule_codes: codes })
+  const lanes = todayLanes([
+    todo(3, 3, 'R8_NEW_LEAD'),
+    todo(4, 3, 'R3_RECHECK_DUE'),
+    todo(9, 4, 'R7_AWAITING_CUSTOMER'),
+    todo(2, 8, 'R1_UNREPLIED', 'R5_REPURCHASE'),
+    todo(1, 9, 'R1_UNREPLIED'),
+    todo(5, 3, 'R5_REPURCHASE'),
+    todo(6, 2, 'R6_LONG_SILENT'),
+  ])
+  assert.deepEqual(lanes.map(lane => [lane.label, lane.items.map(c => c.company_id)]), [
+    ['待回复', ['1', '2']], ['到期跟进', ['9', '4']], ['复购', ['5']], ['新客', ['3']], ['久未联系', ['6']],
+  ])
 })
 
 test('tag filters are conjunctive and combine with todo and keyword', () => {

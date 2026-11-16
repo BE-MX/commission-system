@@ -4,7 +4,7 @@
       <span class="dot" :class="'tone-' + tone" aria-hidden="true" />
       <b>{{ lane.label }}</b>
       <span class="count">{{ lane.items.length }}</span>
-      <span class="sum">S/A {{ lane.priority }} 位 · 今日待处理 {{ lane.todo }} 位</span>
+      <span v-if="dimension !== 'reason'" class="sum">S/A {{ lane.priority }} 位 · 今日待处理 {{ lane.todo }} 位</span>
       <span class="chev" aria-hidden="true">▾</span>
     </button>
     <div :id="bodyId" ref="bodyEl" class="lane-body">
@@ -19,7 +19,7 @@
           <div v-if="group.label" class="sub-title"><span class="tag" :class="'tone-' + subTone">{{ group.label }}</span><span class="muted">{{ group.items.length }} 位</span></div>
           <div class="grid">
             <button v-for="card in group.items" :key="card.company_id" type="button" class="slot-button board-focus" :data-cid="card.company_id" :aria-label="`打开 ${card.name}`" @click="$emit('open', card)">
-              <BoardCard :card="card" :selected="String(selectedId) === String(card.company_id)" />
+              <BoardCard :card="card" :today="dimension === 'reason'" :selected="String(selectedId) === String(card.company_id)" />
             </button>
           </div>
         </template>

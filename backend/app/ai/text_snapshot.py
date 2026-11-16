@@ -3,6 +3,7 @@
 from copy import deepcopy
 from dataclasses import dataclass, field
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from app.ai.preset_config import validate_parameters
@@ -29,7 +30,9 @@ def freeze_text_call_config(preset, provider) -> TextChatSnapshot:
     )
 
 
-def prepare_text_chat(db, preset_name: str, max_output_tokens: int) -> TextChatSnapshot:
+def prepare_text_chat(
+    db, preset_name: str, max_output_tokens: int, *, deepseek_json: bool = False
+) -> TextChatSnapshot:
     """Take current reads inside the caller's short admission transaction.
 
     Only trusted server code can construct/pass this object, never HTTP input.
@@ -60,6 +63,14 @@ def prepare_text_chat(db, preset_name: str, max_output_tokens: int) -> TextChatS
     if type(configured) is not int or configured <= 0 or max_output_tokens <= 0:
         raise ValueError("invalid output limit")
     parameters["max_tokens"] = min(configured, max_output_tokens)
+    if (
+        deepseek_json
+        and provider.api_type == "openai"
+        and urlsplit(provider.api_base).hostname == "api.deepseek.com"
+        and preset.model == "deepseek-flash"
+    ):
+        parameters["response_format"] = {"type": "json_object"}
+        parameters["thinking"] = {"type": "disabled"}
     if transport is not None:
         parameters["transport"] = transport
     return TextChatSnapshot(

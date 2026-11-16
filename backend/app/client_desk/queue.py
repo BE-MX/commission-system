@@ -12,10 +12,11 @@ from .access import enrolled
 from .calendar import is_workday
 from .models import ClientDeskState as State, ClientDeskSuggestion as Row
 from .private_scope import user_id
-from .rules import allocate, as_time, evaluate, REASONS, R1, R4, R5, R6
+from .rules import allocate, as_day, as_time, evaluate, REASONS, R1, R3, R4, R5, R6, R8
 from . import sources
 
 logger = logging.getLogger(__name__)
+PROFILE_FAILURE_BACKOFF = timedelta(days=2)
 
 
 def actor_id(user):
@@ -68,6 +69,30 @@ def effective_snooze(db, uid, cid, day):
     )
 
 
+def missing_routine_material(source, codes):
+    if codes != [R4] and R8 not in codes:
+        return False
+    if source.get("order_count") or source.get("research_summary"):
+        return False
+    ai_accounts = {
+        dep["account"]
+        for dep in (source.get("source_dependencies") or {}).get("wa", [])
+        if dep.get("ai")
+    }
+    if any(
+        msg.get("account_uid") in ai_accounts and (msg.get("text") or "").strip()
+        for msg in source.get("messages", [])
+    ):
+        return False
+    if codes == [R4]:
+        return True
+    manual = source.get("manual") or {}
+    return not (
+        any(key.startswith("F-") for key in source.get("refs", {}))
+        or any((manual.get(key) or "").strip() for key in ("remark", "next_followup_remark"))
+    )
+
+
 def read_candidates(db, user, now):
     uid = actor_id(user)
     cfg = active(db, uid)
@@ -93,6 +118,24 @@ def read_candidates(db, user, now):
         )
         for cid, s in all_sources.items()
     ]
+    recent_failures = {
+        r.company_id
+        for r in db.query(Row.company_id, Row.rule_codes).filter(
+            Row.user_id == uid,
+            Row.run_seq == 0,
+            Row.biz_date >= now.date() - PROFILE_FAILURE_BACKOFF,
+            Row.biz_date < now.date(),
+            Row.attempts > 0,
+            Row.status.in_(("failed", "ambiguous", "rule_only")),
+            Row.error_code.in_(("validation_failed", "execution_failed", "call_uncertain", "lease_expired")),
+        )
+        if r.rule_codes == [R4]
+    }
+    for candidate in filter(None, candidates):
+        if missing_routine_material(all_sources[candidate.company_id], candidate.codes):
+            candidate.disposition = "no_analysis_material"
+        elif candidate.codes == [R4] and candidate.company_id in recent_failures:
+            candidate.disposition = "analysis_backoff"
     return (
         allocate(
             [c for c in candidates if c],
@@ -325,6 +368,20 @@ def enqueue_manual(db, user, company_id, client_request_id, feed_item_ids=None):
     }
 
 
+def completed_recheck(row, state, today):
+    """Keep today's reminder after its analysis advances the next recheck."""
+    from .source_policy import restricted_row
+
+    cooldown = as_day((state.get("rule_cooldowns") or {}).get(R3))
+    return (
+        row.status == "succeeded" and row.priority != "skip"
+        and today == row.biz_date and R3 in (row.rule_codes or [])
+        and state.get("last_applied_run") == [today.isoformat(), row.run_seq]
+        and (not cooldown or cooldown <= today)
+        and not restricted_row(row)
+    )
+
+
 def visible_suggestion(db, row, source, state, now):
     if effective_snooze(db, row.user_id, row.company_id, now.date()):
         return None
@@ -334,6 +391,8 @@ def visible_suggestion(db, row, source, state, now):
         source, s, now, row.user_id, cfg.CLIENT_DESK_RULES, cfg.CLIENT_DESK_CALENDAR
     )
     codes = list(current.codes) if current else []
+    if R3 not in codes and completed_recheck(row, s, now.date()):
+        codes.append(R3)
     strong = set(codes) - {R4, R5, R6}
     if row.cohort == "holdout" and not strong:
         return None

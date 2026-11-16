@@ -9,6 +9,7 @@ available only when the salesperson selected them for this manual run.
 import json
 
 from .pack import canonical
+from .validator import MAX_RESULT_CHARS, unique_keys
 
 TOOL_LABELS = {
     "order_items": "查看订单产品明细",
@@ -31,11 +32,11 @@ def max_steps(rules, run_seq):
 
 def parse_action(raw):
     """Return (tool, args) for a tool request, or None for a final answer."""
-    if not isinstance(raw, str):
+    if not isinstance(raw, str) or len(raw) > MAX_RESULT_CHARS:
         return None
     try:
-        data = json.loads(raw)
-    except ValueError:
+        data = json.loads(raw, object_pairs_hook=unique_keys)
+    except (ValueError, RecursionError):
         return None
     if not isinstance(data, dict) or "tool" not in data or "brief_md" in data:
         return None
@@ -173,7 +174,7 @@ def context_size(messages):
 
 def trace_step(name, status, at, args=None):
     item = {"tool": name, "label": TOOL_LABELS.get(name, FINAL_LABEL if name == "final" else "未知工具"), "status": status, "at": at.isoformat(timespec="seconds")}
-    if name == "order_items" and args and args.get("order_id"):
+    if name == "order_items" and status in ("ok", "empty") and args and args.get("order_id"):
         item["target"] = str(args["order_id"])[:40]
     return item
 

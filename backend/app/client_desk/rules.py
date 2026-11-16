@@ -42,6 +42,15 @@ def as_time(value):
     return value
 
 
+def recheck_due(state, today):
+    check = as_day(state.get("recheck_date"))
+    return (
+        check and check <= today
+        and state.get("recheck_condition")
+        and (state.get("recheck_count") or 0) < 2
+    )
+
+
 @dataclass
 class Candidate:
     company_id: int
@@ -95,13 +104,7 @@ def evaluate(source, state, now, user_id, config=None, calendar=None):
         codes.append(R7)
     if due and due <= today:
         codes.append(R2)
-    check = as_day(state.get("recheck_date"))
-    if (
-        check
-        and check <= today
-        and state.get("recheck_condition")
-        and (state.get("recheck_count") or 0) < 2
-    ):
+    if recheck_due(state, today):
         codes.append(R3)
     created = as_day(source.get("created_at"))
     if (
@@ -174,6 +177,8 @@ def allocate(candidates, quota=40):
     for candidate in ranked:
         if candidate.cohort == "holdout":
             candidate.disposition = "holdout"
+        elif candidate.disposition in {"no_analysis_material", "analysis_backoff"}:
+            continue
         elif quota > 0:
             candidate.disposition = "eligible"
             quota -= 1

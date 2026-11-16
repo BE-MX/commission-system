@@ -230,10 +230,32 @@ def test_calibrated_order_classification(monkeypatch):
         {"status": "done", "sample_kind": "bulk", "account_date": date(2026, 1, 1)},
         {"status": "ship", "sample_kind": "sample", "account_date": date(2026, 2, 1)},
     ]
-    days, transit, gaps = sources.classify_orders(orders, {})
+    days, last, transit, gaps = sources.classify_orders(orders)
     assert days == [date(2026, 1, 1)] and transit and not gaps
+    assert last == date(2026, 2, 1)
     orders.append({"status": "new", "sample_kind": "bulk"})
-    assert sources.classify_orders(orders, {})[1] is None
+    assert sources.classify_orders(orders)[2] is None
+
+
+def test_order_classification_can_use_custom_fields_and_explicit_status_name(monkeypatch):
+    monkeypatch.setattr(
+        "app.core.config.get_settings",
+        lambda: SimpleNamespace(CLIENT_DESK_RULES={"order_classification": {
+            "sample_field": "custom_fields.kind",
+            "bulk_values": ["bulk"],
+            "sample_values": ["sample"],
+            "status_field": "status_name",
+            "status_map": {"Closed": "completed", "Cancelled": "cancelled"},
+        }}),
+    )
+    orders = [
+        {"status": "same", "status_name": "Closed", "custom_fields": '{"kind":"bulk"}', "account_date": date(2026, 9, 1)},
+        {"status": "same", "status_name": "Closed", "custom_fields": {"kind": "sample"}, "account_date": date(2026, 9, 2)},
+        {"status": "same", "status_name": "Cancelled", "account_date": date(2026, 9, 3)},
+    ]
+    assert sources.classify_orders(orders) == ([date(2026, 9, 1)], date(2026, 9, 2), False, [])
+    days, last, transit, gaps = sources.classify_orders(orders + [orders[0] | {"custom_fields": "bad json"}])
+    assert (days, last, transit) == ([], None, None) and gaps
 
 
 def test_link_cas_rebind_and_revoke(isolated, monkeypatch):
@@ -490,8 +512,9 @@ def test_invalid_freight_private_order_cannot_supply_repurchase_days(monkeypatch
         }
         for i in (1, 2, 3)
     ]
-    days, transit, gaps = sources.classify_orders(orders, {})
+    days, last, transit, gaps = sources.classify_orders(orders)
     assert days == [date(2026, 1, 1)] and transit is False and not gaps
+    assert last == date(2026, 1, 1)
 
 
 def test_old_round_snooze_or_done_does_not_reorder_quality(isolated, monkeypatch):
