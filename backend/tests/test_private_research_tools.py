@@ -244,8 +244,25 @@ def test_price_inspection_bounds_fixed_request_and_real_cost_shape(monkeypatch):
     monkeypatch.setattr(providers, "request_json", lambda *_a, **_kw: body)
     assert providers.monid_prepare(None, "hunter_domain_email", "vendor.com", 20_000) is None
     payload = providers.monid_prepare(None, "hunter_domain_email", "vendor.com", 30_000)
-    assert payload["input"] == {"queryParams": {"domain": "vendor.com", "limit": 1}}
+    assert payload["input"] == {"body": {"domain": "vendor.com", "limit": 1}}
     assert providers.reported_charge({"cost": {"value": 0.021, "currency": "USD"}}) == 21_000
+
+
+def test_facebook_profile_supplies_required_minimum_max_posts(monkeypatch):
+    operation = providers.OPERATIONS["facebook_profile"]
+    target = "https://www.facebook.com/sample-shop"
+    reply = {
+        "provider": operation.provider,
+        "endpoint": operation.endpoint,
+        "price": {"currency": "USD", "type": "PER_RESULT", "amount": 0.006},
+    }
+    monkeypatch.setattr(providers, "request_json", lambda *_args, **_kwargs: reply)
+
+    payload = providers.monid_prepare(None, "facebook_profile", target, operation.cap)
+
+    assert payload["input"] == {
+        "body": {"endpoint": "details_by_url", "urls_text": target, "max_posts": 1},
+    }
 
 
 @pytest.mark.parametrize(("result", "matches"), [
