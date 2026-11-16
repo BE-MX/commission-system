@@ -67,6 +67,9 @@ def cmd_create(args) -> None:
             limit=args.limit,
             commit=not args.dry_run,
             enrichment=args.enrichment,
+            private_v2=not args.enrichment,
+            with_orders=args.with_orders,
+            unresearched=args.unresearched,
         )
         summary["owners"] = {str(uid): user.real_name for uid, user in owners.items()} if owners is not None else "all_private"
         summary["dry_run"] = args.dry_run
@@ -105,6 +108,8 @@ def main() -> None:
     scope.add_argument("--owners", help="业务员登录用户名或用户ID，逗号分隔")
     scope.add_argument("--all-private", action="store_true", help="所有有有效主负责人的私海客户")
     create.add_argument("--enrichment", action="store_true", help="补全官网、公司业务、公开联系方式和主营产品，保留已有内容并回写待审核")
+    create.add_argument("--with-orders", action="store_true", help="仅选有有效订单的客户")
+    create.add_argument("--unresearched", action="store_true", help="仅选尚无有效研究报告的客户")
     create.add_argument("--operator", default=None, help="操作人用户名或ID（写入任务 created_by）")
     create.add_argument("--limit", type=int, default=None, help="最多创建的客户数（按有效订单金额降序截取）")
     create.add_argument("--run-tag", default=None, help="批次标签；缺省按当前时间生成，同批任务据此追踪")

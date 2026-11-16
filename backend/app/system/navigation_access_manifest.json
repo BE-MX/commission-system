@@ -1,5 +1,5 @@
 {
-  "source_sha256": "20ac6b88d4816627557da5468ddb7309dc1e438f12d651f92193c21dffa170e2",
+  "source_sha256": "6f522935ecf25c8ce36441682f12ee55b922b21b118cfbc2d75fa3306b206b9f",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -20,6 +20,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -112,6 +113,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3273,6 +3275,35 @@
         ]
       }
     ],
+    "MonidSpend": [
+      {
+        "permission": "sales_monid_spend:read"
+      },
+      {
+        "permission": "sales_monid_spend:read"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "navigation:read",
+          "mcp:admin",
+          "integration:admin",
+          "commerce_transition:admin",
+          "operations:read",
+          "operations:admin",
+          "sales_monid_spend:read",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
     "UserManagement": [
       {
         "permission": "user:read"
@@ -3292,6 +3323,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3320,6 +3352,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3348,6 +3381,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3376,6 +3410,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3410,6 +3445,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3438,6 +3474,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3466,6 +3503,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3494,6 +3532,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3522,6 +3561,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3550,6 +3590,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3578,6 +3619,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",

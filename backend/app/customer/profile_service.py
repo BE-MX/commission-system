@@ -391,9 +391,11 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
     # Compare canonical reference strings in Python: MySQL CAST(id AS CHAR)
     # inherits the connection collation, which can differ from business_ref_id.
     task_ids = {int(ref) for _, ref in referenced_runs if ref and ref.isascii() and ref.isdecimal()}
+    from app.sales_automation.private_research_policy import PRIVATE_RESEARCH_POLICIES
+
     review_task_ids = {str(row[0]) for row in db.query(CustomerResearchTask.id).filter(
         CustomerResearchTask.id.in_(task_ids),
-        CustomerResearchTask.research_policy_version == "private-enrichment-v1",
+        CustomerResearchTask.research_policy_version.in_(PRIVATE_RESEARCH_POLICIES),
     ).all()} if task_ids else set()
     review_only_runs = {run_id for run_id, ref in referenced_runs if ref in review_task_ids}
     for row in fact_rows:

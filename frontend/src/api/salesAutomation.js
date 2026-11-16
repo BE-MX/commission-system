@@ -21,3 +21,7 @@ export const approvePublicPoolTask = id => salesAutomationClient.post(`/public-p
 export const bulkReviewPublicPoolTasks = payload => salesAutomationClient.post('/public-pool/tasks/bulk-review', payload)
 export const claimPublicPoolTask = id => salesAutomationClient.post(`/public-pool/tasks/${id}/claim`)
 export const rejectPublicPoolTask = (id, reason) => salesAutomationClient.post(`/public-pool/tasks/${id}/reject`, { reason })
+
+export const getMonidSpend = (params, signal) => salesAutomationClient.get(
+  '/research/monid-spend', { params, signal, showLoading: false, suppressToast: true },
+)

@@ -585,6 +585,7 @@ def seed_role_permissions(db: Session):
         # 智能获客：外部候选发现、联系人完善与企业研究
         ("sales_automation:read",  "sales_automation", "read",  "查看智能获客"),
         ("sales_automation:write", "sales_automation", "write", "创建搜索任务并确认候选客户"),
+        ("sales_monid_spend:read", "sales_monid_spend", "read", "查看私海背调 Monid 花费"),
         ("sales_automation:admin", "sales_automation", "admin", "管理获客模型与Agent接入"),
         ("sales_automation:invoke", "sales_automation", "invoke", "Agent领取任务并提交搜索与研究结果"),
         # 客户邮件触达：审核后定时发送开发信；worker 使用独立机器凭证，不具备审批能力

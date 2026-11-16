@@ -178,23 +178,43 @@ export class ArkClient {
     const query = new URLSearchParams({
       page: String(integerId(page, "page")),
       page_size: String(integerId(pageSize, "page_size")),
+      include_private_v2: "true",
     });
     if (Number(query.get("page_size")) > 100) throw new ArkApiError("page_size 不能超过100");
     return this.request(`/api/sales-automation/agent/research-tasks?${query}`);
   }
 
-  getResearchTaskContext(taskId) {
+  getResearchTaskContext(taskId, leaseToken) {
+    if (leaseToken) return this.#researchLeaseRequest(taskId, "context", leaseToken);
     return this.request(`/api/sales-automation/agent/research-tasks/${integerId(taskId, "research_task_id")}/context`);
+  }
+
+  callPrivateResearchTool(taskId, leaseToken, agentRunId, tool, action, payload) {
+    if (!["username_scan", "monid"].includes(tool) || !["submit", "status", "bind"].includes(action)) {
+      throw new ArkApiError("未登记的私海研究工具操作");
+    }
+    return this.request(
+      `/api/sales-automation/agent/research-tasks/${integerId(taskId, "research_task_id")}/tools/${tool}/${action}`,
+      {
+        method: "POST",
+        body: {
+          ...payload,
+          agent_id: this.#agentId,
+          lease_token: leaseToken,
+          agent_run_id: integerId(agentRunId, "agent_run_id"),
+        },
+      },
+    );
   }
 
   getCustomerOutreachContext(customerId) {
     return this.request(`/api/sales-automation/agent/customers/${integerId(customerId, "customer_id")}/outreach-context`);
   }
 
-  claimResearchTask(taskId) {
+  claimResearchTask(taskId, { supportsPrivateV2 = false } = {}) {
     return this.request(`/api/sales-automation/agent/research-tasks/${integerId(taskId, "research_task_id")}/claim`, {
       method: "POST",
-      body: { agent_id: this.#agentId },
+      body: { agent_id: this.#agentId, ...(supportsPrivateV2 ? { supports_private_v2: true } : {}) },
     });
   }
 

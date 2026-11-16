@@ -714,6 +714,7 @@ class CustomerResearchTask(Base):
             name="ck_customer_research_review_terminal",
         ),
         UniqueConstraint("id", "customer_id", name="uq_customer_research_task_customer"),
+        Index("ix_customer_research_claim_priority", "priority", "created_at", "id"),
         {"comment": "统一客户身份补全、公海背调、高分候选背调和完整商业研究任务表；任务只负责执行与审核状态，研究事实写入客户事实账本。"},
     )
 
@@ -724,6 +725,7 @@ class CustomerResearchTask(Base):
     source_ref_id = Column(String(128), nullable=True, index=True, comment="触发任务的来源对象ID")
     tier = Column(String(16), nullable=True, index=True, comment="公海分档T1、T2、T3；非公海任务为空")
     task_status = Column(String(16), nullable=False, index=True, comment="执行状态：pending、running、completed、failed、skipped、cancelled")
+    priority = Column(Integer, nullable=False, default=0, server_default="0", comment="调度优先级，私海按需背调优先")
     gate_status = Column(String(16), nullable=False, index=True, comment="低成本门控状态：pending、passed、stopped、not_required")
     result_review_status = Column(String(24), nullable=False, index=True, comment="研究成果质量审核：pending、accepted、revision_requested、rejected、not_required；不表示客户资格")
     selection_reason = Column(JSON, nullable=False, comment="Schema v1任务入选原因数组及对应事实ID")

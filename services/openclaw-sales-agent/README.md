@@ -11,13 +11,14 @@ OpenClaw Agent
   ├─ ark-lead-discovery Skill
   ├─ ark-company-research Skill
   ├─ ark-public-pool-research Skill（T1/T2/T3 背调与成交研判）
+  ├─ ark-private-research Skill（私海 V2 证据和完整报告）
   └─ ark-sales MCP 侧车
        └─ HTTPS + Bearer → https://leshine.cloud/api/sales-automation/agent/*
 ```
 
 独立的 `email-outreach` Agent 在同一 profile 内使用单独工作区。它只能按 `customer_id` 读取方舟统一客户档案、生成按收件人国家/语言习惯本地化的开发信，并把人工确认后的邮件排入收件人当地工作日上班后的首个窗口；它不能重新搜索网页、修改方舟研究、读取收件箱或直接执行 Agent Mail CLI。
 
-MCP 侧车只暴露任务、候选公司、联系人、企业研究、公海背调与 ACL 约束的已发布知识库读取工具。`ARK_AGENT_TOKEN` 保存在独立 `0600` 文件中，只由 MCP 子进程读取；任务租约只存在 MCP 进程内存中，不返回给模型。主研究 Agent 固定使用 `mimo/mimo-v2.5`，邮件 Agent 固定使用 `deepseek/deepseek-v4-pro`，二者都显式使用内置 `openclaw` runtime。主 Agent 禁用 shell 和文件写入，只可读取自己的工作区；邮件 Agent 只能执行固定队列与 Skill reader 白名单。Codex App Server 配置另保留 guardian + `workspace-write` 与凭证环境清理，作为有人日后主动切回 Codex runtime 时的纵深防护；令牌文件始终位于 Agent 工作区之外。
+MCP 侧车暴露任务、候选公司、联系人、企业研究、公海及私海背调与 ACL 约束的已发布知识库读取工具。`ARK_AGENT_TOKEN` 保存在独立 `0600` 文件中，只由 MCP 子进程读取；任务租约只存在 MCP 进程内存中，不返回给模型。主研究 Agent 固定使用 `mimo/mimo-v2.5`，邮件 Agent 固定使用 `deepseek/deepseek-v4-pro`，二者都显式使用内置 `openclaw` runtime。主 Agent 禁用 shell 和文件写入，只可读取自己的工作区；邮件 Agent 只能执行固定队列与 Skill reader 白名单。Codex App Server 配置另保留 guardian + `workspace-write` 与凭证环境清理，作为有人日后主动切回 Codex runtime 时的纵深防护；令牌文件始终位于 Agent 工作区之外。
 
 ## 本地初始化
 
@@ -88,7 +89,14 @@ $HOME/.openclaw-ark-sales/bin/outreach-queue list
 
 `bootstrap.mjs` 会从 profile 私有 `.env` 读取 `ARK_BASE_URL`、`ARK_ALLOWED_ORIGIN`、`ARK_AGENT_ID` 与超时值，再把校验后的固定值写入 MCP 定义；网页和 Agent 提示无法覆盖这些值。若 API 尚未部署到默认的 `https://leshine.cloud`，先在该 `.env` 中把前两项同时改为实际的 Ark API origin，再重跑 bootstrap。
 
-Agent 只开放工作区内的 `read`，用于按需加载已安装的 `SKILL.md`；`write`、`edit`、`apply_patch`、shell 和工作区外读取继续禁用，因此位于工作区外的 Ark token 仍不可见。`HEARTBEAT.md` 是 bootstrap 管理的自动化策略，每次 bootstrap 都会更新：仅 main 获客代理启用 5 分钟 heartbeat，每轮优先处理最早一条 `target_count <= 20` 的搜索任务，较大任务留待人工显式执行；搜索队列没有合格任务时才处理一条公海背调任务，两个队列都无任务时静默返回。Heartbeat 使用 30 分钟上限的轻量隔离会话，每轮只加载当前策略，不继承主会话的历史行为；任务执行要求最迟每 10 分钟续租、25 分钟前可控收尾，避免在有效租约中硬终止。
+Agent 只开放工作区内的 `read` 以加载已安装的 Skill。Bootstrap 更新 `HEARTBEAT.md` 和 `AGENTS.md` 中的私海 V2 托管段落。队列 heartbeat 初始禁用，和 `ARK_HEARTBEAT_ENABLED` 的实例状态上报独立。本地获准启用时设置 `ARK_QUEUE_HEARTBEAT_ENABLED=true`，重跑 bootstrap 后用 `node scripts/verify.mjs --expect-queue-heartbeat` 核验。`--prepare-only` 始终关闭队列 heartbeat，北京生产机器通过项目发布入口准备。
+
+启用后 main 每 5 分钟检查队列，先处理最早一条合格搜索任务（`target_count <= 20`），搜索队列无合格任务时才领一条研究任务。每轮使用 30 分钟上限的轻量隔离会话，最迟每 10 分钟续租，接近 25 分钟时收尾。私海 V2 通过能力标记单独参与队列，领取后才读取个人联系线索。Maigret 和 Monid 使用方舟的异步提交、状态查询与候选绑定工具，Monid 仅补弱线索缺口。
+
+### 北京私海 V2 试点准备
+
+- 打开网页的可信代理只用 `tools.web.fetch.useTrustedEnvProxy`，由 profile 私有环境中 `ARK_WEB_FETCH_TRUSTED_PROXY_ENABLED=true` 启用。出口认证放在运行时私有配置中。启用前验证新加坡出口按预期处理 `web_fetch`，模型、方舟 API、控制面和本地流量直连。使用 HTTP(S) 环境代理时，为这些直连主机配置并核验 `NO_PROXY`，保留页面抓取的 SSRF 主机检查，代理也必须阻断内网目标。Maigret 与 Monid 的出口在各自后端配置。[OpenClaw 2026.8.1 的 web_fetch 配置实现](https://raw.githubusercontent.com/openclaw/openclaw/v2026.8.1/src/agents/tools/web-fetch.ts)
+- 一条研究任务占用一个 Agent 身份的执行时间。理想耗时（分钟）约为 `客户数 × 单客实测平均分钟 ÷ 并行 Agent 身份数`。按 P4 目标上限 15 分钟举例，1,000 个客户约需 250 个 Agent 小时，4 个身份约需 62.5 小时。实际需再计心跳间隙、搜索队列抢占、代理/上游延迟、限流和重试。先用 20 客户试点实测耗时和成功率，再估批量周期。并行时每个身份独立运行 MCP，分别配置唯一 `ARK_AGENT_ID`；北京集中托管并遵循后端任务租约与配额。
 
 ### 排程侧车服务
 

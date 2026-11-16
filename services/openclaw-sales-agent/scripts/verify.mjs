@@ -117,14 +117,25 @@ const heartbeatFile = join(stateDir, "workspace", "main", "HEARTBEAT.md");
 const heartbeatPolicy = readFileSync(heartbeatFile, "utf8");
 for (const marker of [
   "$ark-lead-discovery", "ark_list_search_jobs", "profile", "criteria", "target_count <= 20",
+  "$ark-private-research", "private-research-v2", "private_research_v2",
 ]) {
   if (!heartbeatPolicy.includes(marker)) {
-    throw new Error(`HEARTBEAT.md is missing search queue marker: ${marker}`);
+    throw new Error(`HEARTBEAT.md is missing queue marker: ${marker}`);
   }
 }
 const defaultAgentConfig = captureJson(openclaw, [
   "--profile", profile, "config", "get", "agents.defaults",
 ]);
+if (!defaultAgentConfig.skills?.includes("ark-private-research")) {
+  throw new Error("main agent defaults must include ark-private-research");
+}
+const installedPrivateSkill = readFileSync(
+  join(stateDir, "workspace", "main", "skills", "ark-private-research", "SKILL.md"),
+  "utf8",
+);
+for (const marker of ["ark_username_scan", "ark_monid_run", "private_research_v2"]) {
+  if (!installedPrivateSkill.includes(marker)) throw new Error(`Private research skill is missing ${marker}`);
+}
 if (Object.hasOwn(defaultAgentConfig, "heartbeat")) {
   throw new Error("heartbeat must not be configured in agents.defaults");
 }
@@ -138,13 +149,14 @@ const heartbeatConfig = mainAgent.heartbeat;
 if (heartbeatConfig?.lightContext !== true || heartbeatConfig?.isolatedSession !== true) {
   throw new Error("heartbeat must use a light, isolated session so stale chat history cannot override policy");
 }
-if (heartbeatConfig?.every !== "5m" || heartbeatConfig?.target !== "none") {
-  throw new Error("main heartbeat must run every 5 minutes without sending chat messages");
+const expectedQueueInterval = process.argv.includes("--expect-queue-heartbeat") ? "5m" : "0m";
+if (heartbeatConfig?.every !== expectedQueueInterval || heartbeatConfig?.target !== "none") {
+  throw new Error(`main heartbeat must use interval ${expectedQueueInterval} without sending chat messages`);
 }
 if (heartbeatConfig?.timeoutSeconds <= 900) {
   throw new Error("heartbeat must outlast Ark's 15-minute initial lease");
 }
-process.stdout.write("Skill read policy and main-only search heartbeat policy OK.\n");
+process.stdout.write("Skill read policy and main-only queue heartbeat policy OK.\n");
 
 function assertPrivateSecretFile(tokenFile, label) {
   const info = lstatSync(tokenFile);

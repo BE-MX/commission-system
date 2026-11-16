@@ -29,7 +29,13 @@
           <el-tab-pane label="概览" name="overview">
             <OverviewTab :desk="desk" :detail="detail" @evidence="desk.openEvidence" @copy="$emit('copy')" @whatsapp="$emit('whatsapp')" />
           </el-tab-pane>
-          <el-tab-pane label="背调报告" name="research"><ResearchReport :report="detail.research_report" @evidence="desk.openEvidence" /></el-tab-pane>
+          <el-tab-pane label="背调报告" name="research">
+            <ResearchTab
+              v-if="open && tab === 'research'" :key="detail.card.company_id"
+              :company-id="detail.card.company_id" :initial-report="detail.research_report"
+              @evidence="desk.openEvidence" @report="detail.research_report = $event"
+            />
+          </el-tab-pane>
           <el-tab-pane label="客户画像" name="profile"><ProfilePanel :detail="detail" @evidence="desk.openEvidence" /></el-tab-pane>
           <el-tab-pane label="订单" name="orders">
             <TimelineList v-if="tab === 'orders'" :events="desk.events.value" :loading="desk.timelineLoading.value" :error="desk.timelineError.value" :cursor="desk.cursor.value" empty-label="暂无已同步的有效订单。" @evidence="desk.openEvidence" @more="desk.loadTimeline(true)" @retry="desk.loadTimeline(false)" />
@@ -61,7 +67,7 @@ import { formatBeijingShortDateTime } from '@/utils/datetime'
 import { initials } from './boardModel'
 import TagEditor from './TagEditor.vue'
 import OverviewTab from './OverviewTab.vue'
-import ResearchReport from './ResearchReport.vue'
+import ResearchTab from './ResearchTab.vue'
 import ProfilePanel from './ProfilePanel.vue'
 import TimelineList from './TimelineList.vue'
 

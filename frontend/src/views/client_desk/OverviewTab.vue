@@ -32,7 +32,7 @@
     <section class="tiles">
       <div class="panel"><span class="muted">历史订单</span><b>{{ detail.orders_summary?.count ?? 0 }} 单</b><span class="muted">{{ amount }}</span></div>
       <div class="panel"><span class="muted">客户阶段</span><b>{{ detail.stage?.label || '—' }}</b><span class="muted">按订单与接触时间计算</span></div>
-      <div class="panel"><span class="muted">背调</span><b>{{ detail.research_report?.status === 'ready' ? '已审核' : '无背调结果' }}</b><span class="muted">{{ detail.research_report?.verdict || '' }}</span></div>
+      <div class="panel"><span class="muted">背调</span><b>{{ researchLabel }}</b><span class="muted">{{ detail.research_report?.verdict || '' }}</span></div>
     </section>
   </div>
 </template>
@@ -47,6 +47,12 @@ import AgentProgress from './AgentProgress.vue'
 const props = defineProps({ desk: { type: Object, required: true }, detail: { type: Object, required: true } })
 defineEmits(['evidence', 'copy', 'whatsapp'])
 const suggestion = computed(() => props.desk.suggestion.value)
+const researchLabel = computed(() => {
+  const report = props.detail.research_report
+  if (report?.status !== 'ready') return '无背调结果'
+  if (report.review_status === 'not_required') return '免审'
+  return report.reviewed ? '已审核' : '未审核'
+})
 const amount = computed(() => formatMoney(props.detail.orders_summary?.amount_usd, { currency: 'USD', missing: '金额待同步' }))
 function adoptGrade() {
   props.desk.open('grade')

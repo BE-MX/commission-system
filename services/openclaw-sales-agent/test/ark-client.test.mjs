@@ -124,7 +124,7 @@ test("ArkClient uses the unified research-task endpoints", async () => {
     const result = await client(baseUrl).listResearchTasks(2, 10);
     assert.equal(result.items[0].customer_id, 101);
   });
-  assert.deepEqual(requests, ["/api/sales-automation/agent/research-tasks?page=2&page_size=10"]);
+  assert.deepEqual(requests, ["/api/sales-automation/agent/research-tasks?page=2&page_size=10&include_private_v2=true"]);
 });
 
 test("ArkClient submits a unified research industry gate with the in-memory lease", async () => {

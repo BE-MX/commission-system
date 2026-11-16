@@ -193,9 +193,9 @@ PROFILE_SEEDS = [
 
 
 def seed_default_profiles(db: Session) -> int:
-    from app.sales_automation.research_run_service import PROFILE as research_profile
+    from app.sales_automation.research_run_service import PROFILE, PRIVATE_PROFILE
     created = 0
-    for data in [*PROFILE_SEEDS, research_profile]:
+    for data in [*PROFILE_SEEDS, PROFILE, PRIVATE_PROFILE]:
         existing = db.query(AgentProfile).filter(
             AgentProfile.profile_key == data["profile_key"],
             AgentProfile.version == data["version"],

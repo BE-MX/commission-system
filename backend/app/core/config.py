@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     CLIENT_DESK_ORIGIN: str = ""
     CLIENT_DESK_RULES: dict = Field(default_factory=dict)
     CLIENT_DESK_CALENDAR: dict = Field(default_factory=dict)
+    # Enable the worker only on the Beijing backend; provider calls are opt-in.
+    PRIVATE_RESEARCH_TOOLS_WORKER_ENABLED: bool = False
+    PRIVATE_RESEARCH_MAIGRET_ENABLED: bool = False
+    PRIVATE_RESEARCH_MAIGRET_TOKEN: str = Field(default="", repr=False)
+    PRIVATE_RESEARCH_MONID_ENABLED: bool = False
+    PRIVATE_RESEARCH_MONID_API_KEY: str = Field(default="", repr=False)
+    PRIVATE_RESEARCH_EGRESS_PROXY: str = Field(default="", repr=False)
+    PRIVATE_RESEARCH_MONID_BUDGET_MICROUSD: Annotated[int, Field(gt=0, le=150000)] = 150000
     COMMERCE_PHASE: Literal['legacy_only', 'transition', 'local_only'] | None = None
     COMMERCE_RECEIVING_ENTITY_KEY: str = 'leshine'
     COMMERCE_BANK_CHANNEL: str = 'bank_statement'

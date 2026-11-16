@@ -94,6 +94,9 @@ async def lifespan(app: FastAPI):
             from app.core.storage.worker import start_worker, stop_worker
             storage_worker = start_worker()
             resources.callback(cleanup, stop_worker, storage_worker)
+            if settings.PRIVATE_RESEARCH_TOOLS_WORKER_ENABLED:
+                from app.sales_automation.research_tools_worker import run_worker
+                await resources.enter_async_context(run_worker(settings))
             yield
     except BaseException as error:
         if cleanup_errors:

@@ -14,7 +14,7 @@ from .validator import MAX_RESULT_CHARS, unique_keys
 TOOL_LABELS = {
     "order_items": "查看订单产品明细",
     "older_messages": "读取更早的 WhatsApp 消息",
-    "research_detail": "查看已审核背调",
+    "research_detail": "查看有依据的背调结论",
     "followup_history": "查看跟进记录",
     "selected_inquiries": "读取已勾选询盘",
 }
@@ -107,23 +107,22 @@ def run_tool(db, source, refs, name, args):
         }, new_refs, "ok"
 
     if name == "research_detail":
+        from .board import model_research
+
         report = source.get("research_report") or {}
-        if report.get("status") != "ready":
-            return {"result": "无背调结果"}, {}, "empty"
-        research = next(
-            (r for r in source.get("research") or [] if r["event_key"] == report.get("event_key")),
-            None,
-        )
+        compact = source.get("research_summary") or model_research(report)
+        if not compact:
+            return {"result": "无可用背调结论"}, {}, "empty"
+        event_key = source.get("research_model_event_key") or report.get("event_key")
+        research = next((r for r in source.get("research") or [] if r["event_key"] == event_key), None)
         key = "S-" + str(research["id"]) if research else None
-        sections = _bounded(
-            report["sections"], lambda rows: {"sections": rows}
-        )
+        sections = _bounded(compact["sections"], lambda rows: {"sections": rows})
         new_refs = (
-            {key: {"source": "research", "event_key": report["event_key"], "datum": {"sections": sections}}}
+            {key: {"source": "research", "event_key": event_key, "datum": {"sections": sections}}}
             if key
             else {}
         )
-        return {"key": key, "verdict": report["verdict"], "sections": sections}, new_refs, "ok"
+        return {"key": key, "verdict": compact["verdict"], "sections": sections}, new_refs, "ok"
 
     if name == "followup_history":
         rows = sorted(

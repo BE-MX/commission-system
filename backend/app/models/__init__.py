@@ -109,6 +109,7 @@ from app.customer.pcw_models import (
     OperationReceipt,
     CustomerNotificationDelivery,
 )
+from app.sales_automation.research_tools_models import ResearchToolCall
 from app.sales_automation.models import (
     AcquisitionProfile,
 )

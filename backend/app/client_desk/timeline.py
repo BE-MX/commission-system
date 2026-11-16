@@ -152,7 +152,7 @@ def all_events(db, user, company_id):
                 "report": report,
                 "source": "research",
                 "occurred_at": r["updated_at"],
-                "title": "已审核背调",
+                "title": "客户背调",
             }
         )
     grouped = {}
@@ -235,7 +235,7 @@ def timeline(db, user, company_id, source="all", cursor=None, limit=30):
         "items": [
             {
                 k: v for k, v in (order_event(e, names) if e["source"] == "order" else e).items()
-                if k not in ("messages", "result", "card")
+                if k not in ("messages", "result", "card", "report")
             }
             for e in page
         ],
