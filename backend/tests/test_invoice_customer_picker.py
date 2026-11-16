@@ -1,8 +1,10 @@
+from datetime import date, datetime
+
 from sqlalchemy import text
 
 from app.auth.models import ArkUser
 from app.invoice.customer_picker_service import search_options
-from app.invoice.models import InvoiceCustomerOverlay
+from app.invoice.models import Invoice, InvoiceCustomerOverlay
 from tests.test_invoice_customer_filters import _client, bound_user, seed_customers, OKKI_UID
 
 
@@ -84,3 +86,71 @@ def test_picker_route_binding_and_paging(db, seed_customers, bound_user):
         assert payload == {"items": [], "total": 0, "has_more": False, "okki_bound": False}
     with _client(db, sub="5", permissions=["invoice:read"]) as client:
         assert client.get("/api/invoice/customers/options").status_code == 403
+
+
+def test_picker_contact_phone_uses_latest_matching_invoice_only(db, seed_customers, bound_user):
+    db.execute(text("""
+        UPDATE lsordertest.customer_contacts SET email='aaron@example.test' WHERE id=2
+    """))
+    records = [
+        ("9001", "Aaron Lee", "aaron@example.test", "100", "synced", 1),
+        ("9001", "Aaron Lee", "aaron@example.test", "200", "synced", 2),
+        ("9001", " Aaron LEE ", " Aaron@example.test ", "201", "synced", 2),
+        ("9001", "Aaron Lee", "aaron@example.test", "\t\n\u00a0", "synced", 3),
+        ("9001", "Aaron Lee", "other@example.test", "300", "synced", 4),
+        ("9001", "Alice Wang", "alice@x.com", "400", "synced", 5),
+        ("9002", "Aaron Lee", "aaron@example.test", "500", "synced", 6),
+        ("9001", "Aaron Lee", "aaron@example.test", "600", "deleted", 7),
+    ]
+    for index, (cid, name, email, phone, status, day) in enumerate(records):
+        db.add(Invoice(
+            customer_id=cid, customer_name="Salon", invoice_no=f"PHONE-{index}",
+            invoice_date=date(2026, 11, day), created_at=datetime(2026, 11, day),
+            contact_name=name, contact_email=email, contact_phone=phone, status=status,
+        ))
+    db.flush()
+
+    with _client(db, sub="5", permissions=["invoice:write"]) as client:
+        def phone_for(keyword):
+            response = client.get("/api/invoice/customers/options", params={"keyword": keyword})
+            assert response.status_code == 200
+            return response.json()["data"]["items"][0]["tel"]
+
+        assert phone_for("Aaron Lee") == "201"
+        assert phone_for("Alice Wang") == "111"
+
+
+def test_picker_contact_phone_skips_ambiguous_names(db, seed_customers):
+    db.execute(text("""
+        UPDATE lsordertest.customer_contacts SET email='aaron@example.test', tel=:blank WHERE id=2
+    """), {"blank": " \t\n\u00a0"})
+    db.execute(text("""
+        INSERT INTO lsordertest.customer_contacts (id, company_id, name, email)
+        VALUES (5, '9001', 'Aaron Lee', 'other@example.test'),
+               (6, '9001', 'Aaron Lee', NULL)
+    """))
+    for index, email in enumerate(["aaron@example.test", None]):
+        db.add(Invoice(
+            customer_id="9001", customer_name="Salon", invoice_no=f"SAME-NAME-{index}",
+            invoice_date=date(2026, 11, 1 + index), created_at=datetime(2026, 11, 1 + index),
+            contact_name="Aaron Lee", contact_email=email, contact_phone=f"20{index}",
+        ))
+    db.flush()
+
+    def phones():
+        return {row["contact_id"]: row["tel"] for row in search_options(db, keyword="Aaron Lee")["items"]}
+
+    assert phones() == {2: "200", 5: None, 6: None}
+    db.execute(text("UPDATE lsordertest.customer_contacts SET email='aaron@example.test' WHERE id=5"))
+    assert phones() == {2: None, 5: None, 6: None}
+
+
+def test_picker_contact_phone_accepts_unique_name_without_email(db, seed_customers):
+    db.add(Invoice(
+        customer_id="9001", customer_name="Salon", invoice_no="UNIQUE-NAME",
+        invoice_date=date(2026, 11, 1), contact_name="Aaron Lee", contact_phone="200",
+    ))
+    db.flush()
+
+    contact = search_options(db, keyword="Aaron Lee")["items"][0]
+    assert contact["tel"] == "200"

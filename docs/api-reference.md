@@ -1958,6 +1958,8 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 `GET /api/invoice/customers/options`：需要 `invoice:write`。参数 `keyword`（客户名称/ID 或联系人姓名，最长200字符）、`private_only`（默认true）、`sales_user_id`（沿用代创建授权校验）、`offset`（默认0）、`limit`（默认50，最大100）。返回 `items/total/has_more`，私海请求另返回 `okki_bound`；未绑定时空结果。每项含 `option_key`（customer:公司ID / contact:联系人ID）、`kind`、`company_id/company_name/country_name`；联系人项含 `contact_id/name/email/tel`。空关键词只浏览客户，有关键词并列匹配两类。先按镜像/手动同步 overlay 的最新归属合并，再在数据库内计数和分页，避免20条截断及全量载入。仅客户级搜索旧端点仍供价格配置等独立调用方使用。
 
+联系人选项的 `tel` 优先使用小满电话。小满电话为空时，在同一客户下按联系人姓名匹配发票快照，跳过无电话及已删除的发票，按 `created_at DESC, id DESC` 取最近一条。双方都有邮箱时必须一致。同客户有重名联系人时，还须用唯一匹配的邮箱确认身份。姓名和邮箱匹配忽略首尾空格及大小写。找不到符合条件的发票时电话留空。
+
 `GET /api/invoice/customers/availability`（2026-11-03）：选择客户前的实时只读核对，需要 `invoice:write`。参数 `customer_id`（正整数数字串，最长20位）、`private_only`（默认true）、`sales_user_id`（同搜索的代创建授权）。先检查镜像/overlay 合并后的可选范围，再 GET 小满单个客户详情；返回 `company_id/status`，有效时另带 `company_name`。`status=active` 表示身份及当前私海归属核对通过；`missing` 仅来自小满 HTTP 200、业务码404、`Not Found Resource` 且无数据的明确不存在响应；`out_of_scope` 表示实时负责人已不在当前私海。未绑定409，不在本地可选范围404，小满不可达、鉴权失败或身份不完整502；这些错误不能当作客户已删除。不修改发票、客户镜像或 overlay，仅允许刷新鉴权 token 缓存。
 
 新版和旧版发票表单共用客户选择器，按 `company_id` 归组展示客户名称、国家和客户编号；联系人缩进显示，同名客户不合并，分页跨页追加后同一客户归为一组。底部按当前已加载的独立客户/联系人分别计数，不再把4个入口称为4个客户。明确失效时，在本次选择器会话中直接隐藏该客户及其全部联系人，底部仅统计可见项；重新搜索或加载同ID不会回流；网络错误保留原选择并允许重新选择重试。只在用户明确选择时核对单个客户，不在每次输入时逐条调用小满；编辑旧发票不自动更改其客户，关闭/重置/切换上下文后丢弃迟到结果。

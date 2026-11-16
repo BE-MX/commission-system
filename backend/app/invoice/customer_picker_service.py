@@ -65,6 +65,43 @@ def _effective_customers(db: Session, owner_okki_id: int | None) -> tuple[str, d
     return sql, params, expanding
 
 
+def _contact_phone_sql(schema: str, *, mysql: bool) -> str:
+    # Invoices store name/email snapshots. Use exact normalized comparisons even
+    # when MySQL's column collation normally equates different accented names.
+    binary_collation = "utf8mb4_bin" if mysql else "BINARY"
+    nonspace_pattern = "[^[:space:]]" if mysql else r"\S"
+
+    def identity(column: str) -> str:
+        return f"LOWER(TRIM({column})) COLLATE {binary_collation}"
+
+    def has_phone(column: str) -> str:
+        return f"COALESCE({column} REGEXP '{nonspace_pattern}', 0)"
+
+    selected_email = identity("page.email")
+    invoice_email = identity("i.contact_email")
+    missing_email = "(NULLIF(TRIM(page.email), '') IS NULL OR NULLIF(TRIM(i.contact_email), '') IS NULL)"
+    invoice_customer_id = "CAST(page.company_id AS CHAR)" + (" COLLATE utf8mb4_unicode_ci" if mysql else "")
+    # When the name is shared, require an email match unique to this contact.
+    return f"""CASE WHEN page.kind = 'contact' AND NOT {has_phone('page.tel')} THEN (
+        SELECT TRIM(i.contact_phone)
+        FROM ark_invoices i
+        WHERE i.customer_id = {invoice_customer_id}
+            AND i.status != 'deleted'
+            AND {has_phone('i.contact_phone')}
+            AND NULLIF(TRIM(page.name), '') IS NOT NULL
+            AND {identity('i.contact_name')} = {identity('page.name')}
+            AND ({missing_email} OR {invoice_email} = {selected_email})
+            AND NOT EXISTS (
+                SELECT 1 FROM `{schema}`.customer_contacts other
+                WHERE other.company_id = page.company_id AND other.id != page.contact_id
+                    AND {identity('other.name')} = {identity('page.name')}
+                    AND ({missing_email} OR {identity('other.email')} = {selected_email})
+            )
+        ORDER BY i.created_at DESC, i.id DESC
+        LIMIT 1
+    ) ELSE page.tel END"""
+
+
 def search_options(
     db: Session, *, keyword: str | None = None, owner_okki_id: int | None = None,
     offset: int = 0, limit: int = 50,
@@ -81,8 +118,8 @@ def search_options(
         FROM ({customers_sql}) ci {where}
     """
     # Empty input browses customers, without duplicating every contact in the list.
+    schema = product_service._schema()
     if keyword:
-        schema = product_service._schema()
         options_sql += f""" UNION ALL
             SELECT ci.company_id, ci.company_name, ci.country_name, 'contact' AS kind,
                 cc.id AS contact_id, cc.name, cc.email, cc.tel
@@ -95,11 +132,20 @@ def search_options(
         return text(sql).bindparams(*(bindparam(key, expanding=True) for key in expanding))
 
     total = db.execute(statement(f"SELECT COUNT(*) FROM ({options_sql}) options"), params).scalar_one()
-    rows = db.execute(statement(f"""
+    order = "company_name, company_id, kind DESC, name, contact_id"
+    page_sql = f"""
         SELECT * FROM ({options_sql}) options
-        ORDER BY company_name, company_id, kind DESC, name, contact_id
+        ORDER BY {order}
         LIMIT :limit OFFSET :offset
-    """), {**params, "limit": limit, "offset": offset}).mappings().all()
+    """
+    if keyword:
+        phone_sql = _contact_phone_sql(schema, mysql=db.get_bind().dialect.name == "mysql")
+        page_sql = f"""
+            SELECT page.company_id, page.company_name, page.country_name, page.kind,
+                page.contact_id, page.name, page.email, {phone_sql} AS tel
+            FROM ({page_sql}) page ORDER BY {order}
+        """
+    rows = db.execute(statement(page_sql), {**params, "limit": limit, "offset": offset}).mappings().all()
     items = []
     for row in rows:
         item = dict(row)
