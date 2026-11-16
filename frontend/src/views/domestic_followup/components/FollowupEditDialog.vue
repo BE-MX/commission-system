@@ -20,6 +20,7 @@
           <el-form-item label="跟进原文"><el-input v-model="e.form.value.raw_text" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" maxlength="20000" /></el-form-item>
           <el-form-item label="摘要"><el-input v-model="e.form.value.summary" type="textarea" autosize maxlength="500" /></el-form-item>
           <FollowupOutcomeFields :form="e.form.value" :dicts="e.dicts.value" />
+          <FollowupGuideFields :form="e.form.value" />
           <el-form-item label="客户变化"><el-select v-model="e.form.value.state_changes" multiple clearable>
             <el-option v-for="v in states" :key="v" :value="v" :label="v" />
           </el-select></el-form-item>
@@ -27,6 +28,10 @@
             <div class="edit-heading"><strong>{{ group.label }}</strong><GlassButton variant="link" left-icon="Plus" :disabled="frozen" @click="addItem(group.kind)">添加</GlassButton></div>
             <div v-for="item in e.form.value.items.filter(row => row.kind === group.kind)" :key="item.id || `new-${item.key}`" class="edit-item">
               <el-input v-model="item.text" type="textarea" autosize maxlength="1000" :aria-label="group.label" />
+              <el-select v-if="item.kind === 'content'" v-model="item.nature" placeholder="未分类" clearable class="edit-nature">
+                <el-option label="客户说的" value="customer_said" /><el-option label="业务事实" value="business_fact" />
+                <el-option label="我的判断" value="assessment" /><el-option label="待确认" value="to_confirm" />
+              </el-select>
               <div v-if="item.kind !== 'content'" class="edit-item-meta">
                 <el-select v-model="item.category" class="edit-category" placeholder="分类" clearable aria-label="分类">
                   <el-option v-for="v in categories" :key="v" :value="v" :label="v" />
@@ -75,6 +80,7 @@ import { computed, ref } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
 import AppUpload from '@/components/AppUpload.vue'
 import FollowupOutcomeFields from './FollowupOutcomeFields.vue'
+import FollowupGuideFields from './FollowupGuideFields.vue'
 import { followupApi, apiError } from '@/api/domesticFollowup'
 import { currentBeijingDate, formatCalendarDate } from '@/utils/datetime'
 import { confirmAction, isFeedbackCancelled, msgError, msgSuccessText } from '@/utils/feedback'
@@ -95,7 +101,7 @@ const states = computed(() => [...new Set([...(e.dicts.value.domestic_followup_s
 let itemKey = 0
 function addItem(kind) {
   e.form.value.items.push({ kind, text: '', origin: 'user', severity: kind === 'content' ? null : '一般',
-    category: null, record_only: false, key: ++itemKey })
+    category: null, nature: kind === 'content' ? null : undefined, record_only: false, key: ++itemKey })
 }
 function attachmentName(id) {
   return [...e.record.value.attachments, ...uploads.value].find(a => a.id === id)?.file_name || `截图 ${id}`
@@ -136,6 +142,7 @@ defineExpose({ open })
 .edit-item { padding: 12px 0; border-bottom: 1px solid var(--border-color); }
 .edit-item-meta { margin: 8px 0; }
 .edit-category { width: 180px; }
+.edit-nature { width: 160px; margin: 8px 0; }
 .edit-hint { color: var(--text-secondary); font-size: 12px; }
 .edit-shots { width: 100%; }
 @media (max-width: 600px) { .edit-grid { grid-template-columns: 1fr; gap: 0; } }

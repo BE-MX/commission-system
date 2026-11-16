@@ -962,6 +962,19 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 
 同迁移种三个 `sys_dict` 值域初值（迁移不 import 业务代码，初值与 `app/domestic_followup/constants.py` 的 `DICT_SEEDS` 手动保持一致）：`domestic_followup_state_change`（订单减少/增长等 14 项）、`domestic_followup_category`（质量/发货物流/色差/尺寸/价格/售后退换/服务/产品需求/其他）、`domestic_followup_channel`（微信/电话/视频号/到店/展会/其他）。口径与盲区见[模块说明](module-notes.md)。
 
+### 跟进闭环（264–267，本地实现未部署）
+
+| 对象 | 约束与用途 |
+| --- | --- |
+| `ark_dom_followup_templates`（264） | `(code,version)` 唯一；保存 T01–T10 不可变版本。生效/退休状态、准备与录入字段 JSON、最短写法、AI 场景要点、预算参数、禁用补全规则、维护人和北京时间。 |
+| `ark_domestic_followups.disposition/disposition_note`（265） | 无采纳下一步时选填等待客户、暂停或关闭及一句理由；不生成任务。 |
+| `ark_dom_followup_preps`（266） | `request_id` 唯一、`followup_id` 可空唯一；保存作者、模板版本、目标、联系依据、已知事实、待确认、答案、策略与次数、证据版本、来源待办和乐观锁。未使用卡超期或换人收口为 expired。 |
+| `ark_domestic_followups.prep_id`（266） | 普通索引；草稿即可关联，确认时由准备卡唯一 `followup_id` 保证只能使用一次。 |
+| `ark_domestic_followups.template_code/template_version/template_answers`（267） | 保存当时的场景版本及 `{fields,questions}` 答案，历史不随模板新版改变。 |
+| `ark_domestic_followup_items.nature`（267） | 可空 `customer_said/business_fact/assessment/to_confirm`，与 `origin` 正交；旧记录为空，前端显示未分类。 |
+
+`ark_domestic_followup_tasks.task_type` 新增 `action` 取值，不加列。`source_key=action:{followup_id}:{step_key}` 保证幂等；`payload` 保存步骤依据、事件、完成标准、出处、完成说明和取消理由。行动待办不进入 `CLOSABLE_BY_FOLLOWUP`、约定兑现或留下一步统计，完成/取消必须人工填写说明；归属变化按规则转移或关闭，第三人承办的技术任务在普通转手中保留。
+
 ### 跟进责任与接力协作（255_followup_collaboration）
 
 迁移接 `254_ai_provider_runtime`。新表仅存跟进业务，客户归属与提成快照继续使用原表。时间列使用北京时间。

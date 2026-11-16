@@ -104,7 +104,7 @@ const handoffFields = [
   { key: 'reason', label: '交接原因' }, { key: 'summary', label: '交接摘要' }, { key: 'obstacle', label: '当前障碍' },
   { key: 'commitment', label: '已承诺事项' }, { key: 'next_step', label: '建议下一步' },
 ]
-const taskTypes = { plan: '约定跟进', receipt: '收货回访', issue: '异常意见' }
+const taskTypes = { plan: '约定跟进', action: '行动', receipt: '收货回访', issue: '异常意见' }
 const taskPurposes = { development: '开发', maintenance: '维护', other: '其他' }
 const coordinatorActions = ['open', 'reassign', 'reopen']
 const responseActions = ['accept_handoff', 'reject_handoff', 'withdraw_handoff']

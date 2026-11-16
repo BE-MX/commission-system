@@ -1,6 +1,6 @@
 # 客户跟进闭环 · 开发实施计划
 
-> v1.3 · 2026-11-16 · 未开发。设计细节见 [design.md](design.md)，交互见 [原型](prototype/index.html)。
+> v1.3 · 2026-11-16 · 四期本地实现与独立审查完成，待合并授权。设计细节见 [design.md](design.md)，交互见 [原型](prototype/index.html)。
 > 每一期单独开一个 worktree（`codex/followup-loop-p<N>` 或 `claude/…`），单独开发、验证、审查，可以分别合并和发布。同一模块同一时间只允许一个实现任务（AGENTS.md）。
 
 ## 0. 开工前
@@ -173,3 +173,15 @@
 - 按用户规则，由独立 Agent 对改动做对抗性审查。
 - 在 `docs/handoff.md` 记录进度，同步更新 `docs/api-reference.md`、`docs/database.md`、`docs/module-notes.md`。
 - 合并、推送、部署都等亮哥的指令；生产 preset 的更新单独请示。
+
+
+## 实施结果（2026-11-16，Kimi 本地工作区）
+
+四期代码均已在 `kimi/followup-closed-loop` 工作区实现，未提交、合并或部署。
+
+- 后端跟进测试：302 passed；另 1 项 `test_insight_to_task_requires_customer_write_and_is_idempotent` 为开工前已复现的基线失败，未夹带修改。
+- 前端：`npm run build` 通过；`npm run test:domestic-followup` 57 passed。
+- 迁移：264–267 在独立 SQLite 完成 upgrade/downgrade/upgrade；单 head `267_dom_fu_guided`。
+- 约定：`python scripts/check_conventions.py` 增量无违规。
+- 浏览器：真实 Vue/FastAPI 和独立 SQLite 验证模板新版与历史、准备卡、AI 核对、约定生成、行动完成说明。截图为 [桌面](../reports/assets/2026-11-16-followup-closed-loop/desktop.png) 与 [手机](../reports/assets/2026-11-16-followup-closed-loop/mobile.png)。
+- 限制：预览模型输出使用固定样例，真实模型人工评测尚未执行；生产 preset 更新、业务种子审阅、合并/发布和生产迁移均待授权。

@@ -7,14 +7,15 @@ from app.system.models import SysDict
 DICT_TYPES = (DICT_STATE_CHANGE, DICT_CATEGORY, DICT_CHANNEL, DICT_RESULT, DICT_OBSTACLE)
 
 
-def load_values(db: Session) -> dict[str, list[str]]:
+def load_values(db: Session, extra_types=()) -> dict[str, list[str]]:
+    dict_types = tuple(dict.fromkeys((*DICT_TYPES, *extra_types)))
     rows = (
         db.query(SysDict.type, SysDict.label)
-        .filter(SysDict.type.in_(DICT_TYPES), SysDict.is_active.is_(True))
+        .filter(SysDict.type.in_(dict_types), SysDict.is_active.is_(True))
         .order_by(SysDict.type, SysDict.sort, SysDict.id)
         .all()
     )
-    values = {dict_type: [] for dict_type in DICT_TYPES}
+    values = {dict_type: [] for dict_type in dict_types}
     for dict_type, label in rows:
         values[dict_type].append(label)
     return values

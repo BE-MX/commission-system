@@ -1,6 +1,6 @@
 # 客户跟进闭环：准备卡 → 引导录入 → 下一步与待办
 
-> v1.3 · 2026-11-16 · 设计完成，未开发。
+> v1.3 · 2026-11-16 · 四期本地实现与独立审查完成，待合并授权。
 > 范围：内贸客户跟进（`/domestic/followups`）。不涉及私海助理 `/client-desk`。
 > 依据：《客户跟进规范、记录模板与 AI 执行规则》v1.0 建议稿（worktree `commission-system-codex-followup-standards`，分支 `codex/followup-standards` 下的 `docs/requirements/2026-11-16-followup-standards/`，**尚未提交**）；代码依据 main `c2c36054`。
 

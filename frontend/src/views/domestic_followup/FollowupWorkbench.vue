@@ -27,6 +27,7 @@
         <el-tab-pane label="客户总览" name="customers" lazy>
           <CustomerOverview ref="customersRef" :default-scope="canReadAll ? 'authorized' : 'mine'"
                             @detail="(row, action) => timelineRef.open(row.id, row, action)" @record="customer => composer.open({ customer })"
+                            @prep="customer => prep.open({ customer })"
                             @query-change="timelineRef?.close()" />
         </el-tab-pane>
         <el-tab-pane label="待办" name="tasks">
@@ -39,7 +40,7 @@
           <ListPageStatus :error="w.error.value" :has-data="w.loaded.value" :loading="w.loading.value" :paged="false" @retry="w.loadTasks" />
           <div v-loading="w.loading.value" class="wb-cards">
             <FollowupTaskCard v-for="t in w.filtered.value.due" :key="t.id" :task="t" :on-receipt-ok="w.receiptOk"
-                              @record="recordFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" />
+                              @record="recordFromTask" @prep="prepareFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" @changed="afterEdit" />
             <el-empty v-if="!w.loading.value && !w.error.value && !w.filtered.value.due.length"
                       class="wb-empty" :description="w.typeFilter.value ? '当前分类暂无待办' : '今天的跟进都完成了'">
               <GlassButton v-if="w.typeFilter.value" variant="outline" @click="w.typeFilter.value = ''">查看全部待办</GlassButton>
@@ -49,7 +50,7 @@
             <el-collapse-item name="upcoming" :title="`即将到期（${w.filtered.value.upcoming.length}）`">
               <div class="wb-cards">
                 <FollowupTaskCard v-for="t in w.filtered.value.upcoming" :key="t.id" :task="t" :on-receipt-ok="w.receiptOk"
-                                  @record="recordFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" />
+                                  @record="recordFromTask" @prep="prepareFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" @changed="afterEdit" />
               </div>
             </el-collapse-item>
           </el-collapse>
@@ -101,7 +102,9 @@
     </div>
 
     <FollowupComposer :composer="composer" />
+    <FollowupPrepDrawer :controller="prep" />
     <CustomerTimelineDrawer ref="timelineRef" @record="(customer, historical_only) => composer.open({ customer, historical_only })"
+                            @prep="customer => prep.open({ customer })"
                             @changed="afterEdit"
                             @edit="id => editorRef.open(id)" @history="id => historyRef.open(id)" />
     <QuickProspectDialog ref="prospectRef" @created="afterProspect" @existing="customer => timelineRef.open(customer.id)" />
@@ -118,7 +121,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { Box, Calendar, ChatDotRound, Warning } from '@element-plus/icons-vue'
+import { Box, Calendar, ChatDotRound, Finished, Warning } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import GlassButton from '@/components/GlassButton.vue'
@@ -131,6 +134,7 @@ import StatsBoard from './components/stats/StatsBoard.vue'
 import CustomerTimelineDrawer from './components/CustomerTimelineDrawer.vue'
 import FollowupConfigDialog from './components/FollowupConfigDialog.vue'
 import FollowupComposer from './components/FollowupComposer.vue'
+import FollowupPrepDrawer from './components/FollowupPrepDrawer.vue'
 import FollowupTaskCard from './components/FollowupTaskCard.vue'
 import FollowupOverview from './components/FollowupOverview.vue'
 import CustomerOverview from './components/CustomerOverview.vue'
@@ -142,11 +146,13 @@ import FollowupRecordDrawer from './components/FollowupRecordDrawer.vue'
 import { mayEditFollowup } from './followupEdit'
 import IssueBoard from './components/IssueBoard.vue'
 import { useFollowupComposer } from './composables/useFollowupComposer'
+import { usePrepCard } from './composables/usePrepCard'
 import { useFollowupWorkbench } from './composables/useFollowupWorkbench'
 
 const STATS = [
   { key: 'receipt', label: '收货回访', icon: Box, tone: 'gold' },
   { key: 'plan', label: '约定跟进', icon: ChatDotRound, tone: 'info' },
+  { key: 'action', label: '行动', icon: Finished, tone: 'gold' },
   { key: 'issue', label: '异常意见', icon: Warning, tone: 'warning' },
   { key: 'upcoming', label: '即将到期', icon: Calendar, tone: 'violet' },
 ]
@@ -180,7 +186,9 @@ const composer = useFollowupComposer({
     statsRef.value?.reload()
   },
   onClosed: () => w.loadTasks(),
+  onChangePrep: preset => prep.open(preset),
 })
+const prep = usePrepCard({ onRecord: preset => composer.open(preset) })
 
 function toggleFilter(key) {
   tab.value = 'tasks'
@@ -195,6 +203,9 @@ const isStatActive = key => (key === 'upcoming' ? upcomingOpen.value.includes('u
 
 function recordFromTask(task) {
   composer.open({ customer: { id: task.customer_id, shop_name: task.shop_name, writable: true }, source_task_id: task.id })
+}
+function prepareFromTask(task) {
+  prep.open({ customer: { id: task.customer_id, shop_name: task.shop_name, writable: true }, source_task_id: task.id })
 }
 
 function recordFromStats(row) {
@@ -247,7 +258,7 @@ onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // �
 .followup-workbench { position: relative; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .wb-aurora { inset: -24px -28px; }
 .wb-stats, .wb-panel, .wb-drafts { position: relative; z-index: 1; }
-.wb-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.wb-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
 .wb-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .wb-panel { min-width: 0; --el-table-bg-color: transparent; --el-table-tr-bg-color: transparent; }
 .wb-panel > .action-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border-color); }

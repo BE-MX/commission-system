@@ -7,7 +7,7 @@ import logging
 
 from app.core.database import SessionLocal
 from app.core.time import beijing_today
-from app.domestic_followup import digest_service, insight_generation, receipt_service
+from app.domestic_followup import digest_service, insight_generation, prep_service, receipt_service
 
 logger = logging.getLogger("commission")
 
@@ -65,6 +65,7 @@ def _maintenance() -> dict:
             "receipt": receipt_service.scan(db, today=beijing_today()),
             "expired": receipt_service.expire_tasks(db, today=beijing_today()),
             "drafts": receipt_service.cleanup_drafts(db),
+            "preps": prep_service.expire_stale(db),
         }
         db.commit()
         return result

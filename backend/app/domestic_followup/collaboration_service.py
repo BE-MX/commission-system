@@ -77,6 +77,8 @@ def _change_owner(db, responsibility, recipient):
     collaborator = db.get(FollowupCollaborator, (responsibility.customer_id, recipient))
     if collaborator:
         db.delete(collaborator)
+    from app.domestic_followup import prep_service
+    prep_service.expire_for_owner_change(db, [responsibility.customer_id])
 
 
 def _begin_handoff(db, customer, user, responsibility, payload):
@@ -225,6 +227,9 @@ def _remaining_transition(db, customer, user, responsibility, handoff, payload):
         responsibility.status = "stopped"
         responsibility.allow_future_contact = payload.allow_future_contact
         responsibility.next_plan_date = None
+    if closing:
+        from app.domestic_followup import prep_service
+        prep_service.expire_for_owner_change(db, [customer.id])
     return plan
 
 

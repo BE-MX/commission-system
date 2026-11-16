@@ -30,6 +30,7 @@
         <p>{{ regionLabel(row) }} · {{ row.assignee_name || '暂无跟进人' }}</p>
         <p>{{ labelFor(COLLABORATION_STATUS, row.collaboration_status) }} · {{ row.last_followup_date || '从未联系' }}</p>
         <div class="customer-row-actions">
+          <GlassButton v-if="row.can_record" v-permission="'domestic_followup:write'" variant="link" @click="prepare(row)">准备</GlassButton>
           <GlassButton v-if="row.can_record" v-permission="'domestic_followup:write'" variant="link" @click="record(row)">记跟进</GlassButton>
           <GlassButton variant="link" @click="openDetail(row)">{{ detailLabel(row) }}</GlassButton>
         </div>
@@ -88,6 +89,7 @@
       </el-table-column>
       <el-table-column label="操作" class-name="table-action-column" min-width="135" fixed="right">
         <template #default="{ row }">
+          <GlassButton v-if="row.can_record" v-permission="'domestic_followup:write'" variant="link" @click="prepare(row)">准备</GlassButton>
           <GlassButton v-if="row.can_record" v-permission="'domestic_followup:write'" variant="link" @click="record(row)">记跟进</GlassButton>
           <GlassButton variant="link" @click="openDetail(row)">{{ detailLabel(row) }}</GlassButton>
         </template>
@@ -116,7 +118,7 @@ import { COLLABORATION_STATUS, DEAL_SOURCE, DEVELOPMENT_STAGE, dealLabel, labelF
 import CustomerOverviewFilters from './CustomerOverviewFilters.vue'
 
 const props = defineProps({ defaultScope: { type: String, default: 'mine' } })
-const emit = defineEmits(['detail', 'record', 'query-change'])
+const emit = defineEmits(['detail', 'record', 'prep', 'query-change'])
 const scopes = [
   { key: 'mine', label: '我负责' }, { key: 'collaborating', label: '我协作' }, { key: 'available', label: '可接手' },
   { key: 'incoming', label: '交接给我' }, { key: 'authorized', label: '授权范围' },
@@ -192,6 +194,7 @@ function sort({ prop, order }) {
 }
 function refresh() { return list.refreshUpdate() }
 function record(row) { emit('record', { ...row, writable: true }) }
+function prepare(row) { emit('prep', { ...row, writable: true }) }
 function openDetail(row) { emit('detail', row, row.can_claim ? 'claim' : null) }
 function detailLabel(row) {
   if (row.can_claim) return '接手跟进'

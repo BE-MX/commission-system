@@ -35,6 +35,8 @@ from app.domestic import shipment_models as _domestic_shipment_models  # noqa: F
 from app.domestic_followup import models as _domestic_followup_models  # noqa: F401
 from app.domestic_followup import collaboration_models as _domestic_followup_collab_models  # noqa: F401
 from app.domestic_followup import insight_models as _domestic_followup_insight_models  # noqa: F401
+from app.domestic_followup import template_models as _domestic_followup_template_models  # noqa: F401
+from app.domestic_followup import prep_models as _domestic_followup_prep_models  # noqa: F401
 from app.design_image import models as _design_image_models  # noqa: F401
 from app.ai_chat import models as _ai_chat_models  # noqa: F401
 from app.sales_automation import models as _sales_automation_models  # noqa: F401

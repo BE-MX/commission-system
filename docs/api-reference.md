@@ -2879,6 +2879,30 @@ AI 整理走 `app.ai.service.chat` facade，预设 `domestic_followup_parse`（�
 
 `GET /followups`、`/followups/authors`、`/drafts`、`/tasks`、`/tasks/summary`、`/items` 均接受 `potential_only=true`（默认 false），与原有数据范围和筛选取交集，只返回客户**当前** `lifecycle_status=潜在` 的数据；无客户的草稿在勾选时不显示。此筛选不改变详情/历史的查看权限。
 
+### 跟进闭环：模板、行动待办与准备卡（264–267 迁移，本地实现未部署）
+
+设计见[客户跟进闭环](requirements/2026-11-16-followup-closed-loop/README.md)。下列路径沿用 `/api/domestic-followup` 前缀及统一信封。
+
+| 方法 | 相对路径 | 权限与契约 |
+| --- | --- | --- |
+| GET | `/templates`、`/templates/{code}?version=` | read；读取生效模板或指定历史版本，字段、参数、禁用补全规则均运行时下发。 |
+| GET | `/admin/templates/{code}/versions` | admin；按版本倒序读取模板历史。 |
+| PUT | `/admin/templates/{code}` | admin；携带当前 `version` 保存为新版本，旧版本退休但仍可读；过期版本返回 409，非法字段定义返回 400。 |
+| POST | `/tasks/{id}/complete` | write + 待办操作人；仅 `action`，`{note}` 完成说明必填。 |
+| PUT | `/tasks/{id}` | write + 待办操作人；仅 `action`，修改 `due_date` 或 `title`。 |
+| POST | `/tasks/{id}/cancel` | write + 待办操作人；仅 `action`，`{reason}` 取消理由必填。 |
+| GET | `/customers/{id}/prep-context` | write + 客户可写或来源待办承办人；返回推荐场景、模板、来源待办、历史数量和上张已使用卡的已知事实。 |
+| POST | `/preps` | 同上；创建准备卡，`request_id` 幂等。 |
+| GET | `/customers/{id}/preps`、`/preps/{id}`、`/preps/{id}/strategy` | read + 准备卡可读：当前负责人可读全部，作者仅仍在客户范围内可读；第三人无权读取。 |
+| PUT | `/preps/{id}` | write + 作者且仍可读；`version` 乐观锁，修改后需重新生成策略。 |
+| POST | `/preps/{id}/strategy` | write + 作者；后台生成策略，每张最多 5 次，第 6 次返回 409；GET 返回状态、策略及资料过期标记。 |
+| POST | `/preps/{id}/feedback`、`/preps/{id}/abandon` | write + 作者；反馈 `useful/inaccurate`，或作废未使用卡。 |
+| POST | `/preps/{id}/clone` | write + 可读原卡且客户可写；复制背调和事实，策略重新生成。 |
+
+直接保存、创建草稿及草稿确认新增可选字段：`next_steps`（最多 4 条）、`disposition/disposition_note`、`prep_id`、`template_code/template_version/template_answers`，条目支持 `nature`。采纳下一步时必须有且仅有一条主下一步，映射为原 `plan`；其余以 `source_key=action:{followup_id}:{step_key}` 幂等生成行动待办。补录和只有待办权限的提交禁止新增下一步及处置。准备卡只在确认时加锁绑定，重复或失效绑定解除并在 `warnings` 中说明。
+
+AI 新增 `domestic_followup_strategy` preset；整理输出增加多条下一步、四类事实、场景字段、准备问题回答与最多 3 个缺口追问。客户约定仅在原文出处匹配且有日期时默认采纳；截图转写标待核，不默认采纳；伪造出处降级为建议或待确认。修改 seed 不会更新生产已有 preset，发布时须另行执行授权的后台版本更新与回退准备。
+
 ### 客户总览与接力协作（255 迁移，手动成交状态需 258 迁移）
 
 业务规则与权限矩阵见[已确认需求](requirements/2026-11-09-domestic-followup-collaboration.md)。下列路径沿用 `/api/domestic-followup` 前缀。

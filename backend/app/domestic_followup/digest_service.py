@@ -64,6 +64,7 @@ def _section(label: str, tasks: list, extra: str = "") -> str:
 def render_daily(tasks: list[DomesticFollowupTask], today: date) -> tuple[str, str]:
     receipt = [t for t in tasks if t.task_type == "receipt"]
     plan = [t for t in tasks if t.task_type == "plan"]
+    action = [t for t in tasks if t.task_type == "action"]
     issue = [t for t in tasks if t.task_type in TRACKED_KINDS]
     lines = [f"### 今日客户跟进（{today.month}月{today.day}日 {weekday_label(today)}）"]
     if receipt:
@@ -71,6 +72,8 @@ def render_daily(tasks: list[DomesticFollowupTask], today: date) -> tuple[str, s
     if plan:
         overdue = sum(1 for t in plan if t.due_date < today)
         lines.append(_section("约定跟进", plan, f"（逾期 {overdue}）" if overdue else ""))
+    if action:
+        lines.append(_section("行动", action))
     if issue:
         urgent = sum(1 for t in issue if (t.payload or {}).get("severity") == URGENT)
         lines.append(_section("异常意见", issue, f"（紧急 {urgent}）" if urgent else ""))

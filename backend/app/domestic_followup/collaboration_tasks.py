@@ -21,6 +21,10 @@ def active_tasks(db, customer_id, *, lock=False):
 def task_decision(task, owner_id, coordinator=False, *, closing=False):
     belongs_to_owner = task.assignee_user_id == owner_id
     needs_coordinator_assignment = coordinator and (closing or owner_id is None)
+    if task.task_type == "action":
+        if closing:
+            return "close"
+        return "transfer" if belongs_to_owner else "retain"
     if task.task_type == "plan":
         if task.purpose == "development":
             if belongs_to_owner or needs_coordinator_assignment:
@@ -78,7 +82,8 @@ def plan_tasks(rows, payload, *, releasing=False):
         raise ValueError("所选待办不能用该方式处理")
     if not releasing:
         transfer |= required
-    return {"transfer": sorted(transfer), "keep": sorted(keep), "cancel": sorted(cancel)}
+    server_close = {task_id for task_id, decision in decisions.items() if decision == "close"}
+    return {"transfer": sorted(transfer), "keep": sorted(keep), "cancel": sorted(cancel | server_close)}
 
 
 def package_tasks(rows, plan):
@@ -111,6 +116,6 @@ def execute_plan(tasks, plan, recipient_id, actor):
         task.status = "cancelled"
         task.closed_at = beijing_now()
         task.closed_by_user_id = actor
-        task.closed_reason = "协作开发终止"
+        task.closed_reason = "客户释放" if task.task_type == "action" else "协作开发终止"
     for task_id in plan["keep"]:
         task_map[task_id].purpose = "other"

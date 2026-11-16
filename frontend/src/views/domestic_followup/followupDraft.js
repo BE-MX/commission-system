@@ -1,4 +1,5 @@
 /** 跟进表单的纯逻辑：草稿 ↔ 表单、粘贴截图、到期文案。无 Vue 依赖，便于 node --test。 */
+import { nextStepsFromAi, nextStepsPayload } from './followupNextSteps.js'
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
 export function newRequestId() {
@@ -23,6 +24,8 @@ export function emptyForm(today) {
     unreadable: [], closeTaskIds: [], resolvedItems: [], source_task_id: null,
     ...followupOutcome(), development_stage: null, responsibility_version: null, plan_purpose: null,
     plan_assignee_user_id: null, historical_only: false,
+    nextSteps: [], disposition: null, disposition_note: '', prep_id: null, prep: null,
+    template_code: null, template_version: null, template_answers: { fields: {}, questions: [] }, questionsToSalesperson: [],
   }
 }
 
@@ -30,6 +33,20 @@ const tracked = item => ({
   text: item.text || '', category: item.category || null, severity: item.severity || '一般',
   origin: item.origin || 'user', record_only: Boolean(item.record_only),
 })
+
+function guidedAnswers(draft, ai) {
+  const source = draft.template_answers || {}
+  const answers = { fields: { ...(source.fields || {}) }, questions: (source.questions || []).map(row => ({ ...row })) }
+  Object.entries(ai.field_values || {}).forEach(([key, candidate]) => {
+    if (!answers.fields[key]) answers.fields[key] = candidate.value
+  })
+  ;(ai.question_answers || []).forEach(candidate => {
+    const existing = answers.questions.find(row => row.q === candidate.q)
+    if (existing && !existing.answer) Object.assign(existing, candidate)
+    else if (!existing) answers.questions.push({ ...candidate })
+  })
+  return answers
+}
 
 export function draftToForm(draft, today) {
   const ai = draft?.ai_result || {}
@@ -43,14 +60,24 @@ export function draftToForm(draft, today) {
     customerConfidence: draft.customer_id ? null : (ai.customer_confidence ?? null),
     chat_title: ai.chat_title || null, summary: ai.summary || '',
     channel: draft.channel || ai.channel || null,  // 用户在输入步选的沟通方式优先
-    contents: items.filter(i => i.kind === 'content').map(i => ({ text: i.text, origin: i.origin || 'user' })),
+    contents: items.filter(i => i.kind === 'content').map(i => ({
+      text: i.text, origin: i.origin || 'user', nature: i.nature || null, speaker: i.speaker || null, source: i.source || {},
+    })),
     issues: items.filter(i => i.kind === 'issue').map(tracked),
     suggestions: items.filter(i => i.kind === 'suggestion').map(tracked),
     state_changes: ai.state_changes || [],
     next_date: next.date || null, next_plan: next.plan || '', next_method: next.method || null,
     nextBasis: next.basis || 'none', nextExpression: next.expression || null,
+    nextSteps: nextStepsFromAi(ai.next_steps),
+    disposition: draft.disposition || null, disposition_note: draft.disposition_note || '',
+    prep_id: draft.prep_id || null,
+    template_code: ai.template_code || draft.template_code || null,
+    template_version: ai.template_version || draft.template_version || null,
+    template_answers: guidedAnswers(draft, ai),
+    questionsToSalesperson: ai.questions_to_salesperson || [],
     unreadable: ai.unreadable || [],
     ...followupOutcome(draft),
+    evidence_kind: draft.evidence_kind || ai.evidence_kind || null,
   }
 }
 
@@ -65,10 +92,12 @@ export function followupOutcome(source = {}) {
 
 export function formToPayload(form) {
   const items = [
-    ...form.contents.map(i => ({ kind: 'content', text: clean(i.text), origin: i.origin || 'user', record_only: false })),
+    ...form.contents.map(i => ({ kind: 'content', text: clean(i.text), origin: i.origin || 'user', nature: i.nature || null, record_only: false })),
     ...form.issues.map(i => ({ kind: 'issue', ...tracked(i), text: clean(i.text) })),
     ...form.suggestions.map(i => ({ kind: 'suggestion', ...tracked(i), text: clean(i.text) })),
   ].filter(i => i.text)
+  const hasNextStepCandidates = Boolean((form.nextSteps || []).length)
+  const selectedNextSteps = nextStepsPayload(form.nextSteps)
   return {
     customer_id: form.customer_id || null,
     followup_date: form.followup_date || null,
@@ -76,9 +105,12 @@ export function formToPayload(form) {
     summary: clean(form.summary) || null,
     chat_title: form.chat_title || null,
     state_changes: form.state_changes || [],
-    next_date: form.next_date || null,
-    next_plan: clean(form.next_plan) || null,
-    next_method: form.next_method || null,
+    next_date: hasNextStepCandidates ? null : form.next_date || null,
+    next_plan: hasNextStepCandidates ? null : clean(form.next_plan) || null,
+    next_method: hasNextStepCandidates ? null : form.next_method || null,
+    next_steps: selectedNextSteps,
+    disposition: selectedNextSteps.length ? null : form.disposition || null,
+    disposition_note: selectedNextSteps.length ? null : clean(form.disposition_note) || null,
     items,
     close_task_ids: form.closeTaskIds || [],
     resolved_items: (form.resolvedItems || []).map(r => ({
@@ -87,10 +119,14 @@ export function formToPayload(form) {
     ...followupOutcome(form),
     development_stage: form.development_stage || null,
     responsibility_version: form.responsibility_version || null,
-    plan_purpose: form.next_date ? form.plan_purpose || null : null,
-    ...(form.next_date && form.responsibility_version && !form.historical_only && form.plan_assignee_user_id
+    plan_purpose: !hasNextStepCandidates && form.next_date ? form.plan_purpose || null : null,
+    ...(!hasNextStepCandidates && form.next_date && form.responsibility_version && !form.historical_only && form.plan_assignee_user_id
       ? { plan_assignee_user_id: form.plan_assignee_user_id } : {}),
     historical_only: Boolean(form.historical_only),
+    prep_id: form.prep_id || null,
+    template_code: form.template_code || null,
+    template_version: form.template_version || null,
+    template_answers: form.template_code ? form.template_answers || { fields: {}, questions: [] } : null,
   }
 }
 

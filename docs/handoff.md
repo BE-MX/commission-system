@@ -1344,3 +1344,11 @@ Annual amount release b59 hit the existing 30-second startup budget, followed by
 - 候选迁移227–245下接主线214，已发布208–214保持不变；安装仍为legacy_only、独立对比默认关闭。本次不执行生产迁移或部署。
 - 本轮集成冲突处理、复验及Git状态以[集成记录](reports/2026-10-31-commerce-transition-integration.md)为准；原实现与隔离验收证据见[开发报告](reports/2026-10-28-commerce-dual-route-implementation.md)。
 - 主目录其他任务的未提交内容另行备份和恢复，不纳入本次开发提交。
+
+
+## 2026-11-16 客户跟进闭环四期本地实现（Kimi，待合并授权）
+
+- 工作区 `D:/MyProgram/commission-system-kimi-followup-closed-loop`，分支 `kimi/followup-closed-loop`，基于 main `6c04b175`。范围仅内贸 `/domestic/followups`：T01–T10 模板后台、下一步转约定/行动待办、三步准备卡与历史卡、场景引导录入和四类事实。规范与原型见 [客户跟进闭环](requirements/2026-11-16-followup-closed-loop/README.md)。未提交、推送、合并、部署或执行共享库迁移。
+- 迁移 264–267 已完成隔离 upgrade/downgrade/upgrade，`alembic heads` 仅 `267_dom_fu_guided`。后端跟进测试 302 passed、1 个基线失败；该失败 `test_insight_to_task_requires_customer_write_and_is_idempotent` 在修改前即可复现，未夹带修复。前端构建通过，跟进 Node 测试 57 passed；`check_conventions.py` 增量无违规。
+- 真实 Vue + FastAPI + 独立 SQLite 浏览器验收：模板保存 v2 并保留 v1；T06 推荐、策略生成、准备卡关联、AI 核对、确认生成约定、行动待办填写说明后完成均通过。准备卡为 used，行动未被新跟进自动关闭。验收截图为 [桌面](reports/assets/2026-11-16-followup-closed-loop/desktop.png) 与 [手机](reports/assets/2026-11-16-followup-closed-loop/mobile.png)。模型输出为固定样例，未调用真实模型、未使用真实客户资料。
+- 独立审查及两轮修复复核已完成，限定范围无剩余阻断。上线前仍需：业务审阅模板种子；按授权流程更新生产 parse preset（seed 不会更新既有 preset）；合并/推送/部署及生产迁移均另行请示。真实模型样例集人工评测未执行，不能据此宣称模型验收通过。

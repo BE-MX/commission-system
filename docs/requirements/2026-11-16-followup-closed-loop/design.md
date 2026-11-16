@@ -1,6 +1,6 @@
 # 客户跟进闭环 · 详细设计
 
-> v1.3 · 2026-11-16 · 未开发。总览与决策见 [README](README.md)，开发步骤见 [implementation.md](implementation.md)，交互以 [原型](prototype/index.html) 为准。
+> v1.3 · 2026-11-16 · 四期本地实现与独立审查完成，待合并授权。总览与决策见 [README](README.md)，开发步骤见 [implementation.md](implementation.md)，交互以 [原型](prototype/index.html) 为准。
 > 代码依据：main `c2c36054`。下文的「规范」指《客户跟进规范、记录模板与 AI 执行规则》v1.0（`codex/followup-standards`，未提交）。
 
 ## 1. 现状与缺口

@@ -188,7 +188,7 @@ export const MENU_GROUPS = {
     // 覆盖全部子项权限：任一子页可见则分组可见（此前漏 ai:admin/external_binding
     // 会让只有这些权限的用户看不到整个分组）
     anyPermission: [
-      'user:read', 'role:read', 'dict:read', 'ai:admin', 'navigation:read',
+      'user:read', 'role:read', 'dict:read', 'ai:admin', 'navigation:read', 'domestic_followup:admin',
       'mcp:admin', 'integration:admin', 'commerce_transition:admin',
       'operations:read', 'operations:admin',
       'dingtalk:admin',
@@ -1610,6 +1610,14 @@ export const NAV_ENTRIES = [
       group: 'system', title: '基础字典', icon: Notebook, order: 30,
       permission: 'dict:read',
     },
+  },
+  {
+    path: '/system/followup-templates',
+    name: 'DomesticFollowupTemplates',
+    component: () => import('@/views/domestic_followup/FollowupTemplates.vue'),
+    title: '跟进模板',
+    permission: 'domestic_followup:admin',
+    menu: { group: 'system', title: '跟进模板', icon: Notebook, order: 32, permission: 'domestic_followup:admin' },
   },
   {
     path: '/system/ai',

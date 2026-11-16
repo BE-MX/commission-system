@@ -1,5 +1,5 @@
 {
-  "source_sha256": "20ac6b88d4816627557da5468ddb7309dc1e438f12d651f92193c21dffa170e2",
+  "source_sha256": "01323cd57f41b2b48f3f7665ac5afd2ea317d40b876cbcc78bb71facb5a50a47",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -15,6 +15,7 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
@@ -107,6 +108,7 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
@@ -3287,6 +3289,7 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
@@ -3315,6 +3318,7 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
@@ -3343,6 +3347,36 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
+          "mcp:admin",
+          "integration:admin",
+          "commerce_transition:admin",
+          "operations:read",
+          "operations:admin",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "DomesticFollowupTemplates": [
+      {
+        "permission": "domestic_followup:admin"
+      },
+      {
+        "permission": "domestic_followup:admin"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
@@ -3371,6 +3405,7 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
@@ -3405,6 +3440,7 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
@@ -3433,6 +3469,7 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
@@ -3461,6 +3498,7 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
@@ -3489,6 +3527,7 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
@@ -3517,6 +3556,7 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
@@ -3545,6 +3585,7 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
@@ -3573,6 +3614,7 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",

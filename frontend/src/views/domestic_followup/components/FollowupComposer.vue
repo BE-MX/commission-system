@@ -15,6 +15,11 @@
     <!-- 第一步：输入 -->
     <section v-if="c.step.value === 'input'" class="composer-body" @paste="c.onPaste">
       <el-form label-position="top">
+        <div v-if="c.form.value.prep_id && c.form.value.prep" class="prep-context-bar">
+          <el-tag effect="plain">{{ c.form.value.prep.template_code }}</el-tag><strong>本次目标：{{ c.form.value.prep.goal }}</strong>
+          <span>已关联准备卡</span><GlassButton variant="link" @click="c.form.value.prep_id = null; c.form.value.prep = null">解除关联</GlassButton>
+          <GlassButton variant="link" @click="c.changePrep">换场景</GlassButton>
+        </div>
         <el-form-item label="客户（可留空，AI 会从截图认）">
           <el-select
             v-model="c.form.value.customer_id" filterable remote clearable reserve-keyword
@@ -65,8 +70,16 @@
             </div>
           </div>
         </div>
+        <section v-if="c.openActionTasks.value.length" class="action-tasks">
+          <h3>顺便完成 <span>该客户由我承办的行动待办</span></h3>
+          <div v-for="task in c.openActionTasks.value" :key="task.id" class="action-task-row">
+            <div><strong>{{ task.title }}</strong><p>{{ dueLabel(task) }}<template v-if="task.payload.done_criteria"> · 完成标准：{{ task.payload.done_criteria }}</template></p></div>
+            <GlassButton variant="outline" link-tone="success" @click="actionDialogs.open('complete', task)">完成</GlassButton>
+          </div>
+        </section>
         <FollowupOutcomeFields :form="c.form.value" :dicts="c.dicts" :shareable="!c.form.value.historical_only && !c.taskOnly.value && !!c.form.value.customer_id"
                                :progress="!!c.form.value.responsibility_version" :stage="!c.form.value.historical_only && !c.taskOnly.value && !!c.form.value.responsibility_version" />
+        <FollowupGuideFields :form="c.form.value" />
         <p v-if="c.form.value.historical_only" class="hint">填写今天以前的实际沟通日期，记录保存到客户历史。</p>
         <div v-if="!c.form.value.historical_only && !c.taskOnly.value" class="row-2">
           <el-form-item label="下次跟进（可选，填了就生成待办）">
@@ -101,6 +114,10 @@
         <pre>{{ c.form.value.raw_text }}</pre>
       </details>
       <el-form label-position="top">
+        <div v-if="c.form.value.prep_id && c.form.value.prep" class="prep-context-bar">
+          <el-tag effect="plain">{{ c.form.value.prep.template_code }}</el-tag><strong>本次目标：{{ c.form.value.prep.goal }}</strong>
+          <span>已关联准备卡</span><GlassButton variant="link" @click="c.form.value.prep_id = null; c.form.value.prep = null">解除关联</GlassButton>
+        </div>
         <el-form-item label="客户">
           <el-select v-model="c.form.value.customer_id" filterable remote clearable :remote-method="c.searchCustomers"
                      :loading="c.searching.value" :disabled="!!c.form.value.source_task_id" class="full" @change="c.loadCustomerContext">
@@ -130,8 +147,8 @@
         <FollowupOutcomeFields :form="c.form.value" :dicts="c.dicts" :shareable="!c.taskOnly.value"
                                :progress="!!c.form.value.responsibility_version" :stage="!c.taskOnly.value && !!c.form.value.responsibility_version" />
 
-        <FollowupItemList title="跟进要点" kind="content" :rows="c.form.value.contents" :categories="[]"
-                          @add="c.addRow('contents', 'content')" />
+        <FollowupFactGroups v-model:contents="c.form.value.contents" v-model:questions="c.form.value.questionsToSalesperson"
+                            v-model:next-steps="c.form.value.nextSteps" @add="c.addRow('contents', 'content')" />
         <FollowupItemList title="异常" kind="issue" :rows="c.form.value.issues"
                           :categories="c.dicts.domestic_followup_category" @add="c.addRow('issues', 'issue')" />
         <FollowupItemList title="意见建议" kind="suggestion" :rows="c.form.value.suggestions"
@@ -142,7 +159,12 @@
                         :checked="c.form.value.state_changes.includes(v)" @change="toggleState(v)">{{ v }}</el-check-tag>
         </el-form-item>
 
-        <div v-if="!c.taskOnly.value" class="row-2">
+        <FollowupNextSteps v-if="!c.form.value.historical_only && !c.taskOnly.value && (c.form.value.nextSteps.length || (!c.form.value.next_date && !c.form.value.next_plan))"
+                           v-model="c.form.value.nextSteps" v-model:disposition="c.form.value.disposition"
+                           v-model:disposition-note="c.form.value.disposition_note"
+                           :has-responsibility="!!c.form.value.responsibility_version" :assignees="c.planAssignees.value"
+                           :channels="c.dicts.domestic_followup_channel" />
+        <div v-if="!c.taskOnly.value && !c.form.value.nextSteps.length && (c.form.value.next_date || c.form.value.next_plan)" class="row-2">
           <el-form-item label="下次跟进日期">
             <el-date-picker v-model="c.form.value.next_date" type="date" value-format="YYYY-MM-DD" clearable
                             :disabled-date="beforeFollowup" class="full" />
@@ -153,15 +175,22 @@
             </el-select>
           </el-form-item>
         </div>
-        <FollowupPlanPurpose v-if="c.needsPlanPurpose.value" :form="c.form.value" :assignees="c.planAssignees.value" />
-        <p v-if="c.form.value.next_date && !c.taskOnly.value" class="hint">
+        <FollowupPlanPurpose v-if="c.needsPlanPurpose.value && !c.form.value.nextSteps.length" :form="c.form.value" :assignees="c.planAssignees.value" />
+        <p v-if="c.form.value.next_date && !c.taskOnly.value && !c.form.value.nextSteps.length" class="hint">
           {{ weekdayLabel(c.form.value.next_date) }}<template v-if="c.form.value.nextExpression"> · 依据：原话「{{ c.form.value.nextExpression }}」</template>
         </p>
-        <p v-if="basisHint && !c.taskOnly.value" class="hint hint-warn">{{ basisHint }}</p>
-        <el-form-item v-if="!c.taskOnly.value" label="下次跟进内容">
+        <p v-if="basisHint && !c.taskOnly.value && !c.form.value.nextSteps.length" class="hint hint-warn">{{ basisHint }}</p>
+        <el-form-item v-if="!c.taskOnly.value && !c.form.value.nextSteps.length && (c.form.value.next_date || c.form.value.next_plan)" label="下次跟进内容">
           <el-input v-model="c.form.value.next_plan" maxlength="500" placeholder="留空则不生成待办" />
         </el-form-item>
 
+        <section v-if="c.openActionTasks.value.length" class="action-tasks">
+          <h3>顺便完成 <span>行动待办只能手动完成，并填写说明</span></h3>
+          <div v-for="task in c.openActionTasks.value" :key="task.id" class="action-task-row">
+            <div><strong>{{ task.title }}</strong><p>{{ dueLabel(task) }}<template v-if="task.payload.done_criteria"> · 完成标准：{{ task.payload.done_criteria }}</template></p></div>
+            <GlassButton variant="outline" link-tone="success" @click="actionDialogs.open('complete', task)">完成</GlassButton>
+          </div>
+        </section>
         <el-form-item v-if="c.openTasks.value.length" label="本客户未完成的待办（勾选＝本次一并完成）">
           <el-checkbox-group v-model="c.form.value.closeTaskIds" class="stack">
             <el-checkbox v-for="t in c.openTasks.value" :key="t.id" :value="t.id">{{ t.title }}（{{ dueLabel(t) }}）</el-checkbox>
@@ -201,6 +230,7 @@
     </template>
   </el-drawer>
   <QuickProspectDialog ref="prospectRef" @created="c.selectProspect" @existing="c.selectProspect" />
+  <FollowupActionDialogs ref="actionDialogs" @saved="c.loadCustomerContext(c.form.value.customer_id)" />
 </template>
 
 <script setup>
@@ -212,12 +242,17 @@ import { confirmAction, isFeedbackCancelled } from '@/utils/feedback'
 import { nextBasisHint, taskDueLabel, weekdayLabel } from '../followupDraft'
 import FollowupItemList from './FollowupItemList.vue'
 import FollowupOutcomeFields from './FollowupOutcomeFields.vue'
+import FollowupNextSteps from './FollowupNextSteps.vue'
+import FollowupGuideFields from './FollowupGuideFields.vue'
+import FollowupFactGroups from './FollowupFactGroups.vue'
+import FollowupActionDialogs from './FollowupActionDialogs.vue'
 import FollowupPlanPurpose from './FollowupPlanPurpose.vue'
 import QuickProspectDialog from './QuickProspectDialog.vue'
 
 const props = defineProps({ composer: { type: Object, required: true } })
 const c = props.composer
 const prospectRef = ref(null)
+const actionDialogs = ref(null)
 // AppUpload 单独计算在途数量，传入已完成项避免重复占用名额；附件状态仍由 composer 管理。
 const uploadedAttachments = computed(() => c.attachments.value.filter(a => !a.uploading))
 
@@ -294,6 +329,8 @@ async function discardWithConfirm() {
 
 <style scoped>
 .composer-body { display: flex; flex-direction: column; gap: 12px; }
+.prep-context-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--tag-neutral-bg); }
+.prep-context-bar > span { color: var(--text-secondary); font-size: 12px; }
 .full { width: 100%; }
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .option-meta { float: right; color: var(--text-secondary); font-size: 12px; }
@@ -320,6 +357,12 @@ async function discardWithConfirm() {
 .plain-list { margin: 4px 0 0; padding-left: 18px; }
 .ocr-box pre { white-space: pre-wrap; font-size: 12px; background: var(--tag-neutral-bg); padding: 8px; border-radius: var(--radius-sm, 6px); }
 .composer-footer { display: flex; justify-content: flex-end; gap: 8px; }
+.action-tasks { display: flex; flex-direction: column; gap: 8px; }
+.action-tasks h3 { margin: 0; font-size: 14px; }
+.action-tasks h3 span { margin-left: 6px; color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.action-task-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); }
+.action-task-row strong { font-size: 13px; }
+.action-task-row p { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; }
 @media (max-width: 768px) {
   .row-2 { grid-template-columns: 1fr; }
   .composer-footer { position: sticky; bottom: 0; }

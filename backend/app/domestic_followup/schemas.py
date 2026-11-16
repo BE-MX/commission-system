@@ -19,6 +19,7 @@ class ItemIn(BaseModel):
     origin: Literal["user", "ai_inferred"] = "user"
     record_only: bool = False
     handler_user_id: int | None = Field(None, gt=0)
+    nature: Literal["customer_said", "business_fact", "assessment", "to_confirm"] | None = None
 
 
 class ResolveIn(BaseModel):
@@ -33,6 +34,21 @@ class FollowupOutcomeFields(BaseModel):
     evidence_kind: Literal["customer", "assessment"] | None = None
     shared_summary: str | None = Field(None, max_length=500)
     effective_progress: bool = False
+
+
+class NextStepIn(BaseModel):
+    step_key: str = Field(..., min_length=1, max_length=64)
+    text: str = Field(..., min_length=1, max_length=500)
+    assignee_user_id: int | None = Field(None, gt=0)
+    due_date: dt.date | None = None
+    method: str | None = Field(None, max_length=16)
+    basis: Literal["customer_agreed", "our_commitment", "our_plan", "ai_suggestion"] = "ai_suggestion"
+    trigger: Literal["date", "event"] = "date"
+    event: str | None = Field(None, max_length=200)
+    done_criteria: str | None = Field(None, max_length=500)
+    source: dict = Field(default_factory=dict)
+    is_primary: bool = False
+    plan_purpose: Literal["development", "maintenance", "other"] | None = None
 
 
 class FollowupFields(FollowupOutcomeFields):
@@ -53,6 +69,13 @@ class FollowupFields(FollowupOutcomeFields):
     plan_purpose: Literal["development", "maintenance", "other"] | None = None
     plan_assignee_user_id: int | None = Field(None, ge=1)
     historical_only: bool = False
+    next_steps: list[NextStepIn] = Field(default_factory=list, max_length=4)
+    disposition: Literal["waiting_customer", "paused", "closed"] | None = None
+    disposition_note: str | None = Field(None, max_length=200)
+    prep_id: int | None = Field(None, gt=0)
+    template_code: str | None = Field(None, max_length=8)
+    template_version: int | None = Field(None, ge=1)
+    template_answers: dict | None = None
 
 
 class DirectSaveIn(FollowupFields):
@@ -72,6 +95,10 @@ class DraftCreateIn(FollowupOutcomeFields):
     channel: str | None = Field(None, max_length=16)
     source: Literal["web", "mobile"] = "web"
     source_task_id: int | None = Field(None, gt=0)
+    prep_id: int | None = Field(None, gt=0)
+    template_code: str | None = Field(None, max_length=8)
+    template_version: int | None = Field(None, ge=1)
+    template_answers: dict | None = None
 
 
 class ConfirmIn(FollowupFields):
@@ -101,6 +128,9 @@ class EditFollowupIn(FollowupOutcomeFields):
     next_method: str | None = Field(None, max_length=16)
     items: list[EditItemIn] = Field(default_factory=list, max_length=30)
     attachment_ids: list[int] = Field(default_factory=list, max_length=9)
+    template_code: str | None = Field(None, max_length=8)
+    template_version: int | None = Field(None, ge=1)
+    template_answers: dict | None = None
 
     @field_validator("reason")
     @classmethod
@@ -108,6 +138,19 @@ class EditFollowupIn(FollowupOutcomeFields):
         if not value.strip():
             raise ValueError("请填写修改原因")
         return value.strip()
+
+
+class ActionCompleteIn(BaseModel):
+    note: str = Field(..., max_length=500)
+
+
+class ActionUpdateIn(BaseModel):
+    due_date: dt.date | None = None
+    title: str | None = Field(None, max_length=200)
+
+
+class ActionCancelIn(BaseModel):
+    reason: str = Field(..., max_length=500)
 
 
 class SnoozeIn(BaseModel):
@@ -206,9 +249,44 @@ class _Lenient(BaseModel):
         return result
 
 
+class AiSource(_Lenient):
+    kind: str | None = None
+    attachment_index: int | None = None
+    excerpt: str | None = None
+
+
 class AiContent(_Lenient):
     text: str = ""
     origin: str = "user"
+    nature: str | None = None
+    speaker: str | None = None
+    source: AiSource | None = None
+
+
+class AiFact(_Lenient):
+    text: str = ""
+    origin: str = "ai_inferred"
+    nature: str = "to_confirm"
+    speaker: str | None = None
+    product_ref: str | None = None
+    source: AiSource | None = None
+
+
+class AiFieldValue(_Lenient):
+    value: typing.Any = None
+    source: AiSource | None = None
+
+
+class AiQuestionAnswer(_Lenient):
+    q: str = ""
+    answer: str | None = None
+    state: str = "not_asked"
+
+
+class AiSalesQuestion(_Lenient):
+    q: str = ""
+    options: list[str] = Field(default_factory=list)
+    target_ref: str | None = None
 
 
 class AiItem(_Lenient):
@@ -231,6 +309,28 @@ class AiNext(_Lenient):
             return dt.date.fromisoformat(str(value)[:10])
         except ValueError:
             return None  # "YYYY-MM-DD"、"下周一" 之类的非日期交给 date_parser 按原话重算
+
+
+class AiNextStep(_Lenient):
+    text: str = ""
+    owner: str = "self"
+    owner_hint: str | None = None
+    trigger: str = "date"
+    date_expression: str | None = None
+    date: dt.date | None = None
+    event: str | None = None
+    basis: str = "ai_suggestion"
+    done_criteria: str | None = None
+    method: str | None = None
+    source: AiSource | None = None
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def _iso_or_none(cls, value):
+        try:
+            return dt.date.fromisoformat(str(value)[:10])
+        except ValueError:
+            return None
 
 
 class AiCustomerHint(_Lenient):
@@ -258,6 +358,12 @@ class AiParseOut(_Lenient):
     suggestions: list[AiItem] = Field(default_factory=list)
     state_changes: list[str] = Field(default_factory=list)
     next: AiNext | None = None
+    next_steps: list[AiNextStep] = Field(default_factory=list)
+    scenario: str | None = None
+    facts: list[AiFact] = Field(default_factory=list)
+    field_values: dict[str, AiFieldValue] = Field(default_factory=dict)
+    question_answers: list[AiQuestionAnswer] = Field(default_factory=list)
+    questions_to_salesperson: list[AiSalesQuestion] = Field(default_factory=list)
     receipt_feedback: AiReceiptFeedback | None = None
     unreadable: list[str] = Field(default_factory=list)
     ocr: list[AiOcr] = Field(default_factory=list)

@@ -107,14 +107,15 @@ def test_summary_counts_due_and_urgent(db):
     user = make_user(db, "fu_task_g")
     customer = make_customer(db, user, "任务店G")
     rows = (("a", "receipt", None, TODAY), ("b", "plan", None, TODAY), ("c", "issue", "紧急", TODAY),
-            ("d", "suggestion", "一般", TODAY), ("e", "plan", None, date(2026, 11, 5)))
+            ("d", "suggestion", "一般", TODAY), ("e", "plan", None, date(2026, 11, 5)),
+            ("f", "action", None, TODAY))
     for key, kind, severity, due in rows:
         db.add(DomesticFollowupTask(task_type=kind, customer_id=customer.id, assignee_user_id=user.id,
                                     source_key=f"s:{key}", title=key, due_date=due,
                                     payload={"severity": severity} if severity else None))
     db.flush()
     summary = task_service.summary(db, _ctx(user), today=TODAY)
-    assert summary == {"receipt": 1, "plan": 1, "issue": 2, "urgent": 1, "upcoming": 1}
+    assert summary == {"receipt": 1, "plan": 1, "action": 1, "issue": 2, "urgent": 1, "upcoming": 1}
 
 
 def test_close_tasks_skips_tasks_the_actor_does_not_own(db):
