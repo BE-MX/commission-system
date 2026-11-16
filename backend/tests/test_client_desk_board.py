@@ -45,6 +45,44 @@ def test_research_report_hides_gap_and_raw_documents():
     assert set(compact) == {"verdict", "sections"}
 
 
+@pytest.mark.parametrize("review_status", ["pending", "revision_requested", "accepted", "not_required"])
+def test_v2_report_reads_marked_document_and_model_tool_only_gets_evidenced_statements(review_status):
+    row = {
+        "id": "17",
+        "event_key": "research:17",
+        "review_status": review_status,
+        "result": {
+            "schema_version": "private_research_v2",
+            "report_markdown": "# 报告\n未确认 800 家门店〔待核实〕",
+            "claims": [{"statement": "未确认 800 家门店"}],
+            "verified_claims": ["公司设在大阪", "无依据陈述〔待核实〕"],
+            "citations": [{"citation_id": "source_a"}],
+        },
+    }
+    report = board.research_report([row])
+    assert report["report_markdown"] == row["result"]["report_markdown"]
+    assert report["review_status"] == review_status
+    assert report["reviewed"] is (review_status == "accepted")
+    compact = board.model_research(report)
+    assert compact["sections"] == [{"section": "verified", "statements": ["公司设在大阪"]}]
+    payload, refs, status = agent_tools.run_tool(
+        None, source(research_report=report, research_summary=compact, research=[row]), {}, "research_detail", {}
+    )
+    assert status == "ok"
+    assert refs["S-17"]["event_key"] == "research:17"
+    model_data = repr((compact, payload, refs))
+    assert "待核实" not in model_data and "800" not in model_data and "report_markdown" not in model_data
+
+
+def test_unreviewed_legacy_and_evidence_free_v2_display_but_do_not_feed_analysis():
+    for result in (RESEARCH, {"schema_version": "private_research_v2", "report_markdown": "# 缺口"}):
+        report = board.research_report([{"result": result, "review_status": "pending"}])
+        assert report["status"] == "ready"
+        assert board.model_research(report) is None
+        assert board.research_report([{"result": result, "review_status": "rejected"}]) == {"status": "none"}
+        assert board.research_report([{"result": result, "review_status": "superseded"}]) == {"status": "none"}
+
+
 @pytest.mark.parametrize(
     "orders,last_order,touch,created,expected",
     [

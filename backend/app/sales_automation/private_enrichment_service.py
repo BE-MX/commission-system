@@ -7,10 +7,14 @@ from sqlalchemy import or_
 from app.customer.access_service import CustomerAccess, apply_record_access
 from app.customer import evidence_service
 from app.customer.logical_customer_service import logical_root_predicate
-from app.customer.models import CustomerAccount, CustomerAnnotation, CustomerContactPoint, CustomerExternalIdentity, CustomerFact, CustomerResearchTask, CustomerSourceRecord
+from app.core.time import beijing_now
+from app.customer.models import (
+    CustomerAccount, CustomerAnnotation, CustomerContact, CustomerContactPoint, CustomerContactRelationship,
+    CustomerExternalIdentity, CustomerFact, CustomerResearchTask, CustomerSourceRecord,
+)
 from app.sales_automation import public_pool_service, service
 
-POLICY_VERSION = "private-enrichment-v1"
+from app.sales_automation.private_research_policy import LEGACY_ENRICHMENT_POLICY as POLICY_VERSION
 RESEARCH_REQUEST = {
     "schema_version": "private_enrichment_v1",
     "focus": ["官网及其与客户的主体关联", "公司业务与经营模式", "公开商业联系方式", "主营产品"],
@@ -25,10 +29,10 @@ RESEARCH_REQUEST = {
 }
 
 
-def existing_information(db, account):
+def existing_information(db, account, *, include_personal=False):
     access = CustomerAccess(
         customer_id=account.id, actor_user_id=0, can_manage=False,
-        max_data_classification="internal_business", max_visibility_scope="customer_team", run_id=None,
+        max_data_classification="personal_contact" if include_personal else "internal_business", max_visibility_scope="customer_team", run_id=None,
     )
     facts = evidence_service.visible_facts(db, access).filter(
         CustomerFact.verification_status.notin_(("rejected", "superseded")),
@@ -42,9 +46,32 @@ def existing_information(db, account):
         CustomerExternalIdentity.status == "active",
         or_(CustomerExternalIdentity.source_record_id.is_(None), CustomerExternalIdentity.source_record_id.in_(sources)),
     ).all()
+    contact_names = []
+    linked_ids = []
+    if include_personal:
+        relations = db.query(CustomerContact, CustomerContactRelationship.job_title).join(
+            CustomerContactRelationship, CustomerContactRelationship.contact_id == CustomerContact.id,
+        ).filter(
+            CustomerContactRelationship.customer_id == account.id,
+            CustomerContactRelationship.verification_status.notin_(("rejected", "disputed")),
+            or_(CustomerContactRelationship.effective_from.is_(None), CustomerContactRelationship.effective_from <= beijing_now()),
+            or_(CustomerContactRelationship.effective_to.is_(None), CustomerContactRelationship.effective_to > beijing_now()),
+            or_(CustomerContactRelationship.source_fact_id.is_(None),
+                CustomerContactRelationship.source_fact_id.in_(
+                    evidence_service.visible_facts(db, access).with_entities(CustomerFact.id)
+                )),
+            CustomerContact.record_status == "active",
+        ).order_by(CustomerContact.id).limit(100).all()
+        linked_ids = [row.id for row, _ in relations]
+        contact_names = [{"name": row.canonical_name or row.display_name, "job_title": job_title}
+                         for row, job_title in relations]
     contacts = db.query(CustomerContactPoint).filter(
-        logical_root_predicate(CustomerContactPoint, "contact_point", account.id),
-        CustomerContactPoint.data_classification.in_(("public_business", "internal_business")),
+        or_(
+            logical_root_predicate(CustomerContactPoint, "contact_point", account.id),
+            CustomerContactPoint.contact_id.in_(linked_ids),
+        ),
+        CustomerContactPoint.data_classification.in_(("public_business", "internal_business", "personal_contact")
+            if include_personal else ("public_business", "internal_business")),
         or_(CustomerContactPoint.source_record_id.is_(None), CustomerContactPoint.source_record_id.in_(sources)),
     ).all()
 
@@ -73,7 +100,10 @@ def existing_information(db, account):
         "current_manual_revisions": list(revisions.values()),
         "website_clues": [{"value": row.raw_value, "verification_status": row.verification_status,
                            "source_record_id": row.source_record_id, "source_url": source_url(row)} for row in identities],
+        **({"contact_names": contact_names} if include_personal else {}),
         "business_contacts": [{"type": row.point_type, "value": row.raw_value,
+                               **({"email_domain_type": row.email_domain_type,
+                                   "platform": row.platform} if include_personal else {}),
                                "verification_status": row.verification_status,
                                "contactability_status": row.contactability_status,
                                "source_url": source_url(row), "source_record_id": row.source_record_id}

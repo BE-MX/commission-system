@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     CLIENT_DESK_ORIGIN: str = ""
     CLIENT_DESK_RULES: dict = Field(default_factory=dict)
     CLIENT_DESK_CALENDAR: dict = Field(default_factory=dict)
+    # Enable the worker only on the Beijing backend; provider calls are opt-in.
+    PRIVATE_RESEARCH_TOOLS_WORKER_ENABLED: bool = False
+    PRIVATE_RESEARCH_MAIGRET_ENABLED: bool = False
+    PRIVATE_RESEARCH_MAIGRET_TOKEN: str = Field(default="", repr=False)
+    PRIVATE_RESEARCH_MONID_ENABLED: bool = False
+    PRIVATE_RESEARCH_MONID_API_KEY: str = Field(default="", repr=False)
+    PRIVATE_RESEARCH_EGRESS_PROXY: str = Field(default="", repr=False)
+    PRIVATE_RESEARCH_MONID_BUDGET_MICROUSD: Annotated[int, Field(gt=0, le=150000)] = 150000
     COMMERCE_PHASE: Literal['legacy_only', 'transition', 'local_only'] | None = None
     COMMERCE_RECEIVING_ENTITY_KEY: str = 'leshine'
     COMMERCE_BANK_CHANNEL: str = 'bank_statement'
@@ -273,6 +281,9 @@ class Settings(BaseSettings):
     AI_CHAT_STORAGE_ROOT: str = r"D:\WORKSOURCE\ai-chat"
     AI_CHAT_MAX_UPLOAD_BYTES: _PositiveInt = 4 * 1024 * 1024
     AI_CHAT_MAX_ATTACHMENTS: _PositiveInt = 5
+    AI_CHAT_DAILY_TURN_LIMIT: _PositiveInt = 100
+    AI_CHAT_LEASE_SECONDS: Annotated[int, Field(ge=20, le=300)] = 45
+    AI_CHAT_GENERATION_MAX_SECONDS: Annotated[int, Field(ge=60, le=3600)] = 600
     AI_CHAT_MAX_ATTACHMENT_CHARS: _PositiveInt = 60_000
     AI_CHAT_MAX_TURN_ATTACHMENT_CHARS: _PositiveInt = 120_000
 

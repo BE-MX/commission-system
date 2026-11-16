@@ -1425,7 +1425,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 当前界面只有“上传素材”一个上传入口：设计师先选至少一个当前客户标签，再选多个文件或拖入文件夹。标签可在客户确认后新建、重命名或删除；删除时同步移除该客户素材的关联。文件夹只用于提取文件，不从名称识别、新建标签或目录；文件加入清单时固定本次选中标签。工作台素材按产品类型分组，再按 Color names + Textures type 逐行显示。旧目录弹框仅用于维护既有目录与素材。送审按钮旁的“客户效果预览”在同源 iframe 中复用外部站渲染当前批素材，不调用客户门户登录及已发布素材接口，也不改变批次发布状态。审核弹框、业务预览和客户外部站按产品类型分组并提供标签筛选。内部签名 URL 返回 `/api/customer-media/...` 相对地址，前端跟随素材 API origin 解析，兼容同源代理及 `VITE_CUSTOMER_MEDIA_API_BASE` 云端直传。
 
-## 客户 AI 方案对话（`/api/ai-chat`，100 迁移，2026-08-09）
+## 通用 AI 工作台（`/api/ai-chat`，迁移 100/124/265/266）
 
 ### 内置对话方式（2026-08-26，迁移 124）
 
@@ -1435,25 +1435,41 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 - 会话列表及详情的 `session.mode` 为快照摘要（不含正文）。首次 `POST /sessions/{session_id}/turns/stream` 可提供 `mode_id` 和 `mode_version`，两项必须同时存在；服务端校验实际文件版本后与消息在同一事务保存快照。版本变更或已开始会话换方式返回 409，不自动降级普通聊天。普通会话的幂等请求也不允许追加方式。
 - 已开始会话继续/重试使用保存的规则，不读取最新文件。方式文件不算普通附件，不占 5 个附件名额；上传 Markdown 仍仅为不可信参考资料。
 - 内置方式保留至多 200 条有效历史消息、120,000 字符对话正文；超出上限或参考文档被截断时返回明确的 `context_limit` SSE 错误，不丢失早期经历继续报告。普通聊天仍取最近 20 条有效消息。重试只使用原问题及之前的上下文。
-- 上游因输出长度结束时，SSE 追加明确的“内容尚未完成，回复继续”提示并持久保存，`done.finish_reason` 保留上游终止原因。
+- 上游因输出长度结束时，`done.finish_reason` 与消息字段保留 `length/max_tokens`；页面在正文外提示可继续，不向回答正文追加说明。
 
-共 11 个 URL pattern、12 个 HTTP 操作（含上述 3 个方式读取操作，`/sessions` 同时提供 GET/POST）。资源按当前用户 owner 隔离；跨账号与不存在资源统一返回 404。`ai_chat:read` 用于配置、会话和附件内容读取，`ai_chat:write` 用于建会话、上传/删除草稿附件、发送和重试；`ai_chat:admin` 已登记但不绕过 owner，也没有 MVP 管理端点。
+共 17 个 URL pattern、20 个 HTTP 操作（含版本选择、继续生成和管理统计/角色额度）。资源按当前用户 owner 隔离；跨账号与不存在资源统一返回 404。`ai_chat:read` 用于配置、会话和附件内容读取，`ai_chat:write` 用于建会话、上传/删除草稿附件、发送和重试；`ai_chat:admin` 已登记但不绕过 owner；运行统计与额度管理使用独立的 `ai:admin`。
 
 | 方法 | 路径 | 权限 | 契约 |
 |---|---|---|---|
-| GET | `/config` | read | 返回严格配置状态；不暴露 Provider、API 地址或密钥 |
+| GET | `/config` | read | 返回配置状态、可用 `models`、`default_preset_id`、今日 `usage`；不暴露 Provider、API 地址、密钥或私有参数 |
+| GET | `/models` | read | 仅返回当前用户获准使用的模型摘要 |
+| GET | `/admin/roles` | `ai:admin` | AI 接入管理页的角色选项（name/label） |
 | POST | `/sessions` | write | 创建 owner 会话，body `{title?}` |
 | GET | `/sessions` | read | `limit=30`（1～100）与不透明 `cursor` 的 owner 会话分页 |
-| GET | `/sessions/{session_id}` | read | 返回会话、完整展示历史和该会话附件 |
+| GET | `/sessions/{session_id}` | read | 返回会话、完整展示历史和该会话附件；助手含 `model`、`reasoning_content`、`reply_to_message_id` |
+| PATCH | `/sessions/{session_id}` | write | body `{title}`，重命名本人会话 |
+| DELETE | `/sessions/{session_id}` | write | 软删除本人会话；生成中返回 409；删除后消息和附件入口均为 404 |
 | POST | `/sessions/{session_id}/attachments` | write | multipart 字段 `file`；上传一个私有附件 |
-| DELETE | `/attachments/{attachment_id}` | write | 仅本人尚未发送的 draft 附件可删 |
+| DELETE | `/attachments/{attachment_id}` | write | 本人尚未发送的 draft/failed 附件可删；先持久化不可发送状态，再清理文件与行。失败可重试 |
 | GET | `/attachments/{attachment_id}/content` | read | owner 鉴权后的二进制预览/下载，不使用 `ok()` 信封 |
-| POST | `/sessions/{session_id}/turns/stream` | write | SSE；body `{request_id, content, attachment_ids}`，文字与附件至少一项非空 |
-| POST | `/messages/{assistant_id}/retry/stream` | write | SSE；body `{request_id}`，仅本人 stopped/failed 助手消息可重试 |
+| POST | `/sessions/{session_id}/turns/stream` | write | SSE；body `{request_id, content, attachment_ids, preset_id?}`，文字与附件至少一项非空 |
+| POST | `/messages/{assistant_id}/retry/stream` | write | SSE；body `{request_id, preset_id?}`，仅最后一个用户问题的 completed/stopped/failed 助手回答可重新生成 |
+| POST | `/messages/{assistant_id}/continue/stream` | write | SSE；body `{request_id, preset_id?}`，仅最后一轮 completed 且 `finish_reason=length/max_tokens` 的非空回答可继续；固定原预设，创建保留原文的新版本 |
+| PATCH | `/messages/{user_id}/selection` | write | body `{answer_id}`；仅最后一轮、同会话、非空 completed/stopped 答案可采用，生成中返回 409 |
+| GET | `/admin/usage` | `ai:admin` | 可选 `start/end` 北京日期（默认近 7 天，最多 93 天）、`preset_id/owner_id`；返回 totals/models/users/days，不含对话正文 |
+| GET | `/admin/role-limits` | `ai:admin` | 默认日额度和各角色覆盖值；null 表示未配置 |
+| PUT | `/admin/role-limits/{role_id}` | `ai:admin` | body `{daily_limit: 0..10000|null}`；0 暂停生成，null 恢复默认 |
 
-除附件二进制和 SSE 外，成功响应统一使用 `{code, message, data}` 的 `ok()` 信封。SSE 不套信封，事件顺序为 `meta` → 初始 `heartbeat` → 若干 `delta` → `done` 或 `error`：`meta` 给出会话、用户消息和助手消息 ID；`delta` 是文本增量；`done` 给出最终状态及可用的 token/耗时摘要；`error` 只给可行动错误，不透传供应商原始异常。当前只在 `meta` 后发送一次初始 `heartbeat`，不发送定时心跳；这是同步 AI facade 与断连后可靠保存 `stopped`/关闭上游之间的取舍，网关空闲超时不能依赖周期心跳规避。
 
-发送幂等键在同一会话内生效：同一 `request_id` 与同一正文/附件集合重复提交时复用既有用户/助手消息并返回已保存终态，不再次调用模型；同一键改了正文、附件或用于其他重试时，在建立 SSE 响应前返回 HTTP 409。停止只表示关闭当前连接、保存已收到的部分内容并将消息标记为 `stopped`，不承诺供应商侧停止计费。
+除附件二进制和 SSE 外，成功响应统一使用 `{code, message, data}` 的 `ok()` 信封。SSE 不套信封，事件顺序为 `meta` → 初始 `heartbeat` → 若干 `reasoning` / `delta` → `done` 或 `error`：`meta` 给出会话、用户消息和助手消息 ID；`reasoning` 是独立推理增量、不进入历史提示词；`meta.model` 是获授权的本轮模型摘要；`delta` 是文本增量；`done` 给出最终状态及可用的 token/耗时摘要；`error` 只给可行动错误，不透传供应商原始异常。网络等待时每约 5 秒发送心跳。网络线程只负责 HTTP，数据库由消费线程串行访问。首帧与约每 2 秒保存进度；`AI_CHAT_LEASE_SECONDS=45`，总生成上限 `AI_CHAT_GENERATION_MAX_SECONDS=600`。刷新配置/详情或新生成入口恢复过期任务为 failed，保留最近落库内容，不自动重发；迟到写入不能覆盖终态。
+
+发送幂等键在同一会话内生效：同一 `request_id` 与同一正文/附件集合重复提交时复用既有用户/助手消息并返回已保存终态，不再次调用模型；同一键改了正文、附件、显式模型或用于其他重试时，在建立 SSE 响应前返回 HTTP 409。停止只表示关闭当前连接、保存已收到的部分内容并将消息标记为 `stopped`，不承诺供应商侧停止计费。
+
+聊天模型由已有 AI 接入预设的 `parameters.chat` 发布：`enabled`、`label`、`vision`、`allowed_roles`、可选 `pricing={currency:CNY|USD,input_per_million,output_per_million}`。仅直连 OpenAI/Anthropic 文本预设可用；未发布业务预设、生图与 agent 不进入目录。原 `customer_ai_chat` 默认保留，显式关闭优先。发送、重生成及真正开始上游前重新核验账号、角色和配置版本；业务专用模型的调用权限不会因此开放。带图片历史切换到纯文本模型返回 400。
+
+`AI_CHAT_DAILY_TURN_LIMIT` 默认每用户 100 次；多角色取已配置日额度中的最小值，没有覆盖时使用默认值，管理员不豁免。北京时间零点恢复；失败、停止、已删除会话的已受理生成仍计数，重复幂等请求不重复计数。额度预留按用户行锁串行，同会话只允许一个生成。发送及上游调用前实时重读活跃账号、当前 `ai_chat:write` 权限和模型发布角色。模型变更与状态冲突返回 409、额度耗尽 429、无模型 503；客户端不能自填供应商地址或模型参数。
+
+回答详情另含 `selected_answer_id`（用户消息）、`continuation_of_message_id`、`finish_reason` 与 `first_token_ms`。版本预览仅改变本地显示，采用操作改变后续上下文；有后续问题后不能修改早期采用版本。无选择指针的旧记录取最后一版非空可用回答。统计保留软删除会话，费用按调用时保存的价格快照与完整用量估算；中断时的已报告 token 可计入显示，但不当作完整用量估价，币种不合并。
 
 ## 薪资计算（`/api/salary`，092/097 迁移，2026-08-06，M1 主数据 + M2 批次/考勤/导入 + M3 计算引擎）
 
@@ -1907,6 +1923,18 @@ v1.6.0自动接管：请求可传 `mode:draft|auto`（默认draft）。auto响�
 研究 context 增加 `execution_contract=external_research_run_v1`、task_status、gate_status。领取响应增加服务端生成的 `agent_run_id`，与任务租约代次、客户和 input_hash 绑定；MCP 自动注入此ID。事实接口返回 `tool_call_id` 及真实写入的 evidence_refs，同事务生成规范工具事件，complete 仍严格检查同Run引用闭包。旧Run和跨任务引用不能复用。
 
 `POST /api/customer-hub/research-tasks/{task_id}/retry?expected_attempt_count=N`：人工重试失败背调；要求 `sales_automation:admin` 和该客户读取范围。仅 failed + attempt_count 匹配时重新置pending；保留历史事实，不动搜索结果，下一次claim创建新Run/租约代次。非failed或版本冲突409，无客户权限统一404。
+
+### 私海背调 v2（2026-11-16）
+
+| 方法与路径 | 权限和返回 |
+| --- | --- |
+| GET `/api/client-desk/customers/{company_id}/research` | `client_desk:read` 和本人客户。返回 `status`、`last_run_at`、`cooldown_until`、`cooldown_remaining_seconds`、`can_rerun`、`report` |
+| POST 同路径 | `client_desk:write`，实时小满归属与强身份映射。成功 HTTP 202；进行中、冷却或无法映射返回 409 |
+| GET `/api/sales-automation/research/monid-spend?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` | `sales_monid_spend:read`。按北京时间日期闭区间返回 `by_day` 和 `by_customer`，各行有 `charged_usd`、`reserved_usd`、`calls` |
+
+兼容执行器沿用 `/api/sales-automation/agent/research-tasks`，新执行器列表加 `include_private_v2=true`、领取加 `supports_private_v2=true`。v2 的 GET context 仅供识别契约，使用当前 `agent_id`、`lease_token` POST context 读取完整输入。仍通过 `/facts` 写入公开事实，通过 `/complete` 提交 `private_research_v2` 的 `report_markdown`、`input_hash`、`claims`、`citations`、`missing_information`、可选 `names`。结论、引用可同时为空，此时必须报告缺口。服务端生成标记、计数与 `verified_claims`。
+
+`POST /{id}/tools/{username_scan|monid}/{submit|status|bind}` 使用同一 Agent 权限、任务租约和 `agent_run_id`。submit 返回 `call_id` 和状态；status 传 `call_id`；bind 传 `call_id`、`candidate_ids`，返回原有事实回执。原始供应商响应留在调用账本。付费工具须匹配当前 Run 已尝试的用户名扫描和指定关键缺口。
 
 ### Research fact contract (2026-09-08)
 
@@ -2879,7 +2907,7 @@ AI 整理走 `app.ai.service.chat` facade，预设 `domestic_followup_parse`（�
 
 `GET /followups`、`/followups/authors`、`/drafts`、`/tasks`、`/tasks/summary`、`/items` 均接受 `potential_only=true`（默认 false），与原有数据范围和筛选取交集，只返回客户**当前** `lifecycle_status=潜在` 的数据；无客户的草稿在勾选时不显示。此筛选不改变详情/历史的查看权限。
 
-### 跟进闭环：模板、行动待办与准备卡（264–267 迁移，本地实现未部署）
+### 跟进闭环：模板、行动待办与准备卡（267–270 迁移，本地实现未部署）
 
 设计见[客户跟进闭环](requirements/2026-11-16-followup-closed-loop/README.md)。下列路径沿用 `/api/domestic-followup` 前缀及统一信封。
 

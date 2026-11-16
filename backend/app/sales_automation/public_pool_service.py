@@ -33,7 +33,10 @@ from app.customer.models import (
 from app.customer.logical_customer_service import logical_owner_expression, logical_root_predicate
 from app.customer.ownership_service import require_effective_owner
 from app.sales_automation import service
-from app.sales_automation.schemas import CustomerResearchResult
+from app.sales_automation.private_research_policy import (
+    LEGACY_ENRICHMENT_POLICY, PRIVATE_RESEARCH_POLICY, PRIVATE_RESEARCH_RESULT, is_private_research_v2,
+)
+from app.sales_automation.schemas import CustomerResearchResult, PrivateResearchResult
 
 
 LEASE_MINUTES = 15
@@ -170,6 +173,7 @@ def ensure_research_task(
     tier: str | None,
     created_by: int | None,
     physical_owner_only: bool = False,
+    priority: int = 0,
 ) -> tuple[CustomerResearchTask, bool]:
     account = db.query(CustomerAccount).filter(
         CustomerAccount.id == customer_id,
@@ -216,6 +220,7 @@ def ensure_research_task(
         source_ref_id=source_ref_id,
         tier=tier,
         task_status="pending",
+        priority=priority,
         gate_status="pending",
         result_review_status="pending",
         selection_reason=_json_value(selection_reason),
@@ -224,7 +229,7 @@ def ensure_research_task(
         input_snapshot=canonical_snapshot,
         result_schema_version=None,
         result_json=None,
-        data_classification="internal_business",
+        data_classification="personal_contact" if research_policy_version == PRIVATE_RESEARCH_POLICY else "internal_business",
         visibility_scope="customer_team",
         classification_reason="versioned acquisition research policy",
         research_summary=None,
@@ -586,7 +591,7 @@ def list_tasks(
     )
 
 
-def list_claimable_tasks(db: Session, page: int, page_size: int) -> tuple[list[CustomerResearchTask], int]:
+def list_claimable_tasks(db: Session, page: int, page_size: int, *, include_private_v2=False) -> tuple[list[CustomerResearchTask], int]:
     now = beijing_now()
     owner_id = logical_owner_expression(CustomerResearchTask, "research_task")
     query = db.query(
@@ -603,9 +608,11 @@ def list_claimable_tasks(db: Session, page: int, page_size: int) -> tuple[list[C
             owner_id == CustomerResearchTask.customer_id,
         ),
     ))
+    if not include_private_v2:
+        query = query.filter(CustomerResearchTask.research_policy_version != PRIVATE_RESEARCH_POLICY)
     total = query.count()
     rows = (
-        query.order_by(CustomerResearchTask.created_at, CustomerResearchTask.id)
+        query.order_by(CustomerResearchTask.priority.desc(), CustomerResearchTask.created_at, CustomerResearchTask.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
@@ -628,9 +635,13 @@ def claim_task(
     task_id: int,
     actor_id: int,
     agent_id: str,
-    *, external_run: bool = False,
+    *, external_run: bool = False, supports_private_v2: bool = False,
 ) -> tuple[CustomerResearchTask, str]:
     task = get_task(db, task_id, for_update=True)
+    if task.research_policy_version == PRIVATE_RESEARCH_POLICY and (
+        not is_private_research_v2(task) or not external_run or not supports_private_v2
+    ):
+        raise service.ConflictError("当前执行器不支持私海背调 v2")
     now = beijing_now()
     reclaimable = (
         task.task_status == "running"
@@ -873,14 +884,17 @@ def complete_task_research(
     task = _leased_task(db, task_id, actor_id, agent_id, lease_token)
     if task.gate_status not in {"passed", "not_required"}:
         raise service.ConflictError("行业门控未通过，不能提交完整研究")
+    private = is_private_research_v2(task)
+    schema_version = PRIVATE_RESEARCH_RESULT if private else "customer_research_v1"
     try:
-        contract = CustomerResearchResult.model_validate(result_json)
+        result_model = PrivateResearchResult if private else CustomerResearchResult
+        contract = result_model.model_validate(result_json)
     except ValidationError as exc:
-        raise service.ConflictError("customer_research_v1结构、claim或citation无效") from exc
+        raise service.ConflictError(f"{schema_version}结构、claim或citation无效") from exc
     result = contract.model_dump(mode="json")
     input_hash = research_input_hash(task)
     if result["input_hash"] != input_hash:
-        raise service.ConflictError("customer_research_v1.input_hash与当前任务不匹配")
+        raise service.ConflictError(f"{schema_version}.input_hash与当前任务不匹配")
     normalized_fact_ids = sorted({
         int(citation["evidence_ref"].split(":", 1)[1])
         for citation in result["citations"]
@@ -916,11 +930,15 @@ def complete_task_research(
     result["evidence_fact_ids"] = normalized_fact_ids
     task.task_status = "completed"
     task.result_review_status = "pending"
-    task.result_schema_version = "customer_research_v1"
+    task.result_schema_version = result["schema_version"]
+    if task.result_schema_version == PRIVATE_RESEARCH_RESULT:
+        from app.sales_automation.private_report import validate_report
+        validate_report(db, task, result, facts)
+        statements = result["verified_claims"]
+    else:
+        statements = [claim["statement"] for claim in result["claims"]]
     task.result_json = result
-    task.research_summary = "；".join(
-        claim["statement"] for claim in result["claims"]
-    )[:10000]
+    task.research_summary = "；".join(statements)[:10000]
     task.evidence_fact_ids = normalized_fact_ids
     task.agent_run_id = run.id
     from app.sales_automation.research_run_service import finish_run
@@ -945,7 +963,7 @@ def complete_task_gap(
     from app.sales_automation.schemas import ResearchGapResult
     task = _leased_task(db, task_id, actor_id, agent_id, lease_token)
     gate = task.result_json or {}
-    if (task.task_type != "full_research" or task.research_policy_version != "private-enrichment-v1"
+    if (task.task_type != "full_research" or task.research_policy_version != LEGACY_ENRICHMENT_POLICY
             or task.gate_status != "passed" or gate.get("schema_version") != "research_gate_v1"
             or gate.get("industry_relevance") != "uncertain"):
         raise service.ConflictError("仅主体未核实的私海补全可提交资料不足结果")

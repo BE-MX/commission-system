@@ -1,7 +1,7 @@
 """Add versioned domestic follow-up scene templates.
 
-Revision ID: 264_dom_fu_templates
-Revises: 263_customer_owner_claimed_at
+Revision ID: 267_dom_fu_templates
+Revises: 266_ai_chat_recovery
 """
 
 from alembic import op
@@ -11,8 +11,8 @@ from sqlalchemy.dialects import mysql
 from app.core.time import beijing_now
 from app.domestic_followup.template_seeds import TEMPLATE_SEEDS
 
-revision = "264_dom_fu_templates"
-down_revision = "263_customer_owner_claimed_at"
+revision = "267_dom_fu_templates"
+down_revision = "266_ai_chat_recovery"
 branch_labels = None
 depends_on = None
 

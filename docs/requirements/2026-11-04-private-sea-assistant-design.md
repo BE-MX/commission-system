@@ -132,7 +132,7 @@
 | 初始来源 | `customer_info.origin_name`、建档时间 | ✅ | 时间轴第一条 |
 | 联系人 | `customer_contacts`、`customer_contact_socials` | ✅ | 档案展示；`wa.me` 跳转取已关联会话的号码 |
 | 订单 | `okki_orders` + `okki_order_items` | ✅ | 两种口径并存：①金额、笔数、常买产品用订单经营分析的有效口径 `VALID_ORDER_SQL`；②"最近一次下单时间"和"在途订单"用全部未取消订单。在途订单不得被算成"久未下单" |
-| 背调 | `ark_customer_research_tasks.result_json` | ✅ | 映射必须同时满足 active、verified、strong、一对一的 okki company_id 外部身份，并经 `logical_owner_expression` 解析成当前逻辑客户；只取 `result_review_status ∈ {accepted, not_required}`；按 `visibility_scope/data_classification` 过滤（沿用 `customer/access_service.py`） |
+| 背调 | `ark_customer_research_tasks.result_json` | ✅ | 保留有效、已核验、强一对一的小满身份映射和现有数据范围。私海 v2 完整报告允许客户本人负责人查阅并显示实际审核状态，精确信息无法对应本次事实时标为「待核实」。私海助理分析仅使用通过事实核对的 v2 结论。客户负责人可以按冷却时间申请重新背调。 |
 | WhatsApp | `ark_whatsapp_conversations/messages` | ✅ | 见 §3.3，必须服从三道闸门 |
 | 手工跟进 | 新表 `ark_client_desk_followups` | ✅ | — |
 | 客户等级 | `ark_invoice_customer_profiles.customer_grade` | ✅ | 经 `invoice/customer_profile_service` 读写，不另建分级 |

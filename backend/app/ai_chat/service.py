@@ -11,7 +11,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.ai_chat import context_service, file_service, mode_service
+from app.ai_chat import context_service, file_service, mode_service, generation_service
 from app.ai_chat.file_service import StoredAttachment
 from app.ai_chat.models import AiChatAttachment, AiChatMessage, AiChatSession
 from app.ai_chat.schemas import RetryStreamRequest, TurnStreamRequest
@@ -58,6 +58,7 @@ def get_session(db: Session, session_id: int, owner_user_id: int) -> AiChatSessi
         .filter(
             AiChatSession.id == session_id,
             AiChatSession.owner_user_id == owner_user_id,
+            AiChatSession.deleted_at.is_(None),
         )
         .first()
     )
@@ -71,6 +72,7 @@ def get_message(db: Session, message_id: int, owner_user_id: int) -> AiChatMessa
         .filter(
             AiChatMessage.id == message_id,
             AiChatSession.owner_user_id == owner_user_id,
+            AiChatSession.deleted_at.is_(None),
         )
         .first()
     )
@@ -87,6 +89,7 @@ def get_attachment(
             AiChatAttachment.id == attachment_id,
             AiChatAttachment.created_by == owner_user_id,
             AiChatSession.owner_user_id == owner_user_id,
+            AiChatSession.deleted_at.is_(None),
         )
         .first()
     )
@@ -129,7 +132,8 @@ def list_sessions(
 ) -> SessionPage:
     limit = min(max(limit, 1), 100)
     query = db.query(AiChatSession).filter(
-        AiChatSession.owner_user_id == owner_user_id
+        AiChatSession.owner_user_id == owner_user_id,
+        AiChatSession.deleted_at.is_(None),
     )
     if cursor:
         updated_at, row_id = _decode_cursor(cursor)
@@ -156,6 +160,7 @@ def list_sessions(
 
 
 def get_session_detail(db: Session, session_id: int, owner_user_id: int) -> dict:
+    generation_service.recover_expired(db, owner_user_id)
     session = get_session(db, session_id, owner_user_id)
     messages = (
         db.query(AiChatMessage)
@@ -205,17 +210,26 @@ def create_attachment(
 
 
 def delete_draft_attachment(db: Session, owner_user_id: int, attachment_id: int):
-    row = get_attachment(db, attachment_id, owner_user_id)
-    if row.status != "draft" or row.message_id is not None:
+    candidate = get_attachment(db, attachment_id, owner_user_id)
+    # Mark an unavailable draft durably before touching local or cloud storage.
+    # A failed cleanup remains retryable and cannot be attached to a new message.
+    session = db.query(AiChatSession).filter(AiChatSession.id == candidate.session_id,
+        AiChatSession.owner_user_id == owner_user_id, AiChatSession.deleted_at.is_(None)).with_for_update().first()
+    row = db.query(AiChatAttachment).filter(AiChatAttachment.id == attachment_id).populate_existing().with_for_update().first()
+    if not session or not row or row.status not in {"draft", "failed"} or row.message_id is not None:
         _not_found()
-    storage_path = row.storage_path
     try:
+        row.status = "failed"
+        db.commit()
+        other = db.query(AiChatAttachment.id).filter(AiChatAttachment.storage_path == row.storage_path,
+                                                    AiChatAttachment.id != row.id).first()
+        if not other:
+            file_service.delete_private_file(row.storage_path)
         db.delete(row)
         db.commit()
     except Exception:
         db.rollback()
         raise
-    _cleanup_unreferenced_attachment(db, storage_path)
 
 
 def _cleanup_unreferenced_attachment(db: Session, storage_path: str):
@@ -238,6 +252,7 @@ def _paired_assistant(db: Session, user: AiChatMessage) -> AiChatMessage:
             AiChatMessage.role == "assistant",
             AiChatMessage.reply_to_message_id == user.id,
             AiChatMessage.retry_of_message_id.is_(None),
+            AiChatMessage.continuation_of_message_id.is_(None),
         )
         .first()
     )
@@ -281,6 +296,7 @@ def _validate_existing_turn_request(
     if (
         turn.user_message.content != request.content.strip()
         or attachment_ids != set(request.attachment_ids)
+        or (request.preset_id is not None and request.preset_id != (turn.assistant_message.model_snapshot or {}).get("preset_id"))
     ):
         raise RequestConflictError("请求标识已用于不同内容，请更换请求标识")
 
@@ -295,10 +311,12 @@ def begin_turn(
     owner_user_id: int,
     session_id: int,
     request: TurnStreamRequest,
+    *,
+    model_snapshot: dict | None = None,
 ) -> TurnPair:
     session = (
         db.query(AiChatSession)
-        .filter(AiChatSession.id == session_id, AiChatSession.owner_user_id == owner_user_id)
+        .filter(AiChatSession.id == session_id, AiChatSession.owner_user_id == owner_user_id, AiChatSession.deleted_at.is_(None))
         .populate_existing().with_for_update().first()
     )
     if session is None:
@@ -354,8 +372,10 @@ def begin_turn(
             session_id=session_id,
             role="assistant",
             reply_to_message_id=user.id,
+            model_snapshot=model_snapshot,
             content="",
             status="streaming",
+            lease_expires_at=generation_service.lease_deadline(now),
             created_at=now,
             updated_at=now,
         )
@@ -381,6 +401,8 @@ def begin_turn(
         if session.title == "新对话":
             session.title = _auto_title(user.content)
         session.updated_at = now
+        if model_snapshot:
+            session.selected_preset_id = model_snapshot["preset_id"]
         db.commit()
         return TurnPair(user, assistant, False)
     except IntegrityError:
@@ -400,9 +422,11 @@ def begin_retry(
     owner_user_id: int,
     assistant_id: int,
     request: RetryStreamRequest,
+    *,
+    model_snapshot: dict | None = None,
 ) -> RetryTurn:
     original = get_message(db, assistant_id, owner_user_id)
-    if original.role != "assistant" or original.status not in {"stopped", "failed"}:
+    if original.role != "assistant" or original.status not in {"completed", "stopped", "failed"}:
         _not_found()
     user = get_message(db, original.reply_to_message_id, owner_user_id)
     if user.role != "user" or user.session_id != original.session_id:
@@ -416,20 +440,32 @@ def begin_retry(
         .first()
     )
     if existing:
-        if existing.role == "assistant" and existing.retry_of_message_id == original.id:
+        if existing.role == "assistant" and existing.retry_of_message_id == original.id and existing.continuation_of_message_id is None:
+            if request.preset_id is not None and request.preset_id != (existing.model_snapshot or {}).get("preset_id"):
+                raise RequestConflictError("请求标识已用于其他模型，请更换请求标识")
             return RetryTurn(existing, True)
         raise RequestConflictError("请求标识已用于其他重试，请更换请求标识")
+    if db.query(AiChatMessage.id).filter(
+        AiChatMessage.session_id == original.session_id, AiChatMessage.role == "user", AiChatMessage.id > user.id
+    ).first():
+        raise RequestConflictError("只能重新生成最后一轮回答，请新建对话修改更早的问题")
     row = AiChatMessage(
         session_id=original.session_id,
         role="assistant",
         request_id=request.request_id,
         content="",
         status="streaming",
+        lease_expires_at=generation_service.lease_deadline(),
         reply_to_message_id=user.id,
         retry_of_message_id=original.id,
+        model_snapshot=model_snapshot,
     )
     try:
         db.add(row)
+        session = get_session(db, original.session_id, owner_user_id)
+        session.updated_at = beijing_now()
+        if model_snapshot:
+            session.selected_preset_id = model_snapshot["preset_id"]
         db.commit()
         db.refresh(row)
         return RetryTurn(row, False)
@@ -447,7 +483,10 @@ def begin_retry(
             existing
             and existing.role == "assistant"
             and existing.retry_of_message_id == original.id
+            and existing.continuation_of_message_id is None
         ):
+            if request.preset_id is not None and request.preset_id != (existing.model_snapshot or {}).get("preset_id"):
+                raise RequestConflictError("请求标识已用于其他模型，请更换请求标识")
             return RetryTurn(existing, True)
         raise RequestConflictError("请求标识已被使用，请重新发送") from None
 
@@ -464,18 +503,28 @@ def _set_terminal(
     *,
     error_message: str | None = None,
     ai_call_log_id: int | None = None,
+    reasoning_content: str | None = None,
+    finish_reason: str | None = None,
 ) -> AiChatMessage:
     row = get_message(db, assistant_id, owner_user_id)
     if row.role != "assistant":
         _not_found()
-    row.status = status
-    row.content = content
-    row.error_message = error_message
+    values = {"status": status, "content": content, "reasoning_content": reasoning_content,
+              "error_message": error_message, "updated_at": beijing_now(),
+              "lease_expires_at": None, "finish_reason": finish_reason or ("stop" if status == "completed" else status)}
     if ai_call_log_id is not None:
-        row.ai_call_log_id = ai_call_log_id
-    row.updated_at = beijing_now()
+        values["ai_call_log_id"] = ai_call_log_id
     try:
+        changed = db.query(AiChatMessage).filter(AiChatMessage.id == row.id,
+            generation_service.live_condition()).update(values, synchronize_session=False)
+        if changed and content and status in {"completed", "stopped"}:
+            parent = db.query(AiChatMessage).filter(AiChatMessage.id == row.reply_to_message_id,
+                AiChatMessage.session_id == row.session_id, AiChatMessage.role == "user").populate_existing().with_for_update().first()
+            if parent and (status == "completed" or parent.selected_answer_id is None):
+                parent.selected_answer_id = row.id
         db.commit()
+        if not changed:
+            generation_service.recover_expired(db, owner_user_id)
         db.refresh(row)
         return row
     except Exception:
@@ -483,7 +532,7 @@ def _set_terminal(
         raise
 
 
-def finish_turn(db, owner_user_id, assistant_id, content, ai_call_log_id=None):
+def finish_turn(db, owner_user_id, assistant_id, content, ai_call_log_id=None, *, reasoning_content=None, finish_reason=None):
     return _set_terminal(
         db,
         owner_user_id,
@@ -491,10 +540,12 @@ def finish_turn(db, owner_user_id, assistant_id, content, ai_call_log_id=None):
         "completed",
         content,
         ai_call_log_id=ai_call_log_id,
+        reasoning_content=reasoning_content,
+        finish_reason=finish_reason,
     )
 
 
-def fail_turn(db, owner_user_id, assistant_id, content, error_message, ai_call_log_id=None):
+def fail_turn(db, owner_user_id, assistant_id, content, error_message, ai_call_log_id=None, *, reasoning_content=None):
     return _set_terminal(
         db,
         owner_user_id,
@@ -503,10 +554,11 @@ def fail_turn(db, owner_user_id, assistant_id, content, error_message, ai_call_l
         content,
         error_message=error_message,
         ai_call_log_id=ai_call_log_id,
+        reasoning_content=reasoning_content,
     )
 
 
-def stop_turn(db, owner_user_id, assistant_id, content, ai_call_log_id=None):
+def stop_turn(db, owner_user_id, assistant_id, content, ai_call_log_id=None, *, reasoning_content=None):
     return _set_terminal(
         db,
         owner_user_id,
@@ -514,6 +566,7 @@ def stop_turn(db, owner_user_id, assistant_id, content, ai_call_log_id=None):
         "stopped",
         content,
         ai_call_log_id=ai_call_log_id,
+        reasoning_content=reasoning_content,
     )
 
 

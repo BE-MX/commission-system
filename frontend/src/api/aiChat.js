@@ -5,6 +5,9 @@ import { consumeSseStream } from '@/views/design/ai-chat/state'
 const API_BASE = '/api/ai-chat'
 
 export const getConfig = () => aiChatClient.get('/config')
+export const listChatRoles = () => aiChatClient.get('/admin/roles', { showLoading: false })
+export const renameSession = (sessionId, title) => aiChatClient.patch(`/sessions/${sessionId}`, { title })
+export const deleteSession = sessionId => aiChatClient.delete(`/sessions/${sessionId}`)
 export const listModes = () => aiChatClient.get('/modes', { showLoading: false, suppressToast: true })
 export const getMode = modeId => aiChatClient.get(`/modes/${modeId}`, { showLoading: false, suppressToast: true })
 export const getSessionMode = sessionId => aiChatClient.get(`/sessions/${sessionId}/mode`, { showLoading: false, suppressToast: true })
@@ -89,3 +92,9 @@ export async function streamTurn(sessionId, body, options) {
 export async function streamRetry(messageId, body, options) {
   return streamRequest(`/messages/${messageId}/retry/stream`, body, options)
 }
+
+export const streamContinue = (id, body, options) => streamRequest(`/messages/${id}/continue/stream`, body, options)
+export const selectAnswer = (userId, answerId) => aiChatClient.patch(`/messages/${userId}/selection`, { answer_id: answerId })
+export const getChatUsage = params => aiChatClient.get('/admin/usage', { params, showLoading: false })
+export const getChatRoleLimits = () => aiChatClient.get('/admin/role-limits', { showLoading: false })
+export const setChatRoleLimit = (roleId, dailyLimit) => aiChatClient.put(`/admin/role-limits/${roleId}`, { daily_limit: dailyLimit })

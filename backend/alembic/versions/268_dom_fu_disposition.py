@@ -1,14 +1,14 @@
 """Add no-next-step disposition to domestic follow-ups.
 
-Revision ID: 265_dom_fu_disposition
-Revises: 264_dom_fu_templates
+Revision ID: 268_dom_fu_disposition
+Revises: 267_dom_fu_templates
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "265_dom_fu_disposition"
-down_revision = "264_dom_fu_templates"
+revision = "268_dom_fu_disposition"
+down_revision = "267_dom_fu_templates"
 branch_labels = None
 depends_on = None
 

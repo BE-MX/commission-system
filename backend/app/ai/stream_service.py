@@ -1,5 +1,6 @@
 """Provider-neutral streaming chat for the shared AI facade."""
 
+from app.ai.stream_bridge import network_events
 from app.ai.http_client import apply_token_parameter, transport_http_timeout
 
 import json
@@ -22,6 +23,7 @@ from app.ai.log_snapshot import serialize_response_snapshot
 from app.ai.preset_config import text_request_parameters
 from app.ai.models import AiCallLog, AiPreset
 from app.ai.provider_service import get_provider
+from app.ai.text_snapshot import TextChatSnapshot, freeze_text_call_config
 
 logger = logging.getLogger("commission.ai")
 
@@ -110,12 +112,15 @@ def parse_provider_stream(api_type: str, lines: Iterable[str]) -> Iterator[dict]
                 usage = message.get("usage") or {}
                 input_tokens = usage.get("input_tokens", input_tokens)
                 output_tokens = usage.get("output_tokens", output_tokens)
+                yield {"type": "usage", **_normalized_usage(input_tokens, output_tokens)}
                 model = message.get("model")
                 if model and not meta_emitted:
                     meta_emitted = True
                     yield {"type": "meta", "model": model}
             elif event_type == "content_block_delta":
                 delta = data.get("delta") or {}
+                if delta.get("type") == "thinking_delta" and isinstance(delta.get("thinking"), str):
+                    yield {"type": "reasoning", "text": delta["thinking"]}
                 text = delta.get("text") if delta.get("type") == "text_delta" else None
                 if isinstance(text, str) and text:
                     yield {"type": "delta", "text": text}
@@ -123,6 +128,7 @@ def parse_provider_stream(api_type: str, lines: Iterable[str]) -> Iterator[dict]
                 usage = data.get("usage") or {}
                 input_tokens = usage.get("input_tokens", input_tokens)
                 output_tokens = usage.get("output_tokens", output_tokens)
+                yield {"type": "usage", **_normalized_usage(input_tokens, output_tokens)}
                 delta = data.get("delta") or {}
                 if delta.get("stop_reason") == "refusal":
                     yield _stream_error("provider_error")
@@ -137,6 +143,8 @@ def parse_provider_stream(api_type: str, lines: Iterable[str]) -> Iterator[dict]
             input_tokens = usage.get("prompt_tokens", input_tokens)
             output_tokens = usage.get("completion_tokens", output_tokens)
             total_tokens = usage.get("total_tokens", total_tokens)
+            if usage:
+                yield {"type": "usage", **_normalized_usage(input_tokens, output_tokens, total_tokens)}
             model = data.get("model")
             if model and not meta_emitted:
                 meta_emitted = True
@@ -146,9 +154,10 @@ def parse_provider_stream(api_type: str, lines: Iterable[str]) -> Iterator[dict]
                 if choices[0].get("finish_reason"):
                     finish = {"finish_reason": choices[0]["finish_reason"]}
                 delta = choices[0].get("delta") or {}
+                reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                if isinstance(reasoning, str) and reasoning:
+                    yield {"type": "reasoning", "text": reasoning}
                 text = delta.get("content")
-                if not text:
-                    text = delta.get("reasoning_content") or delta.get("reasoning")
                 if isinstance(text, str) and text:
                     yield {"type": "delta", "text": text}
 
@@ -176,6 +185,7 @@ def _finalize_log(
     api_key: Optional[str] = None,
 ) -> None:
     usage_detail = dict(usage)
+    usage_detail['complete'] = status == 'success'
     if termination:
         usage_detail["termination"] = termination
     safe_text = text.replace(api_key, "[REDACTED]") if api_key else text
@@ -194,12 +204,13 @@ def _finalize_log(
     }
 
     def apply_values(target: AiCallLog) -> None:
-        for field, value in final_values.items():
-            setattr(target, field, value)
+        # Recovery owns an interrupted terminal state; late workers cannot undo it.
+        db.query(AiCallLog).filter(AiCallLog.id == target.id, AiCallLog.status == "pending").update(
+            final_values, synchronize_session=False)
 
     log_id = log.id
-    apply_values(log)
     try:
+        apply_values(log)
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -326,9 +337,15 @@ def chat_stream(
     messages: list,
     caller_module: str,
     caller_user_id: Optional[int] = None,
+    *,
+    config_snapshot: TextChatSnapshot | None = None,
 ) -> Iterator[dict]:
     """Stream a direct model call and finalize its log on every exit path."""
-    preset, provider = _load_direct_preset(db, preset_name)
+    if config_snapshot is None:
+        config_snapshot = freeze_text_call_config(*_load_direct_preset(db, preset_name))
+    if not isinstance(config_snapshot, TextChatSnapshot) or config_snapshot.preset.preset_name != preset_name:
+        raise ValueError("Invalid trusted stream configuration")
+    preset, provider = config_snapshot.preset, config_snapshot.provider
     full_messages = []
     if preset.system_prompt:
         full_messages.append({"role": "system", "content": preset.system_prompt})
@@ -366,28 +383,30 @@ def chat_stream(
         url = build_chat_url(provider.api_base, api_type, provider=provider)
         timeout_sec = request_timeout(provider, "multimodal" if _has_image_message(full_messages) else "text", preset)
 
-        with httpx.Client(timeout=transport_http_timeout(timeout_sec, transport_options(provider, preset)), verify=True, follow_redirects=False) as client:
-            with client.stream("POST", url, headers=headers, json=params) as response:
-                response.raise_for_status()
-                yield {"type": "meta", "log_id": log.id, "model": preset.model}
-                for event in parse_provider_stream(api_type, response.iter_lines()):
-                    event_type = event["type"]
-                    if event_type == "meta":
-                        continue
-                    if event_type == "delta":
-                        text_length = _append_bounded_text(
-                            text_parts, event["text"], text_length
-                        )
-                        yield event
-                    else:
-                        terminal_event = event
-                        if event_type == "done":
-                            usage = {
-                                "input_tokens": event.get("input_tokens"),
-                                "output_tokens": event.get("output_tokens"),
-                                "total_tokens": event.get("total_tokens"),
-                            }
-                        break
+        yield {"type": "meta", "log_id": log.id, "model": preset.model}
+        events = network_events(
+            lambda: httpx.Client(timeout=transport_http_timeout(timeout_sec, transport_options(provider, preset)), verify=True, follow_redirects=False),
+            parse_provider_stream, api_type, url, headers, params)
+        try:
+            for event in events:
+                event_type = event["type"]
+                if event_type == "usage":
+                    usage = {key: event.get(key) for key in ("input_tokens", "output_tokens", "total_tokens")}
+                    continue
+                if event_type == "meta":
+                    continue
+                if event_type in {"reasoning", "heartbeat"}:
+                    yield event
+                elif event_type == "delta":
+                    text_length = _append_bounded_text(text_parts, event["text"], text_length)
+                    yield event
+                else:
+                    terminal_event = event
+                    if event_type == "done":
+                        usage = {key: event.get(key) for key in ("input_tokens", "output_tokens", "total_tokens")}
+                    break
+        finally:
+            events.close()
     except GeneratorExit:
         _finalize_log(
             db,

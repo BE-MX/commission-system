@@ -1,5 +1,5 @@
 {
-  "source_sha256": "01323cd57f41b2b48f3f7665ac5afd2ea317d40b876cbcc78bb71facb5a50a47",
+  "source_sha256": "ce617a02ecb80306774d0a63a02c21b61f2b55d9660acd7f02f7531546db5d15",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -21,6 +21,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -114,6 +115,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -2861,10 +2863,7 @@
         ]
       },
       {
-        "anyPermission": [
-          "design_image:read",
-          "ai_chat:read"
-        ]
+        "permission": "design_image:read"
       },
       {
         "anyPermission": [
@@ -2923,6 +2922,14 @@
           "customer_media_portal:read",
           "customer_media_account:read"
         ]
+      }
+    ],
+    "DesignAiChat": [
+      {
+        "permission": "ai_chat:read"
+      },
+      {
+        "permission": "ai_chat:read"
       }
     ],
     "DesignGantt": [
@@ -3275,6 +3282,36 @@
         ]
       }
     ],
+    "MonidSpend": [
+      {
+        "permission": "sales_monid_spend:read"
+      },
+      {
+        "permission": "sales_monid_spend:read"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "navigation:read",
+          "domestic_followup:admin",
+          "mcp:admin",
+          "integration:admin",
+          "commerce_transition:admin",
+          "operations:read",
+          "operations:admin",
+          "sales_monid_spend:read",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
     "UserManagement": [
       {
         "permission": "user:read"
@@ -3295,6 +3332,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3324,6 +3362,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3353,6 +3392,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3382,6 +3422,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3411,6 +3452,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3446,6 +3488,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3475,6 +3518,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3504,6 +3548,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3533,6 +3578,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3562,6 +3608,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3591,6 +3638,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3620,6 +3668,7 @@
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",

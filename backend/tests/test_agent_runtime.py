@@ -470,7 +470,9 @@ def _start(db, run_id, claim):
 
 
 def test_profile_seed_is_immutable_and_idempotent(db):
-    assert db.query(models.AgentProfile).count() == 4
+    assert db.query(models.AgentProfile).count() == 5
+    research_profile = service.get_active_profile(db, "openclaw_private_customer_research")
+    assert {"ark_monid_run", "ark_username_scan"} <= set(research_profile.tool_allowlist)
     assert seed.seed_default_profiles(db) == 0
     profile = service.get_active_profile(db, "customer_order_copilot")
     assert profile.version == 5

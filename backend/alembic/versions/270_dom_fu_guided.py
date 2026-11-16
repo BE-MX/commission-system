@@ -1,14 +1,14 @@
 """Add guided follow-up template answers and item fact nature.
 
-Revision ID: 267_dom_fu_guided
-Revises: 266_dom_fu_preps
+Revision ID: 270_dom_fu_guided
+Revises: 269_dom_fu_preps
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "267_dom_fu_guided"
-down_revision = "266_dom_fu_preps"
+revision = "270_dom_fu_guided"
+down_revision = "269_dom_fu_preps"
 branch_labels = None
 depends_on = None
 

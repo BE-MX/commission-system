@@ -23,6 +23,8 @@ def request():
 def test_artifact_keeps_credentials_and_runtime_state_out():
     payload = request()
     assert remote.validate(payload)
+    assert '.agents/skills/ark-private-research/SKILL.md' in payload['files']
+    assert 'services/openclaw-sales-agent/src/private-research-tools.mjs' in payload['files']
     assert not any('node_modules' in name or name.endswith('.env') or 'secrets' in name
                    for name in payload['files'])
 

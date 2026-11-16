@@ -56,6 +56,17 @@
   "external_services": [
     {
       "host": "beijing",
+      "name": "ark-maigret-scanner",
+      "manager": "systemd",
+      "unit": "ark-maigret-scanner.service",
+      "source": "services/maigret-scanner",
+      "runtime": "/opt/ark-maigret-scanner",
+      "health": "http://127.0.0.1:7912/health",
+      "database_writer": false,
+      "migration_status": "pending-singapore-egress-and-scanner-verification"
+    },
+    {
+      "host": "beijing",
       "name": "ark-mail-outreach",
       "manager": "systemd",
       "source": "services/openclaw-sales-agent/src/mail-worker-main.mjs",
@@ -270,6 +281,15 @@
     "new_agent_services": "Deploy on Beijing; register manager, health endpoint, state and any database writer before activation.",
     "existing_openclaw_user": "root"
   },
+  "egress_infrastructure": [
+    {
+      "host": "singapore",
+      "name": "private-research-forward-proxy",
+      "access": "authenticated private link or tunnel; no public listener",
+      "consumers": ["beijing private-research Monid adapter", "beijing Maigret scanner", "beijing OpenClaw web tools"],
+      "status": "pending-operator-configuration"
+    }
+  ],
   "standalone_static_targets": [
     {
       "component": "color-guide",

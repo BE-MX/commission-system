@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.customer.contracts import PRIVATE_WEB_RESEARCH_SOURCES
 from app.sales_automation.identity import normalize_source_url
+from app.sales_automation.private_research_policy import PRIVATE_RESEARCH_RESULT
 
 
 class ProfileUpsert(BaseModel):
@@ -35,6 +37,7 @@ class SearchJobCreate(BaseModel):
 
 class AgentClaim(BaseModel):
     agent_id: str = Field(..., min_length=1, max_length=96)
+    supports_private_v2: bool = False
 
 
 class AgentLease(BaseModel):
@@ -119,7 +122,7 @@ class ResearchFactInput(BaseModel):
     confidence_method_version: str = Field("research_evidence_v1", min_length=1, max_length=32)
     confidence_components: dict[str, Any] = Field(default_factory=dict)
     source_system: Literal["public_web", "agent"]
-    source_entity_type: Literal["company_page", "research_report"]
+    source_entity_type: str = Field(..., min_length=1, max_length=32)
     source_account_key: str = Field("global", min_length=1, max_length=128)
     external_record_id: str = Field(..., min_length=1, max_length=255)
     source_url: str | None = Field(None, max_length=2048)
@@ -133,10 +136,11 @@ class ResearchFactInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_fact_provenance(self):
-        if self.fact_layer == "source" and (self.source_system, self.source_entity_type) != (
-            "public_web", "company_page"
+        if self.fact_layer == "source" and (
+            self.source_system != "public_web"
+            or self.source_entity_type not in {"company_page", *PRIVATE_WEB_RESEARCH_SOURCES}
         ):
-            raise ValueError("source事实必须来自已注册公开公司页面")
+            raise ValueError("source事实必须来自已注册公开来源")
         if self.fact_layer == "inferred":
             if (self.source_system, self.source_entity_type) != ("agent", "research_report"):
                 raise ValueError("inferred事实必须来自受控research_report")
@@ -240,6 +244,31 @@ class CustomerResearchResult(BaseModel):
         return self
 
 
+class PrivateResearchResult(CustomerResearchResult):
+    schema_version: Literal[PRIVATE_RESEARCH_RESULT]
+    report_markdown: str = Field(..., min_length=1, max_length=60000)
+    claims: list[ResearchClaim] = Field(default_factory=list, max_length=100)
+    citations: list[ResearchCitation] = Field(default_factory=list, max_length=500)
+    missing_information: list[str] = Field(default_factory=list, max_length=30)
+    names: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("missing_information", "names")
+    @classmethod
+    def valid_text_items(cls, value, info):
+        limit = 160 if info.field_name == "names" else 400
+        cleaned = [item.strip() for item in value]
+        if any(not item or len(item) > limit or any(ord(c) < 32 for c in item) for item in cleaned):
+            raise ValueError("研究名单或缺口包含无效文本")
+        return list(dict.fromkeys(cleaned))
+
+    @model_validator(mode="after")
+    def require_outcome(self):
+        self.report_markdown = self.report_markdown.strip()
+        if not self.report_markdown or not (self.claims or self.missing_information):
+            raise ValueError("私海报告必须提供有效正文及研究结论或缺口")
+        return self
+
+
 class ResearchGapResult(BaseModel):
     """An unresolved private enrichment outcome, never an evidence-backed claim."""
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -261,12 +290,42 @@ class ResearchGapResult(BaseModel):
 class PublicPoolResearchSubmit(AgentLease):
     model_config = ConfigDict(extra="forbid")
 
-    result_json: CustomerResearchResult | ResearchGapResult = Field(..., discriminator="schema_version")
+    result_json: CustomerResearchResult | ResearchGapResult | PrivateResearchResult = Field(..., discriminator="schema_version")
     agent_run_id: int = Field(..., gt=0)
     data_classification: Literal[
         "public_business", "internal_business", "personal_contact", "restricted_internal"
     ] = "internal_business"
     visibility_scope: Literal["all_authorized", "customer_team", "management"] = "customer_team"
+
+
+class ResearchToolLease(AgentLease):
+    model_config = ConfigDict(extra="forbid")
+
+    agent_run_id: int = Field(..., gt=0)
+
+
+class FreeResearchSearch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    queries: list[Annotated[str, Field(min_length=1, max_length=250)]] = Field(..., min_length=1, max_length=5)
+    outcome: Literal["insufficient", "candidate_found"]
+
+
+class ResearchToolSubmit(ResearchToolLease):
+    operation: Literal["username_scan", "instagram_profile", "tiktok_profile", "facebook_profile", "linkedin_profile", "hunter_domain_email"]
+    target: str = Field(..., min_length=1, max_length=512)
+    idempotency_key: str = Field(..., min_length=1, max_length=96, pattern=r"^[A-Za-z0-9._:-]+$")
+    gap: Literal["subject_identity", "professional_identity", "contact", "social_activity"] | None = None
+    free_search: FreeResearchSearch | None = None
+    maigret_call_id: int | None = Field(None, gt=0)
+
+
+class ResearchToolStatus(ResearchToolLease):
+    call_id: int = Field(..., gt=0)
+
+
+class ResearchToolBind(ResearchToolStatus):
+    candidate_ids: list[Annotated[int, Field(gt=0)]] = Field(..., min_length=1, max_length=100)
 
 
 class ResearchResultReview(BaseModel):

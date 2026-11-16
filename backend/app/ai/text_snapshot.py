@@ -56,6 +56,7 @@ def prepare_text_chat(
     parameters.pop("test_mode", None)
     parameters.pop("workflow", None)
     parameters.pop("studio", None)
+    parameters.pop("chat", None)
     parameters.update(parameters.pop("request_parameters", {}))
     if set(parameters) - TEXT_PARAMETERS:
         raise ValueError("preset has unsupported text parameters")

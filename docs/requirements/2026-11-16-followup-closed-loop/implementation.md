@@ -181,7 +181,7 @@
 
 - 后端跟进测试：302 passed；另 1 项 `test_insight_to_task_requires_customer_write_and_is_idempotent` 为开工前已复现的基线失败，未夹带修改。
 - 前端：`npm run build` 通过；`npm run test:domestic-followup` 57 passed。
-- 迁移：264–267 在独立 SQLite 完成 upgrade/downgrade/upgrade；单 head `267_dom_fu_guided`。
+- 迁移：267–270 在独立 SQLite 完成 upgrade/downgrade/upgrade；单 head `270_dom_fu_guided`。
 - 约定：`python scripts/check_conventions.py` 增量无违规。
 - 浏览器：真实 Vue/FastAPI 和独立 SQLite 验证模板新版与历史、准备卡、AI 核对、约定生成、行动完成说明。截图为 [桌面](../reports/assets/2026-11-16-followup-closed-loop/desktop.png) 与 [手机](../reports/assets/2026-11-16-followup-closed-loop/mobile.png)。
 - 限制：预览模型输出使用固定样例，真实模型人工评测尚未执行；生产 preset 更新、业务种子审阅、合并/发布和生产迁移均待授权。

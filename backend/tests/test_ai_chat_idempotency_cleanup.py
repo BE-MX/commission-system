@@ -175,10 +175,10 @@ def test_file_delete_failure_keeps_draft_record(db, monkeypatch):
     monkeypatch.setattr(file_service, "delete_private_file", fail_delete)
     with pytest.raises(file_service.FileStorageError):
         service.delete_draft_attachment(db, owner.id, draft.id)
-    assert db.get(AiChatAttachment, draft.id) is not None
+    assert db.get(AiChatAttachment, draft.id).status == "failed"
 
 
-def test_db_delete_failure_can_be_retried_after_file_is_gone(db, monkeypatch):
+def test_db_delete_failure_before_intent_does_not_delete_file(db, monkeypatch):
     owner, conversation = _owner_and_session(db, "delete-db-failure")
     draft = _draft(db, owner.id, conversation.id, "retry.txt")
     deleted_paths = []
@@ -200,4 +200,4 @@ def test_db_delete_failure_can_be_retried_after_file_is_gone(db, monkeypatch):
 
     service.delete_draft_attachment(db, owner.id, draft.id)
     assert db.get(AiChatAttachment, draft.id) is None
-    assert deleted_paths == ["documents/retry.txt", "documents/retry.txt"]
+    assert deleted_paths == ["documents/retry.txt"]

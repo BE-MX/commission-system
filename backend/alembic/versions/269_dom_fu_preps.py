@@ -1,15 +1,15 @@
 """Add domestic follow-up preparation cards and draft linkage.
 
-Revision ID: 266_dom_fu_preps
-Revises: 265_dom_fu_disposition
+Revision ID: 269_dom_fu_preps
+Revises: 268_dom_fu_disposition
 """
 
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
 
-revision = "266_dom_fu_preps"
-down_revision = "265_dom_fu_disposition"
+revision = "269_dom_fu_preps"
+down_revision = "268_dom_fu_disposition"
 branch_labels = None
 depends_on = None
 

@@ -57,12 +57,12 @@
         "deepseek/deepseek-v4-flash": { agentRuntime: { id: "openclaw" } },
         "deepseek/deepseek-v4-pro": { agentRuntime: { id: "openclaw" } },
       },
-      skills: ["ark-lead-discovery", "ark-company-research", "ark-public-pool-research"],
+      skills: ["ark-lead-discovery", "ark-company-research", "ark-public-pool-research", "ark-private-research"],
     },
     entries: {
       main: {
         heartbeat: {
-          every: "5m",
+          every: "0m", // Bootstrap opt-in: ARK_QUEUE_HEARTBEAT_ENABLED=true.
           target: "none",
           lightContext: true,
           isolatedSession: true,
@@ -87,7 +87,7 @@
         timeoutSeconds: 30,
         cacheTtlMinutes: 15,
       },
-      fetch: { enabled: true },
+      fetch: { enabled: true, useTrustedEnvProxy: false },
     },
   },
   browser: { enabled: false },

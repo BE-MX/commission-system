@@ -42,6 +42,9 @@ def validate_parameters(parameters) -> None:
         return
     if not isinstance(parameters, dict):
         raise ValueError("调用参数必须是 JSON 对象")
+    if "chat" in parameters:
+        from app.ai.chat_config import validate_chat_options
+        validate_chat_options(parameters["chat"])
     if "studio" in parameters:
         studio = parameters["studio"]
         if not isinstance(studio, dict):
@@ -96,7 +99,7 @@ def image_request_parameters(parameters) -> dict:
 
 INTERNAL_PARAMETER_KEYS = {
     "studio", "api_style", "download_hosts", "rate_card", "max_reference_images",
-    "size_parameter", "request_parameters", "transport", "test_mode", "workflow",
+    "size_parameter", "request_parameters", "transport", "test_mode", "workflow", "chat",
 }
 
 

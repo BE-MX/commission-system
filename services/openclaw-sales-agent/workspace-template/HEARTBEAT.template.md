@@ -15,14 +15,15 @@
 ## 统一客户研究任务（搜索队列为空时）
 
 1. 调用 `ark_list_research_tasks` 以 `page_size=100` 列出后端已经完成资格和安全过滤的可领取任务。
-2. 有合格任务时只领取第一条，每轮最多一条；使用 `ark_get_research_task_context` 读取 `customer_id` 与冻结 `input_hash`，再调用 `ark_claim_research_task`。先检索有权访问的已发布企业知识，获取目标产品、客户画像和排除规则，只读有用文档，不做全库扫读。
-3. 若任务含 `input_snapshot.research_request`，按其冻结重点补全；`existing_information` 仅供内部对照。私海补全须核实官网、公司业务、公开商业联系方式和主营产品，保留旧信息；冲突在 `risk` 结论列明原值、新值、双方来源与待确认原因。旧资料不能冒充本次 Run 的 citation；新结论必须引用本次采集回执，回写后等待人工审核。
-4. 先做低成本行业门控并调用 `ark_submit_research_industry_gate`。只有门控状态为 `passed` 才进入后续步骤；无关客户由门控接口直接结束并停止，不再找联系人/社会关系，不研判供应商或深度风险，不生成触达草稿。
-5. 证据不足不等于无关。无官网或官网薄弱时，只核验公开业务账号、企业页面、预约/店铺页的身份互链、业务内容和近期活跃度；禁止调查个人社会关系。
-6. 使用 `ark_append_research_facts` 把原子事实写入同一 `research_task_id`，保留返回的规范 evidence envelope。完成时以 `customer_research_v1` 提交 claims 与同一 Agent Run 的 citation 闭包；不得输出客户等级、成交概率或触达草稿。研究摘要、结论与门控理由一律使用简体中文（公司名、产品名等专有名词保留原文）。
-7. 研究超过 10 分钟时调用 `ark_heartbeat_research_task`。身份无法确认是正常研究结论，不标失败；只有登记的网络、鉴权、提供商或执行故障才调用 `ark_fail_research_task`。
+2. 有合格任务时只领取第一条，每轮最多一条；使用 `ark_get_research_task_context` 核对 `customer_id` 和策略版本，再调用 `ark_claim_research_task`。私海 V2 领取后再次调用 `ark_get_research_task_context`，读取租约保护的任务资料。先检索有权访问的已发布企业知识，获取目标产品、客户画像和排除规则，只读有用文档，不做全库扫读。
+3. 若任务标记 `policy_version=private-research-v2`，用 `$ark-private-research`。按其免费搜索、Maigret、弱线索 Monid 的顺序核验，依 `private_research_v2` 提交完整报告和缺口。主体难以核实仍可提交报告。完成后本轮结束。
+4. 其他任务若含 `input_snapshot.research_request`，按其冻结重点补全；`existing_information` 仅供内部对照。私海补全须核实官网、公司业务、公开商业联系方式和主营产品，保留旧信息；冲突在 `risk` 结论列明原值、新值、双方来源与待确认原因。旧资料不能冒充本次 Run 的 citation；新结论必须引用本次采集回执，回写后等待人工审核。
+5. 先做低成本行业门控并调用 `ark_submit_research_industry_gate`。只有门控状态为 `passed` 才进入后续步骤；无关客户由门控接口直接结束并停止，不再找联系人/社会关系，不研判供应商或深度风险，不生成触达草稿。
+6. 证据不足不等于无关。无官网或官网薄弱时，只核验公开业务账号、企业页面、预约/店铺页的身份互链、业务内容和近期活跃度；禁止调查个人社会关系。
+7. 使用 `ark_append_research_facts` 把原子事实写入同一 `research_task_id`，保留返回的规范 evidence envelope。完成时以 `customer_research_v1` 提交 claims 与同一 Agent Run 的 citation 闭包；不得输出客户等级、成交概率或触达草稿。研究摘要、结论与门控理由一律使用简体中文（公司名、产品名等专有名词保留原文）。
+8. 研究超过 10 分钟时调用 `ark_heartbeat_research_task`。身份无法确认是正常研究结论，不标失败；只有登记的网络、鉴权、提供商或执行故障才调用 `ark_fail_research_task`。
 
-私海主体无法核实且本 Run 没有写入任何事实时，按 context 的 `gap_contract` 通过 `ark_complete_research_task` 提交 `research_gap_v1`：使用领取返回的 input_hash、简体中文 gap_reason 和 missing_information。不添加 claims/citations，不猜测身份；已有事实必须走原证据闭包。未公布 gap_contract 的后端只报告契约缺口，不能伪造完成。
+旧版私海任务主体无法核实且本 Run 没有写入任何事实时，按 context 的 `gap_contract` 通过 `ark_complete_research_task` 提交 `research_gap_v1`：使用领取返回的 input_hash、简体中文 gap_reason 和 missing_information。不添加 claims/citations，不猜测身份；已有事实必须走原证据闭包。未公布 gap_contract 的后端只报告契约缺口，不能伪造完成。
 
 两个队列都没有可处理任务时，回复 `HEARTBEAT_OK`，不要产生其他消息。
 

@@ -1,0 +1,13 @@
+# Ark Maigret scanner
+
+This Beijing service checks one username against the 100 highest-ranked sites in the pinned Maigret catalog. It does not scrape profiles, recurse into additional identities, auto-update the catalog, or have database credentials. A match is a candidate account. Ark records the result and attaches it to the customer only after the current research run explicitly binds it.
+
+The backend connects to `127.0.0.1:7912/scan` with a dedicated Bearer token. The unit has no public route. Configure a separate Python 3.12 virtual environment using the pinned `requirements.txt` and the unit in `deploy/systemd/ark-maigret-scanner.service`. This service is registered as a separate candidate; the application release does not provision or restart it.
+
+The root-owned `/etc/ark/maigret-scanner.env` must contain a random ASCII `PRIVATE_RESEARCH_MAIGRET_TOKEN` (at least 24 characters, same on the Beijing backend) and `PRIVATE_RESEARCH_EGRESS_PROXY`, an authenticated Singapore proxy URL reachable over the approved private link. Do not put either in the source candidate or the OpenClaw environment. Restrict the scanner's outbound network at the host to the approved proxy and loopback. Restrict the proxy to publicly routable destinations and reject private/loopback, link-local and cloud metadata IPs after resolution. Backend and scanner do not fall back to direct connections.
+
+Verify the process on Beijing over loopback with `GET /health`; this tests configuration and catalog availability. An authenticated controlled scan separately verifies the proxy. Verify that unauthenticated scans are rejected. A zero-hit result with at least 50% failed connections is unavailable; the gateway also treats at least 50% unknown checks as unavailable, so blocks and timeouts cannot be interpreted as absence. Keep both provider flags and the Beijing worker disabled until the provider configuration is ready.
+
+Monid uses a company workspace key on the Beijing backend. Configure monthly and per-run limits in that workspace before enabling paid calls. The Ark worker bounds each request with an approved one-result operation, inspects pricing before dispatch, records known charges separately from unresolved reservations, and never retries an ambiguous paid POST. Upstream prices or limits can drift between estimate and execution; an over-cap charge remains visible and its response is not exposed as candidate evidence.
+
+The [Maigret library documentation](https://github.com/soxoj/maigret/blob/v0.6.6/docs/source/library-usage.rst) and [Monid run documentation](https://docs.monid.ai/api/run.html) describe the provider contracts; live connectivity and billing are separate acceptance steps.

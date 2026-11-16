@@ -1,0 +1,22 @@
+[Unit]
+Description=Ark private research username scanner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/opt/ark-maigret-scanner
+EnvironmentFile=/etc/ark/maigret-scanner.env
+ExecStart=/opt/ark-maigret-scanner/venv/bin/python -m uvicorn scanner:app --host 127.0.0.1 --port 7912 --no-access-log --limit-concurrency 8
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=95
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

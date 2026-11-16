@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -13,6 +15,9 @@ from app.knowledge import service as knowledge_service
 from app.knowledge.models import KnowledgeLibrary
 from app.sales_automation import public_pool_service, service, enrichment_service
 from app.sales_automation.dependencies import require_sales_agent, require_sales_agent_for_identity_write
+from app.sales_automation.private_research_policy import (
+    LEGACY_ENRICHMENT_POLICY, PRIVATE_RESEARCH_POLICY, PRIVATE_RESEARCH_RESULT, is_private_research_v2,
+)
 from app.sales_automation.router import _call, _iso, _job, _research_task, _user_id
 from app.sales_automation.schemas import (
     AgentClaim,
@@ -22,6 +27,9 @@ from app.sales_automation.schemas import (
     PublicPoolIndustryGateSubmit,
     PublicPoolResearchSubmit,
     ResearchFactBatch,
+    ResearchToolBind,
+    ResearchToolStatus,
+    ResearchToolSubmit,
 )
 
 
@@ -61,14 +69,26 @@ def _validate_knowledge_references(db: Session, agent: dict, references: list[di
             raise HTTPException(409, "共享客户研究只能引用公司级知识库")
 
 
-def _research_context(db: Session, task_id: int) -> dict:
+def _research_context(db: Session, task_id: int, *, private_lease=False) -> dict:
     detail = _call(public_pool_service.get_task_detail, db, task_id)
     task = detail["task"]
     customer = detail["customer"]
+    private = is_private_research_v2(task)
+    if task.research_policy_version == PRIVATE_RESEARCH_POLICY and (not private or not private_lease):
+        return {
+            "research_task_id": task.id,
+            "execution_contract": "external_research_run_v1",
+            "task_status": task.task_status,
+            "gate_status": task.gate_status,
+            "task_type": task.task_type,
+            "customer_id": task.logical_customer_id,
+            "policy_version": task.research_policy_version,
+            "requires_lease_for_context": True,
+        }
     input_snapshot = dict(task.input_snapshot or {})
     if "customer_id" in input_snapshot:
         input_snapshot["customer_id"] = task.logical_customer_id
-    return {
+    context = {
         "research_task_id": task.id,
         "execution_contract": "external_research_run_v1",
         "task_status": task.task_status,
@@ -87,10 +107,10 @@ def _research_context(db: Session, task_id: int) -> dict:
             "identity_status": customer.identity_status,
             "relationship_stage": customer.relationship_stage,
         },
-        "fact_contract": enrichment_service.research_fact_contract(),
+        "fact_contract": enrichment_service.research_fact_contract(private=private),
         "gap_contract": {
             "schema_version": "research_gap_v1",
-            "allowed_policy": "private-enrichment-v1",
+            "allowed_policy": LEGACY_ENRICHMENT_POLICY,
             "rules": ["Only an uncertain industry gate with zero facts in this Run may finish with an evidence gap.",
                       "Use the current input_hash, a gap_reason and missing_information; never submit claims or citations.",
                       "An evidence gap does not verify identity, change the customer profile or authorize outreach."],
@@ -104,6 +124,18 @@ def _research_context(db: Session, task_id: int) -> dict:
             "forbidden": ["猜测邮箱", "个人社会关系调查", "无来源事实", "跨客户读取", "直接触达"],
         },
     }
+
+    if private:
+        context.pop("gap_contract")
+        context["result_contract"] = {"schema_version": PRIVATE_RESEARCH_RESULT}
+        context["research_rules"] = {
+            "identity_boundary": "可用个人姓名、邮箱、账号和昵称检索公开来源，区分同名主体并核实归属。",
+            "industry_gate": "先用免费网页核实相关性，主体待识别可用 uncertain 门控后继续。",
+            "output_language": "简体中文；专有名词保留原文。",
+            "task_request": input_snapshot.get("research_request"),
+            "forbidden": ["无来源事实", "外传订单和方舟内部资料", "跨客户读取", "直接触达"],
+        }
+    return context
 
 
 @router.get("/agent/knowledge/search")
@@ -141,11 +173,12 @@ def get_agent_knowledge_document(
 @router.get("/agent/research-tasks")
 def list_agent_research_tasks(
     page: int = Query(1, ge=1),
+    include_private_v2: bool = Query(False),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     _agent=Depends(require_sales_agent),
 ):
-    rows, total = public_pool_service.list_claimable_tasks(db, page, page_size)
+    rows, total = public_pool_service.list_claimable_tasks(db, page, page_size, include_private_v2=include_private_v2)
     return ok(page_result([_research_task(row) for row in rows], total, page, page_size))
 
 
@@ -178,6 +211,17 @@ def get_agent_research_context(
     return ok(_research_context(db, task_id))
 
 
+@router.post("/agent/research-tasks/{task_id}/context")
+def get_leased_research_context(
+    task_id: int,
+    payload: AgentLease,
+    db: Session = Depends(get_db),
+    agent=Depends(require_sales_agent),
+):
+    _call(public_pool_service._leased_task, db, task_id, _user_id(agent), payload.agent_id, payload.lease_token)
+    return ok(_research_context(db, task_id, private_lease=True))
+
+
 @router.post("/agent/research-tasks/{task_id}/claim")
 def claim_agent_research_task(
     task_id: int,
@@ -192,6 +236,7 @@ def claim_agent_research_task(
         _user_id(agent),
         payload.agent_id,
         external_run=True,
+        supports_private_v2=payload.supports_private_v2,
     )
     return ok({
         "research_task_id": row.id,
@@ -199,6 +244,7 @@ def claim_agent_research_task(
         "customer_id": row.logical_customer_id,
         "lease_token": token,
         "lease_generation": row.lease_generation,
+        "policy_version": row.research_policy_version,
         "lease_expires_at": _iso(row.lease_expires_at),
         "input_hash": public_pool_service.research_input_hash(row),
     })
@@ -257,6 +303,59 @@ def append_agent_research_facts(
     from app.sales_automation.research_run_service import append_facts
     return ok(_call(append_facts, db, task_id, _user_id(agent), payload.agent_id,
                     payload.lease_token, payload.agent_run_id, payload.facts))
+
+
+ResearchTool = Literal["username_scan", "monid"]
+
+
+@router.post("/agent/research-tasks/{task_id}/tools/{tool}/submit")
+def submit_research_tool_call(
+    task_id: int,
+    tool: ResearchTool,
+    payload: ResearchToolSubmit,
+    db: Session = Depends(get_db),
+    agent=Depends(require_sales_agent),
+):
+    from app.sales_automation.research_tools_service import submit_call
+
+    return ok(_call(
+        submit_call, db, task_id, _user_id(agent), payload.agent_id, payload.lease_token,
+        payload.agent_run_id, tool=tool, operation=payload.operation, target=payload.target,
+        idempotency_key=payload.idempotency_key, gap=payload.gap, maigret_call_id=payload.maigret_call_id,
+        free_search=payload.free_search.model_dump() if payload.free_search else None,
+    ))
+
+
+@router.post("/agent/research-tasks/{task_id}/tools/{tool}/status")
+def get_research_tool_call(
+    task_id: int,
+    tool: ResearchTool,
+    payload: ResearchToolStatus,
+    db: Session = Depends(get_db),
+    agent=Depends(require_sales_agent),
+):
+    from app.sales_automation.research_tools_service import get_call
+
+    return ok(_call(
+        get_call, db, task_id, _user_id(agent), payload.agent_id, payload.lease_token,
+        payload.agent_run_id, tool=tool, call_id=payload.call_id,
+    ))
+
+
+@router.post("/agent/research-tasks/{task_id}/tools/{tool}/bind")
+def bind_research_tool_evidence(
+    task_id: int,
+    tool: ResearchTool,
+    payload: ResearchToolBind,
+    db: Session = Depends(get_db),
+    agent=Depends(require_sales_agent),
+):
+    from app.sales_automation.research_tools_service import bind_call
+
+    return ok(_call(
+        bind_call, db, task_id, _user_id(agent), payload.agent_id, payload.lease_token,
+        payload.agent_run_id, tool=tool, call_id=payload.call_id, candidate_ids=payload.candidate_ids,
+    ))
 
 
 @router.post("/agent/research-tasks/{task_id}/complete")
