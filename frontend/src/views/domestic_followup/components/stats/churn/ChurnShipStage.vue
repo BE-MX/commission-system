@@ -29,6 +29,9 @@
                      aria-label="按归属人筛选" @change="value => ship.load(value || null)">
             <el-option v-for="option in data?.owners || []" :key="option.value" :label="option.label" :value="option.value" />
           </el-select>
+          <el-select v-if="use3d" :model-value="qualityChoice" class="churn-quality" aria-label="画质" @change="changeQuality">
+            <el-option v-for="option in qualityOptions" :key="option.value" :label="option.value === 'auto' && qualityChoice === 'auto' ? `画质：自动（${QUALITY_LABEL[activeQuality]}）` : `画质：${option.label}`" :value="option.value" />
+          </el-select>
           <button type="button" class="churn-btn churn-close" aria-label="关闭客户流失态势" @click="close">关闭 Esc</button>
           <div class="churn-stage__filters">
             <button type="button" class="churn-chip" :aria-pressed="ship.state.onlySA" @click="ship.state.onlySA = !ship.state.onlySA">只看 S/A 级</button>
@@ -77,6 +80,19 @@ const root = ref(null), stage = ref(null), canvas = ref(null), tip = ref(null)
 const labelEls = reactive({}), buoyEls = reactive({})
 const selectedId = ref(null), tipInfo = ref(null), claiming = ref(false)
 const scene = shallowRef(null)
+// 画质：auto 开场实测显卡选档；手动选择记在本机（只是本人便利，读写失败不影响使用）
+const QUALITY_KEY = 'ark.churn.quality'
+const QUALITY_LABEL = { high: '高', medium: '标准', low: '省电' }
+const qualityOptions = [{ value: 'auto', label: '自动' }, { value: 'high', label: '高' }, { value: 'medium', label: '标准' }, { value: 'low', label: '省电' }]
+const qualityChoice = ref(readQuality()), activeQuality = ref('medium')
+function readQuality() {
+  try { const v = localStorage.getItem(QUALITY_KEY); return qualityOptions.some(o => o.value === v) ? v : 'auto' } catch { return 'auto' }
+}
+function changeQuality(value) {
+  qualityChoice.value = value
+  try { localStorage.setItem(QUALITY_KEY, value) } catch { /* 隐私模式等：只是不记住 */ }
+  scene.value?.setQuality(value)
+}
 let observer, returnFocus = null, pointerEvent = null
 // 条目由 shipLayout 原地更新（非响应式），每次时间变化给侧栏一份新快照，否则推演时客户卡停在旧天数
 const selectedItem = computed(() => {
@@ -101,8 +117,12 @@ async function mount3d() {
   try {
     const { createShipScene } = await import('./shipScene')
     if (!canvas.value) return
-    scene.value = createShipScene(canvas.value, { reduced: matchMedia('(prefers-reduced-motion: reduce)').matches, onFrame: placeLabels })
+    scene.value = createShipScene(canvas.value, {
+      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches, onFrame: placeLabels,
+      quality: qualityChoice.value, onQuality: ({ quality }) => { activeQuality.value = quality },
+    })
     scene.value.setModel(ship.model.value)
+    if (import.meta.env.DEV) window.__churnScene = scene.value // 开发期性能对比用，生产构建会剔除
     scene.value.start()
   } catch (error) {
     console.warn('[churn] 三维场景初始化失败，改用 2D 甲板图', error)

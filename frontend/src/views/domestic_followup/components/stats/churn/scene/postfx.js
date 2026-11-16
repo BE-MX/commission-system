@@ -1,5 +1,5 @@
 // 镜头后期：环境光遮蔽（GTAO）→ 泛光 → 色调映射 → 调色 / 移轴景深 / 暗角 / 颗粒 → SMAA 抗锯齿。
-// 全部是着色器代码，不用贴图。性能吃紧时由场景调用 degrade() 逐级关掉最贵的环节。
+// 全部是着色器代码，不用贴图。画质档位由场景通过 setEffects() 开关最贵的环节。
 import * as THREE from 'three'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
@@ -67,7 +67,7 @@ export function createPostFX({ renderer, scene, camera, width, height, reduced }
   composer.addPass(new RenderPass(scene, camera))
 
   const ao = new GTAOPass(scene, camera, width, height)
-  ao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: 12 })
+  ao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: 8 })
   ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 })
   ao.blendIntensity = 0.95
   composer.addPass(ao)
@@ -84,7 +84,6 @@ export function createPostFX({ renderer, scene, camera, width, height, reduced }
   const smaa = new SMAAPass(width * renderer.getPixelRatio(), height * renderer.getPixelRatio())
   composer.addPass(smaa)
 
-  let level = 3 // 3 全开 → 2 关 AO → 1 再关泛光；之后由场景降分辨率
   return {
     render(time) {
       grade.uniforms.uTime.value = time % 1000
@@ -95,13 +94,13 @@ export function createPostFX({ renderer, scene, camera, width, height, reduced }
       composer.setSize(w, h)
       grade.uniforms.uResolution.value.set(w * pixelRatio, h * pixelRatio)
     },
-    /** 关掉一级最贵的效果；已无可关时返回 false。 */
-    degrade() {
-      if (level === 3) { ao.enabled = false; level = 2; return true }
-      if (level === 2) { bloom.enabled = false; level = 1; return true }
-      return false
+    /** 画质档位：ao 环境光遮蔽（最贵）、bloom 泛光、smaa 抗锯齿、blur 移轴景深。 */
+    setEffects({ ao: useAo, bloom: useBloom, smaa: useSmaa, blur }) {
+      ao.enabled = useAo
+      bloom.enabled = useBloom
+      smaa.enabled = useSmaa
+      grade.uniforms.uBlur.value = blur ? (reduced ? 0.6 : 1) : 0
     },
-    get level() { return level },
     dispose() {
       for (const pass of composer.passes) pass.dispose?.()
       composer.dispose()
