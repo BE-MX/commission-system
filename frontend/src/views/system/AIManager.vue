@@ -270,6 +270,7 @@
         <el-pagination v-model:current-page="logPage" v-model:page-size="logPageSize" :page-sizes="[20, 50, 100]" :total="logTotal" layout="total, sizes, prev, pager, next" class="pager" @current-change="changeLogPage" @size-change="changeLogSize" />
         </div>
       </el-tab-pane>
+      <el-tab-pane label="聊天运行" name="chat" lazy><ChatOperations v-if="activeTab === 'chat'" /></el-tab-pane>
       <el-tab-pane label="站点应用" name="sites" lazy>
         <AiGatewayApps />
       </el-tab-pane>
@@ -339,6 +340,7 @@
           <el-input v-model="presetForm.model" placeholder="gpt-4o" :disabled="isAccioProvider" />
         </el-form-item>
         <AiPresetImageFields v-model="presetForm.parameters" :preset-name="presetForm.preset_name" />
+        <AiPresetChatFields v-model="presetForm.parameters" :preset-name="presetForm.preset_name" :disabled="isAccioProvider" />
         <el-collapse>
           <el-collapse-item title="文本、测试与运行参数" name="preset-runtime">
             <AiConfigFields v-model="presetForm.parameters" :fields="presetFields" @validity="presetFieldsValid = $event" />
@@ -454,6 +456,8 @@ import { ref, watch } from 'vue'
 import AiConfigFields from './components/AiConfigFields.vue'
 import { providerFields, presetFields, imageFields } from './aiConfigFields'
 import AiPresetImageFields from './components/AiPresetImageFields.vue'
+import ChatOperations from './components/ChatOperations.vue'
+import AiPresetChatFields from './components/AiPresetChatFields.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import ListPageStatus from '@/components/ListPageStatus.vue'
 

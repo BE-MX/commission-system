@@ -1,13 +1,14 @@
 // Drafts stay in memory, scoped to this mounted workspace; never mix session attachments.
-export function useChatDrafts({ prompt, attachments, modes, sessionId }) {
+export function useChatDrafts({ prompt, attachments, modes, sessionId, selectedPresetId }) {
   const drafts = new Map()
   const key = () => sessionId.value ?? 'new'
   function save() {
-    drafts.set(key(), { prompt: prompt.value, attachments: [...attachments.value], mode: modes.selected.value })
+    drafts.set(key(), { prompt: prompt.value, attachments: [...attachments.value], mode: modes.selected.value, presetId: selectedPresetId?.value })
   }
   function restore({ locked = false } = {}) {
     const draft = drafts.get(key())
     if (!draft) return
+    if (selectedPresetId && draft.presetId) selectedPresetId.value = draft.presetId
     prompt.value = draft.prompt
     if (!sessionId.value) attachments.value = draft.attachments
     if (!locked) {
@@ -19,5 +20,5 @@ export function useChatDrafts({ prompt, attachments, modes, sessionId }) {
     drafts.delete('new')
     drafts.delete(id)
   }
-  return { save, restore, materialize, clear: () => drafts.clear() }
+  return { save, restore, materialize, clear: () => drafts.clear(), remove: id => drafts.delete(id) }
 }

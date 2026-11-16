@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from datetime import date
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.ai.service import chat_stream
-from app.ai_chat import file_service, service, mode_service
+from app.ai_chat import file_service, service, mode_service, workspace_service, generation_service, management_service
+from app.ai_chat.stream_response import ClosingIterator, ClosingStreamingResponse
 from app.ai_chat.schemas import (
     AttachmentResponse,
     MessageResponse,
@@ -19,6 +22,7 @@ from app.ai_chat.schemas import (
     SessionCreate,
     SessionResponse,
     TurnStreamRequest,
+    SessionRename, AnswerSelection, RoleLimitUpdate,
 )
 from app.auth.dependencies import require_permission
 from app.core.config import get_settings
@@ -48,6 +52,8 @@ def _resource_call(function, *args, **kwargs):
         raise HTTPException(status_code=404, detail="资源不存在") from None
     except service.RequestConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+    except workspace_service.WorkspaceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from None
     except mode_service.ModeLoadError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from None
 
@@ -57,7 +63,9 @@ def _session_data(row) -> dict:
 
 
 def _message_data(row) -> dict:
-    return MessageResponse.model_validate(row).model_dump(mode="json")
+    return {**MessageResponse.model_validate(row).model_dump(mode="json"),
+            "model": workspace_service.public_model(row.model_snapshot),
+            "reply_to_message_id": row.reply_to_message_id}
 
 
 def _attachment_data(row) -> dict:
@@ -134,8 +142,13 @@ def stream_assistant_events(
         "content": assistant.content,
         "error_message": assistant.error_message,
         "retry_of_message_id": assistant.retry_of_message_id,
+        "continuation_of_message_id": assistant.continuation_of_message_id,
+        "finish_reason": assistant.finish_reason,
+        "reply_to_message_id": assistant.reply_to_message_id,
+        "model_snapshot": assistant.model_snapshot,
+        "reasoning_content": assistant.reasoning_content,
     }
-    return _stream_assistant_events(
+    events = _stream_assistant_events(
         db,
         owner_user_id,
         session_id,
@@ -143,6 +156,16 @@ def stream_assistant_events(
         reused=reused,
         user_message_id=user_message_id,
     )
+    def cleanup():
+        try:
+            if not reused:
+                row = service.get_message(db, snapshot["id"], owner_user_id)
+                if row.status == "streaming":
+                    service.stop_turn(db, owner_user_id, row.id, row.content,
+                                      reasoning_content=row.reasoning_content)
+        finally:
+            db.close()
+    return ClosingIterator(events, cleanup)
 
 
 def _stream_assistant_events(
@@ -163,19 +186,21 @@ def _stream_assistant_events(
             "assistant_message_id": assistant["id"],
             "status": assistant["status"],
             "reused": reused,
+            "model": workspace_service.public_model(assistant.get("model_snapshot")),
+            "reply_to_message_id": assistant.get("reply_to_message_id"),
         },
     )
-    # MVP emits one initial heartbeat only. Periodic heartbeats require an async
-    # bridge around the shared synchronous facade plus an independently scoped DB
-    # session; adding a timer thread here would make disconnect cleanup unreliable.
     yield sse_event("heartbeat", {"status": assistant["status"]})
     if reused:
+        if assistant.get("reasoning_content"):
+            yield sse_event("reasoning", {"text": assistant["reasoning_content"]})
         yield from _saved_events(
             assistant["status"], assistant["content"], assistant["error_message"]
         )
         return
 
-    config = service.get_config(db)
+    model_snapshot = assistant.get("model_snapshot")
+    config = {"configured": True} if model_snapshot else service.get_config(db)
     if not config["configured"]:
         try:
             service.fail_turn(
@@ -196,43 +221,79 @@ def _stream_assistant_events(
             db.close()
         return
 
-    partial: list[str] = []
+    partial: list[str] = [assistant["content"]] if assistant.get("continuation_of_message_id") else []
+    started = last_checkpoint = time.monotonic()
+    first_token_ms = None
+    if partial:
+        yield sse_event("delta", {"text": partial[0]})
+    reasoning: list[str] = []
+    reasoning_length = 0
     log_id = None
     upstream = None
     try:
+        call_config = workspace_service.validate_generation(db, owner_user_id, model_snapshot) if model_snapshot else None
         context = service.build_context(
             db,
             owner_user_id,
             session_id,
             exclude_assistant_id=assistant["retry_of_message_id"],
+            through_user_id=assistant.get("reply_to_message_id"),
         )
+        if assistant.get("continuation_of_message_id"):
+            context.extend([{"role": "assistant", "content": assistant["content"]},
+                            {"role": "user", "content": "请从上文断点继续完成回答，不要重复已写内容。"}])
         upstream = chat_stream(
             db,
-            service.PRESET_NAME,
+            model_snapshot["preset_name"] if model_snapshot else service.PRESET_NAME,
             context,
             caller_module="ai_chat",
             caller_user_id=owner_user_id,
+            **({"config_snapshot": call_config} if call_config else {}),
         )
         for event in upstream:
             event_type = event.get("type")
+            first_frame = event_type in {"delta", "reasoning"} and first_token_ms is None
+            if event_type in {"delta", "reasoning"} and first_token_ms is None:
+                first_token_ms = int((time.monotonic() - started) * 1000)
             if event_type == "meta":
+                log_id = event.get("log_id", log_id)
+            if event_type in {"meta", "heartbeat", "done", "error"} or time.monotonic() - last_checkpoint >= 2:
+                generation_service.checkpoint(db, owner_user_id, assistant["id"], "".join(partial),
+                    "".join(reasoning), log_id=log_id, first_token_ms=first_token_ms)
+                last_checkpoint = time.monotonic()
+            if event_type == "heartbeat":
+                yield sse_event("heartbeat", {"status": "streaming"})
+            elif event_type == "meta":
                 log_id = event.get("log_id")
+            elif event_type == "reasoning":
+                text = str(event.get("text") or "")[:max(0, 120_000 - reasoning_length)]
+                reasoning_length += len(text)
+                reasoning.append(text)
+                if first_frame:
+                    generation_service.checkpoint(db, owner_user_id, assistant["id"], "".join(partial),
+                        "".join(reasoning), log_id=log_id, first_token_ms=first_token_ms)
+                    last_checkpoint = time.monotonic()
+                yield sse_event("reasoning", {"text": text})
             elif event_type == "delta":
                 text = str(event.get("text") or "")
                 partial.append(text)
+                if first_frame:
+                    generation_service.checkpoint(db, owner_user_id, assistant["id"], "".join(partial),
+                        "".join(reasoning), log_id=log_id, first_token_ms=first_token_ms)
+                    last_checkpoint = time.monotonic()
                 yield sse_event("delta", {"text": text})
             elif event_type == "done":
-                if event.get("finish_reason") in {"max_tokens", "length"}:
-                    notice = '\n\n> 本次输出已达到长度上限，内容尚未完成。回复“继续”，我会接着完成。'
-                    partial.append(notice)
-                    yield sse_event("delta", {"text": notice})
-                service.finish_turn(
+                saved = service.finish_turn(
                     db,
                     owner_user_id,
                     assistant["id"],
                     "".join(partial),
                     log_id,
+                    reasoning_content="".join(reasoning) or None,
+                    finish_reason=event.get("finish_reason"),
                 )
+                if saved.status != "completed":
+                    raise generation_service.GenerationLost("生成已中断，请刷新查看已保存内容")
                 done = {
                     key: value
                     for key, value in event.items()
@@ -250,21 +311,26 @@ def _stream_assistant_events(
                     "".join(partial),
                     message,
                     log_id,
+                    reasoning_content="".join(reasoning) or None,
                 )
                 yield sse_event("error", {"code": code, "message": message})
                 return
         message = "模型连接意外中断，已保留部分内容，请点击重试"
         service.fail_turn(
-            db, owner_user_id, assistant["id"], "".join(partial), message, log_id
+            db, owner_user_id, assistant["id"], "".join(partial), message, log_id,
+            reasoning_content="".join(reasoning) or None,
         )
         yield sse_event("error", {"code": "stream_incomplete", "message": message})
-    except mode_service.ModeContextError as exc:
-        service.fail_turn(db, owner_user_id, assistant["id"], "".join(partial), str(exc), log_id)
+    except generation_service.GenerationLost as exc:
+        yield sse_event("error", {"code": "generation_expired", "message": str(exc)})
+    except (mode_service.ModeContextError, workspace_service.WorkspaceError) as exc:
+        service.fail_turn(db, owner_user_id, assistant["id"], "".join(partial), str(exc), log_id, reasoning_content="".join(reasoning) or None)
         yield sse_event("error", {"code": "context_limit", "message": str(exc)})
     except GeneratorExit:
         try:
             service.stop_turn(
-                db, owner_user_id, assistant["id"], "".join(partial), log_id
+                db, owner_user_id, assistant["id"], "".join(partial), log_id,
+                reasoning_content="".join(reasoning) or None,
             )
         except Exception as stop_exc:
             logger.error(
@@ -285,7 +351,8 @@ def _stream_assistant_events(
         message = "模型服务暂时不可用，已保留本次内容，请点击重试"
         try:
             service.fail_turn(
-                db, owner_user_id, assistant["id"], "".join(partial), message, log_id
+                db, owner_user_id, assistant["id"], "".join(partial), message, log_id,
+                reasoning_content="".join(reasoning) or None,
             )
         except Exception as save_exc:
             logger.error(
@@ -310,8 +377,8 @@ def get_config(
     current_user: dict = Depends(require_permission("ai_chat:read")),
 ):
     return ok(
-        service.get_config(
-            db, include_diagnostic=_may_see_config_diagnostic(current_user)
+        _resource_call(workspace_service.get_config,
+            db, _owner_id(current_user), include_diagnostic=_may_see_config_diagnostic(current_user)
         )
     )
 
@@ -454,7 +521,7 @@ def stream_turn(
 ):
     owner_user_id = _owner_id(current_user)
     turn = _resource_call(
-        service.begin_turn, db, owner_user_id, session_id, body
+        workspace_service.begin_turn, db, owner_user_id, session_id, body
     )
     events = stream_assistant_events(
         db,
@@ -464,7 +531,7 @@ def stream_turn(
         reused=turn.reused,
         user_message_id=turn.user_message.id,
     )
-    return StreamingResponse(
+    return ClosingStreamingResponse(
         events,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -479,9 +546,8 @@ def retry_stream(
     current_user: dict = Depends(require_permission("ai_chat:write")),
 ):
     owner_user_id = _owner_id(current_user)
-    _resource_call(service.get_message, db, assistant_id, owner_user_id)
     retry = _resource_call(
-        service.begin_retry, db, owner_user_id, assistant_id, body
+        workspace_service.begin_retry, db, owner_user_id, assistant_id, body
     )
     assistant = retry.assistant_message
     events = stream_assistant_events(
@@ -492,8 +558,70 @@ def retry_stream(
         reused=retry.reused,
         user_message_id=None,
     )
-    return StreamingResponse(
+    return ClosingStreamingResponse(
         events,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/models")
+def list_models(db: Session = Depends(get_db), current_user: dict = Depends(require_permission("ai_chat:read"))):
+    return ok({"items": _resource_call(workspace_service.list_models, db, _owner_id(current_user))})
+
+
+@router.post("/messages/{assistant_id}/continue/stream")
+def continue_stream(assistant_id: int, body: RetryStreamRequest, db: Session = Depends(get_db),
+                    current_user: dict = Depends(require_permission("ai_chat:write"))):
+    owner = _owner_id(current_user)
+    result = _resource_call(workspace_service.begin_continuation, db, owner, assistant_id, body)
+    row = result.assistant_message
+    return ClosingStreamingResponse(stream_assistant_events(db, owner, row.session_id, row, reused=result.reused),
+        media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.patch("/messages/{user_id}/selection")
+def select_answer(user_id: int, body: AnswerSelection, db: Session = Depends(get_db),
+                  current_user: dict = Depends(require_permission("ai_chat:write"))):
+    row = _resource_call(workspace_service.select_answer, db, _owner_id(current_user), user_id, body.answer_id)
+    return ok(_message_data(row))
+
+
+@router.get("/admin/usage")
+def chat_usage(start: date | None = None, end: date | None = None, preset_id: int | None = Query(None, gt=0),
+               owner_id: int | None = Query(None, gt=0), db: Session = Depends(get_db),
+               _current_user: dict = Depends(require_permission("ai:admin"))):
+    try:
+        return ok(management_service.usage_report(db, start, end, preset_id=preset_id, owner_id=owner_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@router.get("/admin/role-limits")
+def role_limits(db: Session = Depends(get_db), _current_user: dict = Depends(require_permission("ai:admin"))):
+    return ok(management_service.role_limits(db))
+
+
+@router.put("/admin/role-limits/{role_id}")
+def set_role_limit(role_id: int, body: RoleLimitUpdate, db: Session = Depends(get_db),
+                   current_user: dict = Depends(require_permission("ai:admin"))):
+    return ok(_resource_call(management_service.set_role_limit, db, role_id, body.daily_limit, _owner_id(current_user)))
+
+
+@router.patch("/sessions/{session_id}")
+def rename_session(session_id: int, body: SessionRename, db: Session = Depends(get_db),
+                   current_user: dict = Depends(require_permission("ai_chat:write"))):
+    row = _resource_call(workspace_service.rename_session, db, _owner_id(current_user), session_id, body.title)
+    return ok(_session_data(row))
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(session_id: int, db: Session = Depends(get_db),
+                   current_user: dict = Depends(require_permission("ai_chat:write"))):
+    _resource_call(workspace_service.delete_session, db, _owner_id(current_user), session_id)
+    return ok(message="会话已删除")
+
+
+@router.get("/admin/roles")
+def chat_roles(db: Session = Depends(get_db), _current_user: dict = Depends(require_permission("ai:admin"))):
+    return ok({"items": workspace_service.list_role_options(db)})

@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import * as Vue from 'vue'
 import { transform } from 'esbuild'
 import * as draftHelpers from '../src/views/domestic_followup/followupDraft.js'
+import * as nextStepHelpers from '../src/views/domestic_followup/followupNextSteps.js'
 import {
   draftToForm, emptyForm, formToPayload, imageFilesFromClipboard, mergeManualFields, nextBasisHint, taskDueLabel,
   weekdayLabel, clipboardHasText, imageFilesFromDrop, pollDecision, POLL_LIMIT, POLL_MS,
@@ -23,6 +24,7 @@ async function composerForTest() {
   const requireStub = id => {
     if (id === 'vue') return { ...Vue, onBeforeUnmount: () => {} }
     if (id === '../followupDraft') return draftHelpers
+    if (id === '../followupNextSteps') return nextStepHelpers
     if (id === '@/api/domesticFollowup') return { followupApi: api, apiError: error => error.message }
     if (id === '@/utils/datetime') return { currentBeijingDate: () => TODAY }
     if (id === '@/utils/feedback') return {

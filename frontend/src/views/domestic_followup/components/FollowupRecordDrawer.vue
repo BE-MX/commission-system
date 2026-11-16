@@ -13,9 +13,12 @@
         <p>{{ [record.result_code, ...(record.obstacles || []), evidenceLabels[record.evidence_kind]].filter(Boolean).join(' · ') }}</p>
       </section>
       <section v-if="record.raw_text"><h3>跟进原文</h3><p>{{ record.raw_text }}</p></section>
-      <section v-if="record.items?.length">
-        <h3>跟进要点与异常意见</h3>
-        <ul><li v-for="item in record.items" :key="item.id">
+      <FollowupGuideFields :form="record" readonly :show-scenario="false" />
+      <FollowupFactGroups :contents="record.items?.filter(item => item.kind === 'content') || []" readonly />
+      <section v-if="record.disposition"><h3>下一步处置</h3><p>{{ dispositionLabels[record.disposition] || record.disposition }} · {{ record.disposition_note }}</p></section>
+      <section v-if="record.items?.some(item => item.kind !== 'content')">
+        <h3>异常与意见</h3>
+        <ul><li v-for="item in record.items.filter(item => item.kind !== 'content')" :key="item.id">
           <StatusBadge v-if="item.kind !== 'content'" :value="item.kind" :dictionary="ITEM_KIND_STATUS" size="small" />
           {{ item.text }}<span v-if="item.category"> · {{ item.category }}</span>
           <span v-if="item.severity"> · {{ item.severity }}</span>
@@ -50,12 +53,15 @@ import { msgError } from '@/utils/feedback'
 import { ITEM_KIND_STATUS } from '../followupStatus'
 import { useAuthStore } from '@/stores/auth'
 import { mayEditFollowup } from '../followupEdit'
+import FollowupGuideFields from './FollowupGuideFields.vue'
+import FollowupFactGroups from './FollowupFactGroups.vue'
 
 const props = defineProps({ record: { type: Object, default: null } })
 defineEmits(['close', 'timeline', 'edit', 'history'])
 const auth = useAuthStore()
 const ITEM_STATUS = { open: '未处理', handling: '处理中', resolved: '已解决', closed_no_action: '无需处理' }
 const evidenceLabels = { customer: '客户明确说', assessment: '我的判断' }
+const dispositionLabels = { waiting_customer: '等待客户', paused: '暂停', closed: '关闭' }
 const previewUrl = ref('')
 let previewRequest = 0
 function closePreview() {

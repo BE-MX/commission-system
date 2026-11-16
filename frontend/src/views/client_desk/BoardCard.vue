@@ -19,7 +19,10 @@
       <span><b>{{ amount }}</b></span>
       <span>{{ touchText }}</span>
     </div>
-    <div v-if="!compact" class="foot">{{ card.todo_reasons?.[0] ? `今日：${card.todo_reasons[0]}` : (card.okki_stage ? `OKKI 阶段：${card.okki_stage}` : '暂无今日事项') }}</div>
+    <ul v-if="today && card.todo_reasons?.length" class="foot reasons">
+      <li v-for="reason in card.todo_reasons" :key="reason">{{ reason }}</li>
+    </ul>
+    <div v-else-if="!compact" class="foot">{{ card.todo_reasons?.[0] || (card.okki_stage ? `OKKI 阶段：${card.okki_stage}` : '暂无今日事项') }}</div>
   </div>
 </template>
 
@@ -32,6 +35,7 @@ import { initials, tagTone } from './boardModel'
 const props = defineProps({
   card: { type: Object, required: true },
   compact: { type: Boolean, default: false },
+  today: { type: Boolean, default: false },
   selected: { type: Boolean, default: false },
   maxTags: { type: Number, default: 5 },
 })
@@ -52,7 +56,7 @@ const touchText = computed(() => {
 
 <style src="./board.css" scoped></style>
 <style scoped>
-.card { position: relative; display: block; width: 100%; padding: 11px 12px 10px 15px; overflow: hidden; border: 1px solid var(--border-color); border-radius: 13px; background: var(--card-bg); color: var(--text-primary); text-align: left; font-family: var(--font-body); transition: transform 250ms ease, box-shadow 250ms ease, border-color 250ms ease; }
+.card { position: relative; display: block; box-sizing: border-box; width: 100%; padding: 11px 12px 10px 15px; overflow: hidden; border: 1px solid var(--border-color); border-radius: 13px; background: var(--card-bg); color: var(--text-primary); text-align: left; font-family: var(--font-body); transition: transform 250ms ease, box-shadow 250ms ease, border-color 250ms ease; }
 .card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--strip); }
 .card.selected { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--button-focus); }
 .top { display: flex; align-items: center; gap: 9px; }
@@ -63,6 +67,7 @@ const touchText = computed(() => {
 .metrics { display: flex; gap: 10px; color: var(--text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
 .metrics b { color: var(--text-primary); font-weight: 600; }
 .foot { margin-top: 8px; padding-top: 7px; overflow: hidden; border-top: 1px dashed var(--border-color); color: var(--text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.reasons { margin-bottom: 0; padding-left: 16px; white-space: normal; }
 .pip { position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--tag-danger-solid); box-shadow: 0 0 0 3px var(--tag-danger-bg); }
 .compact { height: 132px; box-shadow: 0 6px 16px var(--xk-shadow); }
 </style>

@@ -26,6 +26,8 @@ JWT 管理入口 POST `/api/alibaba-feed/sources`、PATCH `/api/alibaba-feed/sou
 
 2026-11-12 读取优化（本地实现，待发布）：档案、时间轴、事件详情仅小满归属成功结果可复用 60 秒，本人私海清单可复用 45 秒；平台权限、来源授权和建议依赖仍逐请求检查。复制草稿使用 `GET /customers/{company_id}?fresh=true`，与写操作、`wa-open` 一样每次实时核验归属。`/customers` 普通列表按已存分数先分页，仅当前页实时判定建议，失效建议可能仍排前但不显示内容；`suggested` 与 `reason` 筛选仍先实时判定再计算总数和分页。
 
+2026-11-16 今日建议分组在 `GET /board` 的客户卡增加 `todo_rule_codes` 和 `todo_rank_score`。分组依据是当天规则快照与个人跟进状态，档案打开后重新校验建议来源。手动分析的 `steps` 可返回 `attempt`、`finish_reason`、`reasoning_emitted` 和校验诊断 `code/issues`，终态仍以 `error_code=validation_failed` 表达校验失败。
+
 GET `/reports/handoff` 仅公开无敏感内容壳。POST `/reports/redeem` 需登录和收件人匹配，原子消费短时签名票据。不会兑换全平台登录态。请求字段、并发和响应说明见[私海接口契约](requirements/2026-11-04-private-sea-assistant/contracts.md)，实际字段以 `app/client_desk/router.py` 和 `report_router.py` 为准。
 
 ## 全局导航配置（2026-11-03，待部署）
@@ -1423,7 +1425,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 当前界面只有“上传素材”一个上传入口：设计师先选至少一个当前客户标签，再选多个文件或拖入文件夹。标签可在客户确认后新建、重命名或删除；删除时同步移除该客户素材的关联。文件夹只用于提取文件，不从名称识别、新建标签或目录；文件加入清单时固定本次选中标签。工作台素材按产品类型分组，再按 Color names + Textures type 逐行显示。旧目录弹框仅用于维护既有目录与素材。送审按钮旁的“客户效果预览”在同源 iframe 中复用外部站渲染当前批素材，不调用客户门户登录及已发布素材接口，也不改变批次发布状态。审核弹框、业务预览和客户外部站按产品类型分组并提供标签筛选。内部签名 URL 返回 `/api/customer-media/...` 相对地址，前端跟随素材 API origin 解析，兼容同源代理及 `VITE_CUSTOMER_MEDIA_API_BASE` 云端直传。
 
-## 客户 AI 方案对话（`/api/ai-chat`，100 迁移，2026-08-09）
+## 通用 AI 工作台（`/api/ai-chat`，迁移 100/124/265/266）
 
 ### 内置对话方式（2026-08-26，迁移 124）
 
@@ -1433,25 +1435,41 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 - 会话列表及详情的 `session.mode` 为快照摘要（不含正文）。首次 `POST /sessions/{session_id}/turns/stream` 可提供 `mode_id` 和 `mode_version`，两项必须同时存在；服务端校验实际文件版本后与消息在同一事务保存快照。版本变更或已开始会话换方式返回 409，不自动降级普通聊天。普通会话的幂等请求也不允许追加方式。
 - 已开始会话继续/重试使用保存的规则，不读取最新文件。方式文件不算普通附件，不占 5 个附件名额；上传 Markdown 仍仅为不可信参考资料。
 - 内置方式保留至多 200 条有效历史消息、120,000 字符对话正文；超出上限或参考文档被截断时返回明确的 `context_limit` SSE 错误，不丢失早期经历继续报告。普通聊天仍取最近 20 条有效消息。重试只使用原问题及之前的上下文。
-- 上游因输出长度结束时，SSE 追加明确的“内容尚未完成，回复继续”提示并持久保存，`done.finish_reason` 保留上游终止原因。
+- 上游因输出长度结束时，`done.finish_reason` 与消息字段保留 `length/max_tokens`；页面在正文外提示可继续，不向回答正文追加说明。
 
-共 11 个 URL pattern、12 个 HTTP 操作（含上述 3 个方式读取操作，`/sessions` 同时提供 GET/POST）。资源按当前用户 owner 隔离；跨账号与不存在资源统一返回 404。`ai_chat:read` 用于配置、会话和附件内容读取，`ai_chat:write` 用于建会话、上传/删除草稿附件、发送和重试；`ai_chat:admin` 已登记但不绕过 owner，也没有 MVP 管理端点。
+共 17 个 URL pattern、20 个 HTTP 操作（含版本选择、继续生成和管理统计/角色额度）。资源按当前用户 owner 隔离；跨账号与不存在资源统一返回 404。`ai_chat:read` 用于配置、会话和附件内容读取，`ai_chat:write` 用于建会话、上传/删除草稿附件、发送和重试；`ai_chat:admin` 已登记但不绕过 owner；运行统计与额度管理使用独立的 `ai:admin`。
 
 | 方法 | 路径 | 权限 | 契约 |
 |---|---|---|---|
-| GET | `/config` | read | 返回严格配置状态；不暴露 Provider、API 地址或密钥 |
+| GET | `/config` | read | 返回配置状态、可用 `models`、`default_preset_id`、今日 `usage`；不暴露 Provider、API 地址、密钥或私有参数 |
+| GET | `/models` | read | 仅返回当前用户获准使用的模型摘要 |
+| GET | `/admin/roles` | `ai:admin` | AI 接入管理页的角色选项（name/label） |
 | POST | `/sessions` | write | 创建 owner 会话，body `{title?}` |
 | GET | `/sessions` | read | `limit=30`（1～100）与不透明 `cursor` 的 owner 会话分页 |
-| GET | `/sessions/{session_id}` | read | 返回会话、完整展示历史和该会话附件 |
+| GET | `/sessions/{session_id}` | read | 返回会话、完整展示历史和该会话附件；助手含 `model`、`reasoning_content`、`reply_to_message_id` |
+| PATCH | `/sessions/{session_id}` | write | body `{title}`，重命名本人会话 |
+| DELETE | `/sessions/{session_id}` | write | 软删除本人会话；生成中返回 409；删除后消息和附件入口均为 404 |
 | POST | `/sessions/{session_id}/attachments` | write | multipart 字段 `file`；上传一个私有附件 |
-| DELETE | `/attachments/{attachment_id}` | write | 仅本人尚未发送的 draft 附件可删 |
+| DELETE | `/attachments/{attachment_id}` | write | 本人尚未发送的 draft/failed 附件可删；先持久化不可发送状态，再清理文件与行。失败可重试 |
 | GET | `/attachments/{attachment_id}/content` | read | owner 鉴权后的二进制预览/下载，不使用 `ok()` 信封 |
-| POST | `/sessions/{session_id}/turns/stream` | write | SSE；body `{request_id, content, attachment_ids}`，文字与附件至少一项非空 |
-| POST | `/messages/{assistant_id}/retry/stream` | write | SSE；body `{request_id}`，仅本人 stopped/failed 助手消息可重试 |
+| POST | `/sessions/{session_id}/turns/stream` | write | SSE；body `{request_id, content, attachment_ids, preset_id?}`，文字与附件至少一项非空 |
+| POST | `/messages/{assistant_id}/retry/stream` | write | SSE；body `{request_id, preset_id?}`，仅最后一个用户问题的 completed/stopped/failed 助手回答可重新生成 |
+| POST | `/messages/{assistant_id}/continue/stream` | write | SSE；body `{request_id, preset_id?}`，仅最后一轮 completed 且 `finish_reason=length/max_tokens` 的非空回答可继续；固定原预设，创建保留原文的新版本 |
+| PATCH | `/messages/{user_id}/selection` | write | body `{answer_id}`；仅最后一轮、同会话、非空 completed/stopped 答案可采用，生成中返回 409 |
+| GET | `/admin/usage` | `ai:admin` | 可选 `start/end` 北京日期（默认近 7 天，最多 93 天）、`preset_id/owner_id`；返回 totals/models/users/days，不含对话正文 |
+| GET | `/admin/role-limits` | `ai:admin` | 默认日额度和各角色覆盖值；null 表示未配置 |
+| PUT | `/admin/role-limits/{role_id}` | `ai:admin` | body `{daily_limit: 0..10000|null}`；0 暂停生成，null 恢复默认 |
 
-除附件二进制和 SSE 外，成功响应统一使用 `{code, message, data}` 的 `ok()` 信封。SSE 不套信封，事件顺序为 `meta` → 初始 `heartbeat` → 若干 `delta` → `done` 或 `error`：`meta` 给出会话、用户消息和助手消息 ID；`delta` 是文本增量；`done` 给出最终状态及可用的 token/耗时摘要；`error` 只给可行动错误，不透传供应商原始异常。当前只在 `meta` 后发送一次初始 `heartbeat`，不发送定时心跳；这是同步 AI facade 与断连后可靠保存 `stopped`/关闭上游之间的取舍，网关空闲超时不能依赖周期心跳规避。
 
-发送幂等键在同一会话内生效：同一 `request_id` 与同一正文/附件集合重复提交时复用既有用户/助手消息并返回已保存终态，不再次调用模型；同一键改了正文、附件或用于其他重试时，在建立 SSE 响应前返回 HTTP 409。停止只表示关闭当前连接、保存已收到的部分内容并将消息标记为 `stopped`，不承诺供应商侧停止计费。
+除附件二进制和 SSE 外，成功响应统一使用 `{code, message, data}` 的 `ok()` 信封。SSE 不套信封，事件顺序为 `meta` → 初始 `heartbeat` → 若干 `reasoning` / `delta` → `done` 或 `error`：`meta` 给出会话、用户消息和助手消息 ID；`reasoning` 是独立推理增量、不进入历史提示词；`meta.model` 是获授权的本轮模型摘要；`delta` 是文本增量；`done` 给出最终状态及可用的 token/耗时摘要；`error` 只给可行动错误，不透传供应商原始异常。网络等待时每约 5 秒发送心跳。网络线程只负责 HTTP，数据库由消费线程串行访问。首帧与约每 2 秒保存进度；`AI_CHAT_LEASE_SECONDS=45`，总生成上限 `AI_CHAT_GENERATION_MAX_SECONDS=600`。刷新配置/详情或新生成入口恢复过期任务为 failed，保留最近落库内容，不自动重发；迟到写入不能覆盖终态。
+
+发送幂等键在同一会话内生效：同一 `request_id` 与同一正文/附件集合重复提交时复用既有用户/助手消息并返回已保存终态，不再次调用模型；同一键改了正文、附件、显式模型或用于其他重试时，在建立 SSE 响应前返回 HTTP 409。停止只表示关闭当前连接、保存已收到的部分内容并将消息标记为 `stopped`，不承诺供应商侧停止计费。
+
+聊天模型由已有 AI 接入预设的 `parameters.chat` 发布：`enabled`、`label`、`vision`、`allowed_roles`、可选 `pricing={currency:CNY|USD,input_per_million,output_per_million}`。仅直连 OpenAI/Anthropic 文本预设可用；未发布业务预设、生图与 agent 不进入目录。原 `customer_ai_chat` 默认保留，显式关闭优先。发送、重生成及真正开始上游前重新核验账号、角色和配置版本；业务专用模型的调用权限不会因此开放。带图片历史切换到纯文本模型返回 400。
+
+`AI_CHAT_DAILY_TURN_LIMIT` 默认每用户 100 次；多角色取已配置日额度中的最小值，没有覆盖时使用默认值，管理员不豁免。北京时间零点恢复；失败、停止、已删除会话的已受理生成仍计数，重复幂等请求不重复计数。额度预留按用户行锁串行，同会话只允许一个生成。发送及上游调用前实时重读活跃账号、当前 `ai_chat:write` 权限和模型发布角色。模型变更与状态冲突返回 409、额度耗尽 429、无模型 503；客户端不能自填供应商地址或模型参数。
+
+回答详情另含 `selected_answer_id`（用户消息）、`continuation_of_message_id`、`finish_reason` 与 `first_token_ms`。版本预览仅改变本地显示，采用操作改变后续上下文；有后续问题后不能修改早期采用版本。无选择指针的旧记录取最后一版非空可用回答。统计保留软删除会话，费用按调用时保存的价格快照与完整用量估算；中断时的已报告 token 可计入显示，但不当作完整用量估价，币种不合并。
 
 ## 薪资计算（`/api/salary`，092/097 迁移，2026-08-06，M1 主数据 + M2 批次/考勤/导入 + M3 计算引擎）
 
@@ -1906,6 +1924,18 @@ v1.6.0自动接管：请求可传 `mode:draft|auto`（默认draft）。auto响�
 
 `POST /api/customer-hub/research-tasks/{task_id}/retry?expected_attempt_count=N`：人工重试失败背调；要求 `sales_automation:admin` 和该客户读取范围。仅 failed + attempt_count 匹配时重新置pending；保留历史事实，不动搜索结果，下一次claim创建新Run/租约代次。非failed或版本冲突409，无客户权限统一404。
 
+### 私海背调 v2（2026-11-16）
+
+| 方法与路径 | 权限和返回 |
+| --- | --- |
+| GET `/api/client-desk/customers/{company_id}/research` | `client_desk:read` 和本人客户。返回 `status`、`last_run_at`、`cooldown_until`、`cooldown_remaining_seconds`、`can_rerun`、`report` |
+| POST 同路径 | `client_desk:write`，实时小满归属与强身份映射。成功 HTTP 202；进行中、冷却或无法映射返回 409 |
+| GET `/api/sales-automation/research/monid-spend?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` | `sales_monid_spend:read`。按北京时间日期闭区间返回 `by_day` 和 `by_customer`，各行有 `charged_usd`、`reserved_usd`、`calls` |
+
+兼容执行器沿用 `/api/sales-automation/agent/research-tasks`，新执行器列表加 `include_private_v2=true`、领取加 `supports_private_v2=true`。v2 的 GET context 仅供识别契约，使用当前 `agent_id`、`lease_token` POST context 读取完整输入。仍通过 `/facts` 写入公开事实，通过 `/complete` 提交 `private_research_v2` 的 `report_markdown`、`input_hash`、`claims`、`citations`、`missing_information`、可选 `names`。结论、引用可同时为空，此时必须报告缺口。服务端生成标记、计数与 `verified_claims`。
+
+`POST /{id}/tools/{username_scan|monid}/{submit|status|bind}` 使用同一 Agent 权限、任务租约和 `agent_run_id`。submit 返回 `call_id` 和状态；status 传 `call_id`；bind 传 `call_id`、`candidate_ids`，返回原有事实回执。原始供应商响应留在调用账本。付费工具须匹配当前 Run 已尝试的用户名扫描和指定关键缺口。
+
 ### Research fact contract (2026-09-08)
 
 Agent research context now includes `fact_contract.version=registered_research_facts_v1` and the live source/key/value-type registry intersection. MCP checks it before claim and repeats it in the claim receipt. Official company-page research supports candidate, research-only `research.source.company_identity`, `research.source.business_profile`, `research.source.product_catalog`, and `research.source.business_contact` string facts in addition to `business.industry`. This does not verify identity, authorize outreach, or promote customer qualification. Unsupported fact keys, source combinations and types return actionable 400 codes without echoing submitted values. Existing Run/lease, evidence closure and review checks remain mandatory. No schema migration is required.
@@ -1955,6 +1985,8 @@ Agent research context now includes `fact_contract.version=registered_research_f
 ### 发票客户与联系人统一搜索（2026-09-17）
 
 `GET /api/invoice/customers/options`：需要 `invoice:write`。参数 `keyword`（客户名称/ID 或联系人姓名，最长200字符）、`private_only`（默认true）、`sales_user_id`（沿用代创建授权校验）、`offset`（默认0）、`limit`（默认50，最大100）。返回 `items/total/has_more`，私海请求另返回 `okki_bound`；未绑定时空结果。每项含 `option_key`（customer:公司ID / contact:联系人ID）、`kind`、`company_id/company_name/country_name`；联系人项含 `contact_id/name/email/tel`。空关键词只浏览客户，有关键词并列匹配两类。先按镜像/手动同步 overlay 的最新归属合并，再在数据库内计数和分页，避免20条截断及全量载入。仅客户级搜索旧端点仍供价格配置等独立调用方使用。
+
+联系人选项的 `tel` 优先使用小满电话。小满电话为空时，在同一客户下按联系人姓名匹配发票快照，跳过无电话及已删除的发票，按 `created_at DESC, id DESC` 取最近一条。双方都有邮箱时必须一致。同客户有重名联系人时，还须用唯一匹配的邮箱确认身份。姓名和邮箱匹配忽略首尾空格及大小写。找不到符合条件的发票时电话留空。
 
 `GET /api/invoice/customers/availability`（2026-11-03）：选择客户前的实时只读核对，需要 `invoice:write`。参数 `customer_id`（正整数数字串，最长20位）、`private_only`（默认true）、`sales_user_id`（同搜索的代创建授权）。先检查镜像/overlay 合并后的可选范围，再 GET 小满单个客户详情；返回 `company_id/status`，有效时另带 `company_name`。`status=active` 表示身份及当前私海归属核对通过；`missing` 仅来自小满 HTTP 200、业务码404、`Not Found Resource` 且无数据的明确不存在响应；`out_of_scope` 表示实时负责人已不在当前私海。未绑定409，不在本地可选范围404，小满不可达、鉴权失败或身份不完整502；这些错误不能当作客户已删除。不修改发票、客户镜像或 overlay，仅允许刷新鉴权 token 缓存。
 
@@ -2874,6 +2906,30 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 AI 整理走 `app.ai.service.chat` facade，预设 `domestic_followup_parse`（文字归一化）与 `domestic_followup_ocr`（截图 OCR）；两个 preset 启动时自动绑定与 `invoice_screenshot_extract` 相同的视觉 provider/模型（不退回其他 provider）。后台 AI/OCR 走 `jobs.py` 独立线程池（上限 3）。输出宽进：坏字段只丢弃该字段，不整条拒绝。
 
 `GET /followups`、`/followups/authors`、`/drafts`、`/tasks`、`/tasks/summary`、`/items` 均接受 `potential_only=true`（默认 false），与原有数据范围和筛选取交集，只返回客户**当前** `lifecycle_status=潜在` 的数据；无客户的草稿在勾选时不显示。此筛选不改变详情/历史的查看权限。
+
+### 跟进闭环：模板、行动待办与准备卡（267–270 迁移，本地实现未部署）
+
+设计见[客户跟进闭环](requirements/2026-11-16-followup-closed-loop/README.md)。下列路径沿用 `/api/domestic-followup` 前缀及统一信封。
+
+| 方法 | 相对路径 | 权限与契约 |
+| --- | --- | --- |
+| GET | `/templates`、`/templates/{code}?version=` | read；读取生效模板或指定历史版本，字段、参数、禁用补全规则均运行时下发。 |
+| GET | `/admin/templates/{code}/versions` | admin；按版本倒序读取模板历史。 |
+| PUT | `/admin/templates/{code}` | admin；携带当前 `version` 保存为新版本，旧版本退休但仍可读；过期版本返回 409，非法字段定义返回 400。 |
+| POST | `/tasks/{id}/complete` | write + 待办操作人；仅 `action`，`{note}` 完成说明必填。 |
+| PUT | `/tasks/{id}` | write + 待办操作人；仅 `action`，修改 `due_date` 或 `title`。 |
+| POST | `/tasks/{id}/cancel` | write + 待办操作人；仅 `action`，`{reason}` 取消理由必填。 |
+| GET | `/customers/{id}/prep-context` | write + 客户可写或来源待办承办人；返回推荐场景、模板、来源待办、历史数量和上张已使用卡的已知事实。 |
+| POST | `/preps` | 同上；创建准备卡，`request_id` 幂等。 |
+| GET | `/customers/{id}/preps`、`/preps/{id}`、`/preps/{id}/strategy` | read + 准备卡可读：当前负责人可读全部，作者仅仍在客户范围内可读；第三人无权读取。 |
+| PUT | `/preps/{id}` | write + 作者且仍可读；`version` 乐观锁，修改后需重新生成策略。 |
+| POST | `/preps/{id}/strategy` | write + 作者；后台生成策略，每张最多 5 次，第 6 次返回 409；GET 返回状态、策略及资料过期标记。 |
+| POST | `/preps/{id}/feedback`、`/preps/{id}/abandon` | write + 作者；反馈 `useful/inaccurate`，或作废未使用卡。 |
+| POST | `/preps/{id}/clone` | write + 可读原卡且客户可写；复制背调和事实，策略重新生成。 |
+
+直接保存、创建草稿及草稿确认新增可选字段：`next_steps`（最多 4 条）、`disposition/disposition_note`、`prep_id`、`template_code/template_version/template_answers`，条目支持 `nature`。采纳下一步时必须有且仅有一条主下一步，映射为原 `plan`；其余以 `source_key=action:{followup_id}:{step_key}` 幂等生成行动待办。补录和只有待办权限的提交禁止新增下一步及处置。准备卡只在确认时加锁绑定，重复或失效绑定解除并在 `warnings` 中说明。
+
+AI 新增 `domestic_followup_strategy` preset；整理输出增加多条下一步、四类事实、场景字段、准备问题回答与最多 3 个缺口追问。客户约定仅在原文出处匹配且有日期时默认采纳；截图转写标待核，不默认采纳；伪造出处降级为建议或待确认。修改 seed 不会更新生产已有 preset，发布时须另行执行授权的后台版本更新与回退准备。
 
 ### 客户总览与接力协作（255 迁移，手动成交状态需 258 迁移）
 

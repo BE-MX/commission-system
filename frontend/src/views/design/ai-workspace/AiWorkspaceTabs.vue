@@ -22,7 +22,7 @@
       @click="open('DesignAiChat')"
     >
       <el-icon aria-hidden="true"><ChatLineRound /></el-icon>
-      方案对话
+      通用对话
     </button>
   </nav>
 </template>

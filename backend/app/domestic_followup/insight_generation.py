@@ -5,7 +5,7 @@ import re
 from collections import defaultdict
 from datetime import date, timedelta
 
-from sqlalchemy import update
+from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
 
 from app.ai.service import chat
@@ -47,9 +47,10 @@ def _record_context(db: Session, start: date, end: date, author_id: int | None =
         query = query.filter(DomesticFollowup.author_user_id == author_id)
     rows = query.order_by(DomesticFollowup.followup_date.desc(), DomesticFollowup.id.desc()).limit(500).all()
     followup_ids = [record.id for record, _ in rows]
-    items = (db.query(DomesticFollowupItem)
-             .filter(DomesticFollowupItem.followup_id.in_(followup_ids),
-                     DomesticFollowupItem.status != "withdrawn").all()) if followup_ids else []
+    items = ((db.query(DomesticFollowupItem)
+              .filter(DomesticFollowupItem.followup_id.in_(followup_ids),
+                      or_(DomesticFollowupItem.status.is_(None), DomesticFollowupItem.status != "withdrawn")).all())
+             if followup_ids else [])
     grouped = defaultdict(list)
     for item in items:
         grouped[item.followup_id].append({"kind": item.kind, "text": item.text, "category": item.category,

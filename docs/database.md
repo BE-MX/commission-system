@@ -601,12 +601,16 @@ worker 通过 queued/running、lease 与 claim 字段实现可恢复领取。失
 
 业务员客户切换与预览复用以上表，不新增副本或迁移。客户范围实时联结 active `ark_user_external_bindings(provider='okki')` 与当前 `customer_commission_snapshot.salesperson_id`；门户内容仍由 `ark_customer_media_batches.status='published'` 和素材 `deleted_at IS NULL` 决定，因此业务预览与客户实际可见内容保持同一真相源。
 
-## 客户 AI 方案对话（迁移 100，2026-08-09）
+## 通用 AI 工作台（迁移 100/124/265/266）
 
 - `ark_ai_chat_sessions`：owner 会话；`owner_user_id → ark_users.id RESTRICT`，索引 `idx_ai_chat_session_owner_updated(owner_user_id, updated_at)` 支撑最近会话分页。
   - 迁移 `124_ai_chat_modes` 新增可空 JSON `mode_snapshot`：首次发送时保存固定方式 ID、显示元数据、完整规则正文及 SHA-256 版本；已发送会话不可更换方式，重试/历史预览均读取此快照。原有会话保持 NULL，仍为普通聊天；内置规则不复用附件表。
-- `ark_ai_chat_messages`：用户/助手 Markdown 消息，状态为 `completed/streaming/stopped/failed`。`session_id → ark_ai_chat_sessions.id RESTRICT`，`ai_call_log_id → ark_ai_call_logs.id RESTRICT`；`uq_ai_chat_message_session_request(session_id, request_id)` 保证会话内发送幂等，`uq_ai_chat_message_session_id(session_id, id)` 是复合外键目标。助手消息用 `reply_to_message_id` 指向触发它的用户消息；重试助手消息用 `retry_of_message_id` 指向原 stopped/failed 助手消息。两条自引用均通过 `(session_id, message_id)` 复合 FK 限定在同一会话，禁止跨会话串链。
-- `ark_ai_chat_attachments`：私有附件元数据与抽取正文；`session_id → ark_ai_chat_sessions.id RESTRICT`、`created_by → ark_users.id RESTRICT`。发送前 `message_id=NULL/status=draft`，发送事务绑定用户消息后为 `attached`，状态值域为 `draft/attached/failed`；`fk_ai_chat_attachment_message_session(session_id, message_id)` 强制附件只能绑定同一会话内的消息。
+- `ark_ai_chat_messages`：用户/助手 Markdown 消息，状态为 `completed/streaming/stopped/failed`。`session_id → ark_ai_chat_sessions.id RESTRICT`，`ai_call_log_id → ark_ai_call_logs.id RESTRICT`；`uq_ai_chat_message_session_request(session_id, request_id)` 保证会话内发送幂等，`uq_ai_chat_message_session_id(session_id, id)` 是复合外键目标。助手消息用 `reply_to_message_id` 指向触发它的用户消息；重生成助手消息用 `retry_of_message_id` 指向原 completed/stopped/failed 助手消息。两条自引用均通过 `(session_id, message_id)` 复合 FK 限定在同一会话，禁止跨会话串链。
+  - 迁移 `265_universal_ai_chat` 新增消息 `model_snapshot` JSON（模型标识、能力、配置摘要哈希；不含密钥、URL、私有提示词或参数）、`reasoning_content` MEDIUMTEXT。MySQL 正文 `content` 由 TEXT 扩至 MEDIUMTEXT；SQLite 仍用 Text。旧记录保留，新增字段 NULL，不猜测历史模型。
+  - 同迁移增加会话 `selected_preset_id`（最近模型选择，不设 FK，以便预设下架后保留历史）、`deleted_at`（北京时间软删除）。访问统一排除软删除会话，额度统计保留其消息。没有删除业务数据或缩小正文列的自动 downgrade。
+- 迁移 `266_ai_chat_recovery` 为消息增加 `lease_expires_at`、`finish_reason`、`first_token_ms`、`selected_answer_id`、`continuation_of_message_id`，既有记录保持 NULL；版本指针与继续来源使用同会话复合自引用 FK。`idx_ai_chat_generation_lease(status,lease_expires_at)` 支撑恢复筛选。运行时 `model_snapshot.pricing` 保存每次受理价格，不回填旧价格。
+- `ark_ai_chat_role_limits`：`role_id INT UNSIGNED PK/FK → ark_roles.id CASCADE`，`daily_limit` CHECK 0–10000，`updated_by INT UNSIGNED → ark_users.id RESTRICT`，`updated_at` 北京时间。删除角色同步删除其额度配置，不删调用历史。
+- `ark_ai_chat_attachments`：私有附件元数据与抽取正文；`session_id → ark_ai_chat_sessions.id RESTRICT`、`created_by → ark_users.id RESTRICT`。发送前 `message_id=NULL/status=draft`，发送事务绑定用户消息后为 `attached`，状态值域为 `draft/attached/failed`；`failed` 还表示已提交删除意图、待重试清理的未发送附件，不可被新消息绑定；`fk_ai_chat_attachment_message_session(session_id, message_id)` 强制附件只能绑定同一会话内的消息。
 
 owner 真相在 session；消息访问必须经 session 的 `owner_user_id`，附件访问同时校验 session owner 与 `created_by`，跨 owner 与不存在统一 404。数据库 FK/复合 FK 保证引用边界，service 在绑定附件的同一事务中再校验 owner、session 与 draft 状态。
 
@@ -962,6 +966,19 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 
 同迁移种三个 `sys_dict` 值域初值（迁移不 import 业务代码，初值与 `app/domestic_followup/constants.py` 的 `DICT_SEEDS` 手动保持一致）：`domestic_followup_state_change`（订单减少/增长等 14 项）、`domestic_followup_category`（质量/发货物流/色差/尺寸/价格/售后退换/服务/产品需求/其他）、`domestic_followup_channel`（微信/电话/视频号/到店/展会/其他）。口径与盲区见[模块说明](module-notes.md)。
 
+### 跟进闭环（267–270，本地实现未部署）
+
+| 对象 | 约束与用途 |
+| --- | --- |
+| `ark_dom_followup_templates`（264） | `(code,version)` 唯一；保存 T01–T10 不可变版本。生效/退休状态、准备与录入字段 JSON、最短写法、AI 场景要点、预算参数、禁用补全规则、维护人和北京时间。 |
+| `ark_domestic_followups.disposition/disposition_note`（265） | 无采纳下一步时选填等待客户、暂停或关闭及一句理由；不生成任务。 |
+| `ark_dom_followup_preps`（266） | `request_id` 唯一、`followup_id` 可空唯一；保存作者、模板版本、目标、联系依据、已知事实、待确认、答案、策略与次数、证据版本、来源待办和乐观锁。未使用卡超期或换人收口为 expired。 |
+| `ark_domestic_followups.prep_id`（266） | 普通索引；草稿即可关联，确认时由准备卡唯一 `followup_id` 保证只能使用一次。 |
+| `ark_domestic_followups.template_code/template_version/template_answers`（267） | 保存当时的场景版本及 `{fields,questions}` 答案，历史不随模板新版改变。 |
+| `ark_domestic_followup_items.nature`（267） | 可空 `customer_said/business_fact/assessment/to_confirm`，与 `origin` 正交；旧记录为空，前端显示未分类。 |
+
+`ark_domestic_followup_tasks.task_type` 新增 `action` 取值，不加列。`source_key=action:{followup_id}:{step_key}` 保证幂等；`payload` 保存步骤依据、事件、完成标准、出处、完成说明和取消理由。行动待办不进入 `CLOSABLE_BY_FOLLOWUP`、约定兑现或留下一步统计，完成/取消必须人工填写说明；归属变化按规则转移或关闭，第三人承办的技术任务在普通转手中保留。
+
 ### 跟进责任与接力协作（255_followup_collaboration）
 
 迁移接 `254_ai_provider_runtime`。新表仅存跟进业务，客户归属与提成快照继续使用原表。时间列使用北京时间。
@@ -1133,3 +1150,10 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 队列入场由既有配置表 `_insight_queue_lock` 行锁序列化；AI 网络调用不持有入场锁。执行令牌配合条件 UPDATE 阻止超时执行器覆盖结果。证据版本、当前责任人、有效成交样本均在读取时复核；task_service 的 `source_key=insight:<id>` 与建议行锁共同保证待办幂等。配置新增统计名单、非工作日、AI 生成开关，使用既有配置表；无统计汇总表。
 
 实施证据与操作限制见[实施记录](requirements/2026-11-12-followup-stats-board/implementation.md)。
+
+
+## 私海背调 v2（264_private_research_tools）
+
+迁移接在 `263_customer_owner_claimed_at`。为 `ark_customer_research_tasks` 添加 `priority`（默认 0）和优先级与创建时间索引。旧任务保留优先级 0。被按需重跑取代的任务以 `task_status/result_review_status=superseded` 留档；有效运行通过原租约代次及 Run 状态围栏保护。
+
+`ark_customer_research_tool_calls` 关联研究任务和 Agent Run。对 task/run/idempotency_key 唯一，记录租约代次、请求哈希、操作和目标、扫描先决记录、状态、供应商执行 ID、原始响应、绑定回执以及北京时间。调用记录和预占在请求供应商前提交。Monid 按整数微美元保存预占和已确认花费，已确认花费为空时仍占用额度。原始响应只用于服务侧审计与候选绑定，不进入客户读接口。

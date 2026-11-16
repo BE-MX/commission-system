@@ -14,8 +14,8 @@ from app.core.time import beijing_now, beijing_today
 from app.domestic.models import DomesticCustomer
 from app.domestic_followup import attachment_service, config_service, dict_service, task_service, visibility
 from app.domestic_followup.constants import (
-    DICT_CATEGORY, DICT_CHANNEL, DICT_OBSTACLE, DICT_RESULT, DICT_STATE_CHANGE, NEGATIVE_RESULT_CODES,
-    RECEIPT_OK_TEXT, TRACKED_KINDS, URGENT,
+    DICT_CATEGORY, DICT_CHANNEL, DICT_OBSTACLE, DICT_RESULT, DICT_STATE_CHANGE, DISPOSITIONS, NEGATIVE_RESULT_CODES,
+    NEXT_STEP_BASES, RECEIPT_OK_TEXT, TRACKED_KINDS, URGENT,
 )
 from app.domestic_followup.models import DomesticFollowup, DomesticFollowupItem, DomesticFollowupTask
 from app.domestic_followup.schemas import ConfirmIn, DirectSaveIn, DraftCreateIn, FollowupFields
@@ -59,6 +59,11 @@ def _validate(fields: FollowupFields, values: dict, followup_date) -> None:
         raise ValueError("跟进日期不能晚于今天")
     if fields.next_date and fields.next_date < followup_date:
         raise ValueError("下次跟进日期不能早于跟进日期")
+    for step in fields.next_steps:
+        if step.method and step.method not in channels:
+            raise ValueError(f"下一步方式「{step.method}」不在字典中")
+        if step.due_date and step.due_date < followup_date:
+            raise ValueError("下一步核实日期不能早于跟进日期")
 
 
 def validate_outcome(values, result, obstacles, effective, *, previous=None, required=False):
@@ -88,7 +93,7 @@ def _write_items(db: Session, followup: Followup, customer: DomesticCustomer, it
             raise ValueError("处理人不存在或已停用")
         item = DomesticFollowupItem(
             followup_id=followup.id, customer_id=customer.id, seq=seq[item_in.kind], kind=item_in.kind,
-            text=item_in.text.strip(), origin=item_in.origin,
+            text=item_in.text.strip(), origin=item_in.origin, nature=item_in.nature,
             category=item_in.category if tracked else None,
             severity=(item_in.severity or "一般") if tracked else None,
             status=("closed_no_action" if item_in.record_only else "open") if tracked else None,
@@ -103,12 +108,88 @@ def _write_items(db: Session, followup: Followup, customer: DomesticCustomer, it
             _enqueue_urgent(db, item, customer, followup)
 
 
+def _prepare_next_steps(fields: FollowupFields) -> FollowupFields:
+    steps = fields.next_steps
+    if not steps:
+        if fields.disposition and fields.disposition not in DISPOSITIONS:
+            raise ValueError("下一步处置不合法")
+        if fields.disposition and not (fields.disposition_note or "").strip():
+            raise ValueError("选择处置后，请填写一句理由")
+        if not fields.disposition and (fields.disposition_note or "").strip():
+            raise ValueError("请先选择下一步处置")
+        return fields
+    if any((fields.next_date, fields.next_plan, fields.next_method, fields.plan_assignee_user_id, fields.plan_purpose)):
+        raise ValueError("下一步清单与单条下次跟进不能同时提交")
+    if fields.disposition or fields.disposition_note:
+        raise ValueError("采纳下一步后，不能再填写无下一步处置")
+    primary = [step for step in steps if step.is_primary]
+    if len(primary) != 1:
+        raise ValueError("采纳下一步时必须且只能有一条主下一步")
+    keys = [step.step_key.strip() for step in steps]
+    if any(not key for key in keys) or len(set(keys)) != len(keys):
+        raise ValueError("下一步编号不能为空或重复")
+    for step in steps:
+        if not step.text.strip() or step.due_date is None:
+            raise ValueError("每条采纳的下一步都必须填写内容和核实日期")
+        if step.basis not in NEXT_STEP_BASES:
+            raise ValueError("下一步依据不合法")
+        if step.trigger == "event" and not (step.event or "").strip():
+            raise ValueError("事件型下一步必须填写触发事件")
+    main = primary[0]
+    return fields.model_copy(update={
+        "next_date": main.due_date, "next_plan": main.text.strip(), "next_method": main.method,
+        "plan_assignee_user_id": main.assignee_user_id, "plan_purpose": main.plan_purpose,
+        "disposition": None, "disposition_note": None,
+    })
+
+
+def _template_values(db: Session, fields):
+    if not fields.template_code:
+        answers = fields.template_answers or {}
+        if (answers.get("fields") or {}) or (answers.get("questions") or []):
+            raise ValueError("填写场景答案前，请先选择场景模板")
+        return None, None, None
+    from app.domestic_followup import template_service
+
+    template = template_service.get_template(db, fields.template_code, fields.template_version)
+    answers = fields.template_answers or {}
+    definitions = {field["key"]: field for field in template.record_fields or []}
+    values = answers.get("fields") or {}
+    unknown = set(values) - set(definitions)
+    if unknown:
+        raise ValueError(f"场景字段不存在：{'、'.join(sorted(unknown))}")
+    extra_types = [(field.get("options") or {}).get("dict") for field in definitions.values()
+                   if isinstance(field.get("options"), dict) and field["options"].get("dict")]
+    dict_values = dict_service.load_values(db, extra_types)
+    for key, value in values.items():
+        field = definitions[key]
+        options = (field.get("options") or {}).get("inline") or dict_values.get((field.get("options") or {}).get("dict"), [])
+        if field["kind"] == "select" and value not in (*options, None, ""):
+            raise ValueError(f"场景字段「{field['label']}」的值不在选项中")
+        if field["kind"] == "multiselect" and (not isinstance(value, list) or set(value) - set(options)):
+            raise ValueError(f"场景字段「{field['label']}」的值不在选项中")
+    questions = []
+    for row in answers.get("questions") or []:
+        state = row.get("state") if row.get("state") in ("asked", "not_asked", "no_reply") else "not_asked"
+        questions.append({"q": str(row.get("q") or "")[:500], "answer": str(row.get("answer") or "")[:1000], "state": state})
+    return template.code, template.version, {"fields": values, "questions": questions[:10]}
+
+
 def _apply_and_confirm(db: Session, current_user: dict, followup: Followup, fields: FollowupFields) -> Followup:
     if not fields.customer_id:
         raise ValueError("请选择客户")
     from app.domestic_followup import record_access
 
     user_id = visibility.uid(current_user)
+    if fields.prep_id is None and "prep_id" not in fields.model_fields_set and followup.prep_id:
+        fields = fields.model_copy(update={"prep_id": followup.prep_id})
+    if fields.prep_id and not fields.template_code:
+        from app.domestic_followup.prep_models import DomesticFollowupPrep
+        prep = db.get(DomesticFollowupPrep, fields.prep_id)
+        if prep:
+            fields = fields.model_copy(update={"template_code": prep.template_code,
+                                               "template_version": prep.template_version})
+    fields = _prepare_next_steps(fields)
     if fields.followup_date:
         followup.followup_date = fields.followup_date
     if not fields.channel and followup.channel:  # 建草稿时带的沟通方式也要过字典校验
@@ -129,8 +210,17 @@ def _apply_and_confirm(db: Session, current_user: dict, followup: Followup, fiel
     for name in OUTCOME_FIELDS:
         setattr(followup, name, getattr(fields, name))
     followup.responsibility_version = responsibility.version if responsibility else None
+    followup.disposition = fields.disposition
+    followup.disposition_note = (fields.disposition_note or "").strip() or None
+    template_code, template_version, template_answers = _template_values(db, fields)
+    followup.template_code = template_code
+    followup.template_version = template_version
+    followup.template_answers = template_answers
 
     _write_items(db, followup, customer, fields.items, user_id)
+    if not fields.evidence_kind:
+        natures = {item.nature for item in fields.items}
+        followup.evidence_kind = "customer" if "customer_said" in natures else "assessment" if "assessment" in natures else None
     for resolved in fields.resolved_items:
         item = db.get(DomesticFollowupItem, resolved.item_id)
         if item is None or item.customer_id != customer.id:
@@ -145,9 +235,15 @@ def _apply_and_confirm(db: Session, current_user: dict, followup: Followup, fiel
     if not task_only and not fields.historical_only:
         plan_owner = record_access.plan_assignee(db, responsibility, fields)
         task_service.create_plan_task(db, followup, customer.shop_name, assignee_id=plan_owner, purpose=fields.plan_purpose)
+        task_service.create_action_tasks(db, followup, customer.shop_name, steps=fields.next_steps,
+                                         responsibility=responsibility, current_user=current_user)
         record_access.update_responsibility(db, responsibility, followup, fields)
         visibility.learn_alias(db, customer.id, followup.chat_title, user_id)
 
+    from app.domestic_followup import prep_service
+    warnings = prep_service.bind_for_followup(db, current_user, followup, fields.prep_id)
+    if warnings:
+        followup._confirmation_warnings = warnings
     followup.status = "confirmed"
     followup.confirmed_at = beijing_now()
     followup.version += 1
@@ -209,6 +305,18 @@ def create_draft(db: Session, current_user: dict, payload: DraftCreateIn) -> tup
     if not ((payload.raw_text or "").strip() or payload.attachment_ids):
         raise ValueError("请填写跟进内容或上传截图")
     try:
+        if payload.prep_id:
+            from app.domestic_followup import prep_access, prep_service
+            prep = prep_service.detail(db, current_user, payload.prep_id)
+            prep_access.ensure_author(db, current_user, prep)
+            if prep.status not in ("draft", "ready"):
+                raise ValueError("准备卡已使用或已收口，不能用于新的跟进")
+            if payload.customer_id and payload.customer_id != prep.customer_id:
+                raise ValueError("准备卡与客户不一致")
+            payload = payload.model_copy(update={
+                "customer_id": prep.customer_id, "template_code": payload.template_code or prep.template_code,
+                "template_version": payload.template_version or prep.template_version,
+            })
         if payload.customer_id:
             from app.domestic_followup import record_access
             record_access.draft_access(db, current_user, payload.customer_id, payload.source_task_id)
@@ -217,6 +325,16 @@ def create_draft(db: Session, current_user: dict, payload: DraftCreateIn) -> tup
         if not created:
             return followup, False
         followup.customer_id = payload.customer_id
+        followup.prep_id = payload.prep_id
+        followup.template_code = payload.template_code
+        followup.template_version = payload.template_version
+        followup.template_answers = payload.template_answers
+        if payload.prep_id and not payload.template_code:
+            from app.domestic_followup.prep_models import DomesticFollowupPrep
+            prep = db.get(DomesticFollowupPrep, payload.prep_id)
+            if prep:
+                followup.template_code = prep.template_code
+                followup.template_version = prep.template_version
         for name in OUTCOME_FIELDS:
             setattr(followup, name, getattr(payload, name))
         attachment_service.bind(db, user_id, followup.id, payload.attachment_ids)
@@ -241,7 +359,7 @@ def serialize_item(item: DomesticFollowupItem) -> dict:
     return {
         "id": item.id, "followup_id": item.followup_id, "customer_id": item.customer_id, "seq": item.seq,
         "kind": item.kind, "text": item.text, "category": item.category, "severity": item.severity,
-        "origin": item.origin, "status": item.status, "handler_user_id": item.handler_user_id,
+        "origin": item.origin, "nature": item.nature, "status": item.status, "handler_user_id": item.handler_user_id,
         "resolution": item.resolution,
         "resolved_at": item.resolved_at.isoformat() if item.resolved_at else None,
         "created_at": item.created_at.isoformat() if item.created_at else None,
@@ -261,11 +379,15 @@ def serialize(db: Session, followup: Followup, *, with_items: bool = True) -> di
         "evidence_kind": followup.evidence_kind, "shared_summary": followup.shared_summary,
         "effective_progress": followup.effective_progress,
         "responsibility_version": followup.responsibility_version,
+        "disposition": followup.disposition, "disposition_note": followup.disposition_note,
         "next_date": followup.next_date.isoformat() if followup.next_date else None,
         "next_plan": followup.next_plan, "next_method": followup.next_method, "chat_title": followup.chat_title,
         "source": followup.source, "status": followup.status, "ai_status": followup.ai_status,
         "ai_result": followup.ai_result, "ai_error": followup.ai_error, "version": followup.version,
-        "source_task_id": followup.source_task_id,
+        "source_task_id": followup.source_task_id, "prep_id": followup.prep_id,
+        "template_code": followup.template_code, "template_version": followup.template_version,
+        "template_answers": followup.template_answers,
+        "warnings": getattr(followup, "_confirmation_warnings", []),
         "created_at": followup.created_at.isoformat() if followup.created_at else None,
         "attachments": attachment_service.list_for(db, [followup.id]).get(followup.id, []),
     }

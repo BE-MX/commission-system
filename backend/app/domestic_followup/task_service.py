@@ -11,7 +11,8 @@ from app.core.time import beijing_now, beijing_today
 from app.domestic.models import DomesticCustomer
 from app.domestic_followup import visibility
 from app.domestic_followup.constants import (
-    CLOSE_ITEM_RESOLVED, CLOSE_NEW_FOLLOWUP, CLOSE_RECEIPT_DONE, OPEN_ITEM_STATES, TRACKED_KINDS, URGENT,
+    CLOSE_ACTION_CANCELLED, CLOSE_ACTION_DONE, CLOSE_ITEM_RESOLVED, CLOSE_NEW_FOLLOWUP, CLOSE_RECEIPT_DONE,
+    OPEN_ITEM_STATES, TRACKED_KINDS, URGENT,
 )
 from app.domestic_followup.models import DomesticFollowupItem, DomesticFollowupTask
 
@@ -72,6 +73,74 @@ def create_plan_task(db: Session, followup, shop_name: str, *, assignee_id: int 
         due_date=followup.next_date, payload={"plan": followup.next_plan, "method": followup.next_method},
         source_followup_id=followup.id, purpose=purpose,
     )
+    return task
+
+
+def create_action_tasks(db: Session, followup, shop_name: str, *, steps, responsibility, current_user) -> list[Task]:
+    from app.domestic_followup import record_access
+
+    rows = []
+    for step in steps:
+        if step.is_primary:
+            continue
+        assignee = record_access.action_assignee(
+            db, responsibility, step.assignee_user_id, actor_id=visibility.uid(current_user),
+        )
+        task, _ = upsert_task(
+            db, source_key=f"action:{followup.id}:{step.step_key}", task_type="action",
+            customer_id=followup.customer_id, assignee_user_id=assignee, title=f"{shop_name}：{step.text.strip()}",
+            due_date=step.due_date, payload={
+                "step_key": step.step_key, "basis": step.basis, "trigger": step.trigger, "event": step.event,
+                "done_criteria": step.done_criteria, "source": step.source,
+            }, source_followup_id=followup.id,
+        )
+        rows.append(task)
+    return rows
+
+
+def _locked_action(db: Session, current_user: dict, task_id: int) -> Task:
+    task = db.query(Task).filter(Task.id == task_id).populate_existing().with_for_update().first()
+    if task is None or task.task_type != "action":
+        raise LookupError("行动待办不存在")
+    ensure_task_actor(db, current_user, task, lock=True)
+    if task.status != "todo":
+        raise ValueError("该行动待办已结束")
+    return task
+
+
+def complete_action(db: Session, current_user: dict, task_id: int, note: str) -> Task:
+    note = (note or "").strip()
+    if not note:
+        raise ValueError("请填写完成说明")
+    task = _locked_action(db, current_user, task_id)
+    task.payload = {**(task.payload or {}), "done_note": note[:500]}
+    close_task(task, "done", CLOSE_ACTION_DONE, user_id=visibility.uid(current_user))
+    db.flush()
+    return task
+
+
+def update_action(db: Session, current_user: dict, task_id: int, *, due_date=None, title=None) -> Task:
+    if due_date is None and title is None:
+        raise ValueError("请修改到期日或内容")
+    if title is not None and not title.strip():
+        raise ValueError("行动内容不能为空")
+    task = _locked_action(db, current_user, task_id)
+    if due_date is not None:
+        task.due_date = due_date
+    if title is not None:
+        task.title = title.strip()[:200]
+    db.flush()
+    return task
+
+
+def cancel_action(db: Session, current_user: dict, task_id: int, reason: str) -> Task:
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValueError("请填写取消理由")
+    task = _locked_action(db, current_user, task_id)
+    task.payload = {**(task.payload or {}), "cancel_reason": reason[:500]}
+    close_task(task, "cancelled", CLOSE_ACTION_CANCELLED, user_id=visibility.uid(current_user))
+    db.flush()
     return task
 
 
@@ -273,7 +342,7 @@ def summary(db: Session, current_user: dict, *, today: date | None = None, poten
     if potential_only:
         query = query.filter(Task.customer_id.in_(visibility.potential_customer_ids()))
     rows = query.all()
-    result = {"receipt": 0, "plan": 0, "issue": 0, "urgent": 0, "upcoming": 0}
+    result = {"receipt": 0, "plan": 0, "action": 0, "issue": 0, "urgent": 0, "upcoming": 0}
     for task_type, due_date, payload in rows:
         if due_date > today:
             result["upcoming"] += 1

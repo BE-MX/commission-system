@@ -97,3 +97,45 @@ def test_owner_to_owner_keeps_tasks_of_other_people(db):
     db.flush()
     db.expire_all()
     assert {t.assignee_user_id for t in db.query(DomesticFollowupTask).all()} == {helper.id}
+
+
+def test_action_transfer_keeps_third_party_and_release_closes_all(db):
+    old = make_user(db, "fu_hk_action_old")
+    new = make_user(db, "fu_hk_action_new")
+    helper = make_user(db, "fu_hk_action_helper")
+    customer = make_customer(db, old, "行动归属店")
+    owned = DomesticFollowupTask(task_type="action", customer_id=customer.id, assignee_user_id=old.id,
+                                 source_key="action:owner", title="原负责人行动", due_date=TODAY)
+    third = DomesticFollowupTask(task_type="action", customer_id=customer.id, assignee_user_id=helper.id,
+                                 source_key="action:third", title="第三人行动", due_date=TODAY)
+    db.add_all([owned, third])
+    db.flush()
+    customer.owner_user_id = new.id
+    db.flush()
+    assert owned.assignee_user_id == new.id and third.assignee_user_id == helper.id
+    customer.owner_user_id = None
+    db.flush()
+    assert owned.status == "cancelled" and owned.closed_reason == "客户释放"
+    assert third.status == "cancelled" and third.closed_reason == "客户释放"
+
+
+def test_managed_action_decisions_and_server_side_close(db):
+    from app.domestic_followup.collaboration_tasks import execute_plan, task_decision
+
+    old = make_user(db, "fu_hk_managed_old")
+    new = make_user(db, "fu_hk_managed_new")
+    helper = make_user(db, "fu_hk_managed_helper")
+    customer = make_customer(db, old, "托管行动店")
+    owned = DomesticFollowupTask(task_type="action", customer_id=customer.id, assignee_user_id=old.id,
+                                 source_key="managed:action:owner", title="负责人行动", due_date=TODAY)
+    third = DomesticFollowupTask(task_type="action", customer_id=customer.id, assignee_user_id=helper.id,
+                                 source_key="managed:action:third", title="第三人行动", due_date=TODAY)
+    assert task_decision(owned, old.id) == "transfer"
+    assert task_decision(third, old.id) == "retain"
+    assert task_decision(third, old.id, closing=True) == "close"
+    db.add_all([owned, third])
+    db.flush()
+    execute_plan([owned], {"transfer": [owned.id], "cancel": [], "keep": []}, new.id, old.id)
+    execute_plan([third], {"transfer": [], "cancel": [third.id], "keep": []}, None, old.id)
+    assert owned.assignee_user_id == new.id and owned.status == "todo"
+    assert third.status == "cancelled" and third.closed_reason == "客户释放"

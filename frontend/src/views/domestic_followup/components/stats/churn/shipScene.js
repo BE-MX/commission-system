@@ -48,12 +48,19 @@ function readColors() {
   return Object.fromEntries(Object.entries(map).map(([key, token]) => [key, cssColor(token)]))
 }
 
-export function createShipScene(canvas, { reduced = false, onFrame } = {}) {
+export function createShipScene(canvas, { reduced = false, onFrame, onQuality, quality: initialQuality = 'auto' } = {}) {
   const C = readColors()
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
-  // 清晰度自适应：先按屏幕最高 2 倍渲染，实测持续掉帧再逐级降到 1 倍（只降不升，避免来回跳）
-  let pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
-  renderer.setPixelRatio(pixelRatio)
+  // 画质档位。auto：开场先用 1.5 秒不限帧实测显卡，直接选一档；之后持续掉帧再降一档（只降不升）
+  const DEVICE_DPR = window.devicePixelRatio || 1
+  const QUALITY = {
+    high: { dpr: 2, shadow: 4096, ao: true, bloom: true, smaa: true, blur: true },
+    medium: { dpr: 1.25, shadow: 2048, ao: false, bloom: true, smaa: true, blur: true },
+    low: { dpr: 1, shadow: 1024, ao: false, bloom: false, smaa: false, blur: false },
+  }
+  const ORDER = ['high', 'medium', 'low']
+  let quality = 'medium', autoQuality = true
+  renderer.setPixelRatio(Math.min(DEVICE_DPR, QUALITY.medium.dpr))
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 0.7
   renderer.shadowMap.enabled = true
@@ -63,11 +70,12 @@ export function createShipScene(canvas, { reduced = false, onFrame } = {}) {
 
   const post = createPostFX({ renderer, scene, camera, width: canvas.clientWidth || 1, height: canvas.clientHeight || 1, reduced })
   const ocean = createOcean({ renderer, scene, colors: C, sunDirection: SUN_DIRECTION })
+  post.setEffects(QUALITY.medium)
   scene.add(new THREE.HemisphereLight(C.lightSky, C.lightGround, 0.45))
   const sun = new THREE.DirectionalLight(C.lightSun, 2.7)
   sun.position.copy(SUN_DIRECTION).multiplyScalar(90)
   sun.castShadow = true
-  sun.shadow.mapSize.set(4096, 4096)
+  sun.shadow.mapSize.set(2048, 2048)
   sun.shadow.bias = -0.0003
   sun.shadow.normalBias = 0.02
   sun.shadow.radius = 3
@@ -148,18 +156,29 @@ export function createShipScene(canvas, { reduced = false, onFrame } = {}) {
     sun.position.set(ship.centerX, 0, 0).addScaledVector(SUN_DIRECTION, 100)
 
     // 稳固箱垛：一箱约代表四家稳固的 B/C 级与未定级客户
+    // 合并成每种漆面一次绘制（InstancedMesh），几十个稳固箱不再各占一次绘制调用
     const stackSets = [0, 1, 2].map(i => kit.materials(C.stable.clone(), i))
     stackSets.forEach(set => worldOwned.push(...set.all))
+    const slots = [[], [], []]
     for (const region of model.regions) {
       const count = Math.min(region.cols * 4, Math.ceil(region.stackCount / 4))
       for (let i = 0; i < count; i++) {
-        const mesh = new THREE.Mesh(kit.geometries.mid, stackSets[(i * 7 + region.cols) % stackSets.length].list)
-        mesh.position.set(region.x0 + ((i % region.cols) + 0.5) * DECK.PITCH, CARGO_Y + CONTAINER_SIZES.mid.h / 2 + Math.floor(i / region.cols) * 0.92, 0)
-        mesh.castShadow = mesh.receiveShadow = true
-        mesh.userData.region = region.key
-        world.add(mesh); pickables.push(mesh)
+        slots[(i * 7 + region.cols) % 3].push({
+          region: region.key,
+          x: region.x0 + ((i % region.cols) + 0.5) * DECK.PITCH,
+          y: CARGO_Y + CONTAINER_SIZES.mid.h / 2 + Math.floor(i / region.cols) * 0.92,
+        })
       }
     }
+    const placer = new THREE.Object3D()
+    slots.forEach((list, k) => {
+      if (!list.length) return
+      const stacks = new THREE.InstancedMesh(kit.geometries.mid, stackSets[k].list, list.length)
+      list.forEach((slot, n) => { placer.position.set(slot.x, slot.y, 0); placer.updateMatrix(); stacks.setMatrixAt(n, placer.matrix) })
+      stacks.castShadow = stacks.receiveShadow = true
+      stacks.userData.instanceRegions = list.map(slot => slot.region)
+      world.add(stacks); pickables.push(stacks)
+    })
     // 单独绘制的客户箱
     for (const item of model.items) {
       const size = sizeOf(item.level), d = CONTAINER_SIZES[size]
@@ -327,34 +346,66 @@ export function createShipScene(canvas, { reduced = false, onFrame } = {}) {
   }
 
   let raf = 0, last = 0, running = false
-  const intervals = []
-  function adaptResolution(interval) {
-    intervals.push(interval)
-    if (intervals.length < 45) return
-    const sorted = [...intervals].sort((a, b) => a - b)
-    intervals.length = 0
-    if (sorted[Math.floor(sorted.length / 2)] <= 0.046) return // 中位帧间隔 > 46ms ≈ 低于 22 帧才降
-    if (post.degrade()) return // 先关环境光遮蔽，再关泛光，最后才降分辨率
-    if (pixelRatio > 1) {
-      pixelRatio = Math.max(1, pixelRatio - 0.25)
-      renderer.setPixelRatio(pixelRatio)
-      fit(false)
+  function applyQuality(name) {
+    quality = name
+    const q = QUALITY[name]
+    renderer.setPixelRatio(Math.min(DEVICE_DPR, q.dpr))
+    if (sun.shadow.mapSize.x !== q.shadow) {
+      sun.shadow.mapSize.set(q.shadow, q.shadow)
+      sun.shadow.map?.dispose()
+      sun.shadow.map = null
     }
+    post.setEffects(q)
+    fit(false)
+    onQuality?.({ quality: name, auto: autoQuality })
+  }
+  // probe：开场在「标准」档同步测十几帧真实显卡耗时（帧间隔会被 60Hz 垂直同步掩盖，测不出余量）。
+  // 高档实测约为标准档的 2.2 倍：标准档 < 9ms 才上高档，> 26ms 降到省电。
+  // 之后每约 2 秒抽测一帧真实耗时，连续 5 次中位数 > 30ms 再降一档。不用帧间隔：后台标签、切窗口时浏览器会限帧，误判成卡。
+  let probe = { samples: [] }, watch = [], frameCount = 0
+  const probePixel = new Uint8Array(4)
+  function probeFrame(cost) {
+    probe.samples.push(cost)
+    if (probe.samples.length < 15) return
+    const median = probe.samples.slice(3).sort((a, b) => a - b)[6] // 丢掉前 3 帧（着色器编译）
+    probe = null
+    applyQuality(median < 9 ? 'high' : median > 26 ? 'low' : 'medium')
+  }
+  function watchFrame(cost) {
+    watch.push(cost)
+    if (watch.length < 5) return
+    const median = [...watch].sort((a, b) => a - b)[2]
+    watch = []
+    const next = ORDER[ORDER.indexOf(quality) + 1]
+    if (median > 30 && next) applyQuality(next)
   }
   function loop(nowMs) {
     raf = requestAnimationFrame(loop)
-    const raw = (nowMs - last) / 1000
-    const dt = Math.max(0, Math.min(raw, 0.05))
+    const dt = Math.max(0, Math.min((nowMs - last) / 1000, 0.05))
     if (dt < 1 / 31 && !snap) return // 帧率上限 30
     last = nowMs
-    if (raw < 0.5) adaptResolution(raw) // 切回标签页等长停顿不计
     if (seaOn) seaTime += dt
     ocean.setTime(seaTime)
+    const t0 = performance.now()
     if (model) tick(dt, nowMs / 1000)
     post.render(nowMs / 1000)
+    frameCount++
+    const sample = autoQuality && model && (probe || frameCount % 60 === 0)
+    if (sample) { // 开场十几帧 + 之后每 60 帧一次：强制等显卡做完，量出真实耗时
+      const gl = renderer.getContext()
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, probePixel)
+      const cost = performance.now() - t0
+      if (probe) probeFrame(cost); else watchFrame(cost)
+    }
     onFrame?.(project)
   }
-  function start() { if (running) return; running = true; last = performance.now(); intervals.length = 0; raf = requestAnimationFrame(loop) }
+  function start() {
+    if (running) return
+    running = true
+    last = performance.now()
+    watch = []
+    raf = requestAnimationFrame(loop)
+  }
   function stop() { running = false; cancelAnimationFrame(raf) }
 
   const ray = new THREE.Raycaster(), pointer = new THREE.Vector2()
@@ -365,8 +416,11 @@ export function createShipScene(canvas, { reduced = false, onFrame } = {}) {
     const hit = ray.intersectObjects(pickables.filter(m => m.visible), false)[0]
     if (!hit) return null
     if (hit.object.userData.itemId != null) return { itemId: hit.object.userData.itemId }
-    return hit.object.userData.region ? { region: hit.object.userData.region } : null
+    const region = hit.object.userData.region ?? hit.object.userData.instanceRegions?.[hit.instanceId]
+    return region ? { region } : null
   }
+
+  if (initialQuality !== 'auto' && QUALITY[initialQuality]) { autoQuality = false; probe = null; applyQuality(initialQuality) }
 
   return {
     setModel,
@@ -377,6 +431,21 @@ export function createShipScene(canvas, { reduced = false, onFrame } = {}) {
     setHovered(id) { hoveredId = id },
     setFilter(fn) { filter = fn },
     setSea(on) { seaOn = on && !reduced },
+    /** 同步渲染一帧并等显卡完成，返回毫秒（只给开发期性能对比用）。 */
+    benchmarkFrame() {
+      const gl = renderer.getContext(), px = new Uint8Array(4)
+      const t0 = performance.now()
+      if (model) tick(1 / 30, t0 / 1000)
+      post.render(t0 / 1000)
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+      return performance.now() - t0
+    },
+    /** 'auto' | 'high' | 'medium' | 'low'。手动选档后不再自动降级。 */
+    setQuality(name) {
+      autoQuality = name === 'auto'
+      if (autoQuality) { probe = { samples: [] }; watch = []; applyQuality('medium') }
+      else { probe = null; applyQuality(name) }
+    },
     resize() { fit(false) },
     pick, start, stop, project,
     dispose() {

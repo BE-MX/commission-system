@@ -11,6 +11,27 @@ export const DIMENSIONS = {
 export const TAG_TONES = Object.fromEntries(Object.entries(DIMENSIONS).map(([key, value]) => [key, value.tone]))
 const EMPTY_LANES = { grade: '未分级', stage: '未判定', type: '类型未知', ai: '暂无 AI 标签', risk: '暂无风险', channel: '渠道未知' }
 const STAGE_ORDER = ['active', 'repeat', 'nurture', 'dormant', 'churn']
+const TODAY_GROUPS = [
+  { key: 'reply', label: '待回复', codes: ['R1_UNREPLIED'] },
+  { key: 'due', label: '到期跟进', codes: ['R2_FOLLOWUP_DUE', 'R3_RECHECK_DUE', 'R7_AWAITING_CUSTOMER'] },
+  { key: 'repurchase', label: '复购', codes: ['R5_REPURCHASE'] },
+  { key: 'new', label: '新客', codes: ['R8_NEW_LEAD'] },
+  { key: 'silent', label: '久未联系', codes: ['R6_LONG_SILENT'] },
+]
+
+export function todayLanes(cards) {
+  const groups = [...TODAY_GROUPS, { key: 'other', label: '其他跟进', codes: [] }]
+    .map(({ key, label, codes }) => ({ key, label, codes, items: [] }))
+  for (const card of cards) {
+    const group = groups.find(g => g.codes.some(code => card.todo_rule_codes?.includes(code))) || groups.at(-1)
+    group.items.push(card)
+  }
+  return groups.filter(group => group.items.length).map(group => ({
+    ...group,
+    items: group.items.sort((a, b) => (b.todo_rank_score || 0) - (a.todo_rank_score || 0)
+      || String(a.company_id).localeCompare(String(b.company_id), undefined, { numeric: true })),
+  }))
+}
 
 export function tagTone(tag) {
   return TAG_TONES[tag.kind] || 'neutral'

@@ -9,12 +9,15 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_permission
 from app.core.database import get_db
 from app.core.response import ok
+from app.core.time import beijing_today
 from app.domestic_followup import (
     ai_parse_service, attachment_service, collaboration_router, config_service, customer_overview_router,
-    dict_service, edit_service, followup_service, insight_router, jobs, stats_router, task_service, visibility,
+    dict_service, edit_service, followup_service, insight_router, jobs, prep_router, stats_router, task_service,
+    template_router, visibility,
 )
 from app.domestic_followup.schemas import (
-    ConfirmIn, DirectSaveIn, DraftCreateIn, EditFollowupIn, ItemResolveIn, ProspectIn, ReceiptOkIn, SnoozeIn, TransferIn,
+    ActionCancelIn, ActionCompleteIn, ActionUpdateIn, ConfirmIn, DirectSaveIn, DraftCreateIn, EditFollowupIn,
+    ItemResolveIn, ProspectIn, ReceiptOkIn, SnoozeIn, TransferIn,
 )
 
 router = APIRouter()
@@ -22,6 +25,8 @@ router.include_router(customer_overview_router.router)
 router.include_router(collaboration_router.router)
 router.include_router(stats_router.router)
 router.include_router(insight_router.router)
+router.include_router(template_router.router)
+router.include_router(prep_router.router)
 _require_read = require_permission("domestic_followup:read")
 _require_write = require_permission("domestic_followup:write")
 _require_admin = require_permission("domestic_followup:admin")
@@ -218,6 +223,30 @@ def snooze(task_id: int, payload: SnoozeIn, db: Session = Depends(get_db), user=
         task = task_service.snooze(db, user, task_id, days=payload.days)
         db.commit()
     return ok({"id": task.id, "due_date": task.due_date.isoformat()}, message="已顺延")
+
+
+@router.post("/tasks/{task_id}/complete")
+def complete_action(task_id: int, payload: ActionCompleteIn, db: Session = Depends(get_db), user=Depends(_require_write)):
+    with _errors(db):
+        task = task_service.complete_action(db, user, task_id, payload.note)
+        db.commit()
+    return ok(task_service.serialize_tasks(db, [task], beijing_today())[0], message="行动待办已完成")
+
+
+@router.put("/tasks/{task_id}")
+def update_action(task_id: int, payload: ActionUpdateIn, db: Session = Depends(get_db), user=Depends(_require_write)):
+    with _errors(db):
+        task = task_service.update_action(db, user, task_id, due_date=payload.due_date, title=payload.title)
+        db.commit()
+    return ok(task_service.serialize_tasks(db, [task], beijing_today())[0], message="行动待办已修改")
+
+
+@router.post("/tasks/{task_id}/cancel")
+def cancel_action(task_id: int, payload: ActionCancelIn, db: Session = Depends(get_db), user=Depends(_require_write)):
+    with _errors(db):
+        task = task_service.cancel_action(db, user, task_id, payload.reason)
+        db.commit()
+    return ok(task_service.serialize_tasks(db, [task], beijing_today())[0], message="行动待办已取消")
 
 
 @router.post("/tasks/{task_id}/receipt-ok")

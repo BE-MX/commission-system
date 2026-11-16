@@ -59,6 +59,8 @@ def export(db, uid, now, key, biz_date=None):
                             "rank_score",
                             "cohort",
                             "disposition",
+                            "display_eligible",
+                            "priority",
                             "quality_feedback",
                             "shown_at",
                             "feedback_at",

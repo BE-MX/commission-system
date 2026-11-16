@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app.client_desk.calendar import offset_workdays
+from app.client_desk.rules import R3, R4
 
 
 def read_rows(path):
@@ -51,6 +52,7 @@ def summarize(rows, labels, as_of):
     excluded_windows = crossovers = 0
     breakdown = defaultdict(int)
     exclusions = defaultdict(int)
+    rule_cards = ai_cards = rechecks = shown_rechecks = 0
     for key, runs in grouped.items():
         routine = next((r for r in runs if not r["run_seq"]), None)
         exposed = any(r.get("shown_at") for r in runs) or key in evaluated
@@ -79,6 +81,17 @@ def summarize(rows, labels, as_of):
         if routine and routine.get("active_customer"):
             eligible += 1
             graded += int(bool(routine.get("grade")))
+        if routine:
+            codes = set(routine.get("rule_codes") or [])
+            showable = routine.get("display_eligible") and routine.get("priority") != "skip"
+            if showable and codes - {R4}:
+                rule_cards += 1
+                ai_cards += int(routine.get("status") == "succeeded")
+            if R3 in codes:
+                rechecks += 1
+                shown_rechecks += int(any(
+                    R3 in (r.get("rule_codes") or []) and bool(r.get("shown_at")) for r in runs
+                ))
         if key in missed and routine and routine.get("rule_codes"):
             matched += 1
             cause = (
@@ -133,6 +146,9 @@ def summarize(rows, labels, as_of):
         "supplemental_recall": ratio(matched, len(missed)),
         "missed_breakdown": dict(breakdown),
         "analysis_failures": ratio(failed, started),
+        "routine_rule_cards": rule_cards,
+        "routine_ai_cards": ai_cards,
+        "recheck_exposure": ratio(shown_rechecks, rechecks),
         "report_opens": ratio(
             sum(bool(r.get("opened_at")) for r in accepted), len(accepted)
         ),

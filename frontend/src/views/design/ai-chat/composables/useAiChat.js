@@ -4,10 +4,12 @@ import { useAuthStore } from '@/stores/auth'
 import {
   createSession,
   deleteAttachment,
+  renameSession,
+  deleteSession,
   getConfig,
   getSession,
   listSessions,
-  streamRetry,
+  streamRetry, streamContinue, selectAnswer,
   streamTurn,
   uploadAttachment,
 } from '@/api/aiChat'
@@ -38,9 +40,14 @@ function attachFiles(messages, attachments) {
 
 export function useAiChat() {
   const auth = useAuthStore()
-  const config = ref({ configured: true, message: '' })
+  const config = ref({ configured: false, models: [], message: '' })
+  const selectedPresetId = ref(null)
+  const selectedModel = computed(() => config.value.models?.find(model => model.preset_id === selectedPresetId.value) || null)
+  const nextCursor = ref(null)
+  const loadingMore = ref(false)
   const sessionsResource = useAsyncResource(async (_, { signal }) => {
     const response = dataOf(await listSessions({ limit: 30 }, { signal, suppressToast: true })) || {}
+    if (!signal.aborted) nextCursor.value = response.next_cursor || null
     return response.items || []
   }, { initialData: [] })
   const sessions = sessionsResource.data
@@ -56,7 +63,7 @@ export function useAiChat() {
   const busy = computed(() => streaming.value || preparing.value)
   const error = ref(null)
   const modes = useChatModes({ messages, streaming: busy, currentSessionId })
-  const drafts = useChatDrafts({ prompt, attachments: draftAttachments, modes, sessionId: currentSessionId })
+  const drafts = useChatDrafts({ prompt, attachments: draftAttachments, modes, sessionId: currentSessionId, selectedPresetId })
   const activeKey = computed(() => `ai-chat-session:${auth.user?.id}`)
 
   let workspaceGeneration = 0
@@ -65,13 +72,22 @@ export function useAiChat() {
   let sessionPromise = null
   let abortController = null
   let streamAssistantId = null
+  const pendingRequests = new Map()
 
   const canWrite = computed(() => auth.hasPermission('ai_chat:write'))
   const uploadsPending = computed(() => draftAttachments.value.some(item => item.optimistic))
+  const modelIssue = computed(() => {
+    if (!selectedModel.value) return config.value.configured ? '请选择一个可用模型' : ''
+    if (!selectedModel.value.vision && [...draftAttachments.value, ...messages.value.flatMap(message => message.attachments || [])].some(item => item.attachment_type === 'image')) return '本会话包含图片，请选择支持图片的模型，或新建纯文字对话'
+    if (config.value.usage?.limit === 0) return '当前角色已暂停生成，请联系管理员调整额度'
+    if (config.value.usage?.remaining === 0) return '今日对话次数已用完，北京时间零点恢复'
+    return ''
+  })
   const canSubmit = computed(() => canWrite.value
+    && Boolean(selectedModel.value) && !modelIssue.value
     && !busy.value
     && !sessionLoading.value
-    && !uploadsPending.value
+    && !uploadsPending.value && !draftAttachments.value.some(item => item.status === 'failed')
     && modeCanSubmit({ mode: modes.selected.value, prompt: prompt.value, attachments: draftAttachments.value,
       loading: modes.loading.value, error: modes.error.value, locked: modes.locked.value }))
   const currentSession = computed(() => (
@@ -96,8 +112,9 @@ export function useAiChat() {
     sessionsResource.clear(); abortActive(); workspaceGeneration++
     currentSessionId.value = null; messages.value = []; draftAttachments.value = []; prompt.value = ''; drawerOpen.value = false
     error.value = null; sessionLoading.value = false
-    drafts.clear(); modes.restore()
-    void loadSessions()
+    config.value = { configured: false, models: [], message: '' }; selectedPresetId.value = null
+    drafts.clear(); pendingRequests.clear(); modes.restore()
+    void initialize()
   })
 
   async function loadDetail(
@@ -118,6 +135,7 @@ export function useAiChat() {
       }
       const session = detail.session
       if (session) {
+        if (!preserveDrafts) selectedPresetId.value = session.selected_preset_id || selectedPresetId.value || config.value.default_preset_id
         if (!preserveDrafts || messages.value.length) modes.restore(session.mode)
         const index = sessions.value.findIndex(item => item.id === session.id)
         if (index === -1) sessions.value.unshift(session)
@@ -148,6 +166,8 @@ export function useAiChat() {
 
   async function uploadDraft(file) {
     if (!canWrite.value) throw new Error('你没有发送权限')
+    if (!selectedModel.value) throw new Error('请先选择模型')
+    if (/\.(jpe?g|png|webp)$/i.test(file.name) && !selectedModel.value.vision) throw new Error('当前模型不支持图片，请先切换模型')
     if (draftAttachments.value.length >= 5) throw new Error('最多上传 5 个附件')
     const localId = nextLocalId('upload')
     const optimistic = {
@@ -170,6 +190,8 @@ export function useAiChat() {
   }
 
   async function removeDraft(attachmentId) {
+    const expectedWorkspace = workspaceGeneration
+    const sessionId = currentSessionId.value
     const index = draftAttachments.value.findIndex(item => item.id === attachmentId)
     if (index === -1) return
     const [removed] = draftAttachments.value.splice(index, 1)
@@ -177,8 +199,10 @@ export function useAiChat() {
     try {
       await deleteAttachment(attachmentId)
     } catch (deleteError) {
-      draftAttachments.value.splice(index, 0, removed)
-      throw deleteError
+      if (expectedWorkspace !== workspaceGeneration || currentSessionId.value !== sessionId) return
+      if ((deleteError?.status || deleteError?.response?.status) === 404) return
+      draftAttachments.value.splice(index, 0, { ...removed, status: 'failed' })
+      msgError('附件未清理完成，请再次移除后发送', deleteError)
     }
   }
 
@@ -200,6 +224,8 @@ export function useAiChat() {
         id: data.assistant_message_id,
         session_id: data.session_id,
         status: data.status || 'streaming',
+        model: data.model,
+        reply_to_message_id: data.reply_to_message_id,
       })
     }
     return userMaterialized
@@ -231,12 +257,16 @@ export function useAiChat() {
       return
     }
     const targetId = streamAssistantId
-    if (frame.event === 'delta') {
+    if (frame.event === 'reasoning') {
+      if (targetId == null) return
+      const current = messages.value.find(message => message.id === targetId)
+      updateAssistant(targetId, { reasoning_content: `${current?.reasoning_content || ''}${data.text || ''}` })
+    } else if (frame.event === 'delta') {
       if (targetId == null) return
       const current = messages.value.find(message => message.id === targetId)
       updateAssistant(targetId, { content: `${current?.content || ''}${data.text || ''}` })
     } else if (frame.event === 'done') {
-      updateAssistant(targetId, { status: data.status || 'completed', error_message: null })
+      updateAssistant(targetId, { status: data.status || 'completed', error_message: null, finish_reason: data.finish_reason })
       streaming.value = false
     } else if (frame.event === 'error') {
       const message = data.message || '生成失败，请重试'
@@ -248,7 +278,7 @@ export function useAiChat() {
 
   async function refreshAfterStream(sessionId, generation, expectedWorkspace) {
     try {
-      await Promise.all([loadDetail(sessionId, expectedWorkspace, generation, true), loadSessions()])
+      await Promise.all([loadDetail(sessionId, expectedWorkspace, generation, true), loadSessions(), reloadConfig()])
     } catch {
       if (!error.value) {
         error.value = { message: '回答已结束，但会话刷新失败，请手动刷新。' }
@@ -267,8 +297,10 @@ export function useAiChat() {
     }
   }
 
-  async function runStream({ retryMessageId = null } = {}) {
+  async function runStream({ retryMessageId = null, continuation = false } = {}) {
     if (!canWrite.value || busy.value) return
+    if (continuation ? !canContinue(messages.value.find(item => item.id === retryMessageId)) : !selectedModel.value || modelIssue.value) return
+    const presetId = continuation ? messages.value.find(item => item.id === retryMessageId)?.model?.preset_id : selectedPresetId.value
     const composerPrompt = prompt.value
     const mode = modes.selected.value
     const content = composerPrompt.trim() || (!modes.locked.value ? mode?.start_text || '' : '')
@@ -282,6 +314,14 @@ export function useAiChat() {
     if (beforePrepare !== workspaceGeneration) return
     if (!sessionId) return
 
+    const body = retryMessageId ? { preset_id: presetId } : {
+      preset_id: presetId, content, attachment_ids: outgoing.map(item => item.id),
+      mode_id: mode?.id || null, mode_version: mode?.version || null,
+    }
+    const fingerprint = JSON.stringify([retryMessageId, continuation, body])
+    const previous = pendingRequests.get(sessionId)
+    const requestBody = { ...body, request_id: previous?.fingerprint === fingerprint ? previous.requestId : requestId() }
+    pendingRequests.set(sessionId, { fingerprint, requestId: requestBody.request_id })
     const generation = ++streamGeneration
     const expectedWorkspace = workspaceGeneration
     const pendingTurn = {
@@ -319,20 +359,13 @@ export function useAiChat() {
           expectedWorkspace,
         ),
       }
-      if (retryMessageId) {
-        await streamRetry(retryMessageId, { request_id: requestId() }, options)
-      } else {
-        await streamTurn(sessionId, {
-          request_id: requestId(),
-          content,
-          attachment_ids: outgoing.map(item => item.id),
-          mode_id: mode?.id || null,
-          mode_version: mode?.version || null,
-        }, options)
-      }
+      if (continuation) await streamContinue(retryMessageId, requestBody, options)
+      else if (retryMessageId) await streamRetry(retryMessageId, requestBody, options)
+      else await streamTurn(sessionId, requestBody, options)
       if (generation !== streamGeneration || expectedWorkspace !== workspaceGeneration) return
       streaming.value = false
       await refreshAfterStream(sessionId, generation, expectedWorkspace)
+      if (pendingRequests.get(sessionId)?.requestId === requestBody.request_id) pendingRequests.delete(sessionId)
     } catch (streamError) {
       if (streamError?.name === 'AbortError' || generation !== streamGeneration
           || expectedWorkspace !== workspaceGeneration
@@ -344,6 +377,12 @@ export function useAiChat() {
       error.value = { message, conflict: streamError?.status === 409 || streamError?.response?.status === 409 }
       streaming.value = false
       await reloadFailedSession(sessionId, generation, expectedWorkspace)
+      if (generation === streamGeneration && expectedWorkspace === workspaceGeneration
+          && messages.value.some(item => item.request_id === requestBody.request_id)) {
+        acknowledgeDraft(pendingTurn)
+        pendingRequests.delete(sessionId)
+      }
+      if ([403, 429, 503].includes(streamError?.status || streamError?.response?.status)) await reloadConfig()
       if (generation === streamGeneration && !messages.value.length && mode
           && [409, 503].includes(streamError?.status || streamError?.response?.status)) modes.error.value = message
     } finally {
@@ -365,7 +404,28 @@ export function useAiChat() {
 
   async function retry(messageId) {
     if (!canWrite.value || streaming.value) return
-    await runStream({ retryMessageId: messageId })
+    try { await runStream({ retryMessageId: messageId }) }
+    catch (retryError) { msgError(errorMessage(retryError), retryError) }
+  }
+
+  function canContinue(message) {
+    return Boolean(message && config.value.models?.some(model => model.preset_id === message.model?.preset_id)
+      && (config.value.usage?.remaining ?? 1) > 0)
+  }
+
+  async function continueAnswer(messageId) {
+    try { await runStream({ retryMessageId: messageId, continuation: true }) }
+    catch (failure) { msgError(errorMessage(failure), failure) }
+  }
+
+  async function adoptAnswer(message) {
+    if (busy.value || !canWrite.value) return
+    const sessionId = currentSessionId.value
+    const expectedWorkspace = workspaceGeneration
+    try {
+      await selectAnswer(message.reply_to_message_id, message.id)
+      await loadDetail(sessionId, expectedWorkspace, null, true)
+    } catch (failure) { msgError(errorMessage(failure), failure) }
   }
 
   async function stop() {
@@ -388,8 +448,8 @@ export function useAiChat() {
     }
   }
 
-  function newConversation() {
-    if (!sessionLoading.value) drafts.save()
+  function newConversation({ saveDraft = true } = {}) {
+    if (saveDraft && !sessionLoading.value) drafts.save()
     abortActive()
     workspaceGeneration += 1
     currentSessionId.value = null
@@ -421,7 +481,11 @@ export function useAiChat() {
     modes.restore()
     sessionStorage.setItem(activeKey.value, String(sessionId))
     const expectedWorkspace = workspaceGeneration
-    await loadDetail(sessionId)
+    try { await loadDetail(sessionId) }
+    catch (loadError) {
+      if (expectedWorkspace === workspaceGeneration) error.value = { message: errorMessage(loadError) }
+      return
+    }
     if (expectedWorkspace !== workspaceGeneration || currentSessionId.value !== sessionId) return
     drafts.restore({ locked: modes.locked.value })
   }
@@ -429,7 +493,49 @@ export function useAiChat() {
   async function refreshCurrent() {
     if (!currentSessionId.value) return
     error.value = null
-    await loadDetail(currentSessionId.value, workspaceGeneration, null, true)
+    try { await loadDetail(currentSessionId.value, workspaceGeneration, null, true) }
+    catch (loadError) { error.value = { message: errorMessage(loadError) } }
+  }
+
+  async function reloadConfig() {
+    const actor = auth.user?.id
+    try {
+      const result = dataOf(await getConfig())
+      if (actor !== auth.user?.id) return
+      config.value = result
+      if (!selectedPresetId.value) selectedPresetId.value = result.default_preset_id || null
+    } catch (loadError) { msgError(errorMessage(loadError), loadError) }
+  }
+
+  async function loadMore() {
+    if (!nextCursor.value || loadingMore.value) return
+    const actor = auth.user?.id
+    loadingMore.value = true
+    try {
+      const page = dataOf(await listSessions({ cursor: nextCursor.value, limit: 30 }))
+      if (actor !== auth.user?.id) return
+      sessions.value = [...sessions.value, ...(page.items || []).filter(item => !sessions.value.some(existing => existing.id === item.id))]
+      nextCursor.value = page.next_cursor || null
+    } catch (loadError) { msgError(errorMessage(loadError), loadError) }
+    finally { loadingMore.value = false }
+  }
+
+  async function renameConversation(sessionId, title) {
+    const actor = auth.user?.id
+    const updated = dataOf(await renameSession(sessionId, title))
+    if (actor !== auth.user?.id) return
+    sessions.value = sessions.value.map(item => item.id === sessionId ? updated : item)
+  }
+
+  async function deleteConversation(sessionId) {
+    const actor = auth.user?.id
+    await deleteSession(sessionId)
+    if (actor !== auth.user?.id) return
+    drafts.remove(sessionId)
+    pendingRequests.delete(sessionId)
+    if (sessionId === currentSessionId.value) newConversation({ saveDraft: false })
+    sessions.value = sessions.value.filter(item => item.id !== sessionId)
+    await loadSessions()
   }
 
   async function initialize() {
@@ -439,6 +545,7 @@ export function useAiChat() {
       const [configResponse] = await Promise.all([getConfig(), loadSessions()])
       if (actor !== auth.user?.id) return
       config.value = dataOf(configResponse) || config.value
+      selectedPresetId.value = config.value.default_preset_id || null
       const savedId = Number(sessionStorage.getItem(activeKey.value))
       if (savedId && sessions.value.some(session => session.id === savedId)) await selectSession(savedId)
     } catch (initError) {
@@ -455,7 +562,8 @@ export function useAiChat() {
   })
 
   return {
-    config,
+    config, selectedPresetId, selectedModel, modelIssue, reloadConfig,
+    nextCursor, loadingMore, loadMore, renameConversation, deleteConversation,
     sessionsResource, loadSessions,
     sessions,
     currentSessionId,
@@ -476,7 +584,7 @@ export function useAiChat() {
     removeDraft,
     send,
     stop,
-    retry,
+    retry, continueAnswer, adoptAnswer, canContinue,
     newConversation,
     selectSession,
     refreshCurrent,

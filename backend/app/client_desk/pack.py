@@ -55,7 +55,7 @@ def build_pack(source, state, codes, day, correction=False, tags=None):
             "next_followup_date": state.get("next_followup_date"),
             "next_followup_remark": state.get("next_followup_remark"),
         },
-        "rules": codes,
+        "rules": [{"code": code, "cite": "R-" + code} for code in codes],
         "research_summary": source.get("research_summary"),
         "previous_brief": None,
     }

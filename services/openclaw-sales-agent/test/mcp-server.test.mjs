@@ -84,9 +84,11 @@ test("MCP exposes only the Ark workflow and never returns the lease token", asyn
       "ark_heartbeat_search_job",
       "ark_list_research_tasks",
       "ark_list_search_jobs",
+      "ark_monid_run",
       "ark_search_knowledge",
       "ark_submit_candidates",
       "ark_submit_research_industry_gate",
+      "ark_username_scan",
     ],
   );
 

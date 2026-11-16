@@ -4,7 +4,6 @@
       <div>
         <div class="eyebrow">MY PRIVATE SEA · 私海助理</div>
         <h1>我的私海工作台</h1>
-        <p class="muted">按标签把客户分栏，先看哪一栏该动，再点开某一位客户。</p>
       </div>
       <span class="muted">{{ board.data.value?.biz_date || currentBeijingDate() }} · 仅我的私海</span>
     </header>
@@ -18,8 +17,10 @@
       <template v-if="view !== 'unlinked'">
         <el-input v-model="board.keyword.value" clearable placeholder="搜索客户、联系人或国家" aria-label="搜索本人私海" :prefix-icon="Search" />
         <div class="controls">
-          <label>分栏依据 <el-select v-model="board.groupBy.value" aria-label="分栏依据"><el-option v-for="(dim, key) in DIMENSIONS" :key="key" :label="dim.label" :value="key" /></el-select></label>
-          <label>栏内细分 <el-select v-model="board.subBy.value" aria-label="栏内细分"><el-option label="不细分" value="" /><el-option v-for="(dim, key) in DIMENSIONS" :key="key" :label="dim.label" :value="key" :disabled="key === board.groupBy.value" /></el-select></label>
+          <template v-if="view === 'all'">
+            <label>分栏依据 <el-select v-model="board.groupBy.value" aria-label="分栏依据"><el-option v-for="(dim, key) in DIMENSIONS" :key="key" :label="dim.label" :value="key" /></el-select></label>
+            <label>栏内细分 <el-select v-model="board.subBy.value" aria-label="栏内细分"><el-option label="不细分" value="" /><el-option v-for="(dim, key) in DIMENSIONS" :key="key" :label="dim.label" :value="key" :disabled="key === board.groupBy.value" /></el-select></label>
+          </template>
           <el-popover trigger="click" :width="320" placement="bottom-start">
             <template #reference><el-button>＋ 标签筛选{{ board.tagCodes.value.length ? `（${board.tagCodes.value.length}）` : '' }}</el-button></template>
             <div v-for="group in board.filters.value" :key="group.kind" class="filter-group">
@@ -45,8 +46,12 @@
     <section v-if="view !== 'unlinked'" class="board" aria-live="polite">
       <p v-if="board.loading.value" class="muted center" role="status">正在读取我的私海…</p>
       <div v-else-if="board.error.value" class="empty-state"><h3>暂时无法读取</h3><p>{{ board.error.value }}</p><el-button @click="board.load">重试</el-button></div>
-      <div v-else-if="!board.lanes.value.length" class="empty-state"><h3>{{ view === 'todo' ? '今天没有需要特别跟进的客户' : '暂无匹配客户' }}</h3><p>试试其他筛选或分栏方式。</p></div>
-      <BoardLane v-for="lane in board.lanes.value" v-else :key="board.groupBy.value + ':' + lane.key" :lane="lane" :dimension="board.groupBy.value" :sub-dimension="board.subBy.value" :open="board.openLanes.value.has(lane.key)" :selected-id="desk.selected.value" :options="board.options.value" @toggle="board.toggleLane" @open="openCustomer" />
+      <div v-else-if="!board.lanes.value.length" class="empty-state">
+        <h3>{{ view === 'todo' && !board.todoCount.value ? '今天没有待处理的建议' : '暂无匹配客户' }}</h3>
+        <el-button v-if="view === 'todo' && !board.todoCount.value" @click="switchView('all')">查看全部客户</el-button>
+        <p v-else>试试调整搜索或筛选条件。</p>
+      </div>
+      <BoardLane v-for="lane in board.lanes.value" v-else :key="dimension + ':' + lane.key" :lane="lane" :dimension="dimension" :sub-dimension="view === 'all' ? board.subBy.value : ''" :open="board.isLaneOpen(lane.key)" :selected-id="desk.selected.value" :options="board.options.value" @toggle="board.toggleLane" @open="openCustomer" />
     </section>
 
     <UnlinkedConversations v-else :desk="desk" />
@@ -80,7 +85,8 @@ import UnlinkedConversations from './UnlinkedConversations.vue'
 const route = useRoute()
 const board = useBoard()
 const desk = useClientDesk(route, { autoSelect: false, boardMode: true, onRefresh: () => board.load() })
-const view = ref('all'), drawerOpen = ref(false), dialogs = ref(null)
+const view = ref('todo'), drawerOpen = ref(false), dialogs = ref(null)
+const dimension = computed(() => view.value === 'todo' ? 'reason' : board.groupBy.value)
 const tabs = computed(() => [
   { key: 'todo', label: '今日建议', count: board.todoCount.value },
   { key: 'all', label: '全部客户', count: null },

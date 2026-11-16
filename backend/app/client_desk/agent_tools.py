@@ -9,11 +9,12 @@ available only when the salesperson selected them for this manual run.
 import json
 
 from .pack import canonical
+from .validator import MAX_RESULT_CHARS, unique_keys
 
 TOOL_LABELS = {
     "order_items": "查看订单产品明细",
     "older_messages": "读取更早的 WhatsApp 消息",
-    "research_detail": "查看已审核背调",
+    "research_detail": "查看有依据的背调结论",
     "followup_history": "查看跟进记录",
     "selected_inquiries": "读取已勾选询盘",
 }
@@ -31,11 +32,11 @@ def max_steps(rules, run_seq):
 
 def parse_action(raw):
     """Return (tool, args) for a tool request, or None for a final answer."""
-    if not isinstance(raw, str):
+    if not isinstance(raw, str) or len(raw) > MAX_RESULT_CHARS:
         return None
     try:
-        data = json.loads(raw)
-    except ValueError:
+        data = json.loads(raw, object_pairs_hook=unique_keys)
+    except (ValueError, RecursionError):
         return None
     if not isinstance(data, dict) or "tool" not in data or "brief_md" in data:
         return None
@@ -106,23 +107,22 @@ def run_tool(db, source, refs, name, args):
         }, new_refs, "ok"
 
     if name == "research_detail":
+        from .board import model_research
+
         report = source.get("research_report") or {}
-        if report.get("status") != "ready":
-            return {"result": "无背调结果"}, {}, "empty"
-        research = next(
-            (r for r in source.get("research") or [] if r["event_key"] == report.get("event_key")),
-            None,
-        )
+        compact = source.get("research_summary") or model_research(report)
+        if not compact:
+            return {"result": "无可用背调结论"}, {}, "empty"
+        event_key = source.get("research_model_event_key") or report.get("event_key")
+        research = next((r for r in source.get("research") or [] if r["event_key"] == event_key), None)
         key = "S-" + str(research["id"]) if research else None
-        sections = _bounded(
-            report["sections"], lambda rows: {"sections": rows}
-        )
+        sections = _bounded(compact["sections"], lambda rows: {"sections": rows})
         new_refs = (
-            {key: {"source": "research", "event_key": report["event_key"], "datum": {"sections": sections}}}
+            {key: {"source": "research", "event_key": event_key, "datum": {"sections": sections}}}
             if key
             else {}
         )
-        return {"key": key, "verdict": report["verdict"], "sections": sections}, new_refs, "ok"
+        return {"key": key, "verdict": compact["verdict"], "sections": sections}, new_refs, "ok"
 
     if name == "followup_history":
         rows = sorted(
@@ -173,7 +173,7 @@ def context_size(messages):
 
 def trace_step(name, status, at, args=None):
     item = {"tool": name, "label": TOOL_LABELS.get(name, FINAL_LABEL if name == "final" else "未知工具"), "status": status, "at": at.isoformat(timespec="seconds")}
-    if name == "order_items" and args and args.get("order_id"):
+    if name == "order_items" and status in ("ok", "empty") and args and args.get("order_id"):
         item["target"] = str(args["order_id"])[:40]
     return item
 

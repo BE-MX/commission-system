@@ -64,3 +64,20 @@ def move_followup_tasks(session, _context, _instances):
                     task.closed_at = beijing_now()
                 else:
                     task.assignee_user_id = new
+            from app.domestic_followup import prep_service
+            prep_service.expire_for_owner_change(session, [customer_id])
+            if old is None and new is not None:
+                continue
+            actions = session.query(DomesticFollowupTask).filter(
+                DomesticFollowupTask.customer_id == customer_id, DomesticFollowupTask.status == "todo",
+                DomesticFollowupTask.task_type == "action",
+            )
+            if new is not None:
+                actions = actions.filter(DomesticFollowupTask.assignee_user_id == old)
+            for task in actions.all():
+                if new is None:
+                    task.status = "cancelled"
+                    task.closed_reason = CLOSE_RELEASED
+                    task.closed_at = beijing_now()
+                else:
+                    task.assignee_user_id = new

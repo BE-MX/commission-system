@@ -2,7 +2,7 @@
 import { statusDictionary } from '@/utils/status'
 
 export const TASK_TYPE_STATUS = statusDictionary([
-  ['receipt', '收货回访', 'success'], ['plan', '约定跟进', 'primary'],
+  ['receipt', '收货回访', 'success'], ['plan', '约定跟进', 'primary'], ['action', '行动', 'warning'],
   ['issue', '异常', 'danger'], ['suggestion', '意见', 'warning'],
 ])
 

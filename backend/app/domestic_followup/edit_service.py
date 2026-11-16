@@ -17,7 +17,8 @@ from app.domestic_followup.models import (
 )
 from app.domestic_followup.schemas import FollowupFields
 
-EDIT_FIELDS = ("raw_text", "followup_date", "channel", "summary", "state_changes", "next_date", "next_plan", "next_method")
+EDIT_FIELDS = ("raw_text", "followup_date", "channel", "summary", "state_changes", "next_date", "next_plan", "next_method",
+               "template_code", "template_version", "template_answers")
 
 
 def _validate_edit(db, row, payload, items):
@@ -202,6 +203,7 @@ def update(db, user, record_id, payload):
         items = (db.query(Item).filter(Item.followup_id == row.id).order_by(Item.id)
                  .populate_existing().with_for_update().all())
         _validate_edit(db, row, payload, items)
+        followup_service._template_values(db, payload)
         tasks = _tasks(db, row, lock=True)
         historical = _historical_edit(db, user, row, customer, tasks, lock=True)
         incoming, existing = _historical_items(row, payload, items) if historical else (payload.items, items)
@@ -217,6 +219,9 @@ def update(db, user, record_id, payload):
                 setattr(row, name, getattr(payload, name))
         pending = _attachments(db, row, payload.attachment_ids, visibility.uid(user))
         edit_item_service.reconcile(db, row, customer, incoming, existing, tasks, visibility.uid(user), old_date)
+        if not row.evidence_kind:
+            natures = {item.nature for item in incoming if item.kind == "content"}
+            row.evidence_kind = "customer" if "customer_said" in natures else "assessment" if "assessment" in natures else None
         if not managed:
             edit_task_service.sync_plan(db, row, customer, before, tasks, visibility.uid(user))
         db.flush()

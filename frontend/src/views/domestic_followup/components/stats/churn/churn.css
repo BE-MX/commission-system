@@ -37,6 +37,7 @@
 .churn-kpis .churn-kpi { flex-direction: column; gap: 0; padding: 8px 16px; border-left: 1px solid var(--border-color); min-width: 104px; }
 .churn-kpis .churn-kpi:first-child { border-left: 0; }
 .churn-owner { width: 140px; flex: none; }
+.churn-quality { width: 150px; flex: none; }
 .churn-stage__filters { flex-basis: 100%; display: flex; gap: 6px; flex-wrap: wrap; pointer-events: none; }
 .churn-stage__filters > * { pointer-events: auto; }
 .churn-btn, .churn-chip { font: inherit; color: inherit; cursor: pointer; transition: transform 140ms var(--ease-out-strong), background-color 140ms ease; }

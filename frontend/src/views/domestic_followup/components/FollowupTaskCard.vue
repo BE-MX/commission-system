@@ -9,7 +9,16 @@
     <p v-if="task.task_type === 'receipt'" class="task-sub">
       {{ (task.payload.shipments || []).map(s => s.shipment_no).join('、') }}
     </p>
-    <footer class="task-actions">
+    <p v-if="task.task_type === 'action' && task.payload.done_criteria" class="task-sub">完成标准：{{ task.payload.done_criteria }}</p>
+    <footer v-if="task.task_type === 'action'" class="task-actions">
+      <GlassButton v-permission="'domestic_followup:write'" variant="link" link-tone="success" left-icon="CircleCheck" @click="actionDialogs.open('complete', task)">完成</GlassButton>
+      <GlassButton v-permission="'domestic_followup:write'" variant="link" left-icon="Calendar" @click="actionDialogs.open('reschedule', task)">改日期</GlassButton>
+      <GlassButton v-permission="'domestic_followup:write'" variant="link" left-icon="EditPen" @click="$emit('record', task)">发起记录</GlassButton>
+      <GlassButton v-permission="'domestic_followup:write'" variant="link" link-tone="danger" @click="actionDialogs.open('cancel', task)">取消</GlassButton>
+      <GlassButton variant="link" left-icon="View" @click="$emit('timeline', task)">时间线</GlassButton>
+    </footer>
+    <footer v-else class="task-actions">
+      <GlassButton v-if="['plan', 'receipt'].includes(task.task_type)" v-permission="'domestic_followup:write'" variant="link" left-icon="Compass" @click="$emit('prep', task)">准备</GlassButton>
       <GlassButton v-permission="'domestic_followup:write'" variant="link" left-icon="EditPen" @click="$emit('record', task)">记跟进</GlassButton>
       <GlassButton v-if="task.task_type === 'receipt'" v-permission="'domestic_followup:write'"
                    variant="link" link-tone="success" left-icon="CircleCheck" :loading="busy" @click="onReceiptOk">已回访无问题</GlassButton>
@@ -23,6 +32,7 @@
       </el-dropdown>
       <GlassButton variant="link" left-icon="View" @click="$emit('timeline', task)">时间线</GlassButton>
     </footer>
+    <FollowupActionDialogs v-if="task.task_type === 'action'" ref="actionDialogs" @saved="$emit('changed', task)" />
   </article>
 </template>
 
@@ -32,10 +42,12 @@ import GlassButton from '@/components/GlassButton.vue'
 import { currentBeijingDate } from '@/utils/datetime'
 import { taskDueLabel } from '../followupDraft'
 import { SEVERITY_STATUS, TASK_TYPE_STATUS } from '../followupStatus'
+import FollowupActionDialogs from './FollowupActionDialogs.vue'
 
 // 「已回访无问题」用函数 prop 而非 emit：要 await 父组件的请求，按钮 loading 才能真正防连点
 const props = defineProps({ task: { type: Object, required: true }, onReceiptOk: { type: Function, required: true } })
-defineEmits(['record', 'snooze', 'timeline'])
+defineEmits(['record', 'prep', 'snooze', 'timeline', 'changed'])
+const actionDialogs = ref(null)
 const urgent = computed(() => props.task.payload?.severity === '紧急')
 const dueLabel = computed(() => taskDueLabel(props.task, currentBeijingDate()))
 const busy = ref(false)

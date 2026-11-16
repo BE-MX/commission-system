@@ -13,15 +13,15 @@
       <p v-if="catalogError" role="alert">{{ catalogError }} <button type="button" @click="emit('reload-modes')">重试</button></p>
     </div>
 
-    <TransitionGroup v-else tag="div" name="msg" class="message-list">
+    <div v-else class="message-list">
       <article
-        v-for="message in messages"
+        v-for="message in displayed"
         :key="message.id"
         class="message-row"
         :class="`is-${message.role}`"
       >
         <div class="message-meta">
-          <span>{{ message.role === 'user' ? '你' : '方案助手' }}</span>
+          <span>{{ message.role === 'user' ? '你' : message.model?.label || 'AI 助手' }}</span>
           <span v-if="message.status === 'streaming'" class="message-status">
             生成中
             <span class="typing-dots" aria-hidden="true"><i /><i /><i /></span>
@@ -31,13 +31,17 @@
         </div>
 
         <div v-if="message.role === 'assistant'" class="assistant-message">
+          <details v-if="message.reasoning_content" class="reasoning-panel">
+            <summary>{{ message.status === 'streaming' && !message.content ? '正在思考' : '思考过程' }}</summary>
+            <p>{{ message.reasoning_content }}</p>
+          </details>
           <div
             v-if="message.content"
             class="markdown-body"
             :class="{ 'is-streaming': message.status === 'streaming' }"
-            v-html="renderMarkdown(message.content)"
+            v-html="renderChatMarkdown(message.content)" @click="copyCode"
           />
-          <p v-else-if="message.status === 'streaming'" class="stream-placeholder">正在组织方案…</p>
+          <p v-else-if="message.status === 'streaming'" class="stream-placeholder">正在生成回答…</p>
           <p v-if="message.error_message" class="message-error">{{ message.error_message }}</p>
         </div>
         <p v-else class="user-message">{{ message.content }}</p>
@@ -49,22 +53,32 @@
           </span>
         </div>
 
+        <p v-if="message.finish_reason === 'length' || message.finish_reason === 'max_tokens'" class="message-status">已达到单次输出上限，可继续生成。</p>
+        <div v-if="message.role === 'assistant' && versions(message).length > 1" class="message-actions version-controls">
+          <button type="button" :disabled="busy || versionIndex(message) === 0" aria-label="上一个回答版本" @click="previewVersion(message, -1)">上一版</button>
+          <span>版本 {{ versionIndex(message) + 1 }} / {{ versions(message).length }}</span>
+          <button type="button" :disabled="busy || versionIndex(message) === versions(message).length - 1" aria-label="下一个回答版本" @click="previewVersion(message, 1)">下一版</button>
+          <span v-if="isSelected(message)">已用于后续对话</span>
+          <button v-else-if="canWrite && message.reply_to_message_id === lastQuestionId && ['completed', 'stopped'].includes(message.status) && message.content" type="button" :disabled="busy" @click="emit('adopt', message)">用于后续对话</button>
+        </div>
         <div class="message-actions">
+          <button v-if="message.status === 'completed' && ['length', 'max_tokens'].includes(message.finish_reason) && message.reply_to_message_id === lastQuestionId && canWrite" type="button" :disabled="busy || !canContinue(message)" @click="emit('continue', message.id)">继续生成</button>
           <button type="button" @click="copyMessage(message)">
             <el-icon aria-hidden="true"><CopyDocument /></el-icon>
             复制
           </button>
           <button
-            v-if="message.role === 'assistant' && ['failed', 'stopped'].includes(message.status) && canWrite"
+            v-if="message.role === 'assistant' && ['completed', 'failed', 'stopped'].includes(message.status) && canWrite && message.reply_to_message_id === lastQuestionId"
             type="button"
+            :disabled="busy || !canRegenerate"
             @click="emit('retry', message.id)"
           >
             <el-icon aria-hidden="true"><RefreshRight /></el-icon>
-            重试
+            {{ message.status === 'completed' ? '重新生成' : '重试' }}
           </button>
         </div>
       </article>
-    </TransitionGroup>
+    </div>
 
     <Transition name="fab">
       <button v-if="showScrollDown" type="button" class="scroll-latest" @click="scrollToLatest">
@@ -78,10 +92,10 @@
 <script setup>
 import { copyText } from '../../../../utils/clipboard.js'
 
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { ArrowDown, CopyDocument, Paperclip, RefreshRight } from '@element-plus/icons-vue'
-import DOMPurify from 'dompurify'
-import { marked } from 'marked'
+import { renderChatMarkdown } from '../markdown'
+import { answerVersions, visibleMessages } from '../versions'
 import StarterCards from './StarterCards.vue'
 import { msgError, msgSuccess } from '@/utils/feedback'
 const props = defineProps({
@@ -92,14 +106,37 @@ const props = defineProps({
   messages: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
   canWrite: { type: Boolean, default: false },
+  busy: Boolean,
+  canRegenerate: Boolean,
+  canContinue: { type: Function, default: () => false },
 })
-const emit = defineEmits(['starter', 'retry', 'reload-modes'])
+const emit = defineEmits(['starter', 'retry', 'reload-modes', 'continue', 'adopt'])
 const scrollPane = ref(null)
 
-marked.setOptions({ gfm: true, breaks: true })
+const previews = ref({})
+const displayed = computed(() => visibleMessages(props.messages, previews.value))
+const lastQuestionId = computed(() => props.messages.filter(item => item.role === 'user').at(-1)?.id)
+const versions = message => answerVersions(props.messages, message.reply_to_message_id)
+const versionIndex = message => versions(message).findIndex(item => item.id === message.id)
+const isSelected = message => props.messages.find(item => item.id === message.reply_to_message_id)?.selected_answer_id === message.id
+function previewVersion(message, direction) {
+  const answer = versions(message)[versionIndex(message) + direction]
+  if (answer) previews.value = { ...previews.value, [message.reply_to_message_id]: answer.id }
+}
+watch(() => props.messages[0]?.id, () => { previews.value = {} })
+watch(() => props.messages.at(-1)?.id, () => {
+  const last = props.messages.at(-1)
+  if (props.busy && last?.role === 'assistant') previews.value = { ...previews.value, [last.reply_to_message_id]: last.id }
+})
 
-function renderMarkdown(raw) {
-  return DOMPurify.sanitize(marked.parse(raw))
+async function copyCode(event) {
+  const button = event.target.closest?.('.copy-code')
+  if (!button) return
+  const text = button.closest('pre')?.querySelector('code')?.textContent || ''
+  try {
+    if (!await copyText(text)) throw new Error('Copy blocked')
+    msgSuccess('复制代码')
+  } catch { msgError('复制失败，请手动选择代码') }
 }
 
 async function copyMessage(message) {
@@ -137,7 +174,7 @@ function scrollToLatest() {
 
 let prevSignature = ''
 watch(
-  () => props.messages.map(message => `${message.id}:${message.status}:${message.content?.length || 0}`).join('|'),
+  () => props.messages.map(message => `${message.id}:${message.status}:${message.content?.length || 0}:${message.reasoning_content?.length || 0}`).join('|'),
   async () => {
     // 首尾 id 或数量变化 = 新消息/切换会话 → 钉回底部；仅内容长度变化 = 流式追加 → 跟随当前钉住状态
     const last = props.messages[props.messages.length - 1]
@@ -154,6 +191,7 @@ watch(
 </script>
 
 <style scoped>
+.version-controls { flex-wrap: wrap; align-items: center; gap: 8px; }
 .chat-thread {
   flex: 1;
   min-height: 0;
@@ -169,7 +207,7 @@ watch(
 
 .thread-welcome {
   padding-top: clamp(12px, 2vh, 24px);
-  animation: welcome-in 260ms var(--ease-out-strong) backwards;
+
 }
 
 @keyframes welcome-in {
@@ -386,7 +424,7 @@ watch(
 
 @media (hover: hover) and (pointer: fine) {
   /* 桌面端操作按钮平时收起，悬停/聚焦时浮现 */
-  .message-actions { opacity: 0; }
+  .message-actions { opacity: 1; }
   .message-row:hover .message-actions,
   .message-row:focus-within .message-actions { opacity: 1; }
   .message-actions button:hover { background: var(--button-primary-soft); color: var(--button-primary); }
@@ -412,4 +450,16 @@ watch(
   .fab-leave-active { transition: none; }
   .scroll-latest:hover { transform: none; }
 }
+</style>
+
+<style scoped>
+.reasoning-panel { margin-bottom: 14px; border-left: 2px solid var(--border-color); padding: 8px 14px; color: var(--text-secondary); font-size: 13px; }
+.reasoning-panel summary { cursor: pointer; width: fit-content; }
+.reasoning-panel p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; max-height: 320px; overflow: auto; }
+.markdown-body :deep(pre) { position: relative; padding: 0 14px 14px; }
+.markdown-body :deep(pre code) { display: block; overflow-x: auto; }
+.markdown-body :deep(.code-toolbar) { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 9px 0; font-size: 11px; font-family: var(--font-body); }
+.markdown-body :deep(.copy-code) { border: 1px solid currentColor; border-radius: 5px; padding: 3px 7px; color: inherit; background: transparent; cursor: pointer; font: inherit; }
+.markdown-body :deep(.copy-code:focus-visible) { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.message-actions button:disabled { opacity: .45; cursor: not-allowed; }
 </style>

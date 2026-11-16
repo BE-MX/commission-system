@@ -28,7 +28,7 @@ const envFile = join(stateDir, ".env");
 // Cloud preparation deliberately creates no model requests or queue consumer.
 const prepareOnly = process.argv.includes("--prepare-only");
 const mainHeartbeat = {
-  every: "5m",
+  every: "0m",
   target: "none",
   lightContext: true,
   isolatedSession: true,
@@ -72,6 +72,10 @@ async function ensureEnvFile() {
     "ARK_API_TIMEOUT_MS=30000",
     "# Set true after creating secrets/runtime-heartbeat-token (0600) and registering its SHA-256 in Ark.",
     "ARK_HEARTBEAT_ENABLED=false",
+    "# Opt in after the deployment is ready to process the live Ark queues.",
+    "ARK_QUEUE_HEARTBEAT_ENABLED=false",
+    "# Opt in only with an operator-controlled proxy and verified route separation.",
+    "ARK_WEB_FETCH_TRUSTED_PROXY_ENABLED=false",
     "",
     "# Model keys belong in private files under secrets/; see README.",
     "# Optional alternative providers:",
@@ -163,6 +167,16 @@ async function installWorkspaceTemplates() {
       await copyFile(join(serviceDir, "workspace-template", source), join(mainWorkspace, target));
     }
   }
+  const agentsTemplate = await readFile(join(serviceDir, "workspace-template", "AGENTS.template.md"), "utf8");
+  const policyPattern = /<!-- ark-private-research-policy:start -->[\s\S]*?<!-- ark-private-research-policy:end -->/u;
+  const policy = agentsTemplate.match(policyPattern)?.[0];
+  if (!policy) throw new Error("Missing managed private research policy in AGENTS template");
+  const agentsFile = join(mainWorkspace, "AGENTS.md");
+  const existing = await readFile(agentsFile, "utf8");
+  const updated = policyPattern.test(existing)
+    ? existing.replace(policyPattern, () => policy)
+    : `${existing.trimEnd()}\n\n${policy}\n`;
+  if (updated !== existing) await writeFile(agentsFile, updated, { encoding: "utf8", mode: 0o600 });
 }
 
 async function loadArkRuntimeSettings() {
@@ -210,14 +224,18 @@ async function loadArkRuntimeSettings() {
   }
 
   return {
-    ARK_BASE_URL: parsedBase.href.replace(/\/+$/, ""),
-    ARK_ALLOWED_ORIGIN: parsedAllowed.origin,
-    ARK_AGENT_ID: agentId,
-    ARK_AGENT_TOKEN_FILE: arkTokenFile,
-    ARK_API_TIMEOUT_MS: String(timeoutMs),
-    ...(values.ARK_HEARTBEAT_ENABLED === "true"
-      ? { ARK_HEARTBEAT_TOKEN_FILE: heartbeatTokenFile }
-      : {}),
+    queueHeartbeatEnabled: values.ARK_QUEUE_HEARTBEAT_ENABLED === "true",
+    webFetchTrustedProxyEnabled: values.ARK_WEB_FETCH_TRUSTED_PROXY_ENABLED === "true",
+    mcpEnv: {
+      ARK_BASE_URL: parsedBase.href.replace(/\/+$/, ""),
+      ARK_ALLOWED_ORIGIN: parsedAllowed.origin,
+      ARK_AGENT_ID: agentId,
+      ARK_AGENT_TOKEN_FILE: arkTokenFile,
+      ARK_API_TIMEOUT_MS: String(timeoutMs),
+      ...(values.ARK_HEARTBEAT_ENABLED === "true"
+        ? { ARK_HEARTBEAT_TOKEN_FILE: heartbeatTokenFile }
+        : {}),
+    },
   };
 }
 
@@ -236,7 +254,7 @@ function clearDefaultHeartbeat() {
   }
 }
 
-function configureMainAgentTools() {
+function configureMainAgentTools(queueHeartbeatEnabled) {
   const main = JSON.parse(run(openclaw, [
     "--profile", profile, "config", "get", "agents.entries.main",
   ], { capture: true }));
@@ -254,8 +272,10 @@ function configureMainAgentTools() {
   };
   // Keep queue automation scoped to the sales agent. A defaults-level
   // heartbeat would silently schedule unrelated agents such as email outreach.
-  main.heartbeat = mainHeartbeat;
-  if (prepareOnly) main.heartbeat = { ...mainHeartbeat, every: "0m" };
+  main.heartbeat = {
+    ...mainHeartbeat,
+    every: !prepareOnly && queueHeartbeatEnabled ? "5m" : mainHeartbeat.every,
+  };
   setConfig("agents.entries.main", main);
 }
 
@@ -264,7 +284,7 @@ async function main() {
   await migrateModelKeyToSecretFile("MIMO_API_KEY", mimoTokenFile, "MiMo");
   await migrateModelKeyToSecretFile("DEEPSEEK_API_KEY", deepseekTokenFile, "DeepSeek");
   await installWorkspaceTemplates();
-  const arkRuntimeSettings = await loadArkRuntimeSettings();
+  const { queueHeartbeatEnabled, webFetchTrustedProxyEnabled, mcpEnv } = await loadArkRuntimeSettings();
 
   if (Object.keys(getConfig("agents.entries") || {}).length === 0) {
     run(openclaw, ["--profile", profile, "setup", "--baseline", "--workspace", workspace]);
@@ -316,7 +336,7 @@ async function main() {
   }, { replace: true });
   setConfig("agents.defaults.model", { primary: "mimo/mimo-v2.5" });
   setConfig("agents.defaults.skills", [
-    "ark-lead-discovery", "ark-company-research", "ark-public-pool-research",
+    "ark-lead-discovery", "ark-company-research", "ark-public-pool-research", "ark-private-research",
   ]);
   setConfig("tools.profile", "minimal");
   setConfig("tools.alsoAllow", ["read", "web_search", "web_fetch", "ark-sales__*"]);
@@ -329,7 +349,7 @@ async function main() {
   });
   setConfig("tools.agentToAgent.enabled", false);
   clearDefaultHeartbeat();
-  configureMainAgentTools();
+  configureMainAgentTools(queueHeartbeatEnabled);
   setConfig("plugins.entries.parallel.enabled", true);
   // Keep DuckDuckGo installed as a manual fallback, but Parallel Free is the
   // tested default on networks where DuckDuckGo HTML is unavailable.
@@ -342,19 +362,20 @@ async function main() {
     cacheTtlMinutes: 15,
   });
   setConfig("tools.web.fetch.enabled", true);
+  setConfig("tools.web.fetch.useTrustedEnvProxy", webFetchTrustedProxyEnabled);
   setConfig("browser.enabled", false);
 
   const mcpDefinition = {
     command: node,
     args: [join(serviceDir, "src/server.mjs")],
     cwd: serviceDir,
-    env: arkRuntimeSettings,
+    env: mcpEnv,
     toolFilter: { include: ["ark_*"] },
   };
   run(openclaw, ["--profile", profile, "mcp", "set", "ark-sales", JSON.stringify(mcpDefinition)]);
 
   for (const skill of [
-    "ark-lead-discovery", "ark-company-research", "ark-public-pool-research",
+    "ark-lead-discovery", "ark-company-research", "ark-public-pool-research", "ark-private-research",
   ]) {
     run(openclaw, [
       "--profile", profile,

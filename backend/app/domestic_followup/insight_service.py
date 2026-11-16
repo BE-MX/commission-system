@@ -2,6 +2,7 @@
 from collections import defaultdict
 from datetime import date, timedelta
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
@@ -41,7 +42,7 @@ def _evidence(db: Session, current_user: dict, items: list[DomesticFollowupInsig
     items_by_followup = defaultdict(list)
     detail_rows = db.query(DomesticFollowupItem).filter(
         DomesticFollowupItem.followup_id.in_([row.id for row in records]),
-        DomesticFollowupItem.status != "withdrawn").all()
+        or_(DomesticFollowupItem.status.is_(None), DomesticFollowupItem.status != "withdrawn")).all()
     for item in detail_rows:
         items_by_followup[item.followup_id].append(item.text)
     return {row.id: {

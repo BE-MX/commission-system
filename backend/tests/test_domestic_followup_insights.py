@@ -172,3 +172,27 @@ def test_generation_filters_unknown_evidence_and_fills_backend_numbers(db, monke
         assert len(items) == 1
         assert items[0]["body"] == f"当前超期 {items[0]['numeric_values']['overdue']} 家"
         assert items[0]["numeric_values"]["overdue"] == 1
+
+
+def test_null_status_content_is_kept_in_insight_context(db):
+    from app.domestic_followup import insight_generation, insight_service
+    from app.domestic_followup.models import DomesticFollowupItem
+
+    sales = make_user(db, "insight_null_content")
+    customer = make_customer(db, sales, "空状态要点店")
+    record = _confirmed(db, sales, customer)
+    db.add_all([
+        DomesticFollowupItem(followup_id=record.id, customer_id=customer.id, seq=1, kind="content", text="保留要点"),
+        DomesticFollowupItem(followup_id=record.id, customer_id=customer.id, seq=2, kind="content",
+                             text="撤回要点", status="withdrawn"),
+    ])
+    db.flush()
+    _, context = insight_generation._record_context(db, TODAY - timedelta(days=30), TODAY)
+    row = next(item for item in context if item["id"] == record.id)
+    assert [item["text"] for item in row["items"]] == ["保留要点"]
+    _, insights = _snapshot(db, "personal", sales.id, [{
+        "category": "deal", "customer_id": customer.id, "title": "证据", "body": "证据",
+        "suggested_action": "核实", "evidence_followup_ids": [record.id], "sample_size": 1,
+    }])
+    evidence = insight_service._evidence(db, {"sub": str(sales.id), "roles": [], "permissions": list(SALES)}, insights)
+    assert evidence[record.id]["items"] == ["保留要点"]

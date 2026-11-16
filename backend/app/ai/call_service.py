@@ -173,9 +173,19 @@ def chat(
         if api_type == "anthropic":
             content = extract_anthropic_content(result)
             usage = extract_anthropic_usage(result)
+            finish_reason = result.get("stop_reason")
+            reasoning_emitted = any(
+                block.get("type") in ("thinking", "redacted_thinking")
+                for block in (result.get("content") or []) if isinstance(block, dict)
+            )
         else:
             # OpenAI 标准格式: choices[0].message.content
-            message = result.get("choices", [{}])[0].get("message", {})
+            choices = result.get("choices") or [{}]
+            choice = choices[0]
+            finish_reason = choice.get("finish_reason")
+            message = choice.get("message", {})
+            reasoning = message.get("reasoning_content") or message.get("reasoning")
+            reasoning_emitted = bool(reasoning)
             content = message.get("content", "")
             # 某些 API (如 StepFun) 可能返回 list/dict 类型的 content,统一转 str
             if content is not None and not isinstance(content, str):
@@ -184,7 +194,6 @@ def chat(
             # 推理模型兼容 (Step-3.7-flash / DeepSeek-R1 等):
             # content 为空但 reasoning/reasoning_content 有内容时,从中提取答案
             if not content:
-                reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
                 if reasoning and isinstance(reasoning, str) and reasoning.strip():
                     logger.info(
                         "AI content empty, falling back to reasoning. provider=%s model=%s reasoning_len=%d",
@@ -246,6 +255,11 @@ def chat(
             "tokens_used": usage.get("total_tokens"),
             "duration_ms": duration_ms,
             "log_id": log.id,
+            "finish_reason": finish_reason if finish_reason in (
+                "length", "max_tokens", "stop", "end_turn", "stop_sequence",
+                "content_filter", "refusal", "tool_calls", "tool_use",
+            ) else None,
+            "reasoning_emitted": reasoning_emitted,
         }
     except Exception as e:
         logger.warning("AI chat failed: %s", type(e).__name__)

@@ -37,6 +37,7 @@ class TurnStreamRequest(BaseModel):
         pattern=r"^[A-Za-z0-9_-]+$",
     )
     content: str = Field(default="", max_length=12_000)
+    preset_id: int | None = Field(default=None, gt=0)
     mode_id: Literal[*MODE_IDS] | None = None
     mode_version: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     attachment_ids: list[int] = Field(
@@ -64,6 +65,7 @@ class TurnStreamRequest(BaseModel):
 
 class RetryStreamRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    preset_id: int | None = Field(default=None, gt=0)
 
     request_id: str = Field(
         min_length=8,
@@ -78,6 +80,7 @@ class SessionResponse(BaseModel):
     id: int
     owner_user_id: int
     title: str
+    selected_preset_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -90,11 +93,31 @@ class MessageResponse(BaseModel):
     role: MessageRole
     request_id: str | None
     content: str
+    reasoning_content: str | None = None
     status: MessageStatus
     error_message: str | None = None
     retry_of_message_id: int | None = None
+    continuation_of_message_id: int | None = None
+    selected_answer_id: int | None = None
+    finish_reason: str | None = None
+    first_token_ms: int | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class SessionRename(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    title: str = Field(min_length=1, max_length=200)
+
+
+class AnswerSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    answer_id: int = Field(gt=0)
+
+
+class RoleLimitUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    daily_limit: int | None = Field(default=None, ge=0, le=10000, strict=True)
 
 
 class AttachmentResponse(BaseModel):

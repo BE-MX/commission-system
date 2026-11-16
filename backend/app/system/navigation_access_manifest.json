@@ -1,5 +1,5 @@
 {
-  "source_sha256": "20ac6b88d4816627557da5468ddb7309dc1e438f12d651f92193c21dffa170e2",
+  "source_sha256": "ce617a02ecb80306774d0a63a02c21b61f2b55d9660acd7f02f7531546db5d15",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -15,11 +15,13 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -107,11 +109,13 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -2859,10 +2863,7 @@
         ]
       },
       {
-        "anyPermission": [
-          "design_image:read",
-          "ai_chat:read"
-        ]
+        "permission": "design_image:read"
       },
       {
         "anyPermission": [
@@ -2921,6 +2922,14 @@
           "customer_media_portal:read",
           "customer_media_account:read"
         ]
+      }
+    ],
+    "DesignAiChat": [
+      {
+        "permission": "ai_chat:read"
+      },
+      {
+        "permission": "ai_chat:read"
       }
     ],
     "DesignGantt": [
@@ -3273,6 +3282,36 @@
         ]
       }
     ],
+    "MonidSpend": [
+      {
+        "permission": "sales_monid_spend:read"
+      },
+      {
+        "permission": "sales_monid_spend:read"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "navigation:read",
+          "domestic_followup:admin",
+          "mcp:admin",
+          "integration:admin",
+          "commerce_transition:admin",
+          "operations:read",
+          "operations:admin",
+          "sales_monid_spend:read",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
     "UserManagement": [
       {
         "permission": "user:read"
@@ -3287,11 +3326,13 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3315,11 +3356,13 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3343,11 +3386,43 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "DomesticFollowupTemplates": [
+      {
+        "permission": "domestic_followup:admin"
+      },
+      {
+        "permission": "domestic_followup:admin"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "navigation:read",
+          "domestic_followup:admin",
+          "mcp:admin",
+          "integration:admin",
+          "commerce_transition:admin",
+          "operations:read",
+          "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3371,11 +3446,13 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3405,11 +3482,13 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3433,11 +3512,13 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3461,11 +3542,13 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3489,11 +3572,13 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3517,11 +3602,13 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3545,11 +3632,13 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",
@@ -3573,11 +3662,13 @@
           "dict:read",
           "ai:admin",
           "navigation:read",
+          "domestic_followup:admin",
           "mcp:admin",
           "integration:admin",
           "commerce_transition:admin",
           "operations:read",
           "operations:admin",
+          "sales_monid_spend:read",
           "dingtalk:admin",
           "external_binding:read",
           "external_binding:write",

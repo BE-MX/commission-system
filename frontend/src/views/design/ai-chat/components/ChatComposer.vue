@@ -6,6 +6,7 @@
         <el-icon aria-hidden="true"><Document /></el-icon>
         <span>{{ attachment.original_name || attachment.name }}</span>
         <em v-if="attachment.optimistic">上传中</em>
+        <em v-else-if="attachment.status === 'failed'">清理未完成，请再次移除</em>
         <button
           type="button"
           :aria-label="`移除 ${attachment.original_name || attachment.name}`"
@@ -17,7 +18,7 @@
       </span>
     </div>
 
-    <div class="composer-surface">
+    <div class="composer-surface" @paste="pasteFiles" @dragover.prevent @drop.prevent="dropFiles">
       <el-input
         ref="inputRef"
         :model-value="prompt"
@@ -26,7 +27,8 @@
         resize="none"
         :disabled="!canWrite"
         :placeholder="canWrite ? placeholder : '你只有查看权限，无法发送消息'"
-        aria-label="方案对话输入"
+        aria-label="聊天输入"
+        :maxlength="12000"
         @update:model-value="emit('update:prompt', $event)"
         @keydown="handleKeydown"
       />
@@ -34,7 +36,8 @@
       <div class="composer-actions">
         <div class="composer-tools">
           <AppUpload
-            v-if="canWrite && !streaming && attachments.length < 5"
+            ref="uploadRef"
+            v-if="canWrite && canAttach && !streaming && attachments.length < 5"
             :model-value="attachments"
             :upload-fn="uploadFn"
             :accept="accept"
@@ -75,6 +78,7 @@
 
     <div class="composer-footnote">
       <span><el-icon aria-hidden="true"><Lock /></el-icon> 仅自己可见</span>
+      <span v-if="usage">今日 {{ usage.used }} / {{ usage.limit }} 次</span>
       <span v-if="canWrite">Enter 发送 · Shift+Enter 换行</span>
       <span v-else>当前为只读模式</span>
     </div>
@@ -94,13 +98,29 @@ const props = defineProps({
   canWrite: { type: Boolean, default: false },
   canSubmit: { type: Boolean, default: false },
   streaming: { type: Boolean, default: false },
+  vision: { type: Boolean, default: false },
+  canAttach: Boolean,
+  usage: { type: Object, default: null },
   placeholder: { type: String, default: '描述你的问题、目标和约束…' },
   sendLabel: { type: String, default: '发送' },
 })
 const emit = defineEmits(['update:prompt', 'remove', 'send', 'stop'])
 const inputRef = ref(null)
+const uploadRef = ref(null)
 const uploading = computed(() => props.attachments.some(item => item.optimistic))
-const accept = '.jpg,.jpeg,.png,.webp,.pdf,.docx,.xlsx,.pptx,.txt,.md'
+const accept = computed(() => `${props.vision ? '.jpg,.jpeg,.png,.webp,' : ''}.pdf,.docx,.xlsx,.pptx,.txt,.md`)
+
+function pasteFiles(event) {
+  if (!props.canWrite || !props.canAttach || props.streaming) return
+  const files = Array.from(event.clipboardData?.items || []).filter(item => item.kind === 'file').map(item => item.getAsFile()).filter(Boolean)
+  if (!files.length) return
+  event.preventDefault()
+  uploadRef.value?.uploadFiles(files)
+}
+function dropFiles(event) {
+  if (!props.canWrite || !props.canAttach || props.streaming) return
+  uploadRef.value?.uploadFiles(Array.from(event.dataTransfer?.files || []))
+}
 
 function handleKeydown(event) {
   if (!props.canWrite || props.streaming || !props.canSubmit) return

@@ -1,3 +1,16 @@
+## 2026-11-16 私海背调 v2（Codex，本地候选）
+
+工作区 `D:/MyProgram/commission-system-codex-private-research-v2`，分支 `codex/private-research-v2`，基点 `c2c36054`。实现按需重跑与 batch 筛选、租约内客户线索、证据校验与完整 Markdown 报告、Maigret 优先与弱线索 Monid 异步网关、OpenClaw 专用技能、按日/客户花费查看。迁移 `264_private_research_tools` 接 `263_customer_owner_claimed_at`。
+
+验证使用隔离数据库与模拟供应商。研究与运行档案回归 170 项通过（其中含早期网关用例），最终 v2 与网关专项 20 项、私海助理后端 123 项、OpenClaw 89 项、发布脚本 29 项通过。Agent Runtime 有 2 项旧测试在基线复现失败。前端构建与模拟浏览器验收通过。迁移在隔离 SQLite 升降级通过并生成 MySQL 离线 SQL，Alembic 为单 head。
+
+生产放行待配置 Monid 公司工作区及限额、新加坡认证代理、北京 Maigret 单独服务与 provider worker。打开队列前按服务文档验证跨境站点、实际搜索能力、模型长报告及并行 Agent 身份；完成 Rina 20 客户对照、按方案评估效果和花费后再启用分批补齐。估算用客户数 × 单客分钟 ÷ 并行数，按 15 分钟目标估计 1,000 位客户约 250 Agent 小时，4 路理论约 62.5 小时，实际以试点为准。
+
+## 2026-11-16 私海助理今日建议（Codex，Git 交付，待发布）
+
+- 本次按授权合并并推送 `origin/main`。包含 AI 输出和校验修复、R4/R8 入队调整、今日建议分组、R5 配置能力及 R3 复核的当日可见性。发布时需将专用 AI 预设的 1800 token 调整至 4000，再验收生产批次失败率和覆盖量。
+- 只读核对运单现有可靠关联 0/528，R9 等运单绑定补齐。复购映射待业务校准。细节见[今日建议实施与验收](requirements/2026-11-04-private-sea-assistant/implementation-status.md#2026-11-16-今日建议)。
+
 ## 2026-11-14 WhatsApp 未关联客户排除本人及平台通知（Codex，已发布）
 
 - 用户授权候选 `68f72bdd1995fd5ed013c9ba0c186ae5c9774f7c`；办公室连接器及办公室/北京后端已通过受管入口发布，两地 HEAD 一致。schema262不变，无DDL，不含main其他新功能；发布ID `91595cc4551e45c3ba32fbb8beeb1582`。
@@ -1339,3 +1352,25 @@ Annual amount release b59 hit the existing 30-second startup budget, followed by
 - 候选迁移227–245下接主线214，已发布208–214保持不变；安装仍为legacy_only、独立对比默认关闭。本次不执行生产迁移或部署。
 - 本轮集成冲突处理、复验及Git状态以[集成记录](reports/2026-10-31-commerce-transition-integration.md)为准；原实现与隔离验收证据见[开发报告](reports/2026-10-28-commerce-dual-route-implementation.md)。
 - 主目录其他任务的未提交内容另行备份和恢复，不纳入本次开发提交。
+
+
+## 2026-11-16 通用 AI 工作台首版（Codex，Git 交付，未部署）
+
+- 独立分支 `codex/universal-ai-chat` / `D:/MyProgram/commission-system-codex-universal-ai-chat`：平台入口、每轮选模型、回答模型标识、推理折叠、复制/重生成、会话分页/改名/软删除和每日额度已实现。管理端通过预设开放模型、图片能力和角色。
+- 迁移 265 保留旧历史；生成前重新核验模型配置及角色。隔离 MySQL 4 项、最终模型/生命周期/共享调用 80 项、补充模型/时区 20 项、前端状态与导航 46 项通过；批次有重叠，不累加唯一数量。构建、桌面/窄屏浏览器验收通过。两项原有草稿附件清理失败单列。
+- 用户已授权提交、合并 main 并推送 origin，结果以远端回读为准；明确暂不部署，未接生产或真实模型。进程强杀后的 streaming 恢复仍是已知边界。临时数据库已停止，目录清理被自动审批审查拒绝后保留。配置、证据与发布前置见 [交付记录](reports/2026-11-16-universal-ai-chat.md)。
+
+## 2026-11-16 AI 工作台第二版（Codex，已授权 Git 交付，未部署）
+
+- 独立 `codex/ai-chat-v2` / `D:/MyProgram/commission-system-codex-ai-chat-v2` 完成前四项：真实双协议联调、租约/检查点恢复、回答版本与继续生成、用量/费用估算和角色日额度。迁移 266 保留历史；没有改生产配置或运行生产迁移。
+- 后端扩展 261 passed / 1 平台符号链接能力 skip，最终增量 35 passed（批次重叠，不累加）；隔离 MySQL 6 passed，前端 47 passed，生产构建与增量约定通过。子进程硬退出后重开恢复、迟到写入防护及浏览器桌面/375px 窄屏已验。
+- 19 次合成内容实际请求：DeepSeek 与备用 Anthropic 配置通过；原 `claude-fable-5` 预设返回上游 HTTP 错误，后续发布前仍须调整/复验。停止不保证供应商停止计费，部分用量不误作完整账单。详见[第二版交付与限制](reports/2026-11-16-ai-chat-v2.md)。
+- 用户后续已授权提交、合并 main 和推送 origin，结果以远端回读为准；暂不部署，临时 MySQL 与浏览器服务已停止。自动审批审查拒绝临时数据库目录清理，按拦截保留。首版历史交付状态不代表本轮已经发布。
+
+
+## 2026-11-16 客户跟进闭环四期本地实现与独立审查（Kimi）
+
+- 工作区 `D:/MyProgram/commission-system-kimi-followup-closed-loop`，分支 `kimi/followup-closed-loop`，基于 main `6c04b175`；随后按最新 main 整合，迁移顺延为 267–270。范围仅内贸 `/domestic/followups`：T01–T10 模板后台、下一步转约定/行动待办、三步准备卡与历史卡、场景引导录入和四类事实。规范与原型见 [客户跟进闭环](requirements/2026-11-16-followup-closed-loop/README.md)。
+- 迁移 267–270 已完成隔离 upgrade/downgrade/upgrade，`alembic heads` 仅 `270_dom_fu_guided`。后端跟进测试 302 passed、1 个基线失败；该失败 `test_insight_to_task_requires_customer_write_and_is_idempotent` 在修改前即可复现，未夹带修复。前端构建通过，跟进 Node 测试 57 passed；`check_conventions.py` 增量无违规。
+- 真实 Vue + FastAPI + 独立 SQLite 浏览器验收：模板保存 v2 并保留 v1；T06 推荐、策略生成、准备卡关联、AI 核对、确认生成约定、行动待办填写说明后完成均通过。准备卡为 used，行动未被新跟进自动关闭。验收截图为 [桌面](reports/assets/2026-11-16-followup-closed-loop/desktop.png) 与 [手机](reports/assets/2026-11-16-followup-closed-loop/mobile.png)。模型输出为固定样例，未调用真实模型、未使用真实客户资料。
+- 独立审查及两轮修复复核已完成，限定范围无剩余阻断。合并/推送按用户本次授权执行；部署与生产迁移另行请示。上线前仍需业务审阅模板种子，并按授权流程更新生产 parse preset（seed 不会更新既有 preset）；真实模型样例集人工评测未执行，不能据此宣称模型验收通过。

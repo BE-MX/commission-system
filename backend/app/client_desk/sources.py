@@ -3,7 +3,7 @@
 import hashlib
 import json
 from fastapi import HTTPException
-from sqlalchemy import text
+from sqlalchemy import and_, or_, text
 from app.client_desk.private_scope import (
     assert_company_access,
     list_private_companies,
@@ -17,6 +17,8 @@ from app.whatsapp.models import WhatsAppAccount, WhatsAppConversation, WhatsAppM
 from app.core.time import beijing_now
 from app.invoice.product_service import _parse_ts
 from app.client_desk.board import model_research, research_report
+from app.client_desk.read_scope import once
+from app.sales_automation.private_research_policy import PRIVATE_RESEARCH_RESULT
 
 
 def digest(value):
@@ -104,53 +106,42 @@ def visible_wa(
     return result
 
 
-def research_sources(db, user, company_id):
-    from app.customer.models import (
-        CustomerExternalIdentity as Identity,
-        CustomerResearchTask as Task,
-    )
-    from app.customer.logical_customer_service import (
-        logical_owner_expression,
-        logical_subject_matches_customer,
-    )
-    from app.customer.models import CustomerAccount
-    from app.customer.access_service import (
-        require_customer_access,
-        CustomerAccessDenied,
-    )
+def research_customer_id(db, company_id):
+    """Resolve a uniquely verified OKKI company identity to its customer root."""
+    from app.customer.models import CustomerAccount, CustomerExternalIdentity as Identity
+    from app.customer.logical_customer_service import logical_subject_matches_customer
 
-    identities = (
-        db.query(Identity)
-        .filter(
-            Identity.source_system == "okki",
-            Identity.identifier_type == "company_id",
-            Identity.normalized_value == str(company_id),
-            Identity.status == "active",
-            Identity.verification_status == "verified",
-            Identity.identity_strength == "strong",
-            Identity.cardinality == "one_to_one",
-        )
-        .all()
-    )
-    owners = (
-        {
-            r[0]
-            for r in db.query(CustomerAccount.id)
-            .join(
-                Identity,
-                logical_subject_matches_customer(
-                    Identity, "external_identity", CustomerAccount
-                ),
+    def load():
+        owners = (
+            db.query(CustomerAccount.id)
+            .join(Identity, logical_subject_matches_customer(Identity, "external_identity", CustomerAccount))
+            .filter(
+                Identity.source_system == "okki",
+                Identity.identifier_type == "company_id",
+                Identity.normalized_value == str(company_id),
+                Identity.status == "active",
+                Identity.verification_status == "verified",
+                Identity.identity_strength == "strong",
+                Identity.cardinality == "one_to_one",
             )
-            .filter(Identity.id.in_([i.id for i in identities]))
+            .distinct()
+            .limit(2)
             .all()
-        }
-        if identities
-        else set()
-    )
-    if len(owners) != 1:
+        )
+        return owners[0][0] if len(owners) == 1 else None
+
+    return once(("research_customer", db, str(company_id)), load)
+
+
+def research_sources(db, user, company_id):
+    from app.customer.access_service import CustomerAccessDenied, require_customer_access
+    from app.customer.logical_customer_service import logical_owner_expression
+    from app.customer.models import CustomerResearchTask as Task
+    from app.sales_automation.private_research_service import PRIVATE_POLICIES, SOURCE_REF_TYPE, TASK_TYPE
+
+    customer_id = research_customer_id(db, company_id)
+    if customer_id is None:
         return []
-    customer_id = owners.pop()
     actor = (
         user
         if isinstance(user, dict)
@@ -172,7 +163,15 @@ def research_sources(db, user, company_id):
         .filter(
             task_owner == customer_id,
             Task.task_status == "completed",
-            Task.result_review_status.in_(["accepted", "not_required"]),
+            or_(
+                Task.result_review_status.in_(("accepted", "not_required")),
+                and_(
+                    Task.task_type == TASK_TYPE,
+                    Task.source_ref_type == SOURCE_REF_TYPE,
+                    Task.research_policy_version.in_(PRIVATE_POLICIES),
+                    Task.result_review_status.in_(("pending", "revision_requested")),
+                ),
+            ),
             Task.data_classification.in_(access.allowed_classifications()),
             Task.visibility_scope.in_(access.allowed_visibility_scopes()),
         )
@@ -183,6 +182,7 @@ def research_sources(db, user, company_id):
         {
             "id": str(t.id),
             "result": t.result_json,
+            "review_status": t.result_review_status,
             "updated_at": t.updated_at,
             "classification": t.data_classification,
             "visibility": t.visibility_scope,
@@ -256,24 +256,7 @@ def build_customer_sources(
             ).mappings()
         ]
     card["created_at"] = _parse_ts(raw.get("create_time") or raw.get("created_at"))
-    order_days, in_transit, gaps = classify_orders(orders, raw)
-    from app.core.config import get_settings
-
-    status_map = (
-        get_settings()
-        .CLIENT_DESK_RULES.get("order_classification", {})
-        .get("status_map", {})
-    )
-    last_non_cancelled = max(
-        [
-            o["account_date"]
-            for o in orders
-            if o.get("account_date")
-            and status_map.get(str(o.get("status"))) in ("completed", "in_transit")
-            and o.get("valid_business")
-        ],
-        default=None,
-    )
+    order_days, last_non_cancelled, in_transit, gaps = classify_orders(orders)
     orders = [o for o in orders if o.get("valid_business")]
     for o in orders:
         o["id"] = str(o.pop("order_id"))
@@ -398,12 +381,33 @@ def build_customer_sources(
         else {}
     )
     deps.sort(key=lambda dep: (dep["account"], dep["link"]))
+    report = {"status": "none"}
+    model_reports = {}
+    research_dependencies = []
+    for row in research:
+        projected = research_report([row])
+        if report["status"] == "none" and projected["status"] == "ready":
+            report = projected
+        compact = model_research(projected)
+        if compact is not None:
+            model_reports[row["id"]] = compact
+        # Keep existing provenance hashes for legacy results (including gap documents).
+        result = row.get("result")
+        if isinstance(result, dict) and result.get("schema_version") == PRIVATE_RESEARCH_RESULT:
+            if compact is None:
+                continue
+            data = compact
+        elif row.get("review_status") in ("accepted", "not_required"):
+            data = {key: value for key, value in row.items() if key != "review_status"}
+        else:
+            continue
+        research_dependencies.append({"id": row["id"], "hash": digest(data)})
     dependencies = {
         "manual": digest(manual),
         "followups": digest([(f.id, f.content, f.happened_at) for f in followups]),
         "grade": grade,
         "wa": deps,
-        "research": [{"id": r["id"], "hash": digest(r)} for r in research],
+        "research": research_dependencies,
         "orders": digest(orders),
         "card": digest(card),
         "contacts": digest(contacts),
@@ -423,10 +427,10 @@ def build_customer_sources(
             f'S-{r["id"]}': {
                 "source": "research",
                 "event_key": r["event_key"],
-                "datum": model_research(research_report([r])),
+                "datum": model_reports[r["id"]],
             }
             for r in research
-            if research_report([r])["status"] == "ready"
+            if r["id"] in model_reports
         }
     )
     refs.update(
@@ -480,9 +484,11 @@ def build_customer_sources(
             "unknown_amount_count": sum(o["amount_usd"] is None for o in orders),
         },
         "research": research,
-        "research_report": research_report(research),
-        # The model sees compact reviewed statements, never raw or gap documents.
-        "research_summary": model_research(research_report(research)),
+        "research_report": report,
+        "research_summary": next(iter(model_reports.values()), None),
+        "research_model_event_key": next(
+            (r["event_key"] for r in research if r["id"] in model_reports), None
+        ),
         "origin": raw.get("origin_name"),
         "conversations": conversations,
         "wa_targets": targets,
@@ -560,7 +566,24 @@ def grade_options(db):
     ]
 
 
-def classify_orders(orders, raw):
+def _sample_value(order, field):
+    if not field:
+        return None
+    root, separator, key = field.partition(".")
+    if not separator:
+        return order.get(root)
+    if root != "custom_fields" or not key:
+        return None
+    custom = order.get(root)
+    if isinstance(custom, str):
+        try:
+            custom = json.loads(custom)
+        except (ValueError, RecursionError):
+            return None
+    return custom.get(key) if isinstance(custom, dict) else None
+
+
+def classify_orders(orders):
     """Only a versioned, explicitly calibrated mapping may classify sample/in-flight status."""
     from app.core.config import get_settings
 
@@ -569,33 +592,43 @@ def classify_orders(orders, raw):
     sample_values = config.get("sample_values", [])
     bulk_values = config.get("bulk_values", [])
     statuses = config.get("status_map", {})
+    status_field = config.get("status_field", "status")
     days = []
+    last = None
     unknown = False
     in_transit = False
     for order in orders:
-        status = statuses.get(str(order.get("status")))
+        status = (
+            statuses.get(str(order.get(status_field)))
+            if status_field in ("status", "status_name") else None
+        )
         if status not in ("cancelled", "in_transit", "completed"):
             unknown = True
         if status == "in_transit":
             in_transit = True
         if status == "cancelled":
             continue
-        sample = order.get(sample_field) if sample_field else None
+        sample = _sample_value(order, sample_field)
+        account_date = order.get("account_date")
+        if account_date and order.get("valid_business", True) and status in ("in_transit", "completed"):
+            if last is None or account_date > last:
+                last = account_date
         if (
-            sample in bulk_values
+            sample is not None
+            and sample in bulk_values
             and status == "completed"
-            and order.get("account_date")
+            and account_date
             and order.get("valid_business", True)
         ):
-            days.append(order["account_date"])
-        elif sample not in sample_values and sample not in bulk_values:
+            days.append(account_date)
+        elif sample is None or (sample not in sample_values and sample not in bulk_values):
             unknown = True
     gaps = (
         ["部分订单样品或物流状态未校准，暂不推断复购"]
         if unknown or (orders and not sample_field)
         else []
     )
-    return ([] if gaps else days), (None if gaps else in_transit), gaps
+    return ([], None, None, gaps) if gaps else (days, last, in_transit, [])
 
 
 def message_fingerprint(message):

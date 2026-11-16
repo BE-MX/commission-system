@@ -51,7 +51,7 @@ def _historical_allowed(db, user, customer, followup, fields):
     if followup.followup_date >= beijing_today():
         raise ValueError("历史补录请选择今天以前的实际沟通日期")
     if (fields.next_date or fields.next_plan or fields.next_method or fields.development_stage
-            or fields.plan_assignee_user_id
+            or fields.next_steps or fields.disposition or fields.disposition_note or fields.plan_assignee_user_id
             or fields.close_task_ids or fields.resolved_items or followup.source_task_id
             or fields.shared_summary or fields.effective_progress or any(item.kind != "content" for item in fields.items)):
         raise ValueError("历史补录只保存沟通事实，请移除待办、共享摘要或当前进度变更")
@@ -76,13 +76,13 @@ def confirm_access(db, user, followup, fields):
     task = _assigned_task(db, user, customer.id, followup.source_task_id, lock=True)
     may_develop = visibility.can_write_customer(db, user, customer, lock=True)
     if not may_develop:
-        service_task = task and (task.task_type in ("receipt", "issue", "suggestion") or (
+        service_task = task and (task.task_type in ("action", "receipt", "issue", "suggestion") or (
             task.task_type == "plan" and task.purpose in ("maintenance", "other")
         ))
         if not service_task:
             visibility.ensure_customer_writable(db, user, customer.id, lock=True)
         if (fields.next_date or fields.next_plan or fields.next_method or fields.development_stage
-                or fields.plan_assignee_user_id
+                or fields.next_steps or fields.disposition or fields.disposition_note or fields.plan_assignee_user_id
                 or fields.effective_progress or fields.shared_summary
                 or set(fields.close_task_ids) - {task.id}
                 or any(resolved.item_id != task.source_item_id for resolved in fields.resolved_items)):
@@ -110,6 +110,25 @@ def plan_assignee(db, responsibility, fields):
             FollowupCollaborator, (responsibility.customer_id, selected), with_for_update={"read": True},
             populate_existing=True) is None:
         raise ValueError("计划承办人须为当前跟进负责人或正式协作人")
+    if not collaboration_access.qualified(db, selected, responsibility.customer_id, lock=True):
+        raise PermissionError("所选承办人已失去本客户跟进资格，请刷新")
+    return selected
+
+
+def action_assignee(db, responsibility, selected, *, actor_id):
+    target = selected or actor_id
+    if not visibility.holds(db, target, task_service.WRITE_PERMISSION):
+        raise ValueError("承办人不存在、已停用或没有客户跟进写权限")
+    if responsibility is None:
+        if selected and selected != actor_id:
+            raise ValueError("该客户没有跟进责任，他人承办人请线下转告")
+        return target
+    if selected is None:
+        return actor_id
+    if selected != responsibility.owner_user_id and db.get(
+            FollowupCollaborator, (responsibility.customer_id, selected), with_for_update={"read": True},
+            populate_existing=True) is None:
+        raise ValueError("行动承办人须为当前跟进负责人或正式协作人")
     if not collaboration_access.qualified(db, selected, responsibility.customer_id, lock=True):
         raise PermissionError("所选承办人已失去本客户跟进资格，请刷新")
     return selected

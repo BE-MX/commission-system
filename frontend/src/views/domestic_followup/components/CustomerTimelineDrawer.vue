@@ -35,6 +35,8 @@
         <div><dt>跟进频率</dt><dd>{{ data.customer.frequency_days ? `每 ${data.customer.frequency_days} 天` : '未设' }}</dd></div>
         <div><dt>未结异常</dt><dd>{{ data.open_items.length }}</dd></div>
       </dl>
+      <GlassButton v-if="data?.customer.writable || selected?.can_record" v-permission="'domestic_followup:write'" variant="outline" class="tl-record"
+                   @click="prepare">准备跟进</GlassButton>
       <GlassButton v-if="data?.customer.writable || selected?.can_record" v-permission="'domestic_followup:write'" variant="primary" class="tl-record"
                    @click="record">记一条跟进</GlassButton>
       <GlassButton v-if="data?.customer.can_record_history" v-permission="'domestic_followup:write'" variant="link" class="tl-record"
@@ -117,7 +119,7 @@ import CollaborationPanel from './CollaborationPanel.vue'
 import CustomerSummaryActions from './CustomerSummaryActions.vue'
 import CustomerDealStatus from './CustomerDealStatus.vue'
 
-const emit = defineEmits(['record', 'edit', 'history', 'changed'])
+const emit = defineEmits(['record', 'prep', 'edit', 'history', 'changed'])
 const auth = useAuthStore()
 const visible = ref(false)
 const data = ref(null)
@@ -144,6 +146,11 @@ function record(historical = false) {
   const customer = { ...selected.value, ...data.value?.customer, id: customerId.value, writable: true, responsibility_version: collaboration.value?.version }
   close()
   emit('record', customer, historical === true)
+}
+function prepare() {
+  const customer = { ...selected.value, ...data.value?.customer, id: customerId.value, writable: true }
+  close()
+  emit('prep', customer)
 }
 
 const isOverdue = computed(() => {

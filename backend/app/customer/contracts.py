@@ -262,6 +262,33 @@ _INFERRED_BEHAVIOR_FACT_KEYS = frozenset({
     "behavior.inferred.churn_risk",
 })
 
+# Private research has an explicit source/key allowlist. Provider records are server-bound.
+PRIVATE_WEB_RESEARCH_SOURCES = MappingProxyType({
+    "social_profile": ("research.source.social_profile", "verified_platform"),
+    "map_listing": ("research.source.map_listing", "verified_platform"),
+    "business_review": ("research.source.business_review", "secondary_public"),
+    "linkedin_company": ("research.source.linkedin_company", "verified_platform"),
+    "linkedin_person": ("research.source.linkedin_person_profile", "verified_platform"),
+    "professional_directory": ("research.source.professional_identity", "secondary_public"),
+    "personal_contact_page": ("research.source.personal_contact", "secondary_public"),
+    "customs_record": ("research.source.customs_record", "secondary_public"),
+    "business_registry": ("research.source.business_registry", "official_registry"),
+    "domain_registry": ("research.source.domain_registration", "secondary_public"),
+})
+PRIVATE_PROVIDER_RESEARCH_SOURCES = MappingProxyType({
+    ("username_scan", "maigret"): ("social_profile_candidate", "secondary_public"),
+    ("monid", "instagram"): ("social_profile", "verified_platform"),
+    ("monid", "tiktok"): ("social_profile", "verified_platform"),
+    ("monid", "facebook"): ("social_profile", "verified_platform"),
+    ("monid", "linkedin"): ("linkedin_person_profile", "verified_platform"),
+    ("monid", "hunter"): ("personal_contact", "secondary_public"),
+})
+_PRIVATE_RESEARCH_SOURCES = {
+    **{("public_web", entity): pair for entity, pair in PRIVATE_WEB_RESEARCH_SOURCES.items()},
+    **PRIVATE_PROVIDER_RESEARCH_SOURCES,
+}
+
+
 _NUMBER_VALUE_FACT_KEYS = frozenset({
     "preference.expressed.quantity",
     "preference.observed.order_size",
@@ -434,6 +461,16 @@ _fact_registry.update(_registrations(
     ttl_days=365,
     purposes=frozenset({"research"}),
 ))
+for _key in {key for key, _ in _PRIVATE_RESEARCH_SOURCES.values()}:
+    _fact_registry[_key] = FactRegistration(
+        value_types=frozenset({"object"}),
+        data_classification=DataClassification.PERSONAL_CONTACT,
+        allowed_sources=frozenset(source for source, pair in _PRIVATE_RESEARCH_SOURCES.items() if pair[0] == _key),
+        ttl_days=180,
+        conflict_key=_key,
+        allowed_purposes=frozenset({"research"}),
+        supports_high_impact=False,
+    )
 FACT_REGISTRY: Mapping[str, FactRegistration] = MappingProxyType(_fact_registry)
 del _fact_registry
 
@@ -483,6 +520,20 @@ SOURCE_REGISTRY_VERSION = "source_registry_v1"
 
 
 SOURCE_REGISTRY: Mapping[tuple[str, str], SourceRegistration] = MappingProxyType({
+    **{
+        source: SourceRegistration(
+            registry_version=SOURCE_REGISTRY_VERSION,
+            authority=authority,
+            publisher_key_rule="upstream_publisher",
+            source_family_key_rule="canonical_content_hash",
+            allowed_fact_keys=frozenset({key}),
+            default_classification=DataClassification.PERSONAL_CONTACT,
+            ttl_days=180,
+            promotion_ceiling="candidate",
+            collection_legal_basis="private customer research from publicly accessible evidence",
+        )
+        for source, (key, authority) in _PRIVATE_RESEARCH_SOURCES.items()
+    },
     ("okki", "customer"): SourceRegistration(
         registry_version=SOURCE_REGISTRY_VERSION,
         authority="transactional",

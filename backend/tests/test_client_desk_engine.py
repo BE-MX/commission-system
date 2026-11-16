@@ -127,6 +127,32 @@ def test_quota_stability_and_holdout():
     assert result[-1].codes == [rules.R4]
 
 
+def test_material_filter_and_profile_backoff_preserve_rule_reminders(db, configured, monkeypatch):
+    from app.client_desk import history_import
+
+    monkeypatch.setattr(history_import, "import_history", lambda *a: None)
+    monkeypatch.setattr(configured, "CLIENT_DESK_RULES", {"quota": 1})
+    inputs = [
+        source(1, order_count=0, created_at=DAY),
+        source(2, activity_at=NOW),
+        source(3, activity_at=NOW),
+        source(4, order_count=0, activity_at=NOW),
+    ]
+    monkeypatch.setattr(queue.sources, "scan_inputs", lambda *a: inputs)
+    queued(
+        db, company_id=2, biz_date=DAY - timedelta(days=1),
+        rule_codes=[rules.R4], status="rule_only", error_code="validation_failed", attempts=2,
+    )
+    queue.scan_user(db, 1, NOW)
+    db.commit()
+    rows = {r.company_id: r for r in queue.today_rows(db, 1, DAY)}
+    assert rows[1].status == "rule_only" and rows[1].display_eligible
+    assert rows[2].disposition == "analysis_backoff" and not rows[2].display_eligible
+    assert rows[3].status == "queued" and not rows[3].display_eligible
+    assert rows[4].disposition == "no_analysis_material" and not rows[4].display_eligible
+    assert queue.visible_suggestion(db, rows[1], inputs[0], None, NOW)["rule_codes"] == [rules.R8]
+
+
 def test_pack_validation_injection_and_truncation():
     s = source()
     s["messages"] = [
@@ -162,6 +188,100 @@ def test_pack_validation_injection_and_truncation():
     assert sum(len(m["content"]) for m in trimmed.messages) <= 24000
     with pytest.raises(ValueError):
         validator.validate(json.dumps(valid()), trimmed, DAY)
+
+
+@pytest.mark.parametrize("draft", [
+    "I'll ask your account manager for a swift reply. Is bank transfer an option?",
+    "Could we review the 2025-2026 orders on 2026-11-17?",
+    "Please check the metadata: sample received.",
+])
+def test_validation_accepts_normal_followup_language(draft):
+    p = pack.build_pack(source(), {}, [rules.R1], DAY)
+    value = valid()
+    value["suggestion"]["draft_message"] = draft
+    assert validator.validate(json.dumps(value), p, DAY)["suggestion"]["draft_message"] == draft
+
+
+@pytest.mark.parametrize("draft", [
+    "Call +1 (863) 555-0199",
+    "Use [details](data:text/html;base64,YQ==)",
+    "Please send payment to our account.",
+    "SWIFT DEUTDEFF",
+    "SWIFT - DEUTDEFF",
+    "swift deutdeff",
+    "BIC: deutdeff",
+    "Email unverified@example.test",
+])
+def test_validation_still_blocks_unsafe_followup_language(draft):
+    p = pack.build_pack(source(), {}, [rules.R1], DAY)
+    value = valid()
+    value["suggestion"]["draft_message"] = draft
+    with pytest.raises(ValueError, match="unsafe_output"):
+        validator.validate(json.dumps(value), p, DAY)
+
+
+def test_validation_distinguishes_truncation_and_safe_structure_details():
+    p = pack.build_pack(source(), {}, [rules.R1], DAY)
+    with pytest.raises(ValueError, match="non_json"):
+        validator.validate('{"brief_md":', p, DAY)
+    with pytest.raises(ValueError, match="truncated"):
+        validator.validate('{"brief_md":', p, DAY, finish_reason="length")
+    value = valid()
+    value["suggestion"]["strategy"] = 123
+    value["suggestion"]["untrusted-field@example.test"] = "customer content"
+    with pytest.raises(ValueError, match="invalid_structure") as exc:
+        validator.validate(json.dumps(value), p, DAY)
+    assert {"field": "suggestion.strategy", "type": "string_type"} in exc.value.issues
+    assert "example.test" not in str(exc.value.issues)
+    assert validator.validate("```json\n" + json.dumps(valid()) + "\n```", p, DAY)
+
+
+def test_deepseek_json_settings_and_finish_metadata_are_scoped(db, monkeypatch):
+    from app.ai import call_service
+    from app.ai.models import AiCallLog, AiPreset, AiProvider
+    from app.ai.text_snapshot import prepare_text_chat
+
+    for model in (AiProvider, AiPreset, AiCallLog):
+        model.__table__.create(db.get_bind())
+    provider = AiProvider(
+        name="DeepSeek", provider_type="direct", api_type="openai",
+        api_base="https://api.deepseek.com/v1", is_enabled=True,
+    )
+    db.add(provider)
+    db.flush()
+    preset = AiPreset(
+        preset_name="client_desk_daily", provider_id=provider.id, model="deepseek-flash",
+        parameters={"max_tokens": 1800}, is_enabled=True,
+    )
+    db.add(preset)
+    db.commit()
+    assert prepare_text_chat(db, preset.preset_name, 4000).preset.parameters == {"max_tokens": 1800}
+    assert prepare_text_chat(db, preset.preset_name, 4000, deepseek_json=True).preset.parameters["max_tokens"] == 1800
+    preset.parameters = {"max_tokens": 6000}
+    db.commit()
+
+    def post(url, *, body, timeout_sec, **kwargs):
+        assert body["max_tokens"] == 4000
+        assert body["response_format"] == {"type": "json_object"}
+        assert body["thinking"] == {"type": "disabled"}
+        assert timeout_sec == 60
+        return {"choices": [{
+            "finish_reason": "length",
+            "message": {"content": '{"brief_md":', "reasoning_content": "private reasoning"},
+        }]}
+
+    monkeypatch.setattr(call_service, "post_json", post)
+    snapshot = prepare_text_chat(db, preset.preset_name, 4000, deepseek_json=True)
+    result = call_service.chat(
+        db, preset.preset_name, [{"role": "system", "content": "JSON"}],
+        "client_desk", snapshot_mode="metadata", timeout_sec=85,
+        trusted_text_snapshot=snapshot,
+    )
+    assert (result["finish_reason"], result["reasoning_emitted"]) == ("length", True)
+    assert "private reasoning" not in db.query(AiCallLog).one().response_snapshot
+    provider.api_base = "https://gateway.example.test/v1"
+    db.commit()
+    assert prepare_text_chat(db, preset.preset_name, 4000, deepseek_json=True).preset.parameters == {"max_tokens": 4000}
 
 
 @pytest.fixture
@@ -298,7 +418,7 @@ def test_model_transactions(db, configured, monkeypatch, mode, expected, calls):
     monkeypatch.setattr(
         runner,
         "prepare_text_chat",
-        lambda *a: SimpleNamespace(
+        lambda *a, **kw: SimpleNamespace(
             provider=SimpleNamespace(id=5), preset=SimpleNamespace(system_prompt=None)
         ),
     )
@@ -309,7 +429,13 @@ def test_model_transactions(db, configured, monkeypatch, mode, expected, calls):
         n.append(1)
         if mode == "timeout":
             raise TimeoutError
-        return {"content": json.dumps(valid()) if mode != "invalid" else "oops"}
+        if mode == "invalid":
+            if len(n) > 1:
+                assert "输出超长" in params["messages"][-1]["content"]
+                assert "private model text" not in str(params["messages"])
+                return {"content": "oops", "finish_reason": "stop"}
+            return {"content": "private model text", "finish_reason": "length", "reasoning_emitted": True}
+        return {"content": json.dumps(valid()), "finish_reason": "stop"}
 
     monkeypatch.setattr(runner, "chat", chat)
     runner.run_job(db, job)
@@ -317,6 +443,10 @@ def test_model_transactions(db, configured, monkeypatch, mode, expected, calls):
     assert bool(r.draft_message) == (expected == "succeeded")
     if expected == "succeeded":
         assert db.query(State).one().last_applied_run == [str(DAY), 0]
+    if mode == "invalid":
+        assert r.error_code == "validation_failed"
+        assert [(step["attempt"], step["code"]) for step in r.agent_trace] == [(1, "truncated"), (2, "non_json")]
+        assert r.agent_trace[0]["reasoning_emitted"] is True
 
 
 def test_manual_three_and_idempotency(db, configured, monkeypatch):
@@ -334,6 +464,22 @@ def test_manual_three_and_idempotency(db, configured, monkeypatch):
     with pytest.raises(HTTPException) as err:
         queue.enqueue_manual(db, 1, 22, "other")
     assert err.value.status_code == 429
+
+
+def test_successful_r3_remains_visible_for_the_day_it_consumes_the_recheck(db, configured, monkeypatch):
+    db.add(State(user_id=1, company_id=1, recheck_date=DAY, recheck_condition="客户预计补货"))
+    r = queued(db, rule_codes=[rules.R3])
+    src = source()
+    monkeypatch.setattr(runner.sources, "analysis_input", lambda *a: src)
+    monkeypatch.setattr(runner, "prepare_text_chat", lambda *a, **kw: SimpleNamespace(
+        provider=SimpleNamespace(id=5), preset=SimpleNamespace(system_prompt=None)
+    ))
+    monkeypatch.setattr(runner, "chat", lambda *a, **kw: {"content": json.dumps(valid())})
+    runner.run_job(db, runner.claim(db, NOW))
+    state = db.query(State).one()
+    assert state.recheck_date is None and r.status == "succeeded"
+    assert queue.visible_suggestion(db, r, src, state, NOW)["rule_codes"] == [rules.R3]
+    assert queue.visible_suggestion(db, r, src, state, NOW + timedelta(days=1)) is None
 
 
 @pytest.mark.asyncio
@@ -453,7 +599,7 @@ def test_offline_p0_mask_and_rates():
         "active_customer": True,
     }
     rows = [
-        base,
+        base | {"rule_codes": [rules.R3, rules.R5], "display_eligible": True, "status": "succeeded", "priority": "high", "shown_at": str(NOW)},
         base | {"customer": "d", "cohort": "holdout", "communication_times": []},
     ]
     labels = [
@@ -461,6 +607,8 @@ def test_offline_p0_mask_and_rates():
         base | {"customer": "extra", "missed": True},
     ]
     result = metric.summarize(rows, labels, datetime(2026, 11, 7))
+    assert result["routine_rule_cards"] == result["routine_ai_cards"] == 1
+    assert result["recheck_exposure"]["rate"] == 1
     assert result["usefulness"]["rate"] == 1 and result["itt_difference"] == 1
     assert (
         result["supplemental_recall"]["rate"] == 0

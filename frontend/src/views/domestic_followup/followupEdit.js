@@ -12,10 +12,12 @@ export function recordToEditForm(record) {
     summary: record.summary || '', state_changes: [...(record.state_changes || [])],
     next_date: record.next_date, next_plan: record.next_plan, next_method: record.next_method,
     ...followupOutcome(record),
+    template_code: record.template_code || null, template_version: record.template_version || null,
+    template_answers: record.template_answers || { fields: {}, questions: [] },
     attachment_ids: record.attachments.map(a => a.id),
     items: record.items.map(item => ({
       id: item.id, kind: item.kind, text: item.text, category: item.category, severity: item.severity,
-      origin: item.origin, handler_user_id: item.handler_user_id,
+      origin: item.origin, nature: item.nature || null, handler_user_id: item.handler_user_id,
       record_only: item.status === 'closed_no_action' && (item.resolution || '').startsWith('仅记录'),
     })),
   }

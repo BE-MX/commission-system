@@ -34,9 +34,12 @@ URGENT = "紧急"
 ITEM_STATES = ("open", "handling", "resolved", "closed_no_action", "withdrawn")
 OPEN_ITEM_STATES = ("open", "handling")
 ORIGINS = ("user", "ai_inferred")
+FACT_NATURES = ("customer_said", "business_fact", "assessment", "to_confirm")
 OTHER_CATEGORY = "其他"
 
-TASK_TYPES = ("plan", "receipt", "issue", "suggestion")
+TASK_TYPES = ("plan", "action", "receipt", "issue", "suggestion")
+NEXT_STEP_BASES = ("customer_agreed", "our_commitment", "our_plan", "ai_suggestion")
+DISPOSITIONS = ("waiting_customer", "paused", "closed")
 TASK_STATUSES = ("todo", "done", "expired", "cancelled")
 
 CLOSE_RECEIPT_DONE = "回访完成"
@@ -44,6 +47,8 @@ CLOSE_NEW_FOLLOWUP = "有新跟进"
 CLOSE_ITEM_RESOLVED = "条目已解决"
 CLOSE_EXPIRED = "超时过期"
 CLOSE_RELEASED = "客户释放"
+CLOSE_ACTION_DONE = "已完成"
+CLOSE_ACTION_CANCELLED = "已取消"
 
 DRAFT_TTL_DAYS = 7
 RECEIPT_EXPIRE_AFTER_DAYS = 7

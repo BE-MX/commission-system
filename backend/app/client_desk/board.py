@@ -148,15 +148,38 @@ def compute_stage(order_count, last_order, last_touch, created_at, today=None):
 
 
 def research_report(research):
-    """Only reviewed customer_research_v1 claims reach salespeople.
+    """Project the latest visible research report without exposing storage internals."""
+    from app.sales_automation.private_research_policy import PRIVATE_RESEARCH_RESULT
 
-    Gap results, raw JSON and process fields are never exposed; an empty report
-    is a plain ``none`` status that the UI renders as "无背调结果".
-    """
     for row in research or []:
         result = row.get("result")
-        if not isinstance(result, dict):
+        review_status = row.get("review_status", "accepted")
+        if not isinstance(result, dict) or review_status not in (
+            "accepted", "not_required", "pending", "revision_requested"
+        ):
             continue
+        meta = {
+            "status": "ready",
+            "generated_at": row.get("updated_at"),
+            "source_count": len(result.get("citations") or []),
+            "event_key": row.get("event_key"),
+            "review_status": review_status,
+            "reviewed": review_status == "accepted",
+        }
+        if result.get("schema_version") == PRIVATE_RESEARCH_RESULT:
+            markdown = result.get("report_markdown")
+            if not isinstance(markdown, str) or not markdown.strip():
+                continue
+            statements = [
+                text for text in result.get("verified_claims") or []
+                if isinstance(text, str) and text.strip() and "待核实" not in text
+            ]
+            return {
+                **meta,
+                "report_markdown": markdown,
+                "verdict": statements[0][:160] if statements else "",
+                "sections": [{"key": "verified", "label": "有证据支持的结论", "statements": statements}] if statements else [],
+            }
         if result.get("schema_version") != "customer_research_v1":
             continue
         claims = [
@@ -181,20 +204,19 @@ def research_report(research):
             (s for s in sections if s["key"] == "strategy"), sections[0]
         )
         return {
-            "status": "ready",
+            **meta,
             "verdict": verdict_source["statements"][0][:160],
             "sections": sections,
-            "generated_at": row.get("updated_at"),
-            "source_count": len(result.get("citations") or []),
-            "event_key": row.get("event_key"),
-            "reviewed": True,
         }
     return {"status": "none"}
 
 
 def model_research(report):
     """Compact statements for the model; never the raw research document."""
-    if not report or report.get("status") != "ready":
+    if (
+        not report or report.get("status") != "ready" or not report.get("sections")
+        or ("report_markdown" not in report and report.get("review_status") not in ("accepted", "not_required"))
+    ):
         return None
     return {
         "verdict": report["verdict"],
@@ -364,8 +386,10 @@ def board(db, user, keyword=""):
     from app.client_desk.access import require_enabled
     from app.client_desk.models import ClientDeskState, ClientDeskSuggestion
     from app.client_desk.private_scope import list_private_companies, user_id
-    from app.client_desk.rules import REASONS, R4
+    from app.client_desk.queue import completed_recheck, state_data
+    from app.client_desk.rules import REASONS, R2, R3, R4, as_day, recheck_due
     from app.client_desk.source_context import list_last_touches
+    from app.client_desk.source_policy import manual_only, restricted_row
     from app.client_desk.sources import grade_options
     from app.invoice.models import CustomerProfile
     from app.invoice.product_service import _parse_ts, _schema
@@ -456,13 +480,28 @@ def board(db, user, keyword=""):
             and row.quality_feedback is None
             and not (row.snoozed_until and row.snoozed_until > today)
             and row.priority != "skip"
-            and set(row.rule_codes or []) - {R4}
+            and not restricted_row(row)
         )
-        pending[str(row.company_id)] = {
-            "open": bool(open_) or pending.get(str(row.company_id), {}).get("open", False),
-            "reasons": [REASONS[c] for c in row.rule_codes or [] if c in REASONS and c != R4],
-            "analysis_state": row.status if row.run_seq else None,
-        }
+        cid = str(row.company_id)
+        hint = pending.setdefault(cid, {})
+        hint["analysis_state"] = row.status if row.run_seq else None
+        if open_:
+            state = state_data(states.get(cid))
+            auto_state = {} if manual_only(state.get("brief_dependencies")) else state
+            cooldowns = auto_state.get("rule_cooldowns") or {}
+            due = state.get("next_followup_date")
+            codes = [
+                code for code in row.rule_codes or []
+                if code in REASONS and code != R4
+                and (not cooldowns.get(code) or as_day(cooldowns[code]) <= today)
+                and (code != R2 or (due and due <= today))
+                and (
+                    code != R3 or recheck_due(auto_state, today)
+                    or completed_recheck(row, auto_state, today)
+                )
+            ]
+            if codes:
+                hint.update(codes=codes, rank_score=float(row.rank_score or 0))
     items = []
     for card in cards:
         cid = card["company_id"]
@@ -501,8 +540,10 @@ def board(db, user, keyword=""):
                 "orders": summary,
                 "last_touch_at": touch_at,
                 "channel": channel,
-                "todo": hint.get("open", False),
-                "todo_reasons": hint.get("reasons", []),
+                "todo": bool(hint.get("codes")),
+                "todo_rule_codes": hint.get("codes", []),
+                "todo_reasons": [REASONS[c] for c in hint.get("codes", [])],
+                "todo_rank_score": hint.get("rank_score", 0),
                 "analysis_state": hint.get("analysis_state"),
             }
         )

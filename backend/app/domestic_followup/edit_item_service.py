@@ -45,6 +45,7 @@ def reconcile(db, followup, customer, incoming, existing, tasks, actor_id, old_d
             db.add(item)
         item.seq = seq[entry.kind]
         item.text = entry.text.strip()
+        item.nature = entry.nature
         if entry.kind != "content":
             item.category = entry.category
             item.severity = entry.severity or "一般"

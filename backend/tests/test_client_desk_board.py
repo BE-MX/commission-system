@@ -1,7 +1,7 @@
 """Private-sea board: research report, stage, AI tags and the controlled agent loop."""
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -43,6 +43,44 @@ def test_research_report_hides_gap_and_raw_documents():
     assert "gap_reason" not in flat and "input_hash" not in flat and "citation_id" not in flat
     compact = board.model_research(report)
     assert set(compact) == {"verdict", "sections"}
+
+
+@pytest.mark.parametrize("review_status", ["pending", "revision_requested", "accepted", "not_required"])
+def test_v2_report_reads_marked_document_and_model_tool_only_gets_evidenced_statements(review_status):
+    row = {
+        "id": "17",
+        "event_key": "research:17",
+        "review_status": review_status,
+        "result": {
+            "schema_version": "private_research_v2",
+            "report_markdown": "# 报告\n未确认 800 家门店〔待核实〕",
+            "claims": [{"statement": "未确认 800 家门店"}],
+            "verified_claims": ["公司设在大阪", "无依据陈述〔待核实〕"],
+            "citations": [{"citation_id": "source_a"}],
+        },
+    }
+    report = board.research_report([row])
+    assert report["report_markdown"] == row["result"]["report_markdown"]
+    assert report["review_status"] == review_status
+    assert report["reviewed"] is (review_status == "accepted")
+    compact = board.model_research(report)
+    assert compact["sections"] == [{"section": "verified", "statements": ["公司设在大阪"]}]
+    payload, refs, status = agent_tools.run_tool(
+        None, source(research_report=report, research_summary=compact, research=[row]), {}, "research_detail", {}
+    )
+    assert status == "ok"
+    assert refs["S-17"]["event_key"] == "research:17"
+    model_data = repr((compact, payload, refs))
+    assert "待核实" not in model_data and "800" not in model_data and "report_markdown" not in model_data
+
+
+def test_unreviewed_legacy_and_evidence_free_v2_display_but_do_not_feed_analysis():
+    for result in (RESEARCH, {"schema_version": "private_research_v2", "report_markdown": "# 缺口"}):
+        report = board.research_report([{"result": result, "review_status": "pending"}])
+        assert report["status"] == "ready"
+        assert board.model_research(report) is None
+        assert board.research_report([{"result": result, "review_status": "rejected"}]) == {"status": "none"}
+        assert board.research_report([{"result": result, "review_status": "superseded"}]) == {"status": "none"}
 
 
 @pytest.mark.parametrize(
@@ -101,7 +139,7 @@ def mock_model(monkeypatch, replies, sent):
     monkeypatch.setattr(
         runner,
         "prepare_text_chat",
-        lambda *a: SimpleNamespace(provider=SimpleNamespace(id=5), preset=SimpleNamespace(system_prompt=None)),
+        lambda *a, **kw: SimpleNamespace(provider=SimpleNamespace(id=5), preset=SimpleNamespace(system_prompt=None)),
     )
 
     def chat(db, **params):
@@ -162,7 +200,7 @@ def test_removed_tag_is_not_reapplied_and_vocabulary_excludes_it(db, configured,
     runner.run_job(db, runner.claim(db, NOW))
     assert '"custom_need"' not in sent[0][-1]["content"]
     # The removed code is not offered; emitting it fails validation and one correction follows.
-    assert len(sent) == 2 and runner.CORRECTION in sent[1][-1]["content"]
+    assert len(sent) == 2 and runner.CORRECTIONS["invalid_tags"] in sent[1][-1]["content"]
     state = db.query(State).one()
     assert state.ai_tags == [] and state.tag_overrides == ["custom_need"]
 
@@ -191,6 +229,7 @@ def test_inquiry_tool_requires_manual_selection():
     assert status == "ok" and "AF-7-1" in refs
     payload, refs, status = agent_tools.run_tool(None, source(orders=[]), {}, "order_items", {"order_id": "99"})
     assert status == "rejected"
+    assert "target" not in agent_tools.trace_step("order_items", status, NOW, {"order_id": "99"})
 
 
 def test_manual_tag_toggle_validates_dictionary(db, monkeypatch):
@@ -211,9 +250,8 @@ def test_manual_tag_toggle_validates_dictionary(db, monkeypatch):
 
 
 def test_board_projects_cards_stage_and_hides_tags_after_link_revoked(monkeypatch):
-    from sqlalchemy import text
     from tests.test_client_desk_business import isolated as business_fixture
-    from app.client_desk import source_context
+    from app.client_desk import rules, source_context
 
     gen = business_fixture.__wrapped__(monkeypatch)
     db = next(gen)
@@ -222,10 +260,14 @@ def test_board_projects_cards_stage_and_hides_tags_after_link_revoked(monkeypatc
         monkeypatch.setattr(source_context, "list_last_touches", lambda *a: {})
         monkeypatch.setattr("app.client_desk.access.require_enabled", lambda *a, **k: {"sub": "1"})
         monkeypatch.setattr("app.order_intelligence.service.VALID_ORDER_SQL", "1=1")
+        monkeypatch.setattr(board, "beijing_today", lambda: DAY)
         seed(db)
         db.add(State(user_id=1, company_id=801, manual_version=0,
+                     next_followup_date=DAY,
                      ai_tags=[{"code": "custom_need"}],
                      profile_dependencies={"deps": {"wa": []}}))
+        queued(db, company_id=801, rule_codes=[rules.R2, rules.R8], rank_score=5,
+               display_eligible=True)
         db.commit()
         out = board.board(db, {"sub": "1"})
         card = out["items"][0]
@@ -233,11 +275,14 @@ def test_board_projects_cards_stage_and_hides_tags_after_link_revoked(monkeypatc
         assert card["orders"]["count"] == 2 and card["orders"]["amount_usd"] == 20
         assert card["contact_name"] == "Anna" and card["stage"] in dict(board.STAGES)
         assert "custom_need" in [t["code"] for t in card["tags"]]
+        assert card["todo_rule_codes"] == [rules.R2, rules.R8] and card["todo_rank_score"] == 5
         state = db.query(State).one()
+        state.next_followup_date = DAY + timedelta(days=1)
         state.profile_dependencies = {"deps": {"wa": [{"account": "a", "link": 1, "version": 1, "generation": 1, "ai": True}]}}
         db.commit()
         card = board.board(db, {"sub": "1"})["items"][0]
         assert "custom_need" not in [t["code"] for t in card["tags"]]
+        assert card["todo_rule_codes"] == [rules.R8]
         assert board.board(db, {"sub": "1"}, keyword="nomatch")["items"] == []
     finally:
         gen.close()

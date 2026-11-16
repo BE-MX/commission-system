@@ -6,10 +6,11 @@ import {
   clipboardHasText, draftToForm, emptyForm, followupOutcome, formToPayload, imageFilesFromClipboard, imageFilesFromDrop,
   mergeManualFields, newRequestId, pollDecision, POLL_LIMIT, POLL_MS,
 } from '../followupDraft'
+import { manualPrimaryStep, nextStepValidation, normalizeNextSteps } from '../followupNextSteps'
 
 const MAX_ATTACHMENTS = 9
 
-export function useFollowupComposer({ onSaved, onClosed } = {}) {
+export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
   const visible = ref(false)
   const step = ref('input') // input | parsing | review
   const saving = ref(false)
@@ -19,6 +20,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   const customerOptions = ref([])
   const searching = ref(false)
   const openTasks = ref([])
+  const openActionTasks = ref([])
   const openItems = ref([])
   const aiFailed = ref(false)
   const taskOnly = ref(false)
@@ -42,7 +44,9 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   // 选项里查不到时不拦（后端仍会校验）；明确不可写才禁用确认
   const customerWritable = computed(() => selectedCustomer.value?.writable !== false)
   const needsPlanPurpose = computed(() => !!(form.value.responsibility_version && form.value.next_date && !taskOnly.value && !form.value.historical_only))
-  const canSave = computed(() => !loadingContext.value && customerWritable.value && (!needsPlanPurpose.value || Boolean(form.value.plan_purpose)))
+  const nextValidation = computed(() => nextStepValidation(form.value.nextSteps, Boolean(form.value.responsibility_version)))
+  const canSave = computed(() => !loadingContext.value && customerWritable.value && nextValidation.value.valid
+    && (!needsPlanPurpose.value || Boolean(form.value.plan_purpose)))
   watch(() => form.value.next_date, date => { if (!date) form.value.plan_assignee_user_id = null }, { flush: 'sync' })
 
   async function loadDicts() {
@@ -58,7 +62,17 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     stopPolling()
     revokePreviews()
     attachments.value = []
+    openTasks.value = []
+    openActionTasks.value = []
     form.value = { ...emptyForm(currentBeijingDate()), ...preset }
+    if (preset.prep) {
+      form.value.template_code = preset.prep.template_code
+      form.value.template_version = preset.prep.template_version
+      form.value.template_answers = {
+        fields: { ...(preset.prep.answers || {}) },
+        questions: (preset.prep.strategy?.key_questions || []).map(row => ({ q: row.q, answer: '', state: 'not_asked' })),
+      }
+    }
     customerOptions.value = preset.customer ? [preset.customer] : []
     if (preset.customer) form.value.customer_id = preset.customer.id
     step.value = 'input'
@@ -151,6 +165,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   async function loadCustomerContext(customerId, gen = pollGen) {
     const seq = ++contextSeq
     openTasks.value = []
+    openActionTasks.value = []
     openItems.value = []
     form.value.closeTaskIds = []
     form.value.resolvedItems = []  // 换客户后旧客户的勾选会让后端报「不属于该客户」
@@ -163,12 +178,14 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     if (!customerId || form.value.historical_only) return
     loadingContext.value = true
     try {
-      const [tasks, timeline] = await Promise.all([
+      const [tasks, timeline, actions] = await Promise.all([
         followupApi.tasks({ customer_id: customerId, scope: 'visible', due: 'all', page_size: 50 }),
         followupApi.timeline(customerId),
+        followupApi.tasks({ customer_id: customerId, scope: 'mine', status: 'todo', task_type: 'action', due: 'all', page_size: 50 }),
       ])
       if (seq !== contextSeq || gen !== pollGen) return  // 过期响应：客户已换或抽屉已关
       openTasks.value = tasks.items.filter(t => ['plan', 'receipt'].includes(t.task_type))
+      openActionTasks.value = actions.items
       openItems.value = timeline.open_items
       // AI 认出的客户不在搜索结果里时，用时间线头部补一个选项，下拉框才显示店名而不是 ID
       const head = timeline.customer
@@ -179,7 +196,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
       if (taskOnly.value) {
         openTasks.value = openTasks.value.filter(task => task.id === form.value.source_task_id)
         openItems.value = []
-        Object.assign(form.value, { next_date: null, next_plan: '', next_method: null, plan_purpose: null, shared_summary: null, effective_progress: false })
+        Object.assign(form.value, { next_date: null, next_plan: '', next_method: null, nextSteps: [], disposition: null, disposition_note: '', plan_purpose: null, shared_summary: null, effective_progress: false })
       }
       // 从待办发起或当天到期的回访/约定，默认勾「本次一并完成」
       form.value.closeTaskIds = openTasks.value
@@ -190,6 +207,11 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
         if (seq !== contextSeq || gen !== pollGen) return
         const primary = details.owner_user_id ? [{ user_id: details.owner_user_id, name: details.owner_name, primary: true }] : []
         planAssignees.value = [...primary, ...(details.collaborators || []).filter(person => person.user_id !== details.owner_user_id)]
+        form.value.nextSteps = form.value.nextSteps.map(step => {
+          if (step.owner !== 'named') return step
+          const match = planAssignees.value.find(person => person.name === step.owner_hint)
+          return { ...step, assignee_user_id: match?.user_id || null }
+        })
       }
     } catch (e) {
       if (seq !== contextSeq || gen !== pollGen) return
@@ -205,6 +227,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     attachment_ids: attachments.value.map(a => a.id).filter(Boolean),
     source: window.matchMedia?.('(max-width: 768px)').matches ? 'mobile' : 'web',
     source_task_id: form.value.source_task_id || null,
+    prep_id: form.value.prep_id || null,
   })
 
   async function saveDirect() {
@@ -214,12 +237,13 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     if (form.value.historical_only && form.value.followup_date >= currentBeijingDate()) return msgWarning('请选择今天以前的实际沟通日期')
     saving.value = true
     try {
-      await followupApi.directSave({
+      const saved = await followupApi.directSave({
         ...basePayload(), ...formToPayload(form.value),
         // 输入步看不到待办列表：只关闭发起本次记录的那张，别悄悄关掉用户没看到的
         close_task_ids: form.value.source_task_id ? [form.value.source_task_id] : [],
         resolved_items: [],
       })
+      if (saved.warnings?.length) msgWarning(saved.warnings.join('；'))
       finish('跟进已保存')
     } catch (e) { msgError(apiError(e, '保存失败'), e) } finally { saving.value = false }
   }
@@ -232,6 +256,8 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
       const draft = await followupApi.createDraft({
         ...basePayload(), customer_id: form.value.customer_id || null,
         followup_date: form.value.followup_date, channel: form.value.channel,
+        template_code: form.value.template_code || null, template_version: form.value.template_version || null,
+        template_answers: form.value.template_answers || null,
         ...followupOutcome(form.value),
       })
       if (gen !== pollGen) return  // 等接口时抽屉已关
@@ -277,10 +303,16 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   async function applyDraft(draft, gen = pollGen) {
     if (gen !== pollGen) return
     form.value = mergeManualFields(draftToForm(draft, currentBeijingDate()), manualFields)
+    const manualPrimary = manualPrimaryStep(manualFields)
+    if (manualPrimary) form.value.nextSteps = normalizeNextSteps([manualPrimary, ...form.value.nextSteps])
     attachments.value = attachments.value.map(a => ({ ...a, ...(draft.attachments.find(d => d.id === a.id) || {}) }))
     aiFailed.value = draft.ai_status !== 'done'
     if (aiFailed.value) msgWarning(draft.ai_error || 'AI 整理未完成，请参考截图文字手动填写')
     step.value = 'review'
+    if (form.value.prep_id && !form.value.prep) {
+      try { form.value.prep = await followupApi.prep(form.value.prep_id) }
+      catch (e) { msgWarning('准备卡暂时无法读取，提交时会重新核验关联') }
+    }
     await loadCustomerContext(form.value.customer_id, gen)
     if (gen === pollGen) {
       if (manualFields?.customer_id === form.value.customer_id && !taskOnly.value) {
@@ -304,7 +336,8 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     if (!canSave.value) return
     saving.value = true
     try {
-      await followupApi.confirmDraft(form.value.id, { version: form.value.version, ...formToPayload(form.value) })
+      const saved = await followupApi.confirmDraft(form.value.id, { version: form.value.version, ...formToPayload(form.value) })
+      if (saved.warnings?.length) msgWarning(saved.warnings.join('；'))
       finish('跟进已确认')
     } catch (e) {
       if (e?.response?.status === 409) {
@@ -334,6 +367,12 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     close()
   }
 
+  function changePrep() {
+    const customer = selectedCustomer.value || form.value.customer
+    close()
+    onChangePrep?.({ customer, source_task_id: form.value.source_task_id || null })
+  }
+
   function finish(message) {
     if (message) msgSuccessText(message)
     close()
@@ -353,7 +392,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   }
 
   const addRow = (section, kind) => form.value[section].push(kind === 'content'
-    ? { text: '', origin: 'user' }
+    ? { text: '', origin: 'user', nature: null, source: {} }
     : { text: '', category: null, severity: '一般', origin: 'user', record_only: false })
 
   function toggleResolved(item, checked) {
@@ -389,8 +428,8 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
 
   return {
     visible, step, saving, uploading, canSubmit, canSave, customerWritable, taskOnly, needsPlanPurpose, planAssignees, dicts, loadDicts, form, attachments,
-    customerOptions, searching, openTasks, openItems, aiFailed,
+    customerOptions, searching, openTasks, openActionTasks, openItems, aiFailed, nextValidation,
     reviewDirty, open, resume, close, handleClosed, uploadAttachment, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, selectProspect,
-    loadCustomerContext, saveDirect, startAi, confirm, discard, addRow, toggleResolved,
+    loadCustomerContext, saveDirect, startAi, confirm, discard, addRow, toggleResolved, changePrep,
   }
 }

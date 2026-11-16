@@ -8,7 +8,7 @@
       <li v-for="(step, index) in steps" :key="index" :class="step.status">
         <span class="mark" aria-hidden="true">{{ marks[step.status] || '·' }}</span>
         <span>{{ step.label }}<template v-if="step.target"> · 订单 {{ step.target }}</template></span>
-        <span class="muted">{{ statusText[step.status] || '' }}</span>
+        <span class="muted">{{ step.status === 'invalid' ? validationText[step.code] || '结果校验失败' : statusText[step.status] || '' }}</span>
       </li>
       <li v-if="busy" class="pending"><span class="mark spinner" aria-hidden="true" /><span>{{ run.status === 'queued' ? '等待模型空闲' : '正在思考下一步' }}</span></li>
     </ol>
@@ -21,12 +21,13 @@
 import { computed } from 'vue'
 
 const props = defineProps({ run: { type: Object, default: null } })
-const marks = { ok: '✓', empty: '○', rejected: '×', limit: '!' }
+const marks = { ok: '✓', empty: '○', rejected: '×', invalid: '×', limit: '!' }
 const statusText = { empty: '无可用资料', rejected: '超出可读范围', limit: '资料已达上限' }
+const validationText = { truncated: '输出被截断', non_json: '输出格式无效', invalid_structure: '结果字段不符合要求', unsafe_output: '内容未通过安全检查' }
 const NOTES = {
   ambiguous: '模型调用结果未确认，系统不会自动重试；本次次数已计入。',
   call_uncertain: '模型调用结果未确认，系统不会自动重试；本次次数已计入。',
-  validation_failed: '模型结果未通过证据与安全检查，已保留规则提醒。',
+  validation_failed: '模型结果校验失败，已保留规则提醒。',
   source_changed: '分析期间资料或授权发生变化，结果未采用，请重新分析。',
   personal_state_changed: '分析期间你修改了备注或跟进日期，结果未采用，请重新分析。',
   feedback_recorded: '你已处理今天的建议，本次结果未覆盖。',
@@ -47,7 +48,7 @@ ol { display: grid; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
 li { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 8px; font-size: 13px; }
 .mark { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--tag-success-bg); color: var(--tag-success-text); font-size: 11px; font-weight: 700; }
 .empty .mark, .limit .mark { background: var(--tag-neutral-bg); color: var(--tag-neutral-text); }
-.rejected .mark { background: var(--tag-danger-bg); color: var(--tag-danger-text); }
+.rejected .mark, .invalid .mark { background: var(--tag-danger-bg); color: var(--tag-danger-text); }
 .spinner { border: 2px solid var(--metric-violet-bg); border-top-color: var(--metric-violet-ink); background: transparent; animation: spin 900ms linear infinite; }
 .note { margin: 10px 0 0; color: var(--button-warning-text); font-size: 12px; }
 @keyframes spin { to { transform: rotate(360deg); } }

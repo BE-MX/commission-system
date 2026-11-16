@@ -25,6 +25,8 @@ def end_for_follow_release(db: Session, customer_ids: list[int]) -> None:
     if not customer_ids:
         return
     now = beijing_now()
+    from app.domestic_followup import prep_service
+    prep_service.expire_for_owner_change(db, customer_ids)
     with db.no_autoflush:
         for responsibility in db.scalars(select(FollowupResponsibility).where(
                 FollowupResponsibility.customer_id.in_(customer_ids)).with_for_update()):
@@ -43,7 +45,7 @@ def end_for_follow_release(db: Session, customer_ids: list[int]) -> None:
             handoff.handling_reason = FOLLOW_RELEASE_REASON
         for task in db.scalars(select(DomesticFollowupTask).where(
                 DomesticFollowupTask.customer_id.in_(customer_ids), DomesticFollowupTask.status == "todo",
-                DomesticFollowupTask.task_type.in_(OWNER_BOUND_TYPES)).with_for_update()):
+                DomesticFollowupTask.task_type.in_(OWNER_BOUND_TYPES + ("action",))).with_for_update()):
             task.status = "cancelled"
             task.closed_reason = CLOSE_RELEASED
             task.closed_at = now

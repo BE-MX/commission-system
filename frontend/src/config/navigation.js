@@ -188,9 +188,9 @@ export const MENU_GROUPS = {
     // 覆盖全部子项权限：任一子页可见则分组可见（此前漏 ai:admin/external_binding
     // 会让只有这些权限的用户看不到整个分组）
     anyPermission: [
-      'user:read', 'role:read', 'dict:read', 'ai:admin', 'navigation:read',
+      'user:read', 'role:read', 'dict:read', 'ai:admin', 'navigation:read', 'domestic_followup:admin',
       'mcp:admin', 'integration:admin', 'commerce_transition:admin',
-      'operations:read', 'operations:admin',
+      'operations:read', 'operations:admin', 'sales_monid_spend:read',
       'dingtalk:admin',
       'external_binding:read', 'external_binding:write',
       'whatsapp:read', 'whatsapp:write',
@@ -1391,8 +1391,8 @@ export const NAV_ENTRIES = [
     title: 'AI 工作台',
     anyPermission: ['design_image:read', 'ai_chat:read'],
     menu: {
-      group: 'design', title: 'AI 工作台', icon: Picture, order: 5,
-      anyPermission: ['design_image:read', 'ai_chat:read'],
+      group: 'design', title: 'AI 生图', icon: Picture, order: 5,
+      permission: 'design_image:read',
     },
   },
   {
@@ -1412,8 +1412,7 @@ export const NAV_ENTRIES = [
     component: () => import('@/views/design/ai-chat/AiChat.vue'),
     title: 'AI 工作台',
     permission: 'ai_chat:read',
-    activeMenu: '/design/image-studio',
-    hideInMenu: true,
+    menu: { title: 'AI 工作台', icon: ChatDotRound, order: 4, permission: 'ai_chat:read' },
   },
   {
     path: '/design/gantt',
@@ -1571,6 +1570,17 @@ export const NAV_ENTRIES = [
 
   // ── 系统管理 ───────────────────────────────────────────
   {
+    path: '/system/monid-spend',
+    name: 'MonidSpend',
+    component: () => import('@/views/system/MonidSpend.vue'),
+    title: 'Monid 花费',
+    permission: 'sales_monid_spend:read',
+    menu: {
+      group: 'system', title: 'Monid 花费', icon: Money, order: 79,
+      permission: 'sales_monid_spend:read',
+    },
+  },
+  {
     path: '/system/component-showcase',
     name: 'ComponentShowcase',
     component: () => import('@/views/system/ComponentShowcase.vue'),
@@ -1610,6 +1620,14 @@ export const NAV_ENTRIES = [
       group: 'system', title: '基础字典', icon: Notebook, order: 30,
       permission: 'dict:read',
     },
+  },
+  {
+    path: '/system/followup-templates',
+    name: 'DomesticFollowupTemplates',
+    component: () => import('@/views/domestic_followup/FollowupTemplates.vue'),
+    title: '跟进模板',
+    permission: 'domestic_followup:admin',
+    menu: { group: 'system', title: '跟进模板', icon: Notebook, order: 32, permission: 'domestic_followup:admin' },
   },
   {
     path: '/system/ai',

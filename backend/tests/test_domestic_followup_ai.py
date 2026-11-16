@@ -308,3 +308,56 @@ def test_relative_dates_are_based_on_followup_date_for_backfilled_chats(db, monk
     assert context["today"] == "2026-10-30 周五" and context["followup_date"] == "2026-10-20"
     assert followup.ai_result["next"]["date"] == "2026-10-21"
     assert followup.ai_result["next"]["basis"] == "mismatch"
+
+
+def test_next_steps_verify_sources_dates_and_default_selection(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_ai_steps")
+    followup = _draft(db, user, "ai-steps")
+    followup.raw_text = "客户说下周四前给方案。我答应周四前发技术方案。"
+    db.commit()
+    att_id = _attachment(db, followup, user, monkeypatch)
+    monkeypatch.setattr(ai_parse_service, "chat", lambda **k: {"content": json.dumps({
+        "summary": "已约定方案",
+        "next_steps": [
+            {"text": "回访方案", "basis": "customer_agreed", "trigger": "date", "date": "2026-11-05",
+             "source": {"kind": "raw_text", "excerpt": "客户说下周四前给方案"}},
+            {"text": "协调技术", "basis": "our_commitment", "trigger": "date", "date": "2026-11-04",
+             "source": {"kind": "raw_text", "excerpt": "我答应周四前发技术方案"}},
+            {"text": "截图里的约定", "basis": "customer_agreed", "trigger": "event", "event": "方案发出后",
+             "source": {"kind": "attachment", "attachment_index": 0, "excerpt": "周四前给方案"}},
+            {"text": "无出处建议", "basis": "customer_agreed", "trigger": "date", "date": "2026-11-06",
+             "source": {"kind": "raw_text", "excerpt": "原文根本没有这句话"}},
+        ],
+        "ocr": [{"attachment_index": 0, "text": "周四前给方案"}],
+    }, ensure_ascii=False)})
+    _run(db, followup, user)
+    steps = followup.ai_result["next_steps"]
+    assert steps[0]["default_selected"] is True and steps[0]["source"]["verified"] is True
+    assert steps[1]["default_selected"] is False and steps[1]["commitment_advice"] is True
+    assert steps[2]["default_selected"] is False and steps[2]["source"]["label"] == "截图转写·待核"
+    assert steps[3]["basis"] == "ai_suggestion" and steps[3]["default_selected"] is False
+    assert steps[0]["step_key"] and len({step["step_key"] for step in steps}) == 4
+
+
+def test_legacy_next_does_not_duplicate_next_steps_or_drop_fourth(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_ai_next_dedup")
+    followup = _draft(db, user, "ai-next-dedup")
+    steps = [{"text": f"步骤{i}", "basis": "ai_suggestion", "trigger": "date", "date": "2026-11-05"} for i in range(4)]
+    monkeypatch.setattr(ai_parse_service, "chat", lambda **k: {"content": json.dumps({
+        "next": {"plan": "步骤0", "date": "2026-11-05"}, "next_steps": steps,
+    })})
+    _run(db, followup, user)
+    assert [step["text"] for step in followup.ai_result["next_steps"]] == ["步骤0", "步骤1", "步骤2", "步骤3"]
+
+
+def test_ai_facts_default_to_ai_inferred_origin(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_ai_fact_origin")
+    followup = _draft(db, user, "ai-fact-origin")
+    monkeypatch.setattr(ai_parse_service, "chat", lambda **k: {"content": json.dumps({
+        "facts": [{"text": "模型推断的判断", "nature": "assessment"}],
+    }, ensure_ascii=False)})
+    _run(db, followup, user)
+    assert followup.ai_result["items"][0]["origin"] == "ai_inferred"
