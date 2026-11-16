@@ -11,13 +11,22 @@ from app.ai_chat import file_service, router, service
 from app.ai_chat.file_service import StoredAttachment
 from app.ai_chat.models import AiChatMessage, AiChatSession
 from app.auth.dependencies import get_current_user
-from app.auth.models import ArkUser
+from app.auth.models import ArkUser, ArkRole, ArkUserRole, ArkPermission, ArkRolePermission
 from app.core.database import get_db
 
 
 def _seed_user(db, username="router-owner"):
     user = ArkUser(username=username, password_hash="test", real_name=username)
     db.add(user)
+    role = db.query(ArkRole).filter_by(name='chat_writer').first()
+    if role is None:
+        role = ArkRole(name='chat_writer', label='Writer')
+        permission = ArkPermission(code='ai_chat:write', module='ai_chat', action='write', label='Write')
+        db.add_all([role, permission])
+        db.flush()
+        db.add(ArkRolePermission(role_id=role.id, permission_id=permission.id))
+    db.flush()
+    db.add(ArkUserRole(user_id=user.id, role_id=role.id))
     db.commit()
     return user
 

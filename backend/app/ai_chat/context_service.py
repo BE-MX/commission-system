@@ -87,7 +87,13 @@ def build_context(
         newer.content != "",
         newer.id > AiChatMessage.id,
     ).exists()
-    query = query.filter(~superseded)
+    parent = aliased(AiChatMessage)
+    selected = db.query(parent.id).filter(parent.id == AiChatMessage.reply_to_message_id,
+        parent.session_id == AiChatMessage.session_id,
+        parent.selected_answer_id == AiChatMessage.id).exists()
+    has_selection = db.query(parent.id).filter(parent.id == AiChatMessage.reply_to_message_id,
+        parent.session_id == AiChatMessage.session_id, parent.selected_answer_id.is_not(None)).exists()
+    query = query.filter(or_(AiChatMessage.role == "user", selected, and_(~has_selection, ~superseded)))
     if through_user_id is not None:
         query = query.filter(AiChatMessage.id <= through_user_id)
     if exclude_assistant_id is not None:

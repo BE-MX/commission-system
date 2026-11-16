@@ -16,6 +16,15 @@
       </el-select>
       <div v-if="error" class="form-hint" role="alert">{{ error }} <el-button link @click="loadRoles">重试</el-button></div>
     </el-form-item>
+    <el-form-item label="估算 token 费用">
+      <el-switch :model-value="Boolean(parameters?.chat?.pricing)" @update:model-value="update('pricing', $event ? { currency: 'USD', input_per_million: '0', output_per_million: '0' } : null)" />
+      <div class="form-hint">可选。按每百万 token 配置，历史调用保留当时价格；关闭开关表示未计价，0 表示免费。</div>
+    </el-form-item>
+    <template v-if="parameters?.chat?.pricing">
+      <el-form-item label="币种"><el-select :model-value="parameters.chat.pricing.currency" @update:model-value="price('currency', $event)"><el-option value="USD" label="USD" /><el-option value="CNY" label="CNY" /></el-select></el-form-item>
+      <el-form-item label="每百万输入 token"><el-input-number :model-value="Number(parameters.chat.pricing.input_per_million)" :min="0" :max="1000000" :precision="6" @update:model-value="price('input_per_million', String($event ?? ''))" /></el-form-item>
+      <el-form-item label="每百万输出 token"><el-input-number :model-value="Number(parameters.chat.pricing.output_per_million)" :min="0" :max="1000000" :precision="6" @update:model-value="price('output_per_million', String($event ?? ''))" /></el-form-item>
+    </template>
   </template>
 </template>
 
@@ -34,6 +43,7 @@ function update(key, value) {
   if (!parameters.value) return
   emit('update:modelValue', JSON.stringify({ ...parameters.value, chat: { ...parameters.value.chat, [key]: value } }, null, 2))
 }
+function price(key, value) { update('pricing', { ...parameters.value.chat.pricing, [key]: value }) }
 async function loadRoles() {
   loading.value = true
   error.value = ''

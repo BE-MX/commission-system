@@ -4,9 +4,11 @@
 def validate_chat_options(value) -> None:
     if not isinstance(value, dict):
         raise ValueError("chat 必须是 JSON 对象")
-    unknown = set(value) - {"enabled", "label", "vision", "allowed_roles"}
+    unknown = set(value) - {"enabled", "label", "vision", "allowed_roles", "pricing"}
     if unknown:
         raise ValueError("未知的聊天配置字段：" + ", ".join(sorted(unknown)))
+    from app.ai_chat.billing import pricing_options
+    pricing_options(value.get('pricing'))
     for key in ("enabled", "vision"):
         if key in value and type(value[key]) is not bool:
             raise ValueError(f"chat.{key} 必须是布尔值")
@@ -20,6 +22,7 @@ def validate_chat_options(value) -> None:
 
 
 def chat_options(preset) -> dict:
+    from app.ai_chat.billing import pricing_options
     value = (preset.parameters or {}).get("chat", {})
     validate_chat_options(value)
     legacy = preset.preset_name == "customer_ai_chat"
@@ -28,4 +31,5 @@ def chat_options(preset) -> dict:
         "label": value.get("label", "").strip() or preset.model,
         "vision": value.get("vision", legacy),
         "allowed_roles": value.get("allowed_roles", []),
+        "pricing": pricing_options(value.get('pricing')),
     }

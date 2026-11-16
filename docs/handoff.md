@@ -1359,3 +1359,10 @@ Annual amount release b59 hit the existing 30-second startup budget, followed by
 - 独立分支 `codex/universal-ai-chat` / `D:/MyProgram/commission-system-codex-universal-ai-chat`：平台入口、每轮选模型、回答模型标识、推理折叠、复制/重生成、会话分页/改名/软删除和每日额度已实现。管理端通过预设开放模型、图片能力和角色。
 - 迁移 265 保留旧历史；生成前重新核验模型配置及角色。隔离 MySQL 4 项、最终模型/生命周期/共享调用 80 项、补充模型/时区 20 项、前端状态与导航 46 项通过；批次有重叠，不累加唯一数量。构建、桌面/窄屏浏览器验收通过。两项原有草稿附件清理失败单列。
 - 用户已授权提交、合并 main 并推送 origin，结果以远端回读为准；明确暂不部署，未接生产或真实模型。进程强杀后的 streaming 恢复仍是已知边界。临时数据库已停止，目录清理被自动审批审查拒绝后保留。配置、证据与发布前置见 [交付记录](reports/2026-11-16-universal-ai-chat.md)。
+
+## 2026-11-16 AI 工作台第二版（Codex，已授权 Git 交付，未部署）
+
+- 独立 `codex/ai-chat-v2` / `D:/MyProgram/commission-system-codex-ai-chat-v2` 完成前四项：真实双协议联调、租约/检查点恢复、回答版本与继续生成、用量/费用估算和角色日额度。迁移 266 保留历史；没有改生产配置或运行生产迁移。
+- 后端扩展 261 passed / 1 平台符号链接能力 skip，最终增量 35 passed（批次重叠，不累加）；隔离 MySQL 6 passed，前端 47 passed，生产构建与增量约定通过。子进程硬退出后重开恢复、迟到写入防护及浏览器桌面/375px 窄屏已验。
+- 19 次合成内容实际请求：DeepSeek 与备用 Anthropic 配置通过；原 `claude-fable-5` 预设返回上游 HTTP 错误，后续发布前仍须调整/复验。停止不保证供应商停止计费，部分用量不误作完整账单。详见[第二版交付与限制](reports/2026-11-16-ai-chat-v2.md)。
+- 用户后续已授权提交、合并 main 和推送 origin，结果以远端回读为准；暂不部署，临时 MySQL 与浏览器服务已停止。自动审批审查拒绝临时数据库目录清理，按拦截保留。首版历史交付状态不代表本轮已经发布。

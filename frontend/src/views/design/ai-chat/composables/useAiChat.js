@@ -9,7 +9,7 @@ import {
   getConfig,
   getSession,
   listSessions,
-  streamRetry,
+  streamRetry, streamContinue, selectAnswer,
   streamTurn,
   uploadAttachment,
 } from '@/api/aiChat'
@@ -79,6 +79,7 @@ export function useAiChat() {
   const modelIssue = computed(() => {
     if (!selectedModel.value) return config.value.configured ? '请选择一个可用模型' : ''
     if (!selectedModel.value.vision && [...draftAttachments.value, ...messages.value.flatMap(message => message.attachments || [])].some(item => item.attachment_type === 'image')) return '本会话包含图片，请选择支持图片的模型，或新建纯文字对话'
+    if (config.value.usage?.limit === 0) return '当前角色已暂停生成，请联系管理员调整额度'
     if (config.value.usage?.remaining === 0) return '今日对话次数已用完，北京时间零点恢复'
     return ''
   })
@@ -86,7 +87,7 @@ export function useAiChat() {
     && Boolean(selectedModel.value) && !modelIssue.value
     && !busy.value
     && !sessionLoading.value
-    && !uploadsPending.value
+    && !uploadsPending.value && !draftAttachments.value.some(item => item.status === 'failed')
     && modeCanSubmit({ mode: modes.selected.value, prompt: prompt.value, attachments: draftAttachments.value,
       loading: modes.loading.value, error: modes.error.value, locked: modes.locked.value }))
   const currentSession = computed(() => (
@@ -189,6 +190,8 @@ export function useAiChat() {
   }
 
   async function removeDraft(attachmentId) {
+    const expectedWorkspace = workspaceGeneration
+    const sessionId = currentSessionId.value
     const index = draftAttachments.value.findIndex(item => item.id === attachmentId)
     if (index === -1) return
     const [removed] = draftAttachments.value.splice(index, 1)
@@ -196,8 +199,10 @@ export function useAiChat() {
     try {
       await deleteAttachment(attachmentId)
     } catch (deleteError) {
-      draftAttachments.value.splice(index, 0, removed)
-      throw deleteError
+      if (expectedWorkspace !== workspaceGeneration || currentSessionId.value !== sessionId) return
+      if ((deleteError?.status || deleteError?.response?.status) === 404) return
+      draftAttachments.value.splice(index, 0, { ...removed, status: 'failed' })
+      msgError('附件未清理完成，请再次移除后发送', deleteError)
     }
   }
 
@@ -261,7 +266,7 @@ export function useAiChat() {
       const current = messages.value.find(message => message.id === targetId)
       updateAssistant(targetId, { content: `${current?.content || ''}${data.text || ''}` })
     } else if (frame.event === 'done') {
-      updateAssistant(targetId, { status: data.status || 'completed', error_message: null })
+      updateAssistant(targetId, { status: data.status || 'completed', error_message: null, finish_reason: data.finish_reason })
       streaming.value = false
     } else if (frame.event === 'error') {
       const message = data.message || '生成失败，请重试'
@@ -292,9 +297,10 @@ export function useAiChat() {
     }
   }
 
-  async function runStream({ retryMessageId = null } = {}) {
-    if (!canWrite.value || busy.value || !selectedModel.value || modelIssue.value) return
-    const presetId = selectedPresetId.value
+  async function runStream({ retryMessageId = null, continuation = false } = {}) {
+    if (!canWrite.value || busy.value) return
+    if (continuation ? !canContinue(messages.value.find(item => item.id === retryMessageId)) : !selectedModel.value || modelIssue.value) return
+    const presetId = continuation ? messages.value.find(item => item.id === retryMessageId)?.model?.preset_id : selectedPresetId.value
     const composerPrompt = prompt.value
     const mode = modes.selected.value
     const content = composerPrompt.trim() || (!modes.locked.value ? mode?.start_text || '' : '')
@@ -312,7 +318,7 @@ export function useAiChat() {
       preset_id: presetId, content, attachment_ids: outgoing.map(item => item.id),
       mode_id: mode?.id || null, mode_version: mode?.version || null,
     }
-    const fingerprint = JSON.stringify([retryMessageId, body])
+    const fingerprint = JSON.stringify([retryMessageId, continuation, body])
     const previous = pendingRequests.get(sessionId)
     const requestBody = { ...body, request_id: previous?.fingerprint === fingerprint ? previous.requestId : requestId() }
     pendingRequests.set(sessionId, { fingerprint, requestId: requestBody.request_id })
@@ -353,7 +359,8 @@ export function useAiChat() {
           expectedWorkspace,
         ),
       }
-      if (retryMessageId) await streamRetry(retryMessageId, requestBody, options)
+      if (continuation) await streamContinue(retryMessageId, requestBody, options)
+      else if (retryMessageId) await streamRetry(retryMessageId, requestBody, options)
       else await streamTurn(sessionId, requestBody, options)
       if (generation !== streamGeneration || expectedWorkspace !== workspaceGeneration) return
       streaming.value = false
@@ -399,6 +406,26 @@ export function useAiChat() {
     if (!canWrite.value || streaming.value) return
     try { await runStream({ retryMessageId: messageId }) }
     catch (retryError) { msgError(errorMessage(retryError), retryError) }
+  }
+
+  function canContinue(message) {
+    return Boolean(message && config.value.models?.some(model => model.preset_id === message.model?.preset_id)
+      && (config.value.usage?.remaining ?? 1) > 0)
+  }
+
+  async function continueAnswer(messageId) {
+    try { await runStream({ retryMessageId: messageId, continuation: true }) }
+    catch (failure) { msgError(errorMessage(failure), failure) }
+  }
+
+  async function adoptAnswer(message) {
+    if (busy.value || !canWrite.value) return
+    const sessionId = currentSessionId.value
+    const expectedWorkspace = workspaceGeneration
+    try {
+      await selectAnswer(message.reply_to_message_id, message.id)
+      await loadDetail(sessionId, expectedWorkspace, null, true)
+    } catch (failure) { msgError(errorMessage(failure), failure) }
   }
 
   async function stop() {
@@ -557,7 +584,7 @@ export function useAiChat() {
     removeDraft,
     send,
     stop,
-    retry,
+    retry, continueAnswer, adoptAnswer, canContinue,
     newConversation,
     selectSession,
     refreshCurrent,

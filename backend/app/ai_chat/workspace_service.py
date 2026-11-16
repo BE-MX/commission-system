@@ -10,9 +10,9 @@ from app.ai.chat_config import chat_options
 from app.ai.models import AiPreset, AiProvider
 from app.ai.preset_config import is_image_preset, is_studio_preset
 from app.ai.service import freeze_text_call_config
-from app.ai_chat import service
+from app.ai_chat import service, generation_service, management_service
 from app.ai_chat.models import AiChatAttachment, AiChatMessage, AiChatSession
-from app.auth.models import ArkRole, ArkUser, ArkUserRole
+from app.auth.models import ArkRole, ArkUser, ArkUserRole, ArkPermission, ArkRolePermission
 from app.core.config import get_settings
 from app.core.time import beijing_now
 
@@ -74,7 +74,7 @@ def _snapshot(preset, provider):
     options = chat_options(preset)
     return {"preset_id": preset.id, "preset_name": preset.preset_name,
             "label": options["label"], "model": preset.model, "vision": options["vision"],
-            "config_version": _version(preset, provider)}
+            "pricing": options["pricing"], "config_version": _version(preset, provider)}
 
 
 def list_models(db, owner_id):
@@ -91,11 +91,12 @@ def usage(db, owner_id):
         AiChatSession.owner_user_id == owner_id, AiChatMessage.role == "assistant",
         AiChatMessage.created_at >= start, AiChatMessage.created_at < start + timedelta(days=1),
     ).count()
-    limit = get_settings().AI_CHAT_DAILY_TURN_LIMIT
+    limit = management_service.effective_limit(db, owner_id)
     return {"used": count, "limit": limit, "remaining": max(0, limit - count)}
 
 
 def get_config(db, owner_id, *, include_diagnostic=False):
+    generation_service.recover_expired(db, owner_id)
     models = list_models(db, owner_id)
     if models:
         result = {"configured": True, "message": None, "model": models[0]["model"]}
@@ -128,6 +129,7 @@ def resolve_model(db, owner_id, preset_id=None):
 
 
 def validate_generation(db, owner_id, snapshot):
+    _require_current_write(db, owner_id)
     preset, provider = _resolve_pair(db, owner_id, snapshot["preset_id"])
     current = _snapshot(preset, provider)
     if current["config_version"] != snapshot["config_version"]:
@@ -135,7 +137,20 @@ def validate_generation(db, owner_id, snapshot):
     return freeze_text_call_config(preset, provider)
 
 
+def _require_current_write(db, owner_id):
+    roles = _roles(db, owner_id)
+    if 'super_admin' in roles:
+        return
+    granted = db.query(ArkPermission.id).join(ArkRolePermission,
+        ArkRolePermission.permission_id == ArkPermission.id).join(ArkUserRole,
+        ArkUserRole.role_id == ArkRolePermission.role_id).filter(ArkUserRole.user_id == owner_id,
+        ArkPermission.code == 'ai_chat:write').with_for_update(read=True).first()
+    if not granted:
+        raise WorkspaceError('聊天发送权限已变化，请刷新后重试', 403)
+
+
 def _lock_user(db, owner_id):
+    generation_service.recover_expired(db, owner_id)
     # Consistent user -> session lock order serializes quota across all devices/sessions.
     user = db.query(ArkUser).options(noload("*")).filter(
         ArkUser.id == owner_id, ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None)
@@ -156,9 +171,13 @@ def _lock_session(db, owner_id, session_id):
 
 
 def _admit(db, owner_id, session_id):
+    _require_current_write(db, owner_id)
     if db.query(AiChatMessage.id).filter_by(session_id=session_id, status="streaming").first():
         raise WorkspaceError("本会话仍在生成，请等待结束或停止后刷新")
-    if usage(db, owner_id)["remaining"] <= 0:
+    quota = usage(db, owner_id)
+    if quota['limit'] == 0:
+        raise WorkspaceError("当前角色已暂停生成，请联系管理员调整额度", 429)
+    if quota["remaining"] <= 0:
         raise WorkspaceError("今日对话次数已用完，北京时间零点恢复", 429)
 
 
@@ -191,7 +210,6 @@ def begin_turn(db, owner_id, session_id, request):
 
 def begin_retry(db, owner_id, assistant_id, request):
     try:
-        _lock_user(db, owner_id)
         original = service.get_message(db, assistant_id, owner_id)
         session = _lock_session(db, owner_id, original.session_id)
         existing = db.query(AiChatMessage).filter_by(session_id=session.id, request_id=request.request_id).first()
@@ -212,6 +230,66 @@ def rename_session(db, owner_id, session_id, title):
     row.updated_at = beijing_now()
     db.commit()
     return row
+
+
+def _latest_question(db, session_id, user_id):
+    if db.query(AiChatMessage.id).filter(AiChatMessage.session_id == session_id,
+            AiChatMessage.role == 'user', AiChatMessage.id > user_id).first():
+        raise service.RequestConflictError('只能调整最后一轮回答，请新建对话修改更早的问题')
+
+
+def select_answer(db, owner_id, user_id, answer_id):
+    try:
+        question = service.get_message(db, user_id, owner_id)
+        _lock_session(db, owner_id, question.session_id)
+        answer = service.get_message(db, answer_id, owner_id)
+        if (question.role != 'user' or answer.role != 'assistant'
+                or answer.session_id != question.session_id or answer.reply_to_message_id != question.id
+                or answer.status not in {'completed', 'stopped'} or not answer.content):
+            raise service.ResourceNotFoundError('资源不存在')
+        _latest_question(db, question.session_id, question.id)
+        if db.query(AiChatMessage.id).filter_by(session_id=question.session_id, status='streaming').first():
+            raise service.RequestConflictError('请先停止生成再选择版本')
+        question.selected_answer_id = answer.id
+        db.commit()
+        return question
+    except Exception:
+        db.rollback()
+        raise
+
+
+def begin_continuation(db, owner_id, assistant_id, request):
+    try:
+        source = service.get_message(db, assistant_id, owner_id)
+        session = _lock_session(db, owner_id, source.session_id)
+        existing = db.query(AiChatMessage).filter_by(session_id=session.id, request_id=request.request_id).first()
+        if existing:
+            if (existing.continuation_of_message_id == source.id
+                    and (request.preset_id is None or request.preset_id == (existing.model_snapshot or {}).get('preset_id'))):
+                return service.RetryTurn(existing, True)
+            raise service.RequestConflictError('请求标识已用于其他操作，请重新发送')
+        if source.role != 'assistant' or source.status != 'completed' or not source.content or source.finish_reason not in {'length', 'max_tokens'}:
+            raise service.RequestConflictError('只有达到长度上限的回答可以继续生成')
+        _latest_question(db, session.id, source.reply_to_message_id)
+        _admit(db, owner_id, session.id)
+        source_preset = (source.model_snapshot or {}).get('preset_id')
+        if not source_preset or (request.preset_id and request.preset_id != source_preset):
+            raise service.RequestConflictError('继续生成须使用原回答的模型')
+        snapshot = resolve_model(db, owner_id, source_preset)
+        _check_images(db, session.id, snapshot)
+        row = AiChatMessage(session_id=session.id, role='assistant', request_id=request.request_id,
+            content=source.content, status='streaming', reply_to_message_id=source.reply_to_message_id,
+            continuation_of_message_id=source.id, model_snapshot=snapshot,
+            lease_expires_at=generation_service.lease_deadline())
+        db.add(row)
+        session.updated_at = beijing_now()
+        session.selected_preset_id = source_preset
+        db.commit()
+        db.refresh(row)
+        return service.RetryTurn(row, False)
+    except Exception:
+        db.rollback()
+        raise
 
 
 def delete_session(db, owner_id, session_id):

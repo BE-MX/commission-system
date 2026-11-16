@@ -1106,9 +1106,11 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 **私有存储**：`AI_CHAT_STORAGE_ROOT` 默认 `D:\WORKSOURCE\ai-chat`，不挂载到 `/uploads`。文件以 UUID 名写入 `images/` 或 `documents/`，数据库只存相对路径；读取仍须 `ai_chat:read` + owner 校验。部署时该目录及父目录只允许后端服务账号写入，并保留代码侧的绝对路径、父级穿越、symlink/junction/reparse point 拒绝。
 
-**模型配置（2026-11-09）**：方案对话通过 `customer_ai_chat` 预设读取实际型号，支持 direct/OpenAI 与 direct/Anthropic；不再与 `AI_CHAT_MODEL` 环境变量比对。API 地址、Key、型号和参数在 AI 接入管理配置，对后续新调用生效。图文功能需管理员选用支持图片输入的模型；不要为改一个业务而更换其他生图预设共用 Provider 的协议，应另建 Provider。预设/供应商缺失或停用时仍明确不可用，不回退其他配置。
+**模型配置（2026-11-16）**：工作台通过后台发布的 `parameters.chat` 列出可用预设，原 `customer_ai_chat` 默认保留；每轮可选模型，支持 direct/OpenAI 与 direct/Anthropic；不再与 `AI_CHAT_MODEL` 环境变量比对。API 地址、Key、型号和参数在 AI 接入管理配置，对后续新调用生效。图文功能需管理员选用支持图片输入的模型；不要为改一个业务而更换其他生图预设共用 Provider 的协议，应另建 Provider。预设/供应商缺失或停用时仍明确不可用，不回退其他配置。
 
-**部署顺序**：① 在目标环境为 `AI_CHAT_STORAGE_ROOT` 建私有目录并授予后端服务账号读写权限；② `cd backend && alembic upgrade head` 应用迁移 100；③ 重启后端完成 `ai_chat:read/write/admin` 权限 seed，并在角色管理中分配 read/write；④ 在“系统管理 → AI 接入管理”配置适用协议的 Provider 与 `customer_ai_chat` Preset（API Key 只存后台配置，不进 git）；⑤ 用 `GET /api/ai-chat/config` 确认 `configured=true` 后再开放入口。用户点击停止只会关闭本次流、保存部分内容并标记 `stopped`；供应商可能已接收请求，界面和运维说明都不得承诺取消计费。
+**部署顺序**：① 在目标环境为 `AI_CHAT_STORAGE_ROOT` 建私有目录并授予后端服务账号读写权限；② 通过 `deploy/deploy.bat` 候选发布入口统一检查并执行所需迁移（含 100/124/265/266），禁止开发机升级生产库；③ 重启后端完成 `ai_chat:read/write/admin` 权限 seed，并在角色管理中分配 read/write；④ 在“系统管理 → AI 接入管理”配置适用协议的 Provider 与 `customer_ai_chat` Preset（API Key 只存后台配置，不进 git）；⑤ 用 `GET /api/ai-chat/config` 确认 `configured=true` 后再开放入口。用户点击停止只会关闭本次流、保存部分内容并标记 `stopped`；供应商可能已接收请求，界面和运维说明都不得承诺取消计费。
+
+**生成恢复与版本（v2）**：短周期落库、45 秒租约和 600 秒上限；配置/详情/发送入口恢复已过期记录，不自动调用供应商。重生成与继续生成保留原版本，预览不改变上下文。运行管理只汇总元数据，角色额度取已配置最小值，未知/中断用量不按完整账单估价。具体接口与字段见 API 和数据库参考。
 
 ## WhatsApp 实时翻译（whatsapp_translation，2026-09-03）
 

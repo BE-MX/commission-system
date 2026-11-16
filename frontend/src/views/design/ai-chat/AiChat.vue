@@ -65,7 +65,7 @@
         <ChatThread
           :messages="chat.messages.value"
           :loading="chat.initializing.value || chat.sessionLoading.value"
-          :can-write="chat.canWrite.value"
+          :can-write="chat.canWrite.value" :can-continue="chat.canContinue"
           :busy="chat.busy.value" :can-regenerate="Boolean(chat.selectedModel.value) && !chat.modelIssue.value"
           :modes="chat.modes.items.value"
           :selected-mode-id="chat.modes.selected.value?.id || ''"
@@ -73,7 +73,7 @@
           :catalog-error="chat.modes.catalogError.value"
           @starter="applyStarter"
           @reload-modes="chat.modes.loadCatalog"
-          @retry="chat.retry"
+          @retry="chat.retry" @continue="chat.continueAnswer" @adopt="chat.adoptAnswer"
         />
 
         <ChatComposer

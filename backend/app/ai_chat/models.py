@@ -88,6 +88,11 @@ class AiChatMessage(Base):
     content = Column(Text().with_variant(mysql.MEDIUMTEXT(), "mysql"), nullable=False, default="", comment="Markdown 消息正文")
     model_snapshot = Column(JSON, nullable=True, comment="本轮获授权的模型与配置版本快照")
     reasoning_content = Column(Text().with_variant(mysql.MEDIUMTEXT(), "mysql"), nullable=True, comment="供应商返回的推理内容，不进入历史提示词")
+    lease_expires_at = Column(DateTime, nullable=True, comment="生成租约到期北京时间")
+    finish_reason = Column(String(32), nullable=True, comment="生成结束或中断原因")
+    first_token_ms = Column(Integer, nullable=True, comment="首段正文或推理响应耗时")
+    selected_answer_id = Column(BigInteger, nullable=True, comment="用户消息选择用于后续上下文的回答")
+    continuation_of_message_id = Column(BigInteger, nullable=True, comment="本版本继续生成的原回答")
     status = Column(
         String(16), nullable=False, default="completed", comment="消息状态"
     )
@@ -150,6 +155,13 @@ class AiChatMessage(Base):
         ),
         Index("idx_ai_chat_message_session_created", "session_id", "created_at"),
         Index("idx_ai_chat_message_reply_to", "session_id", "reply_to_message_id"),
+        Index("idx_ai_chat_generation_lease", "status", "lease_expires_at"),
+        ForeignKeyConstraint(["session_id", "selected_answer_id"],
+            ["ark_ai_chat_messages.session_id", "ark_ai_chat_messages.id"],
+            name="fk_ai_chat_selected_answer_session", ondelete="RESTRICT"),
+        ForeignKeyConstraint(["session_id", "continuation_of_message_id"],
+            ["ark_ai_chat_messages.session_id", "ark_ai_chat_messages.id"],
+            name="fk_ai_chat_continue_session", ondelete="RESTRICT"),
         {"comment": "AI 方案对话消息"},
     )
 
@@ -255,3 +267,12 @@ class AiChatAttachment(Base):
         lazy="noload",
     )
     creator = relationship("ArkUser", lazy="noload")
+
+
+class AiChatRoleLimit(Base):
+    __tablename__ = "ark_ai_chat_role_limits"
+    role_id = Column(USER_ID, ForeignKey("ark_roles.id", ondelete="CASCADE"), primary_key=True)
+    daily_limit = Column(Integer, nullable=False, comment="每日受理次数，0 暂停生成")
+    updated_by = Column(USER_ID, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False, comment="最近修改额度的用户")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
+    __table_args__ = (CheckConstraint("daily_limit >= 0 AND daily_limit <= 10000", name="ck_ai_chat_role_limit"),)

@@ -97,6 +97,10 @@ class MessageResponse(BaseModel):
     status: MessageStatus
     error_message: str | None = None
     retry_of_message_id: int | None = None
+    continuation_of_message_id: int | None = None
+    selected_answer_id: int | None = None
+    finish_reason: str | None = None
+    first_token_ms: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -104,6 +108,16 @@ class MessageResponse(BaseModel):
 class SessionRename(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     title: str = Field(min_length=1, max_length=200)
+
+
+class AnswerSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    answer_id: int = Field(gt=0)
+
+
+class RoleLimitUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    daily_limit: int | None = Field(default=None, ge=0, le=10000, strict=True)
 
 
 class AttachmentResponse(BaseModel):

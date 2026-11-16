@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from datetime import date
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -11,7 +13,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.ai.service import chat_stream
-from app.ai_chat import file_service, service, mode_service, workspace_service
+from app.ai_chat import file_service, service, mode_service, workspace_service, generation_service, management_service
 from app.ai_chat.stream_response import ClosingIterator, ClosingStreamingResponse
 from app.ai_chat.schemas import (
     AttachmentResponse,
@@ -20,7 +22,7 @@ from app.ai_chat.schemas import (
     SessionCreate,
     SessionResponse,
     TurnStreamRequest,
-    SessionRename,
+    SessionRename, AnswerSelection, RoleLimitUpdate,
 )
 from app.auth.dependencies import require_permission
 from app.core.config import get_settings
@@ -140,6 +142,8 @@ def stream_assistant_events(
         "content": assistant.content,
         "error_message": assistant.error_message,
         "retry_of_message_id": assistant.retry_of_message_id,
+        "continuation_of_message_id": assistant.continuation_of_message_id,
+        "finish_reason": assistant.finish_reason,
         "reply_to_message_id": assistant.reply_to_message_id,
         "model_snapshot": assistant.model_snapshot,
         "reasoning_content": assistant.reasoning_content,
@@ -186,9 +190,6 @@ def _stream_assistant_events(
             "reply_to_message_id": assistant.get("reply_to_message_id"),
         },
     )
-    # MVP emits one initial heartbeat only. Periodic heartbeats require an async
-    # bridge around the shared synchronous facade plus an independently scoped DB
-    # session; adding a timer thread here would make disconnect cleanup unreliable.
     yield sse_event("heartbeat", {"status": assistant["status"]})
     if reused:
         if assistant.get("reasoning_content"):
@@ -220,7 +221,11 @@ def _stream_assistant_events(
             db.close()
         return
 
-    partial: list[str] = []
+    partial: list[str] = [assistant["content"]] if assistant.get("continuation_of_message_id") else []
+    started = last_checkpoint = time.monotonic()
+    first_token_ms = None
+    if partial:
+        yield sse_event("delta", {"text": partial[0]})
     reasoning: list[str] = []
     reasoning_length = 0
     log_id = None
@@ -234,6 +239,9 @@ def _stream_assistant_events(
             exclude_assistant_id=assistant["retry_of_message_id"],
             through_user_id=assistant.get("reply_to_message_id"),
         )
+        if assistant.get("continuation_of_message_id"):
+            context.extend([{"role": "assistant", "content": assistant["content"]},
+                            {"role": "user", "content": "请从上文断点继续完成回答，不要重复已写内容。"}])
         upstream = chat_stream(
             db,
             model_snapshot["preset_name"] if model_snapshot else service.PRESET_NAME,
@@ -244,30 +252,48 @@ def _stream_assistant_events(
         )
         for event in upstream:
             event_type = event.get("type")
+            first_frame = event_type in {"delta", "reasoning"} and first_token_ms is None
+            if event_type in {"delta", "reasoning"} and first_token_ms is None:
+                first_token_ms = int((time.monotonic() - started) * 1000)
             if event_type == "meta":
+                log_id = event.get("log_id", log_id)
+            if event_type in {"meta", "heartbeat", "done", "error"} or time.monotonic() - last_checkpoint >= 2:
+                generation_service.checkpoint(db, owner_user_id, assistant["id"], "".join(partial),
+                    "".join(reasoning), log_id=log_id, first_token_ms=first_token_ms)
+                last_checkpoint = time.monotonic()
+            if event_type == "heartbeat":
+                yield sse_event("heartbeat", {"status": "streaming"})
+            elif event_type == "meta":
                 log_id = event.get("log_id")
             elif event_type == "reasoning":
                 text = str(event.get("text") or "")[:max(0, 120_000 - reasoning_length)]
                 reasoning_length += len(text)
                 reasoning.append(text)
+                if first_frame:
+                    generation_service.checkpoint(db, owner_user_id, assistant["id"], "".join(partial),
+                        "".join(reasoning), log_id=log_id, first_token_ms=first_token_ms)
+                    last_checkpoint = time.monotonic()
                 yield sse_event("reasoning", {"text": text})
             elif event_type == "delta":
                 text = str(event.get("text") or "")
                 partial.append(text)
+                if first_frame:
+                    generation_service.checkpoint(db, owner_user_id, assistant["id"], "".join(partial),
+                        "".join(reasoning), log_id=log_id, first_token_ms=first_token_ms)
+                    last_checkpoint = time.monotonic()
                 yield sse_event("delta", {"text": text})
             elif event_type == "done":
-                if event.get("finish_reason") in {"max_tokens", "length"}:
-                    notice = '\n\n> 本次输出已达到长度上限，内容尚未完成。回复“继续”，我会接着完成。'
-                    partial.append(notice)
-                    yield sse_event("delta", {"text": notice})
-                service.finish_turn(
+                saved = service.finish_turn(
                     db,
                     owner_user_id,
                     assistant["id"],
                     "".join(partial),
                     log_id,
                     reasoning_content="".join(reasoning) or None,
+                    finish_reason=event.get("finish_reason"),
                 )
+                if saved.status != "completed":
+                    raise generation_service.GenerationLost("生成已中断，请刷新查看已保存内容")
                 done = {
                     key: value
                     for key, value in event.items()
@@ -295,6 +321,8 @@ def _stream_assistant_events(
             reasoning_content="".join(reasoning) or None,
         )
         yield sse_event("error", {"code": "stream_incomplete", "message": message})
+    except generation_service.GenerationLost as exc:
+        yield sse_event("error", {"code": "generation_expired", "message": str(exc)})
     except (mode_service.ModeContextError, workspace_service.WorkspaceError) as exc:
         service.fail_turn(db, owner_user_id, assistant["id"], "".join(partial), str(exc), log_id, reasoning_content="".join(reasoning) or None)
         yield sse_event("error", {"code": "context_limit", "message": str(exc)})
@@ -540,6 +568,44 @@ def retry_stream(
 @router.get("/models")
 def list_models(db: Session = Depends(get_db), current_user: dict = Depends(require_permission("ai_chat:read"))):
     return ok({"items": _resource_call(workspace_service.list_models, db, _owner_id(current_user))})
+
+
+@router.post("/messages/{assistant_id}/continue/stream")
+def continue_stream(assistant_id: int, body: RetryStreamRequest, db: Session = Depends(get_db),
+                    current_user: dict = Depends(require_permission("ai_chat:write"))):
+    owner = _owner_id(current_user)
+    result = _resource_call(workspace_service.begin_continuation, db, owner, assistant_id, body)
+    row = result.assistant_message
+    return ClosingStreamingResponse(stream_assistant_events(db, owner, row.session_id, row, reused=result.reused),
+        media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.patch("/messages/{user_id}/selection")
+def select_answer(user_id: int, body: AnswerSelection, db: Session = Depends(get_db),
+                  current_user: dict = Depends(require_permission("ai_chat:write"))):
+    row = _resource_call(workspace_service.select_answer, db, _owner_id(current_user), user_id, body.answer_id)
+    return ok(_message_data(row))
+
+
+@router.get("/admin/usage")
+def chat_usage(start: date | None = None, end: date | None = None, preset_id: int | None = Query(None, gt=0),
+               owner_id: int | None = Query(None, gt=0), db: Session = Depends(get_db),
+               _current_user: dict = Depends(require_permission("ai:admin"))):
+    try:
+        return ok(management_service.usage_report(db, start, end, preset_id=preset_id, owner_id=owner_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@router.get("/admin/role-limits")
+def role_limits(db: Session = Depends(get_db), _current_user: dict = Depends(require_permission("ai:admin"))):
+    return ok(management_service.role_limits(db))
+
+
+@router.put("/admin/role-limits/{role_id}")
+def set_role_limit(role_id: int, body: RoleLimitUpdate, db: Session = Depends(get_db),
+                   current_user: dict = Depends(require_permission("ai:admin"))):
+    return ok(_resource_call(management_service.set_role_limit, db, role_id, body.daily_limit, _owner_id(current_user)))
 
 
 @router.patch("/sessions/{session_id}")

@@ -92,3 +92,9 @@ export async function streamTurn(sessionId, body, options) {
 export async function streamRetry(messageId, body, options) {
   return streamRequest(`/messages/${messageId}/retry/stream`, body, options)
 }
+
+export const streamContinue = (id, body, options) => streamRequest(`/messages/${id}/continue/stream`, body, options)
+export const selectAnswer = (userId, answerId) => aiChatClient.patch(`/messages/${userId}/selection`, { answer_id: answerId })
+export const getChatUsage = params => aiChatClient.get('/admin/usage', { params, showLoading: false })
+export const getChatRoleLimits = () => aiChatClient.get('/admin/role-limits', { showLoading: false })
+export const setChatRoleLimit = (roleId, dailyLimit) => aiChatClient.put(`/admin/role-limits/${roleId}`, { daily_limit: dailyLimit })

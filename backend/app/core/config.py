@@ -282,6 +282,8 @@ class Settings(BaseSettings):
     AI_CHAT_MAX_UPLOAD_BYTES: _PositiveInt = 4 * 1024 * 1024
     AI_CHAT_MAX_ATTACHMENTS: _PositiveInt = 5
     AI_CHAT_DAILY_TURN_LIMIT: _PositiveInt = 100
+    AI_CHAT_LEASE_SECONDS: Annotated[int, Field(ge=20, le=300)] = 45
+    AI_CHAT_GENERATION_MAX_SECONDS: Annotated[int, Field(ge=60, le=3600)] = 600
     AI_CHAT_MAX_ATTACHMENT_CHARS: _PositiveInt = 60_000
     AI_CHAT_MAX_TURN_ATTACHMENT_CHARS: _PositiveInt = 120_000
 

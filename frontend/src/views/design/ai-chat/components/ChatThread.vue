@@ -15,7 +15,7 @@
 
     <div v-else class="message-list">
       <article
-        v-for="message in messages"
+        v-for="message in displayed"
         :key="message.id"
         class="message-row"
         :class="`is-${message.role}`"
@@ -53,13 +53,22 @@
           </span>
         </div>
 
+        <p v-if="message.finish_reason === 'length' || message.finish_reason === 'max_tokens'" class="message-status">已达到单次输出上限，可继续生成。</p>
+        <div v-if="message.role === 'assistant' && versions(message).length > 1" class="message-actions version-controls">
+          <button type="button" :disabled="busy || versionIndex(message) === 0" aria-label="上一个回答版本" @click="previewVersion(message, -1)">上一版</button>
+          <span>版本 {{ versionIndex(message) + 1 }} / {{ versions(message).length }}</span>
+          <button type="button" :disabled="busy || versionIndex(message) === versions(message).length - 1" aria-label="下一个回答版本" @click="previewVersion(message, 1)">下一版</button>
+          <span v-if="isSelected(message)">已用于后续对话</span>
+          <button v-else-if="canWrite && message.reply_to_message_id === lastQuestionId && ['completed', 'stopped'].includes(message.status) && message.content" type="button" :disabled="busy" @click="emit('adopt', message)">用于后续对话</button>
+        </div>
         <div class="message-actions">
+          <button v-if="message.status === 'completed' && ['length', 'max_tokens'].includes(message.finish_reason) && message.reply_to_message_id === lastQuestionId && canWrite" type="button" :disabled="busy || !canContinue(message)" @click="emit('continue', message.id)">继续生成</button>
           <button type="button" @click="copyMessage(message)">
             <el-icon aria-hidden="true"><CopyDocument /></el-icon>
             复制
           </button>
           <button
-            v-if="message.role === 'assistant' && ['completed', 'failed', 'stopped'].includes(message.status) && canWrite && message.id === lastAssistantId"
+            v-if="message.role === 'assistant' && ['completed', 'failed', 'stopped'].includes(message.status) && canWrite && message.reply_to_message_id === lastQuestionId"
             type="button"
             :disabled="busy || !canRegenerate"
             @click="emit('retry', message.id)"
@@ -86,6 +95,7 @@ import { copyText } from '../../../../utils/clipboard.js'
 import { computed, nextTick, ref, watch } from 'vue'
 import { ArrowDown, CopyDocument, Paperclip, RefreshRight } from '@element-plus/icons-vue'
 import { renderChatMarkdown } from '../markdown'
+import { answerVersions, visibleMessages } from '../versions'
 import StarterCards from './StarterCards.vue'
 import { msgError, msgSuccess } from '@/utils/feedback'
 const props = defineProps({
@@ -98,11 +108,26 @@ const props = defineProps({
   canWrite: { type: Boolean, default: false },
   busy: Boolean,
   canRegenerate: Boolean,
+  canContinue: { type: Function, default: () => false },
 })
-const emit = defineEmits(['starter', 'retry', 'reload-modes'])
+const emit = defineEmits(['starter', 'retry', 'reload-modes', 'continue', 'adopt'])
 const scrollPane = ref(null)
 
-const lastAssistantId = computed(() => props.messages.at(-1)?.role === 'assistant' ? props.messages.at(-1).id : null)
+const previews = ref({})
+const displayed = computed(() => visibleMessages(props.messages, previews.value))
+const lastQuestionId = computed(() => props.messages.filter(item => item.role === 'user').at(-1)?.id)
+const versions = message => answerVersions(props.messages, message.reply_to_message_id)
+const versionIndex = message => versions(message).findIndex(item => item.id === message.id)
+const isSelected = message => props.messages.find(item => item.id === message.reply_to_message_id)?.selected_answer_id === message.id
+function previewVersion(message, direction) {
+  const answer = versions(message)[versionIndex(message) + direction]
+  if (answer) previews.value = { ...previews.value, [message.reply_to_message_id]: answer.id }
+}
+watch(() => props.messages[0]?.id, () => { previews.value = {} })
+watch(() => props.messages.at(-1)?.id, () => {
+  const last = props.messages.at(-1)
+  if (props.busy && last?.role === 'assistant') previews.value = { ...previews.value, [last.reply_to_message_id]: last.id }
+})
 
 async function copyCode(event) {
   const button = event.target.closest?.('.copy-code')
@@ -166,6 +191,7 @@ watch(
 </script>
 
 <style scoped>
+.version-controls { flex-wrap: wrap; align-items: center; gap: 8px; }
 .chat-thread {
   flex: 1;
   min-height: 0;

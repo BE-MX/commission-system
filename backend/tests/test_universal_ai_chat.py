@@ -15,7 +15,7 @@ from app.ai_chat import router, service, workspace_service as workspace
 from app.ai_chat.models import AiChatAttachment, AiChatMessage
 from app.ai_chat.schemas import RetryStreamRequest, TurnStreamRequest
 from app.auth.dependencies import get_current_user
-from app.auth.models import ArkRole, ArkUser, ArkUserRole
+from app.auth.models import ArkRole, ArkUser, ArkUserRole, ArkPermission, ArkRolePermission
 from app.core.config import get_settings
 from app.core.database import get_db
 
@@ -24,6 +24,11 @@ from app.core.database import get_db
 def owner(db):
     user = ArkUser(username="chat-user", password_hash="test", real_name="Chat User")
     db.add(user)
+    role = ArkRole(name='chat_writer', label='Chat writer')
+    permission = ArkPermission(code='ai_chat:write', module='ai_chat', action='write', label='Write')
+    db.add_all([role, permission])
+    db.flush()
+    db.add_all([ArkUserRole(user_id=user.id, role_id=role.id), ArkRolePermission(role_id=role.id, permission_id=permission.id)])
     db.commit()
     return user
 

@@ -6,6 +6,7 @@
         <el-icon aria-hidden="true"><Document /></el-icon>
         <span>{{ attachment.original_name || attachment.name }}</span>
         <em v-if="attachment.optimistic">上传中</em>
+        <em v-else-if="attachment.status === 'failed'">清理未完成，请再次移除</em>
         <button
           type="button"
           :aria-label="`移除 ${attachment.original_name || attachment.name}`"
