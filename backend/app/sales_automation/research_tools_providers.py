@@ -197,9 +197,10 @@ def monid_prepare(client, operation, target, reservation):
     params = {
         "instagram": ("body", {"usernames": [slug]}),
         "tiktok": ("queryParams", {"uniqueId": slug}),
-        "facebook": ("body", {"endpoint": "details_by_url", "urls_text": target}),
+        # The connector requires max_posts even in profile-details mode.
+        "facebook": ("body", {"endpoint": "details_by_url", "urls_text": target, "max_posts": 1}),
         "linkedin": ("queryParams", {"url": target}),
-        "hunter": ("queryParams", {"domain": target, "limit": 1}),
+        "hunter": ("body", {"domain": target, "limit": 1}),
     }
     field, values = params[op.source]
     return {**payload, "input": {field: values}}
