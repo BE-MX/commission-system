@@ -12,6 +12,7 @@ from app.agent_runtime.models import AgentProfile, AgentRun, AgentSession
 from app.core.time import beijing_now
 from app.customer.models import CustomerAgentRunScope
 from app.sales_automation import service
+from app.sales_automation.private_research_policy import is_private_research_v2
 
 PROFILE = {
     "profile_key": "openclaw_customer_research", "version": 1,
@@ -23,6 +24,16 @@ PROFILE = {
     "limits_json": {"max_attempts": 1},
     "policy_json": {"external_task_lease": True, "evidence_required": True},
     "output_schema": {"type": "object"},
+}
+
+
+PRIVATE_PROFILE = {
+    **PROFILE,
+    "profile_key": "openclaw_private_customer_research",
+    "version": 2,
+    "description": "私海完整背调与当前任务受控候选证据",
+    "skill_manifest": [{"name": "ark-private-research", "version": "2"}],
+    "tool_allowlist": [*PROFILE["tool_allowlist"], "ark_username_scan", "ark_monid_run"],
 }
 
 
@@ -44,7 +55,10 @@ def finish_run(db: Session, task, status: str, error_code: str | None = None):
 
 
 def start_run(db: Session, task, actor_id: int, input_hash: str):
-    profile = db.query(AgentProfile).filter_by(profile_key=PROFILE["profile_key"], version=1).one_or_none()
+    manifest = PRIVATE_PROFILE if is_private_research_v2(task) else PROFILE
+    profile = db.query(AgentProfile).filter_by(
+        profile_key=manifest["profile_key"], version=manifest["version"],
+    ).one_or_none()
     if profile is None or profile.status != "active":
         raise service.ConflictError("背调执行配置未初始化或已停用，请检查方舟服务启动")
     finish_run(db, task, "cancelled", "research_lease_reclaimed")
@@ -80,15 +94,25 @@ def start_run(db: Session, task, actor_id: int, input_hash: str):
 
 def append_facts(db: Session, task_id: int, actor_id: int, agent_id: str,
                  lease_token: str, agent_run_id: int, facts):
-    from app.sales_automation import enrichment_service, public_pool_service
+    from app.sales_automation import public_pool_service
     task, input_hash = public_pool_service.validate_research_fact_write(
         db, task_id, actor_id, agent_id, lease_token, agent_run_id)
-    run = db.query(AgentRun).filter_by(id=agent_run_id).with_for_update().one()
+    output = append_facts_for_run(db, task, input_hash, agent_run_id, facts)
+    db.commit()
+    return output
+
+
+def append_facts_for_run(db, task, input_hash, run_id, facts, *, provider_evidence=False):
+    from app.sales_automation import enrichment_service
+
+    run = db.query(AgentRun).filter_by(id=run_id).with_for_update().one()
     call_id = f"research-facts-{uuid4().hex}"
     append_event(db, run, event_id=f"{call_id}:requested", event_type="tool.requested",
         actor_type="system", payload={"call_id": call_id, "tool_name": "ark_append_research_facts",
             "research_task_id": task.id, "fact_count": len(facts)})
-    _, rows = enrichment_service.append_research_facts(db, task.id, facts, agent_run_id=run.id)
+    _, rows = enrichment_service.append_research_facts(
+        db, task.id, facts, agent_run_id=run.id, provider_evidence=provider_evidence,
+    )
     output = {"research_task_id": task.id, "customer_id": task.customer_id,
         "agent_run_id": run.id, "input_hash": input_hash, "tool_call_id": call_id,
         "evidence_refs": [{"customer_id": task.customer_id, "evidence_ref": f"fact:{fact.id}",
@@ -97,7 +121,6 @@ def append_facts(db: Session, task_id: int, actor_id: int, agent_id: str,
             for fact in rows]}
     append_event(db, run, event_id=f"{call_id}:succeeded", event_type="tool.succeeded",
                  actor_type="system", payload={"call_id": call_id, "output": output})
-    db.commit()
     return output
 
 

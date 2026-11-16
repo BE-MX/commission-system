@@ -1416,6 +1416,8 @@ ark_sales_search_results重建后的关键字段：
 
 ### 12.3 背调中心
 
+私海 `private-research-v2` 可以从当前任务的个人联系人姓名、个人邮箱、社媒号和平台昵称检索公开来源。个人资料以至少 `personal_contact` 分类和 `customer_team` 可见范围保存，继续经过统一字段和记录访问控制。已核验平台、次级公开来源及按供应商登记的 Monid 来源分别记录。Maigret 候选需要核对主体。工具原文先留在本任务调用账本，主体确认后以候选事实绑定当前运行。公海沿用既有证据口径。
+
 旧ResearchSubject、PublicPoolTask、DealAssessment、ResearchRun和ResearchFact职责由以下结构替代：
 
 - customer_accounts：研究主体。

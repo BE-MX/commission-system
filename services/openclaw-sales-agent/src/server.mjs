@@ -8,6 +8,7 @@ import { ArkClient, LeaseStore } from "./ark-client.mjs";
 import { loadConfig } from "./config.mjs";
 import { RuntimeHeartbeatReporter } from "./runtime-heartbeat.mjs";
 import { toCandidateInput } from "./candidate-contract.mjs";
+import { PRIVATE_RESEARCH_POLICY, registerPrivateResearchTools } from "./private-research-tools.mjs";
 
 const timestamp = z.string().min(10).max(64).describe("ISO 8601 capture timestamp with timezone");
 const publicUrl = z.string().url().max(1024).refine((value) => {
@@ -63,7 +64,7 @@ const researchFact = z.object({
   confidence_method_version: z.string().min(1).max(32).default("research_evidence_v1"),
   confidence_components: z.record(z.string(), z.unknown()).default({}),
   source_system: z.enum(["public_web", "agent"]),
-  source_entity_type: z.enum(["company_page", "research_report"]),
+  source_entity_type: z.string().min(1).max(64).describe("Use current task fact_contract to select the registered source type"),
   source_account_key: z.string().min(1).max(128).default("global"),
   external_record_id: z.string().min(1).max(255),
   source_url: publicUrl.optional(),
@@ -104,6 +105,16 @@ const researchCompletion = z.object({
     input_hash: z.string().regex(/^[0-9a-f]{64}$/u),
     gap_reason: z.string().trim().min(10).max(2000),
     missing_information: z.array(z.string().trim().min(1).max(200)).min(1).max(10),
+  }).strict(), z.object({
+    schema_version: z.literal("private_research_v2"),
+    input_hash: z.string().regex(/^[0-9a-f]{64}$/u),
+    report_markdown: z.string().trim().min(1).max(60000),
+    claims: z.array(researchClaim).max(100),
+    citations: z.array(researchCitation).max(500),
+    names: z.array(z.string().trim().min(1).max(160)).max(100).default([]),
+    missing_information: z.array(z.string().trim().min(1).max(400)).max(30),
+    knowledge_references: z.array(knowledgeReference).max(100).default([]),
+    evidence_fact_ids: z.array(z.number().int().positive()).max(500).default([]),
   }).strict()]),
 });
 
@@ -151,13 +162,22 @@ export function createServer(
   let researchClaimPending = false;
   let researchFailure = false;
   const requireResearchRun = (taskId) => {
-    const runId = researchRuns.get(taskId);
-    if (!runId) throw new Error("当前进程没有该任务的受控执行记录，请先领取任务；禁止猜测 agent_run_id");
-    return runId;
+    const run = researchRuns.get(taskId);
+    if (!run) throw new Error("当前进程没有该任务的受控执行记录，请先领取任务；禁止猜测 agent_run_id");
+    return run;
   };
   const safeTracked = (handler) => safe(async (args) => {
     runtimeReporter?.markActivity();
     return handler(args);
+  });
+
+  registerPrivateResearchTools(server, client, safeTracked, (taskId) => {
+    const run = requireResearchRun(taskId);
+    if (run.policyVersion !== PRIVATE_RESEARCH_POLICY || !run.gatePassed) {
+      throw new Error("此工具只用于当前已通过行业门控的私海 V2 任务");
+    }
+    // Ark authoritatively checks lease expiry and provider call ownership on every action.
+    return { agentRunId: run.id, leaseToken: researchLeases.require(taskId).token };
   });
 
   server.registerTool("ark_list_search_jobs", {
@@ -262,7 +282,18 @@ export function createServer(
     description: "Read the customer-scoped task context and frozen input hash from Ark.",
     inputSchema: z.object({ research_task_id: z.number().int().min(1) }),
     annotations: { readOnlyHint: true, idempotentHint: true },
-  }, safeTracked(({ research_task_id: taskId }) => client.getResearchTaskContext(taskId)));
+  }, safeTracked(async ({ research_task_id: taskId }) => {
+    const run = researchRuns.get(taskId);
+    if (run?.policyVersion !== PRIVATE_RESEARCH_POLICY) return client.getResearchTaskContext(taskId);
+    const context = await client.getResearchTaskContext(taskId, researchLeases.require(taskId).token);
+    if (context.policy_version !== PRIVATE_RESEARCH_POLICY ||
+        context.fact_contract?.version !== "registered_research_facts_v2" ||
+        context.result_contract?.schema_version !== "private_research_v2") {
+      throw new Error("方舟没有返回完整的私海 V2 事实和报告契约，停止本轮并报告");
+    }
+    run.gatePassed = context.gate_status === "passed" || context.gate_status === "not_required";
+    return context;
+  }));
 
   server.registerTool("ark_get_customer_outreach_context", {
     description: "Read one ACL-authorized Ark customer's current outreach profile, contactability, facts, and evidence.",
@@ -280,14 +311,17 @@ export function createServer(
     researchClaimPending = true;
     try {
       const context = await client.getResearchTaskContext(taskId);
-      if (context.execution_contract !== "external_research_run_v1" ||
-          context.fact_contract?.version !== "registered_research_facts_v1") {
+      const privateTask = context.policy_version === PRIVATE_RESEARCH_POLICY;
+      const supportedContext = privateTask
+        ? context.requires_lease_for_context === true && context.task_type === "full_research"
+        : context.fact_contract?.version === "registered_research_facts_v1";
+      if (context.execution_contract !== "external_research_run_v1" || !supportedContext) {
         researchFailure = true;
         throw new Error("方舟背调执行契约尚未部署，未领取任务；停止本轮并报告");
       }
       let data;
       try {
-        data = await client.claimResearchTask(taskId);
+        data = await client.claimResearchTask(taskId, { supportsPrivateV2: privateTask });
       } catch (error) {
         researchFailure = true;
         throw error;
@@ -297,9 +331,14 @@ export function createServer(
         throw new Error("方舟未返回有效 agent_run_id，请更新后端；停止本轮，不能猜测执行记录");
       }
       researchLeases.remember(taskId, data.lease_token, data.lease_expires_at);
-      researchRuns.set(taskId, data.agent_run_id);
+      researchRuns.set(taskId, {
+        id: data.agent_run_id,
+        policyVersion: data.policy_version ?? context.policy_version,
+        gatePassed: false,
+      });
       return { research_task_id: data.research_task_id, customer_id: data.customer_id,
         agent_run_id: data.agent_run_id, input_hash: data.input_hash,
+        policy_version: data.policy_version ?? context.policy_version,
         fact_contract: context.fact_contract,
         gap_contract: context.gap_contract,
         lease_expires_at: data.lease_expires_at, lease_held: true };
@@ -321,11 +360,13 @@ export function createServer(
     inputSchema: researchIndustryGate,
     annotations: { readOnlyHint: false, idempotentHint: true },
   }, safeTracked(async ({ research_task_id: taskId, ...gate }) => {
-    requireResearchRun(taskId);
+    const run = requireResearchRun(taskId);
     const data = await client.submitResearchIndustryGate(taskId, researchLeases.require(taskId).token, gate);
     if (data.gate_status === "stopped") {
       researchLeases.forget(taskId);
       researchRuns.delete(taskId);
+    } else {
+      run.gatePassed = data.gate_status === "passed";
     }
     return data;
   }));
@@ -337,16 +378,34 @@ export function createServer(
       facts: z.array(researchFact).min(1).max(100),
     }),
     annotations: { readOnlyHint: false, idempotentHint: false },
-  }, safeTracked(({ research_task_id: taskId, facts }) => (
-    client.appendResearchFacts(taskId, researchLeases.require(taskId).token, requireResearchRun(taskId), facts)
-  )));
+  }, safeTracked(({ research_task_id: taskId, facts }) => {
+    const run = requireResearchRun(taskId);
+    if (run.policyVersion !== PRIVATE_RESEARCH_POLICY &&
+        facts.some((fact) => !["company_page", "research_report"].includes(fact.source_entity_type))) {
+      throw new Error("当前任务不支持这个事实来源类型");
+    }
+    return client.appendResearchFacts(taskId, researchLeases.require(taskId).token, run.id, facts);
+  }));
 
   server.registerTool("ark_complete_research_task", {
-    description: "Complete with customer_research_v1 same-Run evidence, or research_gap_v1 for an uncertain, evidence-free private enrichment per context gap_contract.",
+    description: "For private-research-v2 use private_research_v2 with Markdown, same-Run claims/citations and gaps. For older tasks use customer_research_v1, or research_gap_v1 if the context permits.",
     inputSchema: researchCompletion,
     annotations: { readOnlyHint: false, idempotentHint: true },
   }, safeTracked(async ({ research_task_id: taskId, ...research }) => {
-    const data = await client.completeResearchTask(taskId, researchLeases.require(taskId).token, { ...research, agent_run_id: requireResearchRun(taskId) });
+    const run = requireResearchRun(taskId);
+    const privateTask = run.policyVersion === PRIVATE_RESEARCH_POLICY;
+    if (privateTask !== (research.result_json.schema_version === "private_research_v2")) {
+      throw new Error("完成报告的 schema_version 必须与领取任务的策略版本匹配");
+    }
+    if (privateTask) {
+      const { claims, citations, missing_information: gaps } = research.result_json;
+      if (Boolean(claims.length) !== Boolean(citations.length) || (!claims.length && !gaps.length)) {
+        throw new Error("私海报告的结论须与引用一同提交，零结论时须列出缺口");
+      }
+      research.data_classification = "personal_contact";
+      research.visibility_scope = "customer_team";
+    }
+    const data = await client.completeResearchTask(taskId, researchLeases.require(taskId).token, { ...research, agent_run_id: run.id });
     researchLeases.forget(taskId);
     researchRuns.delete(taskId);
     return data;

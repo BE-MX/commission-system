@@ -1908,6 +1908,18 @@ v1.6.0自动接管：请求可传 `mode:draft|auto`（默认draft）。auto响�
 
 `POST /api/customer-hub/research-tasks/{task_id}/retry?expected_attempt_count=N`：人工重试失败背调；要求 `sales_automation:admin` 和该客户读取范围。仅 failed + attempt_count 匹配时重新置pending；保留历史事实，不动搜索结果，下一次claim创建新Run/租约代次。非failed或版本冲突409，无客户权限统一404。
 
+### 私海背调 v2（2026-11-16）
+
+| 方法与路径 | 权限和返回 |
+| --- | --- |
+| GET `/api/client-desk/customers/{company_id}/research` | `client_desk:read` 和本人客户。返回 `status`、`last_run_at`、`cooldown_until`、`cooldown_remaining_seconds`、`can_rerun`、`report` |
+| POST 同路径 | `client_desk:write`，实时小满归属与强身份映射。成功 HTTP 202；进行中、冷却或无法映射返回 409 |
+| GET `/api/sales-automation/research/monid-spend?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` | `sales_monid_spend:read`。按北京时间日期闭区间返回 `by_day` 和 `by_customer`，各行有 `charged_usd`、`reserved_usd`、`calls` |
+
+兼容执行器沿用 `/api/sales-automation/agent/research-tasks`，新执行器列表加 `include_private_v2=true`、领取加 `supports_private_v2=true`。v2 的 GET context 仅供识别契约，使用当前 `agent_id`、`lease_token` POST context 读取完整输入。仍通过 `/facts` 写入公开事实，通过 `/complete` 提交 `private_research_v2` 的 `report_markdown`、`input_hash`、`claims`、`citations`、`missing_information`、可选 `names`。结论、引用可同时为空，此时必须报告缺口。服务端生成标记、计数与 `verified_claims`。
+
+`POST /{id}/tools/{username_scan|monid}/{submit|status|bind}` 使用同一 Agent 权限、任务租约和 `agent_run_id`。submit 返回 `call_id` 和状态；status 传 `call_id`；bind 传 `call_id`、`candidate_ids`，返回原有事实回执。原始供应商响应留在调用账本。付费工具须匹配当前 Run 已尝试的用户名扫描和指定关键缺口。
+
 ### Research fact contract (2026-09-08)
 
 Agent research context now includes `fact_contract.version=registered_research_facts_v1` and the live source/key/value-type registry intersection. MCP checks it before claim and repeats it in the claim receipt. Official company-page research supports candidate, research-only `research.source.company_identity`, `research.source.business_profile`, `research.source.product_catalog`, and `research.source.business_contact` string facts in addition to `business.industry`. This does not verify identity, authorize outreach, or promote customer qualification. Unsupported fact keys, source combinations and types return actionable 400 codes without echoing submitted values. Existing Run/lease, evidence closure and review checks remain mandatory. No schema migration is required.

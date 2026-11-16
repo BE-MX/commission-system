@@ -148,15 +148,38 @@ def compute_stage(order_count, last_order, last_touch, created_at, today=None):
 
 
 def research_report(research):
-    """Only reviewed customer_research_v1 claims reach salespeople.
+    """Project the latest visible research report without exposing storage internals."""
+    from app.sales_automation.private_research_policy import PRIVATE_RESEARCH_RESULT
 
-    Gap results, raw JSON and process fields are never exposed; an empty report
-    is a plain ``none`` status that the UI renders as "无背调结果".
-    """
     for row in research or []:
         result = row.get("result")
-        if not isinstance(result, dict):
+        review_status = row.get("review_status", "accepted")
+        if not isinstance(result, dict) or review_status not in (
+            "accepted", "not_required", "pending", "revision_requested"
+        ):
             continue
+        meta = {
+            "status": "ready",
+            "generated_at": row.get("updated_at"),
+            "source_count": len(result.get("citations") or []),
+            "event_key": row.get("event_key"),
+            "review_status": review_status,
+            "reviewed": review_status == "accepted",
+        }
+        if result.get("schema_version") == PRIVATE_RESEARCH_RESULT:
+            markdown = result.get("report_markdown")
+            if not isinstance(markdown, str) or not markdown.strip():
+                continue
+            statements = [
+                text for text in result.get("verified_claims") or []
+                if isinstance(text, str) and text.strip() and "待核实" not in text
+            ]
+            return {
+                **meta,
+                "report_markdown": markdown,
+                "verdict": statements[0][:160] if statements else "",
+                "sections": [{"key": "verified", "label": "有证据支持的结论", "statements": statements}] if statements else [],
+            }
         if result.get("schema_version") != "customer_research_v1":
             continue
         claims = [
@@ -181,20 +204,19 @@ def research_report(research):
             (s for s in sections if s["key"] == "strategy"), sections[0]
         )
         return {
-            "status": "ready",
+            **meta,
             "verdict": verdict_source["statements"][0][:160],
             "sections": sections,
-            "generated_at": row.get("updated_at"),
-            "source_count": len(result.get("citations") or []),
-            "event_key": row.get("event_key"),
-            "reviewed": True,
         }
     return {"status": "none"}
 
 
 def model_research(report):
     """Compact statements for the model; never the raw research document."""
-    if not report or report.get("status") != "ready":
+    if (
+        not report or report.get("status") != "ready" or not report.get("sections")
+        or ("report_markdown" not in report and report.get("review_status") not in ("accepted", "not_required"))
+    ):
         return None
     return {
         "verdict": report["verdict"],

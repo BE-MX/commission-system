@@ -131,6 +131,20 @@ UI 注意：从 DetailDrawer 打开的核查弹窗必须 append-to-body，避免
 
 **本期边界**：订单及明细纳入客户画像；回款、物流、售后和展会不接入本期档案。不要为了“信息完整”越过此边界新增同步或推断。
 
+## 私海背调 v2（2026-11-16）
+
+入口是私海助理客户详情和 `backend/scripts/private_customer_research.py`。批量预览示例（在 backend 目录执行）：
+
+```powershell
+python -m scripts.private_customer_research create --owners rina --with-orders --unresearched --limit 20 --dry-run
+```
+
+按需请求优先级为 100，在客户级锁内检查进行中任务及上一次按需申请的 30 天冷却。新请求取代排队和已完成未审核的旧私海任务。后台按优先级、入队时间领取。旧执行器默认只读旧版队列。
+
+冻结输入区分明确公司与弱线索，客户姓名、个人邮箱和已知公开账号只在有效租约内可见。新事实落在本次 Run 的候选账本，保留已有人工和统一档案内容。后端标记正文中缺乏当前证据的精确信息；模型仅收到能和引用来源事实对应的结论。姓名识别结合提交者的姓名清单、任务联系人及文本模式，试点需抽检姓名标注。
+
+Maigret 和 Monid 走独立的异步调用账本，身份匹配后显式绑定候选。Monid 仅对弱线索、同一 Run 有相关免费检索记录及已实际尝试扫描的任务开放，免费检索过程由 Agent 记录。默认单轮上限 USD 0.15，各接口还有单次额度与次数限制。不确定是否扣费时保留预占，禁止重复发起。北京 worker、两家供应商开关和 OpenClaw 队列心跳均需按受控发布流程启用。配置与健康检查见 [Maigret 服务](../services/maigret-scanner/README.md) 和 [OpenClaw 侧车](../services/openclaw-sales-agent/README.md)。
+
 ## 设计系统（System）
 
 ### 系统字典（sys_dict）

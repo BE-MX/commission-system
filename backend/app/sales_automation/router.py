@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok, page_result
+from app.core.time import beijing_today
 from app.customer.models import CustomerAssignment
 from app.sales_automation import public_pool_service, service
 from app.sales_automation.schemas import (
@@ -317,6 +320,22 @@ def create_public_pool_batch(
 ):
     row = _call(public_pool_service.generate_batch, db, payload, _user_id(user))
     return ok(_batch(row))
+
+
+@router.get("/research/monid-spend")
+def list_research_monid_spend(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("sales_monid_spend:read")),
+):
+    from app.sales_automation.research_tools_service import list_spend
+
+    end = date_to or beijing_today()
+    start = date_from or max(date.min, end - timedelta(days=min(29, (end - date.min).days)))
+    if start > end or end == date.max or (end - start).days >= 366:
+        raise HTTPException(422, "请选择连续且不超过 366 天的日期范围")
+    return ok(_call(list_spend, db, start, end))
 
 
 def list_research_tasks(

@@ -190,7 +190,7 @@ export const MENU_GROUPS = {
     anyPermission: [
       'user:read', 'role:read', 'dict:read', 'ai:admin', 'navigation:read',
       'mcp:admin', 'integration:admin', 'commerce_transition:admin',
-      'operations:read', 'operations:admin',
+      'operations:read', 'operations:admin', 'sales_monid_spend:read',
       'dingtalk:admin',
       'external_binding:read', 'external_binding:write',
       'whatsapp:read', 'whatsapp:write',
@@ -1570,6 +1570,17 @@ export const NAV_ENTRIES = [
   },
 
   // ── 系统管理 ───────────────────────────────────────────
+  {
+    path: '/system/monid-spend',
+    name: 'MonidSpend',
+    component: () => import('@/views/system/MonidSpend.vue'),
+    title: 'Monid 花费',
+    permission: 'sales_monid_spend:read',
+    menu: {
+      group: 'system', title: 'Monid 花费', icon: Money, order: 79,
+      permission: 'sales_monid_spend:read',
+    },
+  },
   {
     path: '/system/component-showcase',
     name: 'ComponentShowcase',

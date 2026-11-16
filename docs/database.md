@@ -1133,3 +1133,10 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 队列入场由既有配置表 `_insight_queue_lock` 行锁序列化；AI 网络调用不持有入场锁。执行令牌配合条件 UPDATE 阻止超时执行器覆盖结果。证据版本、当前责任人、有效成交样本均在读取时复核；task_service 的 `source_key=insight:<id>` 与建议行锁共同保证待办幂等。配置新增统计名单、非工作日、AI 生成开关，使用既有配置表；无统计汇总表。
 
 实施证据与操作限制见[实施记录](requirements/2026-11-12-followup-stats-board/implementation.md)。
+
+
+## 私海背调 v2（264_private_research_tools）
+
+迁移接在 `263_customer_owner_claimed_at`。为 `ark_customer_research_tasks` 添加 `priority`（默认 0）和优先级与创建时间索引。旧任务保留优先级 0。被按需重跑取代的任务以 `task_status/result_review_status=superseded` 留档；有效运行通过原租约代次及 Run 状态围栏保护。
+
+`ark_customer_research_tool_calls` 关联研究任务和 Agent Run。对 task/run/idempotency_key 唯一，记录租约代次、请求哈希、操作和目标、扫描先决记录、状态、供应商执行 ID、原始响应、绑定回执以及北京时间。调用记录和预占在请求供应商前提交。Monid 按整数微美元保存预占和已确认花费，已确认花费为空时仍占用额度。原始响应只用于服务侧审计与候选绑定，不进入客户读接口。

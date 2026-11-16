@@ -1,3 +1,11 @@
+## 2026-11-16 私海背调 v2（Codex，本地候选）
+
+工作区 `D:/MyProgram/commission-system-codex-private-research-v2`，分支 `codex/private-research-v2`，基点 `c2c36054`。实现按需重跑与 batch 筛选、租约内客户线索、证据校验与完整 Markdown 报告、Maigret 优先与弱线索 Monid 异步网关、OpenClaw 专用技能、按日/客户花费查看。迁移 `264_private_research_tools` 接 `263_customer_owner_claimed_at`。
+
+验证使用隔离数据库与模拟供应商。研究与运行档案回归 170 项通过（其中含早期网关用例），最终 v2 与网关专项 20 项、私海助理后端 123 项、OpenClaw 89 项、发布脚本 29 项通过。Agent Runtime 有 2 项旧测试在基线复现失败。前端构建与模拟浏览器验收通过。迁移在隔离 SQLite 升降级通过并生成 MySQL 离线 SQL，Alembic 为单 head。
+
+生产放行待配置 Monid 公司工作区及限额、新加坡认证代理、北京 Maigret 单独服务与 provider worker。打开队列前按服务文档验证跨境站点、实际搜索能力、模型长报告及并行 Agent 身份；完成 Rina 20 客户对照、按方案评估效果和花费后再启用分批补齐。估算用客户数 × 单客分钟 ÷ 并行数，按 15 分钟目标估计 1,000 位客户约 250 Agent 小时，4 路理论约 62.5 小时，实际以试点为准。
+
 ## 2026-11-16 私海助理今日建议（Codex，Git 交付，待发布）
 
 - 本次按授权合并并推送 `origin/main`。包含 AI 输出和校验修复、R4/R8 入队调整、今日建议分组、R5 配置能力及 R3 复核的当日可见性。发布时需将专用 AI 预设的 1800 token 调整至 4000，再验收生产批次失败率和覆盖量。

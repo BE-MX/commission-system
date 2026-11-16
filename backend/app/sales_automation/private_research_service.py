@@ -7,16 +7,18 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from uuid import uuid4
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.auth.models import ArkUser
 from app.core.time import beijing_now
 from app.customer.logical_customer_service import (
     logical_root_query,
+    logical_root_predicate,
     resolve_canonical_customer_id,
 )
 from app.customer.models import (
@@ -29,10 +31,31 @@ from app.customer.models import (
     CustomerTargetMatch,
 )
 from app.sales_automation import public_pool_service, service
+from app.sales_automation.private_enrichment_service import existing_information
+from app.sales_automation.private_research_policy import (
+    LEGACY_ENRICHMENT_POLICY, PRIVATE_RESEARCH_POLICY, PRIVATE_RESEARCH_RESULT,
+)
 
 TASK_TYPE = "full_research"
 SOURCE_REF_TYPE = "manual"
 POLICY_VERSION = "full-research-v1"
+PRIVATE_POLICIES = (POLICY_VERSION, LEGACY_ENRICHMENT_POLICY, PRIVATE_RESEARCH_POLICY)
+REQUEST_PRIORITY = 100
+COOLDOWN_DAYS = 30
+RESEARCH_REQUEST = {
+    "schema_version": PRIVATE_RESEARCH_RESULT,
+    "focus": [
+        "主体识别与依据", "公司与经营概况", "联系人与职业身份", "产品与商业模式",
+        "社交账号与公开活动", "采购与供应链线索", "风险与冲突", "跟进切入建议", "来源与缺口",
+    ],
+    "instructions": [
+        "按明确公司实体和弱线索两条路径调查，使用公开可访问来源。",
+        "用当前任务已有的姓名、个人邮箱、社媒号或平台昵称核实主体。只引用实际采集的来源。",
+        "先免费网页检索，再用用户名扫描。弱线索在仍有关键缺口时才启用 Monid。",
+        "仅按任务绑定证据，不发送消息、不写回小满。订单和方舟内部数据只用于内部研判。",
+        "正文使用 Markdown，区分事实、推断和资料缺口。提交缺口清单及本次运行返回的证据引用。",
+    ],
+}
 RECENT_ORDER_LIMIT = 5
 TOP_FAMILY_LIMIT = 8
 TOP_PRODUCT_LIMIT = 10
@@ -170,12 +193,18 @@ def create_private_research_tasks(
     customer_ids: list[int] | None = None,
     commit: bool = True,
     enrichment: bool = False,
+    private_v2: bool = False,
+    with_orders: bool = False,
+    unresearched: bool = False,
 ) -> dict:
     """为指定业务员的有效主负责客户批量创建 full_research 研究任务。
 
     幂等：同一客户同策略版本存在进行中任务时复用原任务；输入快照变化后
     （例如有新订单）允许创建新一轮任务。全局禁止开发（DNC/抑制名单）客户跳过。
     """
+    if enrichment and private_v2:
+        raise ValueError("请选择一个私海研究策略")
+    policy = PRIVATE_RESEARCH_POLICY if private_v2 else LEGACY_ENRICHMENT_POLICY if enrichment else POLICY_VERSION
     assignments_query = (
         db.query(CustomerAssignment)
         .filter(
@@ -187,7 +216,7 @@ def create_private_research_tasks(
     )
     if owner_ids is not None:
         assignments_query = assignments_query.filter(CustomerAssignment.user_id.in_(owner_ids))
-    if enrichment:
+    if enrichment or private_v2:
         assignments_query = assignments_query.filter(CustomerAssignment.effective_from <= beijing_now())
     assignments = assignments_query.all()
     candidates: list[tuple[int, int]] = []
@@ -212,13 +241,17 @@ def create_private_research_tasks(
     if customer_ids is not None:
         allowed_ids = {int(customer_id) for customer_id in customer_ids}
         candidates = [pair for pair in candidates if pair[0] in allowed_ids]
+    if with_orders:
+        candidates = [pair for pair in candidates if _has_valid_order(db, pair[0])]
+    if unresearched:
+        candidates = [pair for pair in candidates if not _has_research_result(db, pair[0])]
     candidates.sort(key=_sort_key)
     if limit is not None:
         candidates = candidates[: max(0, int(limit))]
 
     summary = {
         "run_tag": run_tag,
-        "policy_version": "private-enrichment-v1" if enrichment else POLICY_VERSION,
+        "policy_version": policy,
         "candidate_count": len(candidates),
         "created": 0,
         "reused": 0,
@@ -256,6 +289,10 @@ def create_private_research_tasks(
                     run_tag=run_tag, input_snapshot=input_snapshot, tier=tier,
                 )
                 summary["policy_version"] = task.research_policy_version
+            elif private_v2:
+                task, was_created = _ensure_private_v2_task(
+                    db, account, owner_id, operator_id, run_tag, input_snapshot, tier=tier,
+                )
             else:
                 task, was_created = public_pool_service.ensure_research_task(
                     db,
@@ -289,6 +326,125 @@ def create_private_research_tasks(
     if commit:
         db.commit()
     return summary
+
+
+def _private_tasks(db, customer_id):
+    return db.query(CustomerResearchTask).filter(
+        logical_root_predicate(CustomerResearchTask, "research_task", customer_id),
+        CustomerResearchTask.customer_id == customer_id,
+        CustomerResearchTask.task_type == TASK_TYPE,
+        CustomerResearchTask.source_ref_type == SOURCE_REF_TYPE,
+        CustomerResearchTask.research_policy_version.in_(PRIVATE_POLICIES),
+    )
+
+
+def _has_valid_order(db, customer_id):
+    return logical_root_query(db, CustomerOrder, "order", customer_id).filter(
+        CustomerOrder.is_valid_business_order.is_(True),
+    ).first() is not None
+
+
+def _has_research_result(db, customer_id):
+    return _private_tasks(db, customer_id).filter(
+        CustomerResearchTask.task_status == "completed",
+        CustomerResearchTask.result_review_status != "rejected",
+        CustomerResearchTask.result_schema_version.in_(("customer_research_v1", PRIVATE_RESEARCH_RESULT)),
+    ).first() is not None
+
+
+def _ensure_private_v2_task(db, account, owner_id, operator_id, run_tag, snapshot, *, tier=None, priority=0):
+    info = existing_information(db, account, include_personal=True)
+    company = bool(account.canonical_company_name and account.canonical_company_name.strip()) or any(
+        row["verification_status"] == "verified" for row in info["website_clues"]
+    ) or any(
+        row["type"] == "email" and row.get("email_domain_type") == "corporate"
+        and row["verification_status"] not in {"disputed", "invalid"} for row in info["business_contacts"]
+    )
+    snapshot = {
+        **snapshot,
+        "owner_user_id": owner_id,
+        "research_request": RESEARCH_REQUEST,
+        "existing_information": info,
+        "lead_track": "company" if company else "weak",
+    }
+    return public_pool_service.ensure_research_task(
+        db, customer_id=account.id, task_type=TASK_TYPE, source_ref_type=SOURCE_REF_TYPE,
+        source_ref_id=run_tag, research_policy_version=PRIVATE_RESEARCH_POLICY,
+        input_snapshot=snapshot, selection_reason=[{"reason": snapshot["trigger"]}],
+        tier=tier, created_by=operator_id, physical_owner_only=True, priority=priority,
+    )
+
+
+def _research_status(tasks, now):
+    active = next((task for task in tasks if task.task_status == "running"), None)
+    active = active or next((task for task in tasks if task.task_status == "pending"), None)
+    latest = active or (tasks[0] if tasks else None)
+    last_run = max((task.finished_at for task in tasks if task.finished_at is not None), default=None)
+    last_request = next((task for task in tasks if task.priority == REQUEST_PRIORITY), None)
+    cooldown = last_request.created_at + timedelta(days=COOLDOWN_DAYS) if last_request else None
+    remaining = max(0, int((cooldown - now).total_seconds() + 0.999)) if cooldown else 0
+    status = latest.task_status if latest else "idle"
+    return {
+        "status": status,
+        "last_run_at": last_run.isoformat() if last_run else None,
+        "cooldown_until": cooldown.isoformat() if cooldown else None,
+        "cooldown_remaining_seconds": remaining,
+        "can_rerun": not remaining and status != "running",
+    }
+
+
+def _current_tasks(db, customer_id):
+    return _private_tasks(db, customer_id).filter(CustomerResearchTask.task_status != "superseded").order_by(
+        CustomerResearchTask.created_at.desc(), CustomerResearchTask.id.desc(),
+    )
+
+
+def private_research_status(db, *, customer_id):
+    tasks = _current_tasks(db, customer_id).options(load_only(
+        CustomerResearchTask.task_status, CustomerResearchTask.finished_at,
+        CustomerResearchTask.created_at, CustomerResearchTask.priority,
+    )).all()
+    return _research_status(tasks, beijing_now())
+
+
+def rerun_private_research(db, *, customer_id, owner_user_id):
+    """Create an owner-requested task; the desk caller rechecks current OKKI ownership first."""
+    from app.sales_automation.research_run_service import finish_run
+
+    account = db.query(CustomerAccount).filter(
+        CustomerAccount.id == customer_id, CustomerAccount.record_status == "active",
+    ).with_for_update().one_or_none()
+    if account is None:
+        raise service.NotFoundError("客户不存在")
+    if public_pool_service.is_development_denied(db, customer_id):
+        raise service.ConflictError("该客户当前不允许发起背调")
+    # A locking read observes committed cooldowns and serializes task claims with replacement.
+    tasks = _current_tasks(db, customer_id).populate_existing().with_for_update().all()
+    if not _research_status(tasks, beijing_now())["can_rerun"]:
+        raise service.ConflictError("背调进行中或仍在冷却期")
+    for task in tasks:
+        if task.task_status != "pending" and not (
+            task.task_status == "completed" and task.result_review_status in {"pending", "revision_requested"}
+        ):
+            continue
+        finish_run(db, task, "cancelled", "research_superseded")
+        task.task_status = "superseded"
+        task.result_review_status = "superseded"
+        task.claimed_by = None
+        task.lease_token_hash = None
+        task.lease_expires_at = None
+    db.flush()
+    run_tag = f"private-rerun-{uuid4().hex}"
+    _ensure_private_v2_task(db, account, owner_user_id, owner_user_id, run_tag, {
+        "schema_version": "research_input_v1",
+        "customer_id": customer_id,
+        "profile_input_seq": account.profile_input_seq,
+        "trigger": "private_research_rerun",
+        "run_tag": run_tag,
+        "commerce_snapshot": _commerce_snapshot(db, customer_id),
+    }, priority=REQUEST_PRIORITY)
+    db.commit()
+    return private_research_status(db, customer_id=customer_id)
 
 
 def research_report(db: Session, *, run_tag: str | None = None) -> list[dict]:

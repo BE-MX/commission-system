@@ -371,7 +371,7 @@ def run_job(db, job):
                     "orders": len(source.get("orders") or []),
                     "messages": sum(1 for k in pack.refs if k.startswith("M-")),
                     "inquiries": sum(1 for k in pack.refs if k.startswith("AF-")),
-                    "research": (source.get("research_report") or {}).get("status") == "ready",
+                    "research": bool(source.get("research_summary")),
                     "followups": sum(1 for k in pack.refs if k.startswith("F-")),
                 },
                 "generated_at": finished.isoformat(),

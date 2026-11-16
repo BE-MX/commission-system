@@ -1,5 +1,7 @@
 # Public-pool staged research framework
 
+> 本框架适用于公海研究。私海 `private-research-v2` 由独立技能执行，允许用当前任务的姓名、个人邮箱、社媒号和平台昵称检索公开来源。公海继续按本框架的联系人和检索词约束执行。
+
 ## 1. Enterprise knowledge grounding
 
 Search narrowly for target industries, exclusions, product fit, buyer types, and verified sales lessons. Prefer 2–5 relevant published documents. Store only exact document/revision/version IDs; never copy internal prose into public facts or expose it to a search provider.

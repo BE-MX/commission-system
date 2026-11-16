@@ -58,7 +58,8 @@ def validate(payload):
         path = PurePosixPath(name)
         allowed = (name.startswith('services/openclaw-sales-agent/') or
                    any(name.startswith('.agents/skills/' + s + '/') for s in
-                       ('ark-lead-discovery', 'ark-company-research', 'ark-public-pool-research')) or
+                       ('ark-lead-discovery', 'ark-company-research', 'ark-public-pool-research',
+                        'ark-private-research')) or
                    name in {'deploy/sales-agent-runtime/package.json', 'deploy/sales-agent-runtime/package-lock.json',
                             'deploy/sales_agent_credentials.py'})
         if not allowed or path.is_absolute() or '..' in path.parts or '\\' in name:

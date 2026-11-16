@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_permission
 from app.core.database import get_db
 from app.core.response import ok
-from app.client_desk import schemas, service, link_service, timeline
+from app.client_desk import schemas, service, link_service, research, timeline
 from app.client_desk.access import require_enabled
 from app.client_desk.read_scope import scope_request
 
@@ -76,6 +76,24 @@ def get_customer(
 ):
     load = service.fresh_detail if fresh else service.detail
     return ok(load(db, user, company_id))
+
+
+@router.get("/customers/{company_id}/research")
+def get_research(
+    company_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_permission("client_desk:read")),
+):
+    return ok(research.status(db, user, company_id))
+
+
+@router.post("/customers/{company_id}/research", status_code=202)
+def rerun_research(
+    company_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_permission("client_desk:write")),
+):
+    return ok(research.rerun(db, user, company_id))
 
 
 @router.get("/customers/{company_id}/timeline")
