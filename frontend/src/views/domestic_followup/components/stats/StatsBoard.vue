@@ -11,6 +11,8 @@
     <el-alert v-if="currentError" class="stats-error" type="error" :title="currentError" :closable="false" show-icon>
       <template #default><GlassButton variant="link" @click="loadView()">重新加载</GlassButton></template>
     </el-alert>
+    <ChurnShipCard v-if="view !== 'ai'" ref="churnRef" :api="api" :can-read-all="canReadAll" :user-id="churnUserId"
+                   @record="openRecord" @timeline="id => $emit('timeline', id)" />
     <div v-loading="currentLoading && !hasData">
       <PersonalStats v-if="view === 'personal' && personal.data" :data="personal.data" v-model:person="person" v-model:chart="chart" :can-read-all="canReadAll"
                      @drilldown="drilldown" @timeline="id => $emit('timeline', id)" @record="openRecord" @go-tab="tab => $emit('go-tab', tab)" />
@@ -43,6 +45,7 @@ import TeamStats from './TeamStats.vue'
 import InsightBoard from './InsightBoard.vue'
 import StatsDrilldownDrawer from './StatsDrilldownDrawer.vue'
 import StatsSegments from './StatsSegments.vue'
+import ChurnShipCard from './churn/ChurnShipCard.vue'
 import { availableViews, nextView } from './statsModel'
 
 const props = defineProps({ api: { type: Object, required: true }, canReadAll: Boolean })
@@ -52,7 +55,7 @@ const {
   view, range, customDates, person, chart, aiTab, aiPerson, personal, team, insights, refreshing,
   loadPersonal, loadView, changeRange, changeCustomDates, changeAiPerson,
 } = board
-const root = ref(null), dock = ref(null), thumb = ref(null), drilldownRef = ref(null)
+const root = ref(null), dock = ref(null), thumb = ref(null), drilldownRef = ref(null), churnRef = ref(null)
 const entering = ref(true), instantDock = ref(false), dockLeft = ref(0)
 let observer, enterTimer, instantTimer
 const icons = { User, UserFilled, MagicStick }
@@ -64,10 +67,13 @@ const currentError = computed(() => ({ personal: personal.error, team: team.erro
 const currentLoading = computed(() => ({ personal: personal.loading, team: team.loading, ai: insights.loading && !insights.data }[view.value]))
 const hasData = computed(() => Boolean({ personal: personal.data, team: team.data, ai: insights.data }[view.value]))
 const insightData = computed(() => insights.data || { personal: null, company: null, refresh: { status: 'idle', remaining: 2, limit: 2 } })
+// 管理者在个人数据里选了某人时，态势卡也只看这个人；团队视图看全部
+const churnUserId = computed(() => (props.canReadAll && view.value === 'personal' && person.value !== 'all' ? Number(person.value) || null : null))
 function drilldown(params, title) { drilldownRef.value?.open(params, title) }
 function openRecord(row) { emit('record', row) }
 function reload() {
   loadPersonal()
+  churnRef.value?.reload()
   if (team.loaded) board.loadTeam()
   if (insights.loaded) board.loadInsights()
 }

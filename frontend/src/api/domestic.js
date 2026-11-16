@@ -82,6 +82,11 @@ export function updateCustomer(id, data) {
   return domesticClient.put(`/customers/${id}`, data)
 }
 
+// 从公海认领：归属给自己，两个公海倒计时（3 个月未下单 / 1 个月未跟进）都重新开始
+export function claimCustomer(id) {
+  return domesticClient.post(`/customers/${id}/claim`)
+}
+
 export function deleteCustomer(id) {
   return domesticClient.delete(`/customers/${id}`)
 }

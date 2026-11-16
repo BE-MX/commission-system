@@ -53,6 +53,7 @@ class DomesticCustomer(Base):
     customer_level = Column(String(8), comment="客户等级（sys_dict: domestic_customer_level）")
     lifecycle_status = Column(String(16), comment="客户状态（sys_dict: domestic_customer_lifecycle）")
     owner_user_id = Column(_UINT, ForeignKey("ark_users.id"), comment="归属销售")
+    owner_claimed_at = Column(DateTime, comment="最近一次从公海认领的北京时间；跟进钟从此重新计时，订单钟不受影响")
     first_contact_date = Column(Date, comment="首次联系日期")
     first_order_date = Column(Date, comment="首次下单日期（历史档案口径）")
     last_order_date = Column(Date, comment="最近下单日期（历史档案口径）")

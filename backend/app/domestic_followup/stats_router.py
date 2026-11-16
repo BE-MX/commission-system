@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_permission
 from app.core.database import get_db
 from app.core.response import ok
-from app.domestic_followup import stats_service
+from app.domestic_followup import stats_churn, stats_service
 
 router = APIRouter()
 _require_read = require_permission("domestic_followup:read")
@@ -60,6 +60,13 @@ def rhythm(scope: str = Query("personal", pattern="^(personal|team)$"),
 def missing_today(db: Session = Depends(get_db), user=Depends(_require_read)):
     with _errors():
         return ok(stats_service.missing_today(db, user))
+
+
+@router.get("/stats/churn-map")
+def churn_map(user_id: int | None = Query(None, ge=1), db: Session = Depends(get_db), user=Depends(_require_read)):
+    """客户流失态势：当前快照，不随看板时间范围变化。业务员只拿自己的客户明细。"""
+    with _errors():
+        return ok(stats_churn.churn_map(db, user, user_id=user_id))
 
 
 @router.get("/stats/drilldown")

@@ -1,4 +1,7 @@
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+import pytest
 
 from app.core.time import beijing_today
 from app.domestic_followup import followup_service
@@ -45,16 +48,19 @@ def test_public_sea_release_keeps_independent_tasks_and_single_writer(db):
             assert client.post(f"/api/domestic-followup/tasks/{task.id}/snooze", json={"days": 1}).status_code == 403
 
 
-def test_former_author_retains_record_but_cannot_change_transferred_plan(db):
+@pytest.mark.parametrize("clear_next_date", [False, True])
+def test_former_author_can_correct_record_dates_without_rescheduling_transferred_plan(db, clear_next_date):
     seed_dicts(db)
     original, current = [make_user(db, "fuc_" + label) for label in ("author", "current")]
     for user in (original, current):
         grant(db, user, *ALL_PERMS)
     customer = make_customer(db, original, "交接后的历史")
-    create_initial_responsibility(db, customer.id, current.id)
+    responsibility = create_initial_responsibility(db, customer.id, current.id)
     row = _record(db, original, customer, "old-contact")
     row.next_date = beijing_today() + timedelta(days=3)
     row.next_plan = "复核型号"
+    original_due = row.next_date
+    responsibility.next_plan_date = original_due
     moved = DomesticFollowupTask(
         customer_id=customer.id, assignee_user_id=current.id, source_key="plan:moved", task_type="plan",
         purpose="development", title="复核型号", due_date=row.next_date, source_followup_id=row.id,
@@ -64,16 +70,63 @@ def test_former_author_retains_record_but_cannot_change_transferred_plan(db):
     record_path = f"/api/domestic-followup/followups/{row.id}"
     body = {"version": row.version, "request_id": "edit-old-contact", "reason": "纠正客户原话",
             "result_code": "有效沟通",
-            "raw_text": "原话更正", "followup_date": row.followup_date.isoformat(), "next_plan": row.next_plan,
-            "next_date": row.next_date.isoformat()}
+            "raw_text": "原话更正", "followup_date": (row.followup_date - timedelta(days=1)).isoformat(),
+            "next_plan": row.next_plan,
+            "next_date": None if clear_next_date else (original_due + timedelta(days=1)).isoformat()}
     with followup_client(db, original) as client:
         assert client.get(record_path).json()["data"]["historical_edit"] is True
-        changed_due = {**body, "next_date": (row.next_date + timedelta(days=1)).isoformat()}
-        assert client.put(record_path, json=changed_due).status_code == 400
+        assert client.put(record_path, json={**body, "next_plan": "改现任安排"}).status_code == 400
         correction = client.put(record_path, json=body)
         assert correction.status_code == 200, correction.text
-    assert moved.assignee_user_id == current.id and moved.due_date == row.next_date
+        reloaded = client.get(record_path).json()["data"]
+        assert (reloaded["followup_date"], reloaded["next_date"]) == (body["followup_date"], body["next_date"])
+        revision, = client.get(f"{record_path}/history").json()["data"]
+        assert revision["before"]["next_date"] == original_due.isoformat()
+        assert revision["after"]["next_date"] == body["next_date"]
+        assert revision["after"]["followup_date"] == body["followup_date"]
+    assert moved.assignee_user_id == current.id and moved.due_date == original_due and moved.status == "todo"
+    assert responsibility.next_plan_date == original_due
     assert row.author_user_id == original.id and row.raw_text == "原话更正"
+
+
+@pytest.mark.parametrize("instant, status", [("2026-11-13T15:59:59+00:00", 400), ("2026-11-13T16:00:00+00:00", 200)])
+def test_edit_record_dates_use_beijing_midnight_and_keep_date_order(db, monkeypatch, instant, status):
+    from app.auth import utils as auth_utils
+    from app.core import time as time_service
+
+    fixed = datetime.fromisoformat(instant)
+
+    class ServerClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed.astimezone(tz or ZoneInfo("America/Los_Angeles"))
+
+    monkeypatch.setattr(auth_utils, "utc_now", lambda: datetime.now(time_service.UTC_TIMEZONE))
+    monkeypatch.setattr(time_service, "datetime", ServerClock)
+    seed_dicts(db)
+    owner = make_user(db, "fuc_edit_clock")
+    grant(db, owner, *ALL_PERMS)
+    customer = make_customer(db, owner, "跨日日期更正")
+    create_initial_responsibility(db, customer.id, owner.id)
+    row = _record(db, owner, customer, "clock-contact", day=date(2026, 11, 12))
+    db.commit()
+    path = f"/api/domestic-followup/followups/{row.id}"
+    body = {"version": row.version, "request_id": "edit-clock-contact", "reason": "更正日期",
+            "result_code": "有效沟通", "raw_text": row.raw_text,
+            "followup_date": "2026-11-14", "next_date": "2026-11-14"}
+    with followup_client(db, owner) as client:
+        response = client.put(path, json=body)
+        assert response.status_code == status, response.text
+        if status == 400:
+            assert response.json()["detail"] == "跟进日期不能晚于今天"
+        else:
+            assert response.json()["data"]["next_date"] == "2026-11-14"
+            version = response.json()["data"]["version"]
+            invalid = client.put(path, json={**body, "version": version, "request_id": "edit-clock-invalid",
+                                            "next_date": "2026-11-13"})
+            assert invalid.status_code == 400
+            assert invalid.json()["detail"] == "下次跟进日期不能早于跟进日期"
+    assert db.query(DomesticFollowupTask).count() == 0
 
 
 def test_receipt_assignment_does_not_grant_development_access(db):

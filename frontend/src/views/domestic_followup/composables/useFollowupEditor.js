@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { recordToEditForm } from '../followupEdit.js'
+import { currentBeijingDate } from '../../../utils/datetime.js'
 import { errorMessage } from '../../../utils/errors.js'
 
 export function useFollowupEditor(api, onSaved = () => {}) {
@@ -37,11 +38,16 @@ export function useFollowupEditor(api, onSaved = () => {}) {
     if (saving.value || !form.value || conflict.value) return false
     if (!form.value.reason.trim()) { error.value = '请填写修改原因'; return false }
     if (!form.value.result_code?.trim()) { error.value = '请选择本次结果'; return false }
+    const { followup_date, next_date } = form.value
+    if (!followup_date) { error.value = '请选择跟进日期'; return false }
+    if (followup_date > currentBeijingDate()) { error.value = '跟进日期不能晚于今天'; return false }
+    if (next_date && next_date < followup_date) { error.value = '下次跟进日期不能早于跟进日期'; return false }
     saving.value = true
     error.value = ''
     // A transport retry must use exactly the same idempotent payload.
     retryPayload ||= {
       ...JSON.parse(JSON.stringify(form.value)),
+      next_date: next_date || null,
       items: form.value.items.map(({ key, ...item }) => ({ ...item })),
     }
     try {

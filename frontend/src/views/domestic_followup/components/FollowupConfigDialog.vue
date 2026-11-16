@@ -23,6 +23,10 @@
           </label>
         </div>
       </el-form-item>
+      <el-form-item label="「1 个月未跟进入公海」生效日（空 = 未启用，只在流失态势图上预演）">
+        <el-date-picker v-model="form.public_sea_follow_launch_date" type="date" value-format="YYYY-MM-DD" clearable class="cfg-full" placeholder="未启用" />
+        <p class="cfg-hint">生效后所有客户的跟进钟从这一天起算，满 1 个自然月才开始释放；3 个月未下单的规则不受影响。</p>
+      </el-form-item>
       <el-form-item label="跟进统计名单">
         <el-select v-model="form.stats_user_ids" multiple filterable remote :remote-method="searchUsers" class="cfg-full"
                    placeholder="留空则自动取有写权限且名下有负责客户的在职用户">
@@ -83,10 +87,10 @@ async function save() {
   saving.value = true
   try {
     const { receipt_delay_days, urgent_receiver_user_ids, frequency_days, fallback_assignee_user_id,
-      stats_user_ids, stats_non_workdays, insight_generation_enabled } = form.value
+      stats_user_ids, stats_non_workdays, insight_generation_enabled, public_sea_follow_launch_date } = form.value
     await followupApi.saveConfig({
       receipt_delay_days, urgent_receiver_user_ids, frequency_days, stats_user_ids, stats_non_workdays,
-      insight_generation_enabled,
+      insight_generation_enabled, public_sea_follow_launch_date: public_sea_follow_launch_date || null,
       fallback_assignee_user_id: fallback_assignee_user_id || null,  // 清空时 el-select 给的是空串
     })
     msgSuccessText('跟进设置已保存')
@@ -101,4 +105,5 @@ defineExpose({ open })
 .cfg-full { width: 100%; }
 .cfg-freq { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 16px; }
 .cfg-freq label { display: flex; align-items: center; gap: 8px; }
+.cfg-hint { margin: 4px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
 </style>

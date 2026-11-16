@@ -60,6 +60,20 @@ def _validate(db: Session, key: str, value):
             _is_int(v) and 1 <= v <= 365 for v in value.values()
         ):
             raise ValueError("跟进频率需为 {等级: 天数} 且天数 1~365")
+    elif key == "public_sea_follow_launch_date":
+        if value is not None:
+            try:
+                parsed = date.fromisoformat(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("公海跟进规则生效日需为 YYYY-MM-DD") from exc
+            if parsed.isoformat() != value:
+                raise ValueError("公海跟进规则生效日需为 YYYY-MM-DD")
+            from app.core.time import beijing_today
+
+            saved = db.get(DomesticFollowupConfig, key)
+            unchanged = saved is not None and saved.value == value  # 已生效后原样回传不拦，否则其他设置都存不了
+            if parsed < beijing_today() and not unchanged:  # 设成过去会让下一次释放一次性放掉一大批客户
+                raise ValueError("公海跟进规则生效日不能早于今天")
     elif key == "receipt_launch_date":
         if value is not None:
             try:

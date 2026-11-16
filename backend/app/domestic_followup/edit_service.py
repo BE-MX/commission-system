@@ -197,8 +197,8 @@ def update(db, user, record_id, payload):
         managed = collaboration_access.customer_is_managed(db, customer, lock=True)
         if managed and not collaboration_access.has_live_write(db, user, lock=True):
             raise PermissionError("当前账号没有跟进编辑权限")
-        if managed and any(getattr(payload, name) != getattr(row, name) for name in ("next_date", "next_plan", "next_method")):
-            raise ValueError("旧记录仅供更正沟通事实，请通过新跟进或待办更新当前安排")
+        if managed and any(getattr(payload, name) != getattr(row, name) for name in ("next_plan", "next_method")):
+            raise ValueError("请通过新跟进或待办更新当前跟进计划和沟通方式")
         items = (db.query(Item).filter(Item.followup_id == row.id).order_by(Item.id)
                  .populate_existing().with_for_update().all())
         _validate_edit(db, row, payload, items)

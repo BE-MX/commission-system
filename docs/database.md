@@ -1,9 +1,5 @@
 # 莱莎方舟 数据库表参考
 
-## TM 资料试点（256_alibaba_feed_pilot）
-
-接 `255_followup_collaboration`。单例表 `ark_alibaba_feed_pilot` 固定 `id=1`，保留来源 `source_id`、试点业务员 `user_id`、`enabled` 和并发 `version`。迁移初始化关闭且未配置，保留已有来源、批次和资料。保存、启用及停用与来源权限同事务更新。两地后端和单活 Scheduler 从共享库读取同一状态。
-
 ## 单产品库存同步审计（253_inventory_sync_audit，本地实现，待发布）
 
 接 `252_alibaba_feed_business`，新增方舟库 `ark_inventory_sync_logs`：`id`、`product_id`、`created_by`、`observed_at`、`before_data`、`after_data`、`created_at`，按产品与创建时间索引。前后库存快照为 JSON；时间为北京时间，`observed_at` 是小满拉取开始时间，防止把拉取期间新发生的占库误判为已反映。
@@ -39,6 +35,8 @@
 迁移继承 `247_sales_return_freight`，新增 `ark_navigation_configs`（组织共享草稿、draft_revision、base_version、当前版本指针与目录 hash）、`ark_navigation_versions`（不可变发布快照、唯一版本、唯一 request_id、请求指纹、字段差异）、`ark_navigation_config_audits`（保存/发布/恢复审计）。时间均为无时区北京时间。
 
 草稿使用条件 UPDATE 比较修订号及发布版本；发布在同事务切换指针、插入版本及审计。回退复制历史为新草稿，不修改历史快照。只保存展示字段，权限/路由/交易阶段仍由代码与构建目录决定。降级遇到任何配置或历史记录时阻断，避免删除管理员配置。没有从开发机执行共享库迁移。
+
+本文维护表结构与迁移说明；源码依据为 `backend/alembic/versions/` 与对应模型。迁移编号代表结构依赖，不代表当前生产 head。部署、开关和真实业务验收统一见[交接文档](handoff.md)。 本轮 2026-10-31 核对本地迁移链至 `214_sales_return_ledger`；这不是实时生产查询。
 
 本文维护表结构与迁移说明；源码依据为 `backend/alembic/versions/` 与对应模型。迁移编号代表结构依赖，不代表当前生产 head。部署、开关和真实业务验收统一见[交接文档](handoff.md)。 本轮 2026-10-31 核对本地迁移链至 `214_sales_return_ledger`；这不是实时生产查询。
 
@@ -82,13 +80,19 @@ ORM 层禁止更新/删除回款、GMV 调整和审计事实，错误用引用�
 复用 `ark_okki_outbound_tasks`、成功 `ark_invoice_sync_logs` 与 `ark_shipping_operation_events`。事件 scope `outbound-stock-reservation` 保存任务ID/完整成功日志ID代次的整单 product_id、sku_id、count 及 order_id、warehouse_id；`outbound-stock-native` 保存严格核验后的原生关联数量，或历史严格完成代次的原占用基线。系统观察的 operator/login 为 0，并保留系统名称。原生快照只在核验后更新；未知外发和未同步草稿不能释放成功代次。无新增表、索引、迁移或镜像写入，不能仅上线前端；应用与受管 legacy 模块需同批发布。业务规则见[补货同步](requirements/2026-10-21-outbound-replenishment.md)。
 
 
+## 客户素材视频播放版（198）
+
+`ark_customer_media_assets` 新增可空 `playback_key`（H.264 播放版对象键，`VARCHAR(768)` ascii，与 `object_key` 同类型）和 `playback_size`（BIGINT）。原件 `object_key` 不变，`thumbnail_key` 由“预留”改为首帧 JPEG 海报的实际对象键。播放版与海报由上传时的 ffmpeg 转码产生，目录约定 `customers/{客户}/batches/{批次}/playback|thumbnails/{uuid}`。
+
+迁移 `198_customer_media_playback` 父版本 `197_battle_awards`，只新增两列、不改既有数据；升级使用列存在判断，可中断续跑，且不为列注释重建生产表。历史视频的派生文件不由迁移生成，需在装有 ffmpeg 的实例执行 `python -m scripts.backfill_customer_media_playback --apply`（默认 dry-run，逐素材提交）。
+
 ## 常用导航（194）
 
 `ark_navigation_preferences`：`user_id` 为 `INT UNSIGNED` 主键，外键指向 `ark_users.id`，删除用户时级联删除配置；`items` JSON 保存按用户排列的导航标识数组；`created_at/updated_at` 为无时区北京时间。每用户一行；清空以空数组保存。配置与工作台布局独立，重置工作台不影响常用导航。
 
 迁移 `194_navigation_preferences` 父版本 `193_wa_ai_assistant`，只新增表。ORM 已注册到 Alembic metadata。开发验收仅使用隔离 SQLite；生产迁移仍由统一部署入口执行，不从开发机升级共享库。
 
-## WhatsApp AI 消息助手（193，本地候选）
+## WhatsApp AI 消息助手（193）
 
 `ark_whatsapp_assistant_runs` 保存请求人私有报告：账号/请求人/客户端请求ID、带北京时间语义的起止范围、可选单会话范围、运行状态/唯一活动槽、generation/consent版本、消息/会话数与进度、输入hash和知识引用元数据、按对象的结构化结果、清单完成状态、错误分类与业务时间。输入manifest不复制聊天正文，AI调用日志仅元数据。
 
@@ -96,7 +100,7 @@ ORM 层禁止更新/删除回款、GMV 调整和审计事实，错误用引用�
 
 迁移 `193_wa_ai_assistant` 接 `192_wa_sync_fencing`，只建报告表和索引；用户FK为MySQL unsigned INTEGER，账号FK匹配原account_uid。隔离SQLite升级保留原消息，离线MySQL DDL已验证。降级阻止删除报告，回退代码保留扩展结构。集成并行分支时仍须对账其他迁移及唯一head。
 
-## WhatsApp 接入、版本与正文范围（192，本地未部署）
+## WhatsApp 接入、版本与正文范围（192）
 
 `192_wa_sync_fencing` 父节点 186，号码避开并行未合并 187–191。新增 `ark_whatsapp_body_grants`（account_uid+user_id 唯一，MySQL 用户外键 INTEGER UNSIGNED，consent_version）、`ark_whatsapp_message_sources`（account_uid+provider+完整来源键 SHA256 唯一，source_key JSON、稳定 message_uid、exact/new/unverified）。不按文本、时间或昵称合并身份，LID 保留原键。
 
@@ -126,16 +130,16 @@ ORM 层禁止更新/删除回款、GMV 调整和审计事实，错误用引用�
 
 迁移204接当前主线 `203_perf_goals`，只新增一列，downgrade拒绝删除已保存资料；隔离SQLite升级验证保留已有账号，生产迁移仍须经统一部署入口执行。实际执行记录见[交接文档](handoff.md)。
 
-## 客户采购账号密码（183_portal_password_login，候选）
+## 客户采购账号密码（183_portal_password_login）
 
 ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工配置或客户邮件激活时设置的 bcrypt 密码哈希；父revision182。无默认密码或迁移自动激活。重置增加授权/记录版本并撤销旧会话；明确恢复账号可激活invited成员。downgrade拒绝丢弃哈希，升级及备份/隔离恢复见deploy/customer-orders.md。
 
 
-## 账号解锁（`178_account_unlock`，本地未部署）
+## 账号解锁（`178_account_unlock`）
 
 `ark_account_unlock_audits` 记录被解锁用户、操作人 ID/用户名快照、解除的失败日志 ID 上界、失败次数和北京时间。用户外键为 MySQL `INTEGER UNSIGNED`，按 `user_id` 建索引；原 `ark_login_logs` 的状态、原因和时间不变。窗口内仅计入最近解锁边界之后的新失败，避免同秒失败被误清除。管理员解锁和密码登录以目标用户行锁串行化；重复解锁未锁定账号不写审计。迁移只新增表，父 revision 为 `177_portal_pi_header`；禁止删除审计数据的 downgrade，生产迁移走统一发布入口。
 
-## 任务中心一期（`173_task_center`，本地未部署）
+## 任务中心一期（`173_task_center`）
 
 | 表 | 关键字段与约束 |
 | --- | --- |
@@ -164,7 +168,7 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 
 ## 预售结算与汇总回款（166_presale_settlement）
 
-2026-10-13 本地扩展（未部署、无 schema 迁移）：ark_shipment_settlements.quote.payment_term 冻结 pay_first|ship_first，历史缺字段按先付款；复用原快照金额与 ark_settlement_applications 记录批次应收和真实回款引用，欠款通过应收减生效应用计算，不创建虚拟 Receipt。ark_receipt_logs.action=credit_effective 保存先出库批次补款曾生效事实，撤生效不能变成普通欠款；可复用多批的原定金/预付货款不套用单批补款标记。详见 [批次约定](requirements/2026-10-13-presale-credit-batches.md)。
+2026-10-13 行为扩展（无 schema 迁移）：ark_shipment_settlements.quote.payment_term 冻结 pay_first|ship_first，历史缺字段按先付款；复用原快照金额与 ark_settlement_applications 记录批次应收和真实回款引用，欠款通过应收减生效应用计算，不创建虚拟 Receipt。ark_receipt_logs.action=credit_effective 保存先出库批次补款曾生效事实，撤生效不能变成普通欠款；可复用多批的原定金/预付货款不套用单批补款标记。详见 [批次约定](requirements/2026-10-13-presale-credit-batches.md)。
 
 开发分支新增 `170_presale_freight_name`（父 `169_pcw_customer_workbench`）：为 `ark_receivables` 增加唯一的 `remote_order_name`、冻结的 `remote_payload` 和摘要，以及发送令牌、租约、错误和版本列；为 `ark_shipment_outbounds` 增加首次远端明细核验快照和 `last_check_attempt_at`，分别用于确认实际出库时固定行 ID/成本单价、以及远端读取失败后的公平轮询。运费目标在远端写入前先预留可匹配名称；远端 ID 回读核验后绑定。生产迁移仍只能经候选发布入口执行，本地未对共享数据库升级。
 
@@ -182,11 +186,11 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 | ark_shipment_outbounds | 未来投递器的冻结 payload/hash、租约和远端映射；settlement_id、outbound_no、可空 remote_id 各唯一，目前无投递执行器 |
 | ark_settlement_events | 创建、暂停、恢复、取消的操作者、原因与北京时间审计 |
 
-2026-10-26 本地扩展（未部署，无 schema 迁移）：结算终态 `cancelled_keep_freight` 表示商品已撤销、原运费保留。其商品应用必须 released，原报价冻结的运费应用必须 applied 且足额对应原 bound 运费目标，保留原金额和资金来源；不修改 Receipt。商品数量、商业调价抵扣及活动批次口径将其视为已撤销，运费财务汇总继续包含它。重建批次的 quote JSON 冻结 `retained_freight_settlement_id` / `retained_freight_amount`，不重复建立运费应收。撤销证明复用不可变 `shipment_create_cancelled` 审计及 `outbound-delete/outbound_deleted` 回执，原出库任务保留远端 ID、快照和错误，状态改 cancelled，不能被读回或重试复活。
+2026-10-26 扩展（d6e56d82 已部署，无 schema 迁移）：结算终态 `cancelled_keep_freight` 表示商品已撤销、原运费保留。其商品应用必须 released，原报价冻结的运费应用必须 applied 且足额对应原 bound 运费目标，保留原金额和资金来源；不修改 Receipt。商品数量、商业调价抵扣及活动批次口径将其视为已撤销，运费财务汇总继续包含它。重建批次的 quote JSON 冻结 `retained_freight_settlement_id` / `retained_freight_amount`，不重复建立运费应收。撤销证明复用不可变 `shipment_create_cancelled` 审计及 `outbound-delete/outbound_deleted` 回执，原出库任务保留远端 ID、快照和错误，状态改 cancelled，不能被读回或重试复活。
 
 `ark_receipts` 新增 batch_id、receivable_id 外键和索引，purpose 默认 ordinary（新增用途 presale_deposit/presale_goods/freight）；唯一 batch_id+receivable_id；xiaoman_order_id 改可空以表达运费目标未建立。金额 NUMERIC(14,2)，时间由 beijing_now 写入。单活动批次由原订单锁和服务校验保证。迁移只做新增/放宽可空，不允许 downgrade 删除财务事实。
 
-## 临时战报（162_battle_reports，本地实现，未部署）
+## 临时战报（162_battle_reports）
 
 奖项扩展迁移 `197_battle_awards`（父 `196_domestic_commission`，本地实现未部署）为 `ark_battle_reports` 增加 `award_kind VARCHAR(24) NOT NULL DEFAULT 'gmv'` 和可空 `award_rules JSON`。旧战报默认gmv；规则快照含附件2025美元基数gmv_2025_usd、入职日、source_sha256、push_start_date及Excel I列美元目标target_gmv_usd，与配置更正及审计同事务。奖项currency=USD，人民币只用于奖金，年度直接以USD实绩比较附件USD目标；旧target_usd仅供gmv，奖项目标不写该列。迁移只加列，downgrade拒绝删除奖项基数，应用回滚保留数据。业务镜像保持只读；无需复制或修正OKKI订单。
 
@@ -198,7 +202,7 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 
 北京时间日期/时间，目标未填为NULL。成员表report_id索引；已有绑定改变不自动替换历史OKKI身份。查询只读业务镜像 `okki_orders` 与 `customer_info`，不复制成交账本、不改订单、不依赖采购节固定周期。162父节点161_invoice_lifecycle，downgrade拒绝删除目标/审计，不执行生产迁移或历史回填。详见 [实现与验收](requirements/2026-09-22-battle-report.md)。
 
-## 云存储队列与可替换文件引用（159，本地实现，未部署）
+## 云存储队列与可替换文件引用（159）
 
 | 表 | 责任与关键约束 |
 | --- | --- |
@@ -209,7 +213,7 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 
 时间列均为北京时间。客户素材继续使用原表的 `storage_provider/object_key`，仅在完整回读校验后受控切换provider。159依赖158，禁止开发机升级共享生产库；downgrade不自动删除队列或引用数据。
 
-## 回款同步恢复（175_receipt_recovery，本地实现，未部署）
+## 回款同步恢复（175_receipt_recovery）
 
 `ark_receipts` 新增可空 `send_phase`、`recovery_kind`、`next_attempt_at` 和默认 0 的 `recovery_attempts`；后两类调度字段有索引。历史阶段保持 NULL，不能推测未发送。
 
@@ -480,8 +484,8 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 - `ark_dashboard_preference`：每用户一行的工作台布局配置。`user_id`（INT UNSIGNED FK→ark_users.id ON DELETE CASCADE，UNIQUE）+ `prefs`（JSON：`{version, metrics:{hidden,order}, actions:{hidden,order}}`）+ 时间戳。卡片 key 的合法性不在库层校验——真相源是前端 `views/dashboard/cards.js` 注册表，未知 key 前端忽略（注册表增删卡片对存量配置向前兼容）。
 
 ## 内贸订单（迁移 081～145，2026-07-27 至 2026-09-11）
-
 迁移 `196_domestic_commission`（接 `195_main_portal_merge`，本地实现）：新增客户配置表 `ark_domestic_customer_commissions`（id/customer_id/user_id/rate/created_at）及订单快照表 `ark_domestic_order_commissions`（id/order_id/user_id/user_name_snapshot/rate/created_at）。`rate NUMERIC(5,4)` 是订单金额直接提成率，0.04=4%；客户与订单分别以父 ID + user_id 唯一，用户 FK 为 INT UNSIGNED / RESTRICT。配置由服务校验 1～2 名不同在职用户、单项正数且合计不超过 100%，默认新客户归属销售 4%；时间为无时区北京时间。订单与快照在同一事务创建。配置和快照变化复用 `ark_domestic_analysis_events` 留痕。迁移不回填存量客户或订单、不修改余额、账本、金额；降级拒绝删除业务证据，只由正式部署入口升级生产。
+
 
 迁移 `184_domestic_request_withdraw`：`ark_domestic_orders.review_version INT NOT NULL DEFAULT 0`记录价格审核提交轮次，存量默认0，新待审建单为1，后续进入待审递增；锁内比对页面所见版本，防止旧页面批准撤回后重新提交的新报价。`ark_domestic_customer_requests.status`的CHECK增加`withdrawn`，新增可空`withdrawn_at DATETIME`（北京时间）与`resubmitted_request_id BIGINT`（关联重新提交的新申请ID，逻辑引用）；原申请保留，不覆盖金额、说明与凭证。无账本或余额回填，迁移只由统一部署入口执行，降级禁止删除这些业务证据。
 
@@ -508,7 +512,7 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 
 140 从两条原路线各克隆生产（确认下单～入库）与普单（毛坯出库～发货完成）路线，复制保留区段内的条件规则并裁剪跳过目标；跨区段控制、边界缺失/重复、源路线停用或目标重名会在 DDL 前报错。未配置源路线的空安装只升级结构，建单会提示缺少路线，配置后按对应固定路线补挂才能报工。已有订单、逐件数据、报工、产品档案和明细路线快照不改写。旧应用不了解生产单的 NULL 客户，上线须协调 schema 与全部读写应用切换，完成前不开放生产单入口。存在生产订单或分段路线引用时拒绝 downgrade，防止数据丢失。
 
-- `ark_domestic_customers`：内贸客户，`shop_name` UNIQUE，`custom_code` 可选且 UNIQUE，另存派生会员等级、`last_recharge_amount/last_recharged_at` 和 `balance`。会员只看最近一次成功充值金额，与余额和历史合计无关；充值事务在客户行锁下同时更新余额、会员快照和流水。有订单的客户禁删只停用。133 迁移补客户档案列：`customer_source`（来源）、`store_type`（门店类型）、`customer_level`（S/A/B/C）、`lifecycle_status`（活跃/潜在/沉默/流失，四个值域均为 sys_dict，与 `status` 停用开关不同）、`owner_user_id`（归属销售 FK ark_users）、`first_contact_date/first_order_date/last_order_date`、`total_order_count/total_sales_amount`（历史档案口径，不随系统订单联动）。
+- `ark_domestic_customers`：内贸客户，`shop_name` UNIQUE，`custom_code` 可选且 UNIQUE，另存派生会员等级、`last_recharge_amount/last_recharged_at` 和 `balance`。会员只看最近一次成功充值金额，与余额和历史合计无关；充值事务在客户行锁下同时更新余额、会员快照和流水。有订单的客户禁删只停用。133 迁移补客户档案列：`customer_source`（来源）、`store_type`（门店类型）、`customer_level`（S/A/B/C）、`lifecycle_status`（活跃/潜在/沉默/流失，四个值域均为 sys_dict，与 `status` 停用开关不同）、`owner_user_id`（归属销售 FK ark_users）、`first_contact_date/first_order_date/last_order_date`、`total_order_count/total_sales_amount`（历史档案口径，不随系统订单联动）。 263 迁移加 `owner_claimed_at`（DATETIME 北京时间，可空）：最近一次从公海认领的时间，公海跟进钟从此重新计时，订单钟不受影响；只在认领入口写，客户编辑改派不写。同一迁移把跟进设置里恰好为旧默认 60 的 C 级频率改为 30（另写标记行 `_c_level_aligned_by_263`，降级只还原它改过的值）。
 - `ark_domestic_customer_ledger`：客户充值/订单扣款/差额补扣/退款流水。`amount` 是有符号变动额，`balance_after` 是变动后快照，`business_key` 唯一；充值时将客户端 `request_id` 编码为业务键实现幂等。所有余额变动在客户行锁下完成，不允许透支。
 - `ark_domestic_customer_requests`（148 迁移，2026-09-14）：客户充值/调整的先申请后审核单。`request_type`（recharge/adjust）、`amount`、`change_membership`+`membership_level`（调整等级目标，NULL=取消会员）、`voucher_path`（充值必传的银行流水/转账截图相对路径）、`status`（pending/approved/rejected）、`request_id` UNIQUE（提交幂等）、`business_key` UNIQUE（审核通过执行时写入账本的 `recharge:/adjust:` 幂等键，申请行与账行一一对应）、申请/审核双方经办人与审核意见。审核通过前余额与会员等级不变；驳回不落账本。
 - `ark_domestic_products`：下单选属性后 find-or-create 沉淀，`attrs_key` 使用稳定 JSON 数组编码 `product_type/craft/net_color/size/length/density/hair_style_series`，UNIQUE 即产品身份，避免属性值含分隔符时碰撞；`route_id` 按工艺映射自动绑定，可人工改绑。129 新增可空 `hair_style_series`，并将 `size/density` 放宽为可空：头套使用工艺、发长、可选网帽颜色、必填尺码和发型系列，只有 `15厘米` 头套有必填发量；发片将工艺和尺寸合并存入 `craft`，只再保存发长，其余头套专属字段均为 `NULL`。标准属性值存 `domestic_cap_*` 与 `domestic_piece_*` 字典，特单自定义值存对应 `_special` 字典。
@@ -589,7 +593,7 @@ worker 通过 queued/running、lease 与 claim 字段实现可恢复领取。失
 ## 客户拍摄素材交付与门户（迁移 114，2026-08-14；业务预览无新迁移，2026-08-17）
 
 - `ark_customer_media_batches`：一条设计任务一个交付批次，保存客户与申请人快照、审核状态、修订号、乐观锁和发布/下架时间；`task_id` 唯一。
-- `ark_customer_media_assets`：批次图片/视频私有原件元数据，存储适配器与 object key 唯一；`deleted_at` 是软删除边界。
+- `ark_customer_media_assets`：批次图片/视频私有原件元数据，存储适配器与 object key 唯一；`deleted_at` 是软删除边界。视频另有 `playback_key`（H.264 播放版）与 `thumbnail_key`（首帧 JPEG 海报），原件 `object_key` 保留；迁移 `198_customer_media_playback` 新增 `playback_key/playback_size`，历史视频需运行回填脚本。
 - `ark_customer_media_reviews`：送审、通过、退回、下架等不可变审计记录，按批次与时间索引。
 - `ark_customer_portal_accounts`：一个 customer_id 一个门户账号、登录邮箱唯一；只保存 bcrypt 密码哈希和会话失效版本。
 - `ark_customer_portal_sessions`：只保存会话 token 的 SHA-256、版本、IP/UA、过期和撤销时间；账号删除级联会话。
@@ -758,7 +762,7 @@ T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、�
 AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网络调用期间不持有业务行锁。租约按 Provider timeout 延长，过期任务最多领取 3 次；达到上限转 failed，避免无限重放。应用结果时重新锁定知识库/文档/任务并核对 `base_revision_id`，因此不会覆盖任务创建后的编辑。
 
 **142 生产客户关联迁移**：仅放松 `ck_dom_order_kind_fields` 中生产单 customer_id 必须为空的限制，保留业务客户必填、生产零金额和客户外键；不清空、不回填现有订单。MySQL 单条 ALTER 替换 CHECK；已存在生产客户关联时拒绝回退。部署入口执行，开发验证只使用隔离库。
-# 共用手机发货质检：迁移 153_shipping_station
+## 共用手机发货质检：迁移 153_shipping_station
 
 父版本 `151_customer_media_tags`（集成最新 main 后接续，151 已在 152 之后）。新增两张表，原出库检验和媒体表继续共用，不复制业务数据：
 
@@ -824,7 +828,7 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 
 `ark_customer_actions` 扩展 7 列：work_item_id（FK，存量行为空）、action_round、parent_action_id（自引用行动链）、row_version（server_default 1）、original_due_at（原期限，改约不变）、business_due_at（当前期限）、due_provenance；unique(work_item_id,action_round)（历史 NULL 行不受约束）+ 索引 (owner,status,business_due_at)。126 冻结契约测试以显式 post-126 列登记方式扩展，冻结资源文件不动。
 
-## 172_workbench_lifecycle（父 171_customer_tag_display_value，本地未部署）
+## 172_workbench_lifecycle（父 171_customer_tag_display_value）
 
 客户工作台 v2 在已有 `ark_customer_work_items` 上增补目标类型/定义、负责人、八态等待与暂停字段、结果有效性与来源版本。原 `awaiting_reply` 确定性映射为 `waiting/customer`；旧 `resolved` 保留历史而标记 `legacy_unverified`，不会补造证据或自动纳入当前有效解决数。迁移前须暂停相关写入并按项目发布流程备份；迁移不运行旧事项生成任务，也不自动发送客户消息。迁移设计为前向修复，downgrade 不删除审计/容量账本。
 
@@ -842,7 +846,7 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 网站、选品页等服务入口复用已有 `ark_customer_annotations` 的受治理备注：`content_schema_version=v1`、`content_json.kind=service_asset_v1`，保留登记和撤销记录，不新增网站效果指标表。客户合并/拆分继续由现有 annotation 逻辑归属和隐私裁剪处理。
 
 
-## 174_domestic_decision（父173_task_center，本地未部署）
+## 174_domestic_decision（父173_task_center）
 
 新增七张分析域表，原内贸订单/账本作为事实源，没有复制生产业务库或改写历史。
 
@@ -858,11 +862,11 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 
 所有用户FK为unsigned INT，账本源entity_id支持BIGINT；时间统一北京时间。六项新权限只登记，旧角色不自动获得读取、资金或全量范围。权限撤销/客户转移立即作用于新请求的结果读取、任务、证据和下载。迁移降级明确拒绝删除审计/报告/行动数据，修复采用前向迁移。
 
-迁移已在内存SQLite隔离验证，不等于MySQL线上迁移。生产依[统一发布入口](../deploy/README.md)部署并核验容量；数据库约束、MySQL并发及大样本性能还需目标环境验证。详见[模块说明](domestic-decision.md)。
+初始迁移曾在内存 SQLite 隔离验证；生产执行证据见[交接文档](handoff.md)，后续发布仍依[统一发布入口](../deploy/README.md)核验实际 schema 与容量。数据库约束、MySQL 并发及大样本性能须按具体变更选择目标环境验证。详见[模块说明](domestic-decision.md)。
 
-## 客户下单门户（迁移176/177，开发中未部署）
+## 客户下单门户（迁移176/177）
 
-新增模型位于 `backend/app/portal/`，统一前缀 `ark_order_portal_`，不复用客户素材门户账号。基础迁移为 `176_customer_order_portal`；初始离线 SQL 验证不等于后续生产执行证据，实际状态见[交接文档](handoff.md)。
+新增模型位于 `backend/app/portal/`，统一前缀 `ark_order_portal_`，不复用客户素材门户账号。基础迁移为 `176_customer_order_portal`；初始开发阶段的离线 SQL 验证与后续实际迁移是不同证据，当前执行状态见[交接文档](handoff.md)。
 
 | 分组 | 表后缀 |
 | --- | --- |
@@ -880,17 +884,17 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 
 ## 177_portal_pi_header
 
-父迁移176_customer_order_portal；为ark_order_portal_revisions新增invoice_presentation_json JSON NULL，持久化后续PI客户确认的商业头部。旧NULL不回填，不改旧交易摘要；新非空快照进入revision hash且受ORM不可变保护。客户视图裁剪内部来源/ID，发布仅使用已接受快照。该迁移只做加列，禁止删除已确认证据的降级；初始阶段完成 MySQL 离线 DDL 与隔离 SQLite 数据保留验证；实际迁移执行和发布状态见[交接文档](handoff.md)。
+父迁移176_customer_order_portal；为ark_order_portal_revisions新增invoice_presentation_json JSON NULL，持久化后续PI客户确认的商业头部。旧NULL不回填，不改旧交易摘要；新非空快照进入revision hash且受ORM不可变保护。客户视图裁剪内部来源/ID，发布仅使用已接受快照。该迁移只做加列，禁止删除已确认证据的降级；初始开发验证包括 MySQL 离线 DDL 和隔离 SQLite 保留旧行测试；后续迁移和交付状态统一见[交接文档](handoff.md)。
 
-## 201_portal_access_requests
+## 201_portal_access_requests（开发中）
 
 父迁移200。新增 `ark_order_portal_access_requests`：客户公开提交全名、电话、邮箱，状态为 pending/approved/rejected/cancelled；批准时记录审核员工、原因，并绑定已存在的客户账号与客户门户授权。客户输入不含密码，申请也不创建权限。批准复用现有 invitation outbox，客户通过一次性激活邮件请求验证码并设置密码。申请数据有站点/状态/邮箱索引，所有时间使用北京时间。申请表不保存密码或明文 token。
 
-## 200_portal_quote_fee_estimate
+## 200_portal_quote_fee_estimate（开发中）
 
 父迁移199。`ark_order_portal_quotes` 新增 nullable JSON `fee_estimate_json`：自动运费（按总克重阶梯）与所选付款方式手续费的计算结果，status 为 confirmed（含 weight_grams/shipping/surcharge/total）或 manual（over_limit/unknown_weight）。仅在非空时纳入报价证据哈希，旧报价哈希不变；只新增不回填，降级被拒绝。配置位于 `Site.policy_json.auto_fees`（enabled 默认 false、shipping_tiers 默认 300/600/800/1000/1300/1600/1800/2000g→40…96 USD）与 `payment_terms[].method_label/surcharge_percent`，无表结构变化。初始隔离验证不代替后续生产迁移回读，执行记录见[交接文档](handoff.md)。
 
-## 199_portal_catalog_families
+## 199_portal_catalog_families（开发中）
 
 父迁移198_customer_media_playback。新增 `ark_order_portal_product_families`（站点内产品族：销售单位、单位克重、起订/步长、无货阈值（销售单位）、展示工艺档、排序、状态）与 `ark_order_portal_color_swatches`（站点内按规范化色号键 color_key 唯一的色块图、展示名、状态）；`ark_order_portal_catalog_items` 新增 nullable `family_id`（FK→product_families，RESTRICT）与 `grade`（standard/super/ultra），MySQL 加检查约束“二者同空或同时有值”。只做新增，不回填，旧商品保持未归类；降级被拒绝。归入产品族的商品由服务层继承起订/步长，safety_buffer = 无货阈值 × conversion_factor（换算为库存单位）。色型不另存，读取 `ark_price_color_types` 与标准价保持一致。隔离验证与生产迁移执行记录分别留证，后者见[交接文档](handoff.md)。
 

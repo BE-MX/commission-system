@@ -7,11 +7,12 @@
       </el-alert>
       <template v-if="e.form.value">
         <p>{{ e.record.value.shop_name }} · 原录入人：{{ e.record.value.author_name }}</p>
-        <el-alert :title="planningEditable ? '未完成待办随修改同步。' : '可以更正沟通内容。当前跟进安排请在新记录中更新。'"
+        <el-alert :title="planningEditable ? '未完成待办随修改同步。' : '下次跟进日期只更新本条记录。当前安排请通过新跟进或待办调整。'"
                   type="info" :closable="false" />
         <el-form label-position="top" :disabled="e.saving.value || e.uncertain.value" class="edit-form">
           <div class="edit-grid">
-            <el-form-item label="跟进日期"><el-date-picker v-model="e.form.value.followup_date" class="edit-control" type="date" value-format="YYYY-MM-DD" /></el-form-item>
+            <el-form-item label="跟进日期" required><el-date-picker v-model="e.form.value.followup_date" :clearable="false"
+              :disabled-date="isFuture" class="edit-control" type="date" value-format="YYYY-MM-DD" /></el-form-item>
             <el-form-item label="沟通方式"><el-select v-model="e.form.value.channel" class="edit-control" clearable>
               <el-option v-for="v in channels" :key="v" :value="v" :label="v" />
             </el-select></el-form-item>
@@ -50,7 +51,8 @@
             </div>
           </el-form-item>
           <div class="edit-grid">
-            <el-form-item label="下次跟进日期"><el-date-picker v-model="e.form.value.next_date" :disabled="!planningEditable" class="edit-control" type="date" value-format="YYYY-MM-DD" clearable /></el-form-item>
+            <el-form-item label="下次跟进日期"><el-date-picker v-model="e.form.value.next_date" :disabled-date="beforeFollowup"
+              class="edit-control" type="date" value-format="YYYY-MM-DD" :value-on-clear="null" clearable /></el-form-item>
             <el-form-item label="下次沟通方式"><el-select v-model="e.form.value.next_method" :disabled="!planningEditable" class="edit-control" clearable>
               <el-option v-for="v in channels" :key="v" :value="v" :label="v" />
             </el-select></el-form-item>
@@ -74,6 +76,7 @@ import GlassButton from '@/components/GlassButton.vue'
 import AppUpload from '@/components/AppUpload.vue'
 import FollowupOutcomeFields from './FollowupOutcomeFields.vue'
 import { followupApi, apiError } from '@/api/domesticFollowup'
+import { currentBeijingDate, formatCalendarDate } from '@/utils/datetime'
 import { confirmAction, isFeedbackCancelled, msgError, msgSuccessText } from '@/utils/feedback'
 import { canRemoveEditItem, canToggleRecordOnly } from '../followupEdit'
 import { useFollowupEditor } from '../composables/useFollowupEditor'
@@ -84,6 +87,8 @@ const GROUPS = [{ kind: 'content', label: '跟进要点' }, { kind: 'issue', lab
 const uploading = ref(false), uploads = ref([])
 const frozen = computed(() => e.saving.value || e.uncertain.value)
 const planningEditable = computed(() => e.record.value?.planning_editable !== false)
+const isFuture = date => formatCalendarDate(date) > currentBeijingDate()
+const beforeFollowup = date => Boolean(e.form.value?.followup_date) && formatCalendarDate(date) < e.form.value.followup_date
 const channels = computed(() => [...new Set([...(e.dicts.value.domestic_followup_channel || []), e.form.value?.channel, e.form.value?.next_method].filter(Boolean))])
 const categories = computed(() => e.dicts.value.domestic_followup_category || [])
 const states = computed(() => [...new Set([...(e.dicts.value.domestic_followup_state_change || []), ...(e.form.value?.state_changes || [])])])

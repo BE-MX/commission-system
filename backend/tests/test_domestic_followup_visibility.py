@@ -34,7 +34,7 @@ def test_config_defaults_and_update(db):
     grant(db, admin, "domestic_followup:read_all")
     config = config_service.get_config(db)
     assert config["receipt_delay_days"] == 3
-    assert config["frequency_days"] == {"S级": 7, "A级": 14, "B级": 30, "C级": 60}
+    assert config["frequency_days"] == {"S级": 7, "A级": 14, "B级": 30, "C级": 30}  # 2026-11-13 Q3：1 个月未跟进即入公海
 
     config_service.update_config(db, {"receipt_delay_days": 4, "urgent_receiver_user_ids": [admin.id]}, admin.id)
     config = config_service.get_config(db)

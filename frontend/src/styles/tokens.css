@@ -148,6 +148,40 @@
   --color-success-bg-strong: rgba(103, 194, 58, 0.2);
 
   --color-danger:         #DC3545;
+  /* 客户流失态势（三维材质只能用实色，见 DESIGN.md 2026-11-13） */
+  --churn-stable:         #4D6E63;
+  --churn-warning:        #E0A12B;
+  --churn-critical:       #DC3545;
+  --churn-fallen:         #C3CED3;
+  --churn-sea:            #2D7D8E;
+  --churn-sky:            #DCE7EE;
+  --churn-hull:           #0E3B2D;
+  --churn-hull-band:      #B24A5E;
+  --churn-deck:           #3B524B;
+  --churn-deck-alt:       #344A44;
+  --churn-structure:      #F3F5F7;
+  --churn-edge:           #0A1A14;
+  --churn-light-sky:      #FFFFFF;
+  --churn-light-ground:   #2E5A4E;
+  --churn-light-sun:      #FFD9A8;
+  --churn-sea-specular:   #1C3A44;
+  --churn-splash:         #FFFFFF;
+  --churn-sea-deep:       #0A3446;
+  --churn-sea-shallow:    #2C7D8C;
+  --churn-foam:           #F2F7F8;
+  --churn-horizon:        #CFDDE4;
+  --churn-hull-boot:      #ECEFF1;
+  --churn-hull-top:       #0E4A37;
+  --churn-window:         #FFD58A;
+  --churn-lifeboat:       #F08A24;
+  --churn-hatch:          #2C443D;
+  /* 客户流失态势专用品牌绿（取自 LESHINE logo，2026-11-13）；只用于该功能，平台主色仍是金色 */
+  --churn-brand:          #11865A;
+  --churn-brand-hover:    #0E7350;
+  --churn-brand-deep:     #0B5A3D;
+  --churn-brand-soft:     #E4F3EC;
+  --churn-brand-pink:     #E48A98;
+  --churn-rim:            #CFE8FF;
   --color-danger-hover:   #C0392B;
   --color-danger-deep:    #A93226;
   --color-danger-text:    #A93226;

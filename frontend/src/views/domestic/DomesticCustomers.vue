@@ -123,6 +123,8 @@
           <template #default="{ row }">
             <div class="table-actions">
               <GlassButton v-permission="'domestic_followup:read'" variant="link" left-icon="ChatDotRound" @click="openFollowup(row)">跟进</GlassButton>
+              <GlassButton v-if="!row.owner_user_id && row.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Pointer"
+                           :loading="claimingId === row.id" @click="handleClaim(row)">认领</GlassButton>
               <template v-if="canOperateCustomer(row)">
               <GlassButton v-any-permission="['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin']" variant="link" left-icon="Van" @click="deliveryDialog.open(row)">交付对账</GlassButton>
               <GlassButton v-permission="'domestic:write'" variant="link" left-icon="Edit" @click="openDialog(row)">编辑</GlassButton>
@@ -453,7 +455,7 @@ const listPageState = useDomesticCustomers()
 const {
   loading, list, total, page, pageSize, searchForm,
   fetchList, handleSearch, handlePageChange, handleSizeChange,
-  canOperateCustomer, handleProvinceChange, resetFilters,
+  canOperateCustomer, handleProvinceChange, resetFilters, claimingId, handleClaim,
   saving, dialog, options, openDialog, save,
   rechargeDialog, openRecharge, confirmRecharge,
   selectRechargeVoucher, onRechargeVoucherChange,
