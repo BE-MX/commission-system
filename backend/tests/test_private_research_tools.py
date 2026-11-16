@@ -248,6 +248,48 @@ def test_price_inspection_bounds_fixed_request_and_real_cost_shape(monkeypatch):
     assert providers.reported_charge({"cost": {"value": 0.021, "currency": "USD"}}) == 21_000
 
 
+@pytest.mark.parametrize(("operation_name", "target", "price_type", "amount", "microusd"), [
+    ("instagram_profile", "sample", "PER_RESULT", 0.00081, 810),
+    ("tiktok_profile", "sample", "PER_CALL", 0.001, 1000),
+    ("facebook_profile", "https://www.facebook.com/sample", "PER_RESULT", 0.006, 6000),
+    ("linkedin_profile", "https://www.linkedin.com/in/sample", "PER_CALL", 0.01, 10000),
+    ("hunter_domain_email", "example.com", "PER_RESULT", 0.0245, 24500),
+])
+def test_monid_inspect_accepts_live_quotes_within_the_reserved_budget(
+    monkeypatch, operation_name, target, price_type, amount, microusd,
+):
+    operation = providers.OPERATIONS[operation_name]
+    reply = {
+        "provider": operation.provider,
+        "endpoint": operation.endpoint,
+        "price": {"type": price_type, "amount": {"value": amount, "currency": "USD"}},
+    }
+
+    def request_inspect(_client, method, url, *, json):
+        assert method == "POST" and url == f"{providers.MONID_BASE}/inspect"
+        assert json == {"provider": operation.provider, "endpoint": operation.endpoint}
+        return reply
+
+    monkeypatch.setattr(providers, "request_json", request_inspect)
+    assert providers.monid_prepare(None, operation_name, target, microusd) is not None
+    assert providers.monid_prepare(None, operation_name, target, microusd - 1) is None
+
+
+def test_monid_price_rejects_foreign_currency_and_counts_nested_usd_fees():
+    price = {
+        "type": "PER_RESULT",
+        "amount": {"value": 0.006, "currency": "USD"},
+        "flatFee": {"value": 0.001, "currency": "USD"},
+    }
+    assert providers._expected_max_price(price) == 7000
+    assert providers._expected_max_price({**price, "currency": "EUR"}) is None
+    assert providers._expected_max_price({**price, "flatFee": {"value": 0.001, "currency": "EUR"}}) is None
+    assert providers._expected_max_price({**price, "amount": {"value": "NaN", "currency": "USD"}}) is None
+    assert providers._expected_max_price({**price, "flatFee": {"value": "1e-34", "currency": "USD"}}) > 6000
+    assert providers._expected_max_price({**price, "amount": {"value": "1e999999", "currency": "USD"}}) is None
+    assert providers._expected_max_price({**price, "type": []}) is None
+
+
 def test_facebook_profile_supplies_required_minimum_max_posts(monkeypatch):
     operation = providers.OPERATIONS["facebook_profile"]
     target = "https://www.facebook.com/sample-shop"
