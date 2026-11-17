@@ -30,6 +30,8 @@ def draft_access(db, user, customer_id, task_id):
     if task_id is not None and customer is not None and customer.status == 1:
         _assigned_task(db, user, customer_id, task_id)
         return
+    if customer is not None and visibility.can_record_lost_customer(db, user, customer):
+        return
     visibility.ensure_customer_writable(db, user, customer_id)
 
 
@@ -41,7 +43,7 @@ def can_record_history(db, user, customer, *, lock=False):
         return False
     previously_authored = db.scalar(select(DomesticFollowup.id).where(
         DomesticFollowup.customer_id == customer.id, DomesticFollowup.author_user_id == visibility.uid(user),
-        DomesticFollowup.status == "confirmed",
+        DomesticFollowup.status == "confirmed", DomesticFollowup.recorded_outside_scope.is_(False),
     ).limit(1))
     return bool(previously_authored or visibility.in_legacy_customer_scope(db, user, customer.id)
                 or visibility.is_super_admin(user) or collaboration_access.has_history_access(db, user, customer))
@@ -67,7 +69,7 @@ def confirm_access(db, user, followup, fields):
         raise LookupError("客户不存在")
     if fields.historical_only:
         _historical_allowed(db, user, customer, followup, fields)
-        return customer, None, False
+        return customer, None, False, False
     if customer.status != 1:
         raise PermissionError("该客户已停用，不能记录跟进")
     responsibility = db.scalar(select(FollowupResponsibility).where(
@@ -76,6 +78,15 @@ def confirm_access(db, user, followup, fields):
     task = _assigned_task(db, user, customer.id, followup.source_task_id, lock=True)
     may_develop = visibility.can_write_customer(db, user, customer, lock=True)
     if not may_develop:
+        if task is None and visibility.can_record_lost_customer(db, user, customer, lock=True):
+            if (fields.next_date or fields.next_plan or fields.next_method or fields.development_stage
+                    or fields.next_steps or fields.disposition or fields.disposition_note or fields.plan_assignee_user_id
+                    or fields.plan_purpose or fields.close_task_ids or fields.resolved_items or fields.prep_id
+                    or fields.effective_progress or fields.shared_summary
+                    or any(item.kind != "content" and (not item.record_only or item.handler_user_id)
+                           for item in fields.items)):
+                raise PermissionError("非当前跟进人仅可记录流失客户的沟通，不能安排或处理待办")
+            return customer, None, True, True
         service_task = task and (task.task_type in ("action", "receipt", "issue", "suggestion") or (
             task.task_type == "plan" and task.purpose in ("maintenance", "other")
         ))
@@ -87,7 +98,7 @@ def confirm_access(db, user, followup, fields):
                 or set(fields.close_task_ids) - {task.id}
                 or any(resolved.item_id != task.source_item_id for resolved in fields.resolved_items)):
             raise PermissionError("此权限仅用于处理已分配的待办")
-        return customer, responsibility, True
+        return customer, responsibility, True, False
     if responsibility and (fields.next_date or fields.development_stage):
         if fields.responsibility_version != responsibility.version:
             raise ConflictError("跟进责任或下一步安排已变更，请刷新后重试")
@@ -97,7 +108,7 @@ def confirm_access(db, user, followup, fields):
             promised = fields.next_date if fields.plan_purpose == "development" else responsibility.next_plan_date
             if not promised or promised <= beijing_today():
                 raise ValueError("暂缓开发请保留一个未来的联系约定")
-    return customer, responsibility, False
+    return customer, responsibility, False, False
 
 
 def plan_assignee(db, responsibility, fields):

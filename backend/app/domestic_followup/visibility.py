@@ -5,13 +5,13 @@ current_user 是 JWT claims dict（sub/roles/permissions），和平台其他域
 import logging
 import re
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, literal, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkPermission, ArkRole, ArkRolePermission, ArkUser, ArkUserRole
 from app.domestic.models import DomesticCustomer, DomesticCustomerCommission
-from app.domestic_followup.constants import PROSPECT_LIFECYCLE
+from app.domestic_followup.constants import LOST_LIFECYCLE, PROSPECT_LIFECYCLE
 from app.domestic_followup.models import DomesticCustomerAlias, DomesticFollowup, DomesticFollowupTask
 
 SEARCH_LIMIT = 20
@@ -147,6 +147,14 @@ def can_write_customer(db: Session, current_user: dict, customer: DomesticCustom
             or in_legacy_customer_scope(db, current_user, customer.id, lock=lock))
 
 
+def can_record_lost_customer(db: Session, user: dict, customer: DomesticCustomer, *, lock: bool = False) -> bool:
+    """An exception for adding records, separate from customer and collaboration write access."""
+    from app.domestic_followup import collaboration_access
+
+    return (customer.status == 1 and customer.lifecycle_status == LOST_LIFECYCLE
+            and collaboration_access.has_live_write(db, user, lock=lock))
+
+
 def _owner_name(db: Session, owner_user_id: int | None) -> str:
     if owner_user_id is None:
         return "公海"
@@ -168,18 +176,22 @@ def ensure_customer_writable(db: Session, current_user: dict, customer_id: int, 
     return customer
 
 
-def _customer_row(db: Session, current_user: dict, customer: DomesticCustomer, matched_alias=None) -> dict:
+def _customer_row(db: Session, current_user: dict, customer: DomesticCustomer, matched_alias=None,
+                  *, allow_lost_record=False, show_contact=True) -> dict:
+    writable = can_write_customer(db, current_user, customer)
+    record_only = allow_lost_record and customer.lifecycle_status == LOST_LIFECYCLE and not writable
     return {
         "id": customer.id,
         "shop_name": customer.shop_name,
         "custom_code": customer.custom_code,
-        "contact": customer.contact,
+        "contact": customer.contact if show_contact else None,
         "province": customer.province,
         "customer_level": customer.customer_level,
         "lifecycle_status": customer.lifecycle_status,
         "owner_user_id": customer.owner_user_id,
         "owner_name": _owner_name(db, customer.owner_user_id),
-        "writable": can_write_customer(db, current_user, customer),
+        "writable": record_only or writable,
+        "record_only": record_only,
         "matched_alias": matched_alias,
     }
 
@@ -200,25 +212,33 @@ def customer_search_scope(current_user: dict):
 
 
 def search_customers(db: Session, current_user: dict, q: str) -> list[dict]:
+    from app.domestic_followup import collaboration_access
+
     keyword = (q or "").strip()
     if not keyword:
         return []
     like = _like(keyword)
     query = db.query(DomesticCustomer).filter(DomesticCustomer.status == 1)
-    if not can_read_all(current_user):
-        query = query.filter(customer_search_scope(current_user))
-    direct = query.filter(or_(
+    in_scope = literal(True) if can_read_all(current_user) else customer_search_scope(current_user)
+    name_or_code = or_(
         DomesticCustomer.shop_name.like(like, escape="\\"),
-        DomesticCustomer.contact.like(like, escape="\\"),
         DomesticCustomer.custom_code.like(like, escape="\\"),
-    )).order_by(DomesticCustomer.shop_name).limit(SEARCH_LIMIT).all()
-    results = [_customer_row(db, current_user, c) for c in direct]
-    seen = {c.id for c in direct}
+    )
+    direct_match = or_(name_or_code, DomesticCustomer.contact.like(like, escape="\\"))
+    lost_write = collaboration_access.has_live_write(db, current_user)
+    match = and_(in_scope, direct_match)
+    if lost_write:
+        match = or_(match, and_(DomesticCustomer.lifecycle_status == LOST_LIFECYCLE, name_or_code))
+    direct = (query.with_entities(DomesticCustomer, in_scope)
+              .filter(match).order_by(DomesticCustomer.shop_name).limit(SEARCH_LIMIT).all())
+    results = [_customer_row(db, current_user, customer, allow_lost_record=lost_write, show_contact=bool(visible))
+               for customer, visible in direct]
+    seen = {c.id for c, _ in direct}
 
     # 别名先套可见范围再 limit，避免范围外的高频别名把结果挤掉
     alias_rows = (
         query.join(DomesticCustomerAlias, DomesticCustomerAlias.customer_id == DomesticCustomer.id)
-        .filter(DomesticCustomerAlias.alias_norm.like(_like(normalize_alias(keyword)), escape="\\"))
+        .filter(in_scope, DomesticCustomerAlias.alias_norm.like(_like(normalize_alias(keyword)), escape="\\"))
         .with_entities(DomesticCustomer, DomesticCustomerAlias.alias)
         .order_by(DomesticCustomerAlias.hit_count.desc())
         .limit(SEARCH_LIMIT)
@@ -227,7 +247,7 @@ def search_customers(db: Session, current_user: dict, q: str) -> list[dict]:
     for customer, alias in alias_rows:
         if customer.id in seen:
             continue
-        results.append(_customer_row(db, current_user, customer, matched_alias=alias))
+        results.append(_customer_row(db, current_user, customer, matched_alias=alias, allow_lost_record=lost_write))
         seen.add(customer.id)
     return results[:SEARCH_LIMIT]
 

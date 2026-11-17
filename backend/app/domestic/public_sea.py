@@ -113,6 +113,7 @@ def compute_clocks(db: Session, customers: list[DomesticCustomer], today: date,
     followups = dict(_shared(
         db.query(DomesticFollowup.customer_id, func.max(DomesticFollowup.followup_date))
         .filter(DomesticFollowup.customer_id.in_(ids), DomesticFollowup.status == "confirmed",
+                DomesticFollowup.recorded_outside_scope.is_(False),
                 DomesticFollowup.followup_date <= today)
         .group_by(DomesticFollowup.customer_id), locking).all())
     paused = dict(

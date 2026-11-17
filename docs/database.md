@@ -975,6 +975,7 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 | `ark_dom_followup_preps`（266） | `request_id` 唯一、`followup_id` 可空唯一；保存作者、模板版本、目标、联系依据、已知事实、待确认、答案、策略与次数、证据版本、来源待办和乐观锁。未使用卡超期或换人收口为 expired。 |
 | `ark_domestic_followups.prep_id`（266） | 普通索引；草稿即可关联，确认时由准备卡唯一 `followup_id` 保证只能使用一次。 |
 | `ark_domestic_followups.template_code/template_version/template_answers`（267） | 保存当时的场景版本及 `{fields,questions}` 答案，历史不随模板新版改变。 |
+| `ark_domestic_followups.recorded_outside_scope`（271） | 布尔，非空，默认 false。由服务端标记仅凭流失客户例外录入的记录；它不授予后续历史补录资格，也不用于延长公海的未跟进释放周期。 |
 | `ark_domestic_followup_items.nature`（267） | 可空 `customer_said/business_fact/assessment/to_confirm`，与 `origin` 正交；旧记录为空，前端显示未分类。 |
 
 `ark_domestic_followup_tasks.task_type` 新增 `action` 取值，不加列。`source_key=action:{followup_id}:{step_key}` 保证幂等；`payload` 保存步骤依据、事件、完成标准、出处、完成说明和取消理由。行动待办不进入 `CLOSABLE_BY_FOLLOWUP`、约定兑现或留下一步统计，完成/取消必须人工填写说明；归属变化按规则转移或关闭，第三人承办的技术任务在普通转手中保留。

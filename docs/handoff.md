@@ -1,3 +1,7 @@
+## 2026-11-17 流失客户跟进录入（Codex，待发布）
+
+有实时跟进写权限的业务员可在录入表单按店名或编号查找启用的流失客户，支持直接保存及确认 AI 草稿。记录归实际录入人。仅凭流失例外提交的记录不改变跟进责任、待办、历史补录资格或公海释放周期。迁移 `271_dom_fu_lost_record` 接 `270_dom_fu_guided`。后端定向回归 89 项、前端测试 58 项、前端构建和隔离迁移验证通过。
+
 ## 2026-11-16 私海背调 v2（Codex，本地候选）
 
 工作区 `D:/MyProgram/commission-system-codex-private-research-v2`，分支 `codex/private-research-v2`，基点 `c2c36054`。实现按需重跑与 batch 筛选、租约内客户线索、证据校验与完整 Markdown 报告、Maigret 优先与弱线索 Monid 异步网关、OpenClaw 专用技能、按日/客户花费查看。迁移 `264_private_research_tools` 接 `263_customer_owner_claimed_at`。

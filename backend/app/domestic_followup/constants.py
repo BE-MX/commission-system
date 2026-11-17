@@ -55,6 +55,7 @@ RECEIPT_EXPIRE_AFTER_DAYS = 7
 URGENT_MAX_ATTEMPTS = 5
 RECEIPT_OK_TEXT = "已回访，客户无问题反馈"
 PROSPECT_LIFECYCLE = "潜在"
+LOST_LIFECYCLE = "流失"
 HINT_MIN_CONFIDENCE = 0.7
 INQUIRY_FOLLOWUP_DAYS = 1  # 询单次日跟进；作为 rules.inquiry_days 注入 AI，不写死在 prompt 里
 NEGATIVE_RESULT_CODES = ("未接通", "未回复", "客户拒绝")

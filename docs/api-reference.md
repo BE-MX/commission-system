@@ -2879,7 +2879,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | GET/PUT | `/config` | 回访天数、上线日、紧急接收人、兜底负责人、推送频率等配置；PUT 需 `admin`，紧急接收人须持有 `domestic_followup:read_all`（或超管）。 |
 | GET | `/dicts` | 三个 sys_dict type（状态变化/分类/沟通方式）当前值域，供前端下拉和 AI 运行时注入复用。 |
 | GET | `/users` | 按关键字搜索可指派用户（转交、兜底负责人用）：只返回持有 `domestic_followup:write` 的在职用户，超管视同持有。 |
-| GET | `/customers/search` | 按当前用户可见范围搜索客户，`q` 关键字。 |
+| GET | `/customers/search` | 按当前用户可见范围搜索客户，`q` 关键字。有实时跟进写权限时，也可按店名或编号找到启用的流失客户；原可见范围外的联系人和微信备注不参与搜索。仅能录入沟通时返回 `writable: true, record_only: true`。 |
 | POST | `/customers/prospect` | 按店铺名建潜在客户（未成交线索先建档才能录跟进）。 |
 | GET | `/customers/{customer_id}/timeline` | 客户时间线：跟进记录 + 任务 + 发货/AI 背景；可读/可写分开判定，不可读时隐藏发货和 AI 背景（见模块说明）。 |
 | POST | `/attachments` | 上传跟进截图，≤10MB；先上传拿到附件 ID，建草稿或直接保存时再绑定。 |
@@ -2887,7 +2887,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | POST | `/followups` | 直接保存一条跟进（不经 AI 草稿），`result_code` 本次结果必填且需符合当前字典；缺失或空白返回 400。`followup_date` 可为今天或过去日期；协作客户带下一步计划或显式更新当前进度时不再限制为今天，仍校验责任版本与权限。已绑定未 OCR 的附件在后台线程补跑 OCR。 |
 | GET | `/followups` | 已确认记录列表，支持 `customer_id`、`mine`、`author_user_id`、`keyword`、`date_from` / `date_to`（跟进日期，含首尾）和分页；筛选始终与当前用户可见范围取交集。关键字按字面匹配客户名/编码/联系人及原文/摘要/条目，反向日期范围返回 400。 |
 | GET | `/followups/authors` | 查看权限即可读取；返回当前可见已确认记录的录入人 `{id, real_name}`，含历史停用/离职录入人；不返回仅有草稿或范围外记录的录入人。 |
-| GET | `/followups/{id}` | 单条已确认记录，沿用原查看范围，返回 `can_edit`。 |
+| GET | `/followups/{id}` | 单条已确认记录，沿用原查看范围，返回 `can_edit`；凭流失客户例外录入的记录返回 `recorded_outside_scope: true`，只可更正沟通内容。 |
 | PUT | `/followups/{id}` | 需 write；仅原作者或 super_admin 可修改，read_all 不授予编辑他人记录权。提交 `version`、`request_id`、必填 `reason` 与完整可编辑字段、保留的条目 ID/截图 ID；`result_code` 合并原记录后必须非空，存量空结果需补选，不能清空已有结果；客户、作者和原待办来源不可改。旧版本/同请求不同内容返回 409；同请求同内容安全重放。事务内留存前后快照并同步待办，新增截图后台 OCR。 |
 | GET | `/followups/{id}/history` | 原查看范围内读取修改历史；包含修改人、时间、原因、版本、记录及关联待办前后快照。归档截图保留鉴权读取。 |
 | POST | `/drafts` | 建 AI 草稿；创建成功后在后台线程跑 `ai_parse_service.run_parse`，前端轮询状态。 |
@@ -2902,6 +2902,8 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | GET | `/items` | 异常/意见条目看板：`status`、`kind`（issue/suggestion）、`category`、`customer_id`、`mine`，分页。 |
 | POST | `/items/{item_id}/resolve` | 处理条目（关闭时校验操作人是当前处理人）。 |
 | POST | `/items/{item_id}/transfer` | 转交条目处理人；目标须持有 `domestic_followup:write`，否则 400。 |
+
+流失客户例外同时适用于直接保存、建 AI 草稿和确认草稿；确认时重新锁定客户并校验启用状态、生命周期和实时跟进写权限。仅凭此例外录入时，不允许安排或完成待办、变更开发进度或共享摘要；`timeline.customer.record_only` 为 true 表示能新增沟通，既有历史的查看范围不变。
 
 AI 整理走 `app.ai.service.chat` facade，预设 `domestic_followup_parse`（文字归一化）与 `domestic_followup_ocr`（截图 OCR）；两个 preset 启动时自动绑定与 `invoice_screenshot_extract` 相同的视觉 provider/模型（不退回其他 provider）。后台 AI/OCR 走 `jobs.py` 独立线程池（上限 3）。输出宽进：坏字段只丢弃该字段，不整条拒绝。
 

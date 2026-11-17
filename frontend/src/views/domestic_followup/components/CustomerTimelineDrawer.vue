@@ -37,7 +37,7 @@
       </dl>
       <GlassButton v-if="data?.customer.writable || selected?.can_record" v-permission="'domestic_followup:write'" variant="outline" class="tl-record"
                    @click="prepare">准备跟进</GlassButton>
-      <GlassButton v-if="data?.customer.writable || selected?.can_record" v-permission="'domestic_followup:write'" variant="primary" class="tl-record"
+      <GlassButton v-if="data?.customer.writable || data?.customer.record_only || selected?.can_record || selected?.record_only" v-permission="'domestic_followup:write'" variant="primary" class="tl-record"
                    @click="record">记一条跟进</GlassButton>
       <GlassButton v-if="data?.customer.can_record_history" v-permission="'domestic_followup:write'" variant="link" class="tl-record"
                    @click="record(true)">历史补录</GlassButton>

@@ -12,7 +12,8 @@
           <el-option v-for="v in categories" :key="v" :value="v" :label="v" />
         </el-select>
         <el-checkbox v-model="row.severity" true-value="紧急" false-value="一般" size="small">紧急</el-checkbox>
-        <el-checkbox v-model="row.record_only" size="small">仅记录，不跟进</el-checkbox>
+        <el-checkbox v-if="recordOnly" :model-value="true" disabled size="small">仅记录，不跟进</el-checkbox>
+        <el-checkbox v-else v-model="row.record_only" size="small">仅记录，不跟进</el-checkbox>
       </div>
       <div class="item-tail">
         <StatusBadge v-if="row.origin === 'ai_inferred'" value="AI 推断" size="small" />
@@ -30,6 +31,7 @@ defineProps({
   kind: { type: String, required: true },
   rows: { type: Array, required: true },
   categories: { type: Array, default: () => [] },
+  recordOnly: Boolean,
 })
 defineEmits(['add'])
 </script>
