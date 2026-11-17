@@ -198,9 +198,16 @@ def test_pk_uses_per_capita_not_team_total():
     assert data["winner"]=="B" and data["teams"][0]["target"]==12
 
 
-@pytest.mark.parametrize("stamp,slot", [("2026-10-19T09:00:00+08:00","09:00"), ("2026-10-19T01:00:00+00:00","09:00"),
-    ("2026-10-20T09:00:00+08:00","09:00"),("2026-10-21T16:05:00+08:00","16:00"),
-    ("2026-10-18T18:00:00-07:00","09:00"),("2026-10-23T16:15:00+08:00","16:00")])
+@pytest.mark.parametrize("stamp,slot", [
+    ("2026-10-19T09:00:00+08:00", None),
+    ("2026-10-19T09:00:29.999999+08:00", None),
+    ("2026-10-19T01:00:30+00:00", "09:00"),
+    ("2026-10-18T18:00:30-07:00", "09:00"),
+    ("2026-10-21T16:00:29+08:00", None),
+    ("2026-10-21T16:00:30+08:00", "16:00"),
+    ("2026-10-21T16:05:30+08:00", "16:00"),
+    ("2026-10-23T16:15:30+08:00", "16:00"),
+])
 def test_award_slots_in_beijing(stamp,slot):
     assert poster_delivery.due_slot(datetime.fromisoformat(stamp),campaign())==slot
 
@@ -218,7 +225,7 @@ def test_push_bounds_and_midnight():
 @pytest.mark.parametrize('hour', [9, 16])
 @pytest.mark.parametrize('minute', [0, 1, 5, 6, 15, 16, 17])
 def test_award_weekday_slots_are_separate(day, hour, minute):
-    now = datetime(2026, 11, day, hour, minute)
+    now = datetime(2026, 11, day, hour, minute, 30)
     for kind, offset in [('annual_repurchase', 0), ('new_sign_pk', 1)]:
         expected = f'{hour:02d}:{offset:02d}' if day < 7 and minute in (offset, offset + 5, offset + 15) else None
         assert poster_delivery.due_slot(now, campaign(kind)) == expected
@@ -411,18 +418,26 @@ def test_single_award_delivery_is_idempotent_and_uncertain_not_resent(posters, m
     s=posters; r=s.report_obj
     r.award_kind="annual_repurchase"; r.award_rules={"push_start_date":"2026-10-19"};r.start_date=date(2026,1,1);r.end_date=date(2026,12,31);r.poster_push_enabled=True
     s.db.commit()
-    now=datetime(2026,10,19,9)
-    monkeypatch.setattr(poster_delivery,"beijing_now",lambda:now)
-    monkeypatch.setattr(poster_delivery,"build_snapshot",lambda *a:{"calculated_at":now.isoformat(),"report":{"name":"年度奖"}})
+    now = datetime(2026, 10, 19, 9, 0, 30)
+    monkeypatch.setattr(poster_delivery, "beijing_now", lambda: now)
+    monkeypatch.setattr(poster_delivery, "build_snapshot", lambda db, report, members, at: {
+        "calculated_at": at.isoformat(), "report": {"name": "年度奖"},
+    })
     mock_render(monkeypatch)
-    poster_delivery.send_slot(s.db,r.id,now,s.sender)
-    poster_delivery.send_slot(s.db,r.id,now,s.sender)
-    assert s.sender.send_markdown.await_count==1
-    row=s.db.query(BattleReportDelivery).one()
-    assert list(row.deliveries)==["personal"]
-    row.deliveries={"personal":{"status":"uncertain","attempts":1}};s.db.commit()
-    poster_delivery.send_slot(s.db,r.id,now,s.sender)
-    assert s.sender.send_markdown.await_count==1
+    assert poster_delivery.send_slot(s.db, r.id, now.replace(second=7), s.sender) == {"status": "skipped"}
+    assert s.db.query(BattleReportDelivery).count() == 0
+
+    poster_delivery.send_slot(s.db, r.id, now, s.sender)
+    poster_delivery.send_slot(s.db, r.id, now.replace(minute=5), s.sender)
+    assert s.sender.send_markdown.await_count == 1
+    row = s.db.query(BattleReportDelivery).one()
+    assert row.slot == "09:00"
+    assert row.snapshot["calculated_at"] == "2026-10-19T09:00:30"
+    assert list(row.deliveries) == ["personal"]
+    row.deliveries = {"personal": {"status": "uncertain", "attempts": 1}}
+    s.db.commit()
+    poster_delivery.send_slot(s.db, r.id, now.replace(minute=15), s.sender)
+    assert s.sender.send_markdown.await_count == 1
 
 
 def test_presets_require_complete_identity_mapping_and_admin(setup):
@@ -445,6 +460,8 @@ def test_annual_excel_target_is_persisted_and_change_is_audited_and_disables_pus
     rid=response.json()['data']['id'];url=f'/api/battle-reports/{rid}'
     assert response.json()['data']['award_rules']['baselines'][0]['target_gmv_usd']=='843354.291'
     assert s.client.post(url+'/state',json={'action':'publish','version':1}).status_code==200
+    config = s.client.get(url + "/poster-config").json()["data"]
+    assert config["send_times"] == ["09:00:30", "16:00:30"]
     report=s.db.get(BattleReport,rid);report.poster_push_enabled=True;s.db.commit()
     payload['award_rules']['baselines'][0]['target_gmv_usd']='800000.123456'
     response=s.client.put(url,json={**payload,'version':2,'reason':'更正附件目标'})

@@ -409,8 +409,9 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
     scheduler.add_job(send_battle_posters_job, trigger="cron", hour=17, minute="1,6,16",
                       timezone="Asia/Shanghai", id=JOB_BATTLE_POSTERS_AFTERNOON, replace_existing=True,
                       max_instances=1, coalesce=True, misfire_grace_time=60)
+    # Let the top-of-hour order sync commit before the annual poster reads its snapshot.
     scheduler.add_job(send_battle_posters_job, trigger="cron", day_of_week="mon-fri", hour="9,16", minute="0,5,15",
-                      kwargs={"award_kind": "annual_repurchase"},
+                      second=30, kwargs={"award_kind": "annual_repurchase"},
                       timezone="Asia/Shanghai", id=JOB_BATTLE_AWARDS, replace_existing=True,
                       max_instances=1, coalesce=True, misfire_grace_time=60)
     scheduler.add_job(send_battle_posters_job, trigger="cron", day_of_week="mon-fri", hour="9,16", minute="1,6,16",
