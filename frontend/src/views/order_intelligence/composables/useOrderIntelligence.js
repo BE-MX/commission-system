@@ -1,4 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   generateOrderAiBrief,
   getActiveOrderAiBrief,
@@ -21,6 +22,18 @@ const oneYearAgo = () => {
   return formatBeijingDate(new Date(Date.now() - 364 * 86400000))
 }
 
+const DEEP_LINK_TABS = new Set(['overview', 'countries', 'people', 'profiles', 'customers'])
+const queryList = value => (Array.isArray(value) ? value : value ? [value] : []).map(String).filter(Boolean).slice(0, 20)
+
+/** 产品风向标深链：?tab=customers&colors=#1B&models=B3 预置页签与型号/颜色筛选（只读，不改口径）。 */
+export function applyRouteQuery(query, filters, activeTab) {
+  if (DEEP_LINK_TABS.has(String(query.tab || ''))) activeTab.value = String(query.tab)
+  const models = queryList(query.models)
+  const colors = queryList(query.colors)
+  if (models.length) filters.models = models
+  if (colors.length) filters.colors = colors
+}
+
 export function useOrderIntelligence() {
   const activeTab = ref('overview')
   const peopleDimension = ref('user')
@@ -36,6 +49,7 @@ export function useOrderIntelligence() {
   })
   const copy = value => JSON.parse(JSON.stringify(value))
   const initialFilters = copy(filters)
+  applyRouteQuery(useRoute()?.query || {}, filters, activeTab)
   const appliedFilters = ref(copy(filters))
   const hasPendingAnalysis = computed(() => JSON.stringify(filters) !== JSON.stringify(appliedFilters.value))
   const readConfig = context => ({ signal: context.signal, suppressToast: true })

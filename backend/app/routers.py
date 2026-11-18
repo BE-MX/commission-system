@@ -64,6 +64,7 @@ from app.customer.router import router as customer_hub_router
 from app.knowledge.router import router as knowledge_router
 from app.announcement.router import router as announcement_router
 from app.order_intelligence.router import router as order_intelligence_router
+from app.product_sales.router import router as product_sales_router
 from app.operations.router import router as operations_router
 from app.customer_media.router import router as customer_media_router
 from app.customer_media.public_router import (
@@ -172,6 +173,7 @@ def register_routers(app: FastAPI) -> None:
         prefix="/api/order-intelligence",
         tags=["订单经营智能分析"],
     )
+    app.include_router(product_sales_router, prefix="/api/product-sales", tags=["产品风向标"])
     app.include_router(operations_router, prefix="/api/operations", tags=["运行与自动化中心"])
     app.include_router(agent_runtime_router, prefix="/api/agent-runtime", tags=["AI Agent 任务中心"])
     app.include_router(agent_runtime_worker_router, prefix="/api/agent-runtime/worker", tags=["AI Agent Worker"])

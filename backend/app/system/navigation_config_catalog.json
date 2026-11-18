@@ -1,5 +1,5 @@
 {
-  "source_sha256": "366b8961a88db5e7665c5f3d57b8eab94160d079f7276473b92f66b9865d4163",
+  "source_sha256": "1e38c402c90553fc5583075571eb654d0b80c7b5a7345d205d9acb15ec2e0c4c",
   "nodes": [
     {
       "id": "customerPortal",
@@ -927,6 +927,26 @@
       "phase": false
     },
     {
+      "id": "ProductRadar",
+      "kind": "page",
+      "label": "产品风向标",
+      "icon": "TrendCharts",
+      "parent": "customerOperations",
+      "order": 12,
+      "visible": true,
+      "builtin": true,
+      "protected": false,
+      "badge": "",
+      "badgePlace": "text",
+      "badgeTone": "gold",
+      "titleSync": false,
+      "path": "/customer-hub/product-radar",
+      "external": false,
+      "rule": "product_sales:read / product_sales:read / customer:read / client_desk:read / alibaba_feed:admin / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "business": "",
+      "phase": false
+    },
+    {
       "id": "CustomerHubAcquisition",
       "kind": "page",
       "label": "获客任务",
@@ -1663,6 +1683,26 @@
       "path": "/tracking/daily-report",
       "external": false,
       "rule": "tracking:daily_report / tracking:daily_report / tracking:read / tracking:write / tracking:daily_report",
+      "business": "",
+      "phase": false
+    },
+    {
+      "id": "ProductNameMappings",
+      "kind": "page",
+      "label": "历史品名映射",
+      "icon": "List",
+      "parent": "stock",
+      "order": 60,
+      "visible": true,
+      "builtin": true,
+      "protected": false,
+      "badge": "",
+      "badgePlace": "text",
+      "badgeTone": "gold",
+      "titleSync": false,
+      "path": "/stock/product-name-mappings",
+      "external": false,
+      "rule": "product_sales:admin / product_sales:admin / stock:read / stock:write / stock:admin / stock_daily:read / catalog:read / inventory:read / production:read / production:write / production:print / production:admin / production_product:read / production_dashboard:read / production_route:read / semifinished:read / semifinished:write / semifinished:admin",
       "business": "",
       "phase": false
     },

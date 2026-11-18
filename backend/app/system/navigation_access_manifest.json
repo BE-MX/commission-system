@@ -1,5 +1,5 @@
 {
-  "source_sha256": "366b8961a88db5e7665c5f3d57b8eab94160d079f7276473b92f66b9865d4163",
+  "source_sha256": "1e38c402c90553fc5583075571eb654d0b80c7b5a7345d205d9acb15ec2e0c4c",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -621,6 +621,27 @@
           "customer_radar:read",
           "customer_pcw:read"
         ]
+      },
+      {
+        "anyPermission": [
+          "customer:read",
+          "client_desk:read",
+          "alibaba_feed:admin",
+          "sales_automation:read",
+          "customer_opportunity:read",
+          "customer_radar:read",
+          "mail_outreach:read",
+          "mail_outreach:write",
+          "mail_outreach:admin"
+        ]
+      }
+    ],
+    "ProductRadar": [
+      {
+        "permission": "product_sales:read"
+      },
+      {
+        "permission": "product_sales:read"
       },
       {
         "anyPermission": [
@@ -1685,6 +1706,34 @@
           "tracking:read",
           "tracking:write",
           "tracking:daily_report"
+        ]
+      }
+    ],
+    "ProductNameMappings": [
+      {
+        "permission": "product_sales:admin"
+      },
+      {
+        "permission": "product_sales:admin"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
         ]
       }
     ],

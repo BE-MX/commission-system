@@ -393,6 +393,17 @@ export const NAV_ENTRIES = [
     },
   },
   {
+    path: '/customer-hub/product-radar',
+    name: 'ProductRadar',
+    component: () => import('@/views/product_sales/ProductRadar.vue'),
+    title: '产品风向标',
+    permission: 'product_sales:read',
+    menu: {
+      group: 'customerOperations', title: '产品风向标', icon: TrendCharts, order: 12,
+      permission: 'product_sales:read',
+    },
+  },
+  {
     path: '/customer-hub/acquisition',
     name: 'CustomerHubAcquisition',
     component: () => import('@/views/customer_hub/AcquisitionTasks.vue'),
@@ -870,6 +881,18 @@ export const NAV_ENTRIES = [
     },
   },
 
+  // ── 产品风向标（2026-11-18，P0 仅映射维护） ─────────────────
+  {
+    path: '/stock/product-name-mappings',
+    name: 'ProductNameMappings',
+    component: () => import('@/views/product_sales/NameMappings.vue'),
+    title: '历史品名映射',
+    permission: 'product_sales:admin',
+    menu: {
+      group: 'stock', title: '历史品名映射', icon: List, order: 60,
+      permission: 'product_sales:admin',
+    },
+  },
   // ── 备货管理 ───────────────────────────────────────────
   {
     path: '/stock/overview',

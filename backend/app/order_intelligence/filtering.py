@@ -125,12 +125,29 @@ def model_expression(item_alias: str, product_alias: str, fallback_name: bool = 
     )
 
 
+def name_color(product_name: str | None) -> str:
+    """Color segment of ``型号/尺寸/颜色/克重`` names.
+
+    Shade codes may contain a slash (``#8TP8/18``): with ≥5 segments and the
+    third-from-last starting with ``#``, the color spans two segments. Same rule
+    as ``app.stock.overview_service._parse_name``; keep ``color_expression`` in sync.
+    """
+    parts = [part.strip() for part in str(product_name or "").split("/")]
+    if len(parts) >= 5 and parts[-3].startswith("#"):
+        return f"{parts[-3]}/{parts[-2]}"
+    return parts[-2] if len(parts) >= 3 else ""
+
+
 def color_expression(item_alias: str, product_alias: str) -> str:
+    name = f"COALESCE({item_alias}.product_name, '')"
+    slashes = f"(LENGTH({name}) - LENGTH(REPLACE({name}, '/', '')))"
+    third_last = f"TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX({name}, '/', -3), '/', 1))"
+    second_last = f"TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX({name}, '/', -2), '/', 1))"
     return (
         f"COALESCE(NULLIF(TRIM({product_alias}.color), ''), "
-        f"CASE WHEN LENGTH(COALESCE({item_alias}.product_name, '')) "
-        f"- LENGTH(REPLACE(COALESCE({item_alias}.product_name, ''), '/', '')) >= 2 "
-        f"THEN NULLIF(TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX({item_alias}.product_name, '/', -2), '/', 1)), '') END, "
+        f"CASE WHEN {slashes} >= 4 AND LEFT({third_last}, 1) = '#' "
+        f"THEN CONCAT({third_last}, '/', {second_last}) "
+        f"WHEN {slashes} >= 2 THEN NULLIF({second_last}, '') END, "
         "'未知')"
     )
 

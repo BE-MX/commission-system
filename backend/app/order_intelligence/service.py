@@ -31,6 +31,7 @@ from app.order_intelligence.filtering import (
     color_expression,
     group_countries,
     model_expression,
+    name_color,
     order_sql,
     product_sql,
 )
@@ -311,7 +312,7 @@ def _load_product_rows(
         row = dict(source)
         parts = [part.strip() for part in str(row.get("product_name") or "").split("/")]
         row["model"] = (row.get("model") or (parts[0] if parts else "") or "未知").strip()
-        row["color"] = (row.get("color") or (parts[-2] if len(parts) >= 3 else "") or "未知").strip()
+        row["color"] = (row.get("color") or name_color(row.get("product_name")) or "未知").strip()
         row["size"] = (row.get("size") or (parts[1] if len(parts) >= 2 else "") or "未知").strip()
         row["quantity"] = int(row.get("quantity") or 0)
         row["company_id"] = str(row.get("company_id") or "")

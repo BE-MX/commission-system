@@ -852,3 +852,13 @@ def test_resolve_scope_salesperson_without_binding_rejected():
     with pytest.raises(HTTPException) as exc:
         service.resolve_scope(_BindingDb(None), user)
     assert exc.value.status_code == 422
+
+
+def test_name_color_keeps_slash_in_shade_codes():
+    from app.order_intelligence.filtering import name_color
+
+    assert name_color("Standard Double Drawn Keratin Tip Hair/18/#8TP8/18/1g") == "#8TP8/18"
+    assert name_color("B3/18/#1B/20g") == "#1B"
+    assert name_color("B3/18/P28/20g") == "P28"
+    assert name_color("B3/18") == ""
+    assert name_color(None) == ""

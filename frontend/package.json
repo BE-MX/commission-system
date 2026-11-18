@@ -22,6 +22,7 @@
     "test:expo-kiosk": "node --test tests/expoKioskIsolationRegression.test.mjs tests/expoKioskRouting.test.mjs tests/expoKioskLogout.test.mjs tests/customerImageInvite.test.mjs",
     "test:expo-retail": "node --test tests/expoRetailTryOn.test.mjs",
     "test:navigation-layout": "node --test tests/navigationLayout.test.mjs",
+    "test:product-sales": "node --test tests/productSalesRadar.test.mjs",
     "test:kubai-icons": "node --test tests/kubaiNavIcons.test.mjs",
     "test:holidays": "node --test tests/holidays.test.mjs",
     "test:customer-media-portal": "node --test tests/customerMediaPortalState.test.mjs",
