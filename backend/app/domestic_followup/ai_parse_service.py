@@ -30,6 +30,18 @@ logger = logging.getLogger("commission")
 PARSE_PRESET = "domestic_followup_parse"
 CANDIDATE_LIMIT = 200
 
+ITEM_HANDLING_INSTRUCTIONS = (
+    "在预设的 JSON 结构上补充异常意见的处理证据。逐条判断 issues 和 suggestions 是否还需处理。"
+    "按顺序阅读本轮原文和全部截图，匹配同一产品和同一异议。\n"
+    "报价或规格异议已有针对性的具体解释，且本轮没有继续异议、未完成动作或后续承诺时，只需记录。"
+    "质量、错发等实质问题只有在处理已经完成或客户明确无需处理时才只记录。"
+    "只记录的条目保留客户异议在 text 中，额外返回 handled_source，格式与 source 一致。"
+    "excerpt 引用至少 6 个非空白字符的连续处理原文，kind 填 raw_text 或 attachment，"
+    "截图须填写对应的 attachment_index。客户没有继续回复时，只记录已给出解释，不推断客户接受。\n"
+    "客户仍有异议、我方仅表示收到或承诺稍后处理、或缺少本轮处理证据时，handled_source 填 null。"
+    "下一步只写尚未完成的动作，已给出的解释无需再次建议。\n"
+)
+
 
 def _candidates(db: Session, current_user: dict) -> list[dict]:
     query = db.query(DomesticCustomer.id, DomesticCustomer.shop_name).filter(DomesticCustomer.status == 1)
@@ -132,7 +144,10 @@ def build_messages(db: Session, followup: DomesticFollowup, current_user: dict, 
     content = [{"type": "text", "text": text}]
     for att in attachments:
         content.append({"type": "image_url", "image_url": {"url": attachment_service.data_url(att)}})
-    return [{"role": "user", "content": content}], candidates
+    return [
+        {"role": "system", "content": ITEM_HANDLING_INSTRUCTIONS},
+        {"role": "user", "content": content},
+    ], candidates
 
 
 def fallback_category(categories: list[str]) -> str | None:
@@ -153,16 +168,23 @@ def bounded_confidence(value) -> float:
     return value if 0.0 <= value <= 1.0 else 0.0
 
 
-def _item(raw: AiItem, kind: str, categories: list[str]) -> dict | None:
+def _item(db: Session, followup: DomesticFollowup, parsed: AiParseOut,
+          raw: AiItem, kind: str, categories: list[str]) -> dict | None:
     text = (raw.text or "").strip()[:1000]
     if not text:
         return None
+    record_only = False
+    if raw.handled_source:
+        source, _, record_only = _source_text(db, followup, parsed, raw.handled_source)
+        if record_only:
+            note = f"\n本轮处理「{source['excerpt'].strip()[:500]}」"
+            text = text[:1000 - len(note)].rstrip() + note
     return {
         "kind": kind, "text": text,
         "category": raw.category if raw.category in categories else fallback_category(categories),
         "severity": raw.severity if raw.severity in SEVERITIES else "一般",
         "origin": raw.origin if raw.origin in ORIGINS else "ai_inferred",
-        "record_only": False,
+        "record_only": record_only,
     }
 
 
@@ -304,8 +326,8 @@ def normalize(db: Session, current_user: dict, parsed: AiParseOut, values: dict,
               followup: DomesticFollowup, candidates: list[dict]) -> dict:
     categories, states, channels = values[DICT_CATEGORY], values[DICT_STATE_CHANGE], values[DICT_CHANNEL]
     items = [i for i in (_fact_item(db, followup, parsed, c) for c in (*parsed.contents, *parsed.facts)) if i]
-    items += [i for i in (_item(r, "issue", categories) for r in parsed.issues) if i]
-    items += [i for i in (_item(r, "suggestion", categories) for r in parsed.suggestions) if i]
+    for kind, entries in (("issue", parsed.issues), ("suggestion", parsed.suggestions)):
+        items.extend(item for raw in entries if (item := _item(db, followup, parsed, raw, kind, categories)))
 
     nxt = parsed.next
     # 相对日期以跟进日为基准：补录几天前的聊天时，「明天」指聊天次日，不是今天的次日
