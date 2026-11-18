@@ -1,12 +1,77 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+import { createServer } from 'vite'
+import { createSSRApp } from 'vue'
+import { renderToString } from 'vue/server-renderer'
 import { emptyForm, formToPayload } from '../src/views/domestic_followup/followupDraft.js'
 import { nextStepValidation, nextStepsFromAi, nextStepsPayload, normalizeNextSteps } from '../src/views/domestic_followup/followupNextSteps.js'
 import { dictOptionLabels } from '../src/views/domestic_followup/followupDynamicOptions.js'
 
 const customerStep = { step_key: 'customer', text: '客户约定回访', basis: 'customer_agreed', trigger: 'date', date: '2026-11-20', default_selected: true }
 const actionStep = { step_key: 'action', text: '协调技术', basis: 'our_commitment', trigger: 'date', date: '2026-11-18', default_selected: false, commitment_advice: true }
+
+test('a managed customer AI draft can save with unselected next steps and a legacy date', async t => {
+  const draft = {
+    id: 7, version: 1, ai_status: 'done', followup_date: '2026-11-17', attachments: [],
+    ai_result: { customer_id: 12, customer_confidence: 0.9, summary: '已回复报价咨询',
+      next: { date: actionStep.date, plan: actionStep.text }, next_steps: [actionStep] },
+  }
+  const modules = {
+    '@/api/domesticFollowup': `
+      export const submissions = []
+      export const apiError = (error, fallback) => error.message || fallback
+      export const followupApi = {
+        dicts: async () => ({}), draft: async () => (${JSON.stringify(draft)}),
+        tasks: async () => ({ items: [] }), collaboration: async () => ({}),
+        timeline: async () => ({ customer: { id: 12, writable: true, responsibility_version: 1 }, open_items: [] }),
+        confirmDraft: async (id, body) => { submissions.push({ id, body }); return {} },
+      }
+    `,
+    '@/utils/feedback': `
+      export const msgError = text => { throw new Error(text) }
+      export const msgSuccessText = () => {}
+      export const msgWarning = text => { throw new Error(text) }
+    `,
+    '@/utils/datetime': `export const currentBeijingDate = () => '2026-11-18'`,
+  }
+  const server = await createServer({
+    root: fileURLToPath(new URL('..', import.meta.url)), configFile: false, envFile: false, logLevel: 'silent',
+    server: { middlewareMode: true, hmr: false },
+    plugins: [{
+      name: 'mock-followup-review',
+      resolveId(id) { if (Object.hasOwn(modules, id)) return `\0${id}` },
+      load(id) { if (id.startsWith('\0')) return modules[id.slice(1)] },
+    }],
+  })
+  t.after(() => server.close())
+  const { useFollowupComposer } = await server.ssrLoadModule('/src/views/domestic_followup/composables/useFollowupComposer.js')
+  const { submissions } = await server.ssrLoadModule('@/api/domesticFollowup')
+  let composer
+  await renderToString(createSSRApp({ setup() { composer = useFollowupComposer(); return () => null } }))
+  await composer.resume(draft.id)
+  const form = composer.form.value
+  form.result_code = '有效沟通'
+
+  assert.equal(composer.step.value, 'review')
+  assert.equal(composer.canSave.value, true, 'a hidden legacy field must not disable confirmation')
+  form.nextSteps = normalizeNextSteps(form.nextSteps.map(row => ({ ...row, selected: true })))
+  assert.equal(composer.canSave.value, false, 'a selected primary step still needs a purpose')
+  assert.match(composer.saveBlocker.value, /计划用途/)
+  form.nextSteps[0].plan_purpose = 'maintenance'
+  assert.equal(composer.canSave.value, true, 'the visible primary purpose is sufficient')
+  form.nextSteps[0].due_date = null
+  assert.equal(composer.canSave.value, false, 'a selected step still needs a date')
+  assert.match(composer.saveBlocker.value, /填写日期/)
+  form.nextSteps = normalizeNextSteps(form.nextSteps.map(row => ({ ...row, selected: false })))
+
+  await composer.confirm()
+  assert.equal(submissions.length, 1)
+  assert.equal(submissions[0].body.result_code, '有效沟通')
+  assert.equal(submissions[0].body.next_date, null)
+  assert.deepEqual(submissions[0].body.next_steps, [])
+})
 
 test('only evidence-backed dated customer agreements are selected by default', () => {
   const rows = nextStepsFromAi([customerStep, actionStep,
