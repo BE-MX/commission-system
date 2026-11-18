@@ -1,5 +1,5 @@
 {
-  "source_sha256": "ce617a02ecb80306774d0a63a02c21b61f2b55d9660acd7f02f7531546db5d15",
+  "source_sha256": "366b8961a88db5e7665c5f3d57b8eab94160d079f7276473b92f66b9865d4163",
   "nodes": [
     {
       "id": "customerPortal",
@@ -701,6 +701,26 @@
       "badgeTone": "gold",
       "titleSync": false,
       "path": "/dashboard",
+      "external": false,
+      "rule": "",
+      "business": "",
+      "phase": false
+    },
+    {
+      "id": "DocumentScan",
+      "kind": "page",
+      "label": "文档扫描",
+      "icon": "Camera",
+      "parent": "",
+      "order": 7,
+      "visible": true,
+      "builtin": true,
+      "protected": false,
+      "badge": "",
+      "badgePlace": "text",
+      "badgeTone": "gold",
+      "titleSync": false,
+      "path": "/document-scan",
       "external": false,
       "rule": "",
       "business": "",

@@ -5,6 +5,7 @@ import vm from 'node:vm'
 import realAxios from 'axios'
 import * as vue from 'vue'
 import * as pinia from 'pinia'
+import { isDocumentScanPath } from '../src/router/documentScanRoute.js'
 
 const read = name => fs.readFileSync(new URL('../src/' + name, import.meta.url), 'utf8')
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -32,7 +33,8 @@ async function harness({ path = '/invoice/manage', search = '', hash = '' } = {}
   const request = new vm.SourceTextModule(read('api/request.js'), { context })
   const imports = {
     axios: { default: realAxios },
-    'element-plus': { ElMessage: { error(value) { effects.messages.push(typeof value === 'string' ? value : value.message) } } },
+    '@/utils/feedback': { msgError(value) { effects.messages.push(typeof value === 'string' ? value : value.message) } },
+    '@/router/documentScanRoute': { isDocumentScanPath },
     '@/composables/useLoading': { useLoading: () => ({ show() { effects.loading++ }, hide() { effects.loading-- } }) },
   }
   await request.link(name => {
@@ -176,6 +178,15 @@ test('current fx auth failure preserves route query and fragment', async () => {
   const h = await harness({ path: '/fx-settlement', search: '?view=owned', hash: '#receipt' }); await h.login()
   const pending = await h.client().start(); await pending.reject()
   assert.deepEqual(h.effects.redirects, ['/login?redirect=' + encodeURIComponent('/fx-settlement?view=owned#receipt')]); assert.equal(h.effects.loading, 0)
+})
+
+test('current document scan auth failure returns to the responsive scan page', async () => {
+  const h = await harness({ path: '/document-scan', search: '?from=mobile' })
+  await h.login()
+  const pending = await h.client().start()
+  await pending.reject()
+  assert.deepEqual(h.effects.redirects, ['/login?redirect=' + encodeURIComponent('/document-scan?from=mobile')])
+  assert.equal(h.effects.loading, 0)
 })
 
 test('late invitation failure respects rotating custom authorization', async () => {

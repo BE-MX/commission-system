@@ -21,6 +21,7 @@ import {
   DataLine, Printer, Brush, Tickets, Goods, Postcard, Shop, Wallet, Monitor,
   Finished, ChatDotRound,
 } from '@element-plus/icons-vue'
+import { DOCUMENT_SCAN_PATH } from '../router/documentScanRoute.js'
 
 const FESTIVAL_PERMISSION = 'festival:read'
 const FESTIVAL_ORDER_PERMISSION = 'festival_order:read'
@@ -263,6 +264,13 @@ export const NAV_ENTRIES = [
     component: () => import('@/views/dashboard/Dashboard.vue'),
     title: '工作台',
     menu: { icon: DataAnalysis, order: 0 },
+  },
+  {
+    path: DOCUMENT_SCAN_PATH,
+    name: 'DocumentScan',
+    component: () => import('@/views/document-scan/DocumentScan.vue'),
+    title: '文档扫描',
+    menu: { icon: Camera, order: 7 },
   },
   {
     path: '/announcements',

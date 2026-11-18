@@ -4,6 +4,7 @@ import axios from 'axios'
 import { useLoading } from '@/composables/useLoading'
 import { getAccessToken, getAuthEpoch, clearAuthState } from '@/stores/auth'
 import { isFxSettlementPath } from '@/router/fxSettlementRoute'
+import { isDocumentScanPath } from '@/router/documentScanRoute'
 
 const loading = useLoading()
 
@@ -135,7 +136,7 @@ export function createApiClient({
         if (!ownsCurrentAuthentication(error.config)) return Promise.reject(error)
         clearAuthState()
         const returnTo = window.location.pathname + window.location.search + window.location.hash
-        window.location.href = (isFxSettlementPath(window.location.pathname) || window.location.pathname.startsWith('/client-desk'))
+        window.location.href = (isFxSettlementPath(window.location.pathname) || isDocumentScanPath(window.location.pathname) || window.location.pathname.startsWith('/client-desk'))
           ? '/login?redirect=' + encodeURIComponent(returnTo)
           : '/login'
         return Promise.reject(error)

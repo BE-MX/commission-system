@@ -1,5 +1,5 @@
 {
-  "source_sha256": "ce617a02ecb80306774d0a63a02c21b61f2b55d9660acd7f02f7531546db5d15",
+  "source_sha256": "366b8961a88db5e7665c5f3d57b8eab94160d079f7276473b92f66b9865d4163",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -416,6 +416,10 @@
       }
     ],
     "Dashboard": [
+      {},
+      {}
+    ],
+    "DocumentScan": [
       {},
       {}
     ],
