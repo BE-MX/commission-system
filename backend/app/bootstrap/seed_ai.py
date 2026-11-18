@@ -488,3 +488,16 @@ def auto_init_ai_presets() -> None:
     from app.bootstrap.seed_whatsapp_reply import auto_init_reply_presets
     auto_init_reply_presets()
     _init_domestic_followup_presets()
+    if get_settings().FACTORY_INBOUND_ENABLED:
+        from app.factory_inbound.recognition_service import PRESET_NAME, SYSTEM_PROMPT
+
+        _auto_create_preset(
+            preset_name=PRESET_NAME,
+            system_prompt=SYSTEM_PROMPT,
+            parameters={"temperature": 0, "max_tokens": 8192},
+            description="工厂手写送货单图片转写，行类型由业务值域注入",
+            provider_name_hint=_TEAMROUTER_CHAT_PROVIDER,
+            require_direct_anthropic=True,
+            allow_provider_fallback=False,
+            model_name_hint=_VISION_MODEL,
+        )

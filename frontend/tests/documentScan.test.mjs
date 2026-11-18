@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { isDocumentScanPath } from '../src/router/documentScanRoute.js'
-import { detectDocument } from '../src/views/document-scan/documentEdges.js'
-import { applyScanEffect, rectifyDocument } from '../src/views/document-scan/documentImage.js'
-import { fullFrame, isValidQuad, padDetectedQuad, squareToQuad } from '../src/views/document-scan/documentQuad.js'
+import { detectDocument } from '../src/components/document-scanner/documentEdges.js'
+import { applyScanEffect, rectifyDocument } from '../src/components/document-scanner/documentImage.js'
+import { fullFrame, isValidQuad, padDetectedQuad, squareToQuad } from '../src/components/document-scanner/documentQuad.js'
 
 const paperCorners = [[0.16, 0.19], [0.76, 0.12], [0.88, 0.78], [0.13, 0.84]]
 

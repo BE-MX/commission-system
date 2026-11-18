@@ -18,6 +18,15 @@ def require_legacy_outbound_scope(db, operation, payload):
     """Call inside the original claim transaction, before durable send intent."""
     if 'outbound' not in operation or operation.endswith('_remove'):
         return
+    _require_legacy_physical_sku_scope(db, payload, "旧出库", "再次占用或释放")
+
+
+def require_legacy_purchase_inbound_scope(db, payload):
+    """Purchase receipts affect the same physical SKU scope as sales outbound."""
+    _require_legacy_physical_sku_scope(db, payload, "旧入库", "再次变更实物库存")
+
+
+def _require_legacy_physical_sku_scope(db, payload, label, effect):
     transition.lock_policy(db)
     scopes = db.scalars(select(ResourceScope).where(ResourceScope.resource_kind == 'sku')
         .with_for_update().execution_options(populate_existing=True)).all()
@@ -27,16 +36,16 @@ def require_legacy_outbound_scope(db, operation, payload):
     # A stale/invalid phase must never reopen a scope already assigned native.
     namespace = get_settings().PORTAL_OKKI_NAMESPACE.strip()
     if not namespace:
-        raise ValueError('旧出库缺少当前小满租户身份，无法排除本地实物范围')
+        raise ValueError(f'{label}缺少当前小满租户身份，无法排除本地实物范围')
     rows = payload.get('record_list') if isinstance(payload, dict) else None
     if not isinstance(rows, list) or not rows:
-        raise ValueError('旧出库缺少冻结实物明细，无法排除本地实物范围')
+        raise ValueError(f'{label}缺少冻结实物明细，无法排除本地实物范围')
     for row in rows:
         if not isinstance(row, dict):
-            raise ValueError('旧出库实物明细身份不完整')
+            raise ValueError(f'{label}实物明细身份不完整')
         product, sku = str(row.get('product_id') or ''), str(row.get('sku_id') or '')
         if not product or not sku:
-            raise ValueError('旧出库实物产品或SKU身份缺失')
+            raise ValueError(f'{label}实物产品或SKU身份缺失')
         aliases = db.scalars(select(CatalogExternalIdentity).where(
             CatalogExternalIdentity.source == 'okki', CatalogExternalIdentity.tenant == namespace,
             CatalogExternalIdentity.external_product_id == product,
@@ -44,9 +53,9 @@ def require_legacy_outbound_scope(db, operation, payload):
             .with_for_update().execution_options(populate_existing=True)).all()
         mapped = {str(alias.sku_id) for alias in aliases}
         if len(mapped) != 1:
-            raise ValueError('旧出库SKU缺少当前租户唯一实物映射，禁止绕过本地排他范围')
+            raise ValueError(f'{label}SKU缺少当前租户唯一实物映射，禁止绕过本地排他范围')
         if mapped.intersection(protected):
-            raise ValueError('该SKU已有本地或冻结实物范围，旧出库不能再次占用或释放')
+            raise ValueError(f'该SKU已有本地或冻结实物范围，{label}不能{effect}')
 
 
 def require_material_scope_ready(db, resource_key):

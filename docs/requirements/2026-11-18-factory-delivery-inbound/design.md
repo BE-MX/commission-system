@@ -2,9 +2,9 @@
 
 版本：v0.3，2026-11-18（已过两轮对抗性审查，均已核实采纳，见第 16 节）。依据 [需求与设计 v0.4](README.md)（业务决策 D1–D17 以该文为准，本文不重复论证）。高保真原型见 [prototype/index.html](prototype/index.html)。
 
-原型打开方式：原型直接引用 `frontend/src/views/document-scan/` 的真实扫描模块和 `frontend/src/styles/tokens.css`，须在**仓库根目录**起静态服务（只绑定本机）：`python -m http.server 8767 --bind 127.0.0.1`，再打开 `http://127.0.0.1:8767/docs/requirements/2026-11-18-factory-delivery-inbound/prototype/index.html`（本机 `.claude/launch.json` 已加 `factory-inbound-prototype`，该文件不进 Git）。拍照与校正是真实算法；识别结果、订单与同步为示例数据。
+原型打开方式：原型直接引用 `frontend/src/components/document-scanner/` 的真实扫描模块和 `frontend/src/styles/tokens.css`，须在**仓库根目录**起静态服务（只绑定本机）：`python -m http.server 8767 --bind 127.0.0.1`，再打开 `http://127.0.0.1:8767/docs/requirements/2026-11-18-factory-delivery-inbound/prototype/index.html`（本机 `.claude/launch.json` 已加 `factory-inbound-prototype`，该文件不进 Git）。拍照与校正是真实算法；识别结果、订单与同步为示例数据。
 
-状态：开发设计稿，未开发、未建迁移。实施前须先完成 README 第 14 节 P0（15 张样本标准答案）与第 15.2 节的小满接口实测。
+状态：P1 和 P2 同步主链路已在开发 worktree 实现。P2 迁移为 `275_factory_inbound_batch`，真实自动同步默认关闭。授权的一件接口试单和本地流程验证见[核验记录](p2-verification.md)。
 
 ## 1. 范围
 
@@ -447,9 +447,11 @@ def confirm_batch(db, note_id, body, user):          # router 用 get_db 的 Ses
 2. 跨单行重算：已释放的预占可补给 `unallocated_qty`；失效明细的预占改分到其他明细。
 3. `apply_received_increment(item, qty, audit={inbound_no, batch_no, actor})`，同步明细与订单状态。
 4. 分配置为 `applied`，批次 `writeback_status = done`。
-5. 失败：`writeback_status = failed`，scheduler 每 10 分钟重试，3 次后提醒管理员；不回滚小满。
+5. 失败时保存 `writeback_status = failed` 和小满完成凭据。单据内点击「核对并续办」只重新执行本地回写。
 
 ## 10. 小满同步
+
+小满已在一件实测中接受正数单价及采购单、采购行关联。批次先取得采购单和每个 SKU 的采购行 ID，再创建一张入库草稿。指定单号和使用原 ID 转完成已验证，防重与回写仍按本节流程落地。详见[接口核验](p2-verification.md)。
 
 ### 10.1 发送流程
 
@@ -462,15 +464,17 @@ sequenceDiagram
     U->>S: 确认批次
     S->>T: 申请资源级办理权（主体=批次，SKU 列表）
     T-->>S: 凭证 + 租约 / 或拒绝（SKU 已转本地）
-    S->>S: sync_status=sending，记 attempt
-    S->>X: POST /v1/invoices/purchaseInbound/push
-    alt 返回 inbound_invoice_id
-        S->>X: GET info 回读核对
-        S->>S: synced → 触发回写
-    else 明确失败 4xx / 业务码
-        S->>S: failed（可修正重试）
-    else 超时 / 5xx / 网络
-        S->>S: uncertain（按 dedupe 模式核清）
+    S->>S: 冻结两个单号及采购明细
+    S->>X: 持久化采购发送意图后创建采购单并回读
+    X-->>S: 核对成功的采购单 ID 及各 SKU 采购行 ID
+    S->>X: 持久化入库草稿意图后创建草稿并回读
+    X-->>S: 核对成功的入库草稿编号与 ID
+    S->>X: 持久化完成意图后按原 ID 转完成并回读
+    X-->>S: 原入库单状态及全部明细
+    alt 回读确认完成且完全一致
+        S->>S: synced，触发回写
+    else 任一阶段超时、未知或回读不符
+        S->>S: uncertain，核清原单后续办
     end
 ```
 
@@ -478,38 +482,36 @@ sequenceDiagram
 
 现有 `legacy_sending` 的办理权以发票为主体。新增最小能力：`authorize_resource(db, subject_kind='factory_inbound_batch', subject_id, sku_keys)`，复用 epoch、租约与 legacy 路线校验，对 `sku_keys` 执行与 `require_legacy_outbound_scope` 等价的排除。具体表结构由交易双路线负责人确定；本模块只依赖这个函数的返回（凭证或拒绝原因）。
 
-### 10.3 防重复模式（实测后配置）
+### 10.3 发送检查点与防重复
 
-`FACTORY_INBOUND_DEDUPE_MODE`：
-
-| 值 | 前提（P2 实测） | uncertain 核清 |
-| --- | --- | --- |
-| `serial` | push 接受方舟指定 `serial_id`，info / list 可按 serial 精确查 | 租约过期后精确查询；明确不存在才回 confirmed |
-| `draft` | 先 `status=1` 建草稿，存在转完成接口 | 查本单号草稿：唯一则转完成；无则重建 |
-| `manual` | 两者都不行 | 系统不重发；管理员在小满核对后二选一，二次确认并审计 |
-
-默认 `manual`，实测通过再改。
+每次远端写入前保存该阶段的请求。通过交易路线、SKU 范围和租户配置校验后，在短事务内登记一次性发送权，提交事务后才发 POST。创建采购单或入库草稿前按冻结单号查询。结果不明时按原编号和已知 ID 回读，核对身份和全部业务字段。发现一致的采购单或草稿，从对应检查点续办。回读确认原单已完成时记录凭据并继续本地回写。已登记发送权的阶段若始终查不到原单、仍只查到完成前的草稿，或身份冲突，保持待核对。采购单的待安排入库数量只供展示。
 
 ### 10.4 Payload
 
+每批通过 `/v1/purchaseOrder/push` 创建一张采购单。采购单保存 `purchase_order_no`、供应商、币种、处理人、采购中状态 ID、采购金额及 `product_list`。回读采购单核对各产品和 SKU 的数量与单价，取每条 `purchase_order_product_id`。用这些 ID 构建一张入库草稿，例如：
+
 ```json
 {
-  "supplier_id": "<SU0001 解析得到>",
+  "supplier_id": 101,
   "currency": "USD",
-  "invoice_warehouse_id": "<默认仓库 ID>",
-  "status": 2,
-  "handler": ["<确认人绑定的小满 user_id>"],
+  "invoice_warehouse_id": 102,
+  "serial_id": "FI20261118-003-1",
+  "status": 1,
+  "handler": [103],
   "warehouse_invoice_time": "2026-11-18",
   "remark": "方舟入库单 FI20261118-003-1；工厂单据 7085384；11-11",
   "record_list": [
-    { "product_id": 0, "sku_id": 0, "inbound_count": 90, "purchase_price": 0 }
+    {
+      "product_id": 201, "sku_id": 202, "inbound_count": 1, "purchase_price": 1,
+      "purchase_order_id": 301, "purchase_order_product_id": 302
+    }
   ]
 }
 ```
 
-同一 SKU 合并为一条；请求体脱敏后存入 `sync_logs`。`DEDUPE_MODE=draft` 时 `status` 先传 1。
+同一 SKU 单价一致时合并为一条。供应商、仓库、用户及采购类型状态使用小满解析结果，价格使用已冻结的业务单价。请求体脱敏后存入 `sync_logs`。草稿回读通过后，将冻结的入库请求加上回读所得 `inbound_id`，把 `status` 改为 2。
 
-**draft 模式的状态**：草稿建成后批次为 `drafted`（不是 `synced`），**不回写、不生效对应**；转完成并回读确认 status=已完成后，才置 `synced` 并触发 9.2 回写。超时核清时区分「草稿已建」（继续转完成）和「已完成」（补记）。
+草稿建成后保存阶段回执。转完成并回读核对同一入库单及采购明细后，才置 `synced` 并触发 9.2 回写。
 
 ## 11. 接口契约（节选）
 
@@ -561,9 +563,10 @@ sequenceDiagram
 | `FACTORY_INBOUND_ENABLED` | false | 功能总开关 |
 | `FACTORY_INBOUND_SYNC_ENABLED` | false | P2 同步开关 |
 | `FACTORY_INBOUND_STORAGE_ROOT` | `D:\WORKSOURCE\factory-inbound` | 私有图片目录，部署实例在 `deploy/platforms.json` 登记 |
-| `FACTORY_INBOUND_SUPPLIER_NO` | `SU0001` | 小满供应商编号 |
+| `FACTORY_INBOUND_OKKI_SUPPLIER_ID` | 0 | 当前租户已核验的供应商内部 ID |
+| `FACTORY_INBOUND_OKKI_WAREHOUSE_ID` | 0 | 当前租户已核验的默认仓内部 ID |
+| `FACTORY_INBOUND_OKKI_PURCHASING_STATUS_ID` | 0 | 当前租户已核验的「采购中」状态 ID |
 | `FACTORY_INBOUND_FACTORY_CODE` | `juancheng` | 工厂标识 |
-| `FACTORY_INBOUND_DEDUPE_MODE` | `manual` | 10.3 |
 | `FACTORY_INBOUND_ORDER_LOOKBACK_DAYS` | 335 | 单号查找窗口 |
 | `FACTORY_INBOUND_MAX_UPLOAD_BYTES` | 6 MB | 两张图合计上限；后端校验，前端预压缩 |
 
@@ -610,7 +613,7 @@ P1 = 0–5；P2 = 6–9。任务 1、2、7 可并行；7 与 8 的接口需在�
 
 ## 15. 开放项
 
-- 小满接口三项实测（README 15.2 第 1 条），决定 `DEDUPE_MODE`。
+- 小满已完成一件采购关联试单。接入前按 10.3 实现三阶段检查点与核清，并确认正式采购单价来源。
 - 资源级办理权的表结构与归属（10.2）。
 - 文档扫描组件提取由谁执行（3.2）。
 - 颜色「A-B」两段写法的换算规则需样本校准（8.1）。

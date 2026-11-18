@@ -50,6 +50,29 @@ def _legacy_only(identity_field):
     return decorate
 
 
+def _locked_items(db, *, item_id=None, order_id=None):
+    column, value = (ProductionOrderItem.id, item_id) if item_id is not None else (ProductionOrderItem.order_id, order_id)
+    return db.execute(select(ProductionOrderItem.__table__).where(column == value)
+                      .order_by(ProductionOrderItem.id).with_for_update()).mappings()
+
+
+def _pending_inbound_qty(db, item_ids):
+    """Read current reservations after locking the same header and item rows."""
+    from app.factory_inbound.batch_models import Allocation
+
+    if not item_ids:
+        return 0
+    return sum(db.scalars(select(Allocation.quantity).where(
+        Allocation.target_kind == "production_item", Allocation.target_id.in_(item_ids),
+        Allocation.status == "pending",
+    ).order_by(Allocation.id).with_for_update()))
+
+
+def _require_no_pending_inbound(db, item_ids):
+    if _pending_inbound_qty(db, item_ids):
+        raise ValueError("该生产明细有待回写的工厂到货预占，请先处理入库批次")
+
+
 def _generate_order_no(db: Session) -> str:
     """生成订单号: PO{YYYYMMDD}-{NNN}, 按天自增"""
     today_str = beijing_today().strftime("%Y%m%d")
@@ -347,10 +370,9 @@ def update_order(
     operator_name: str = "",
 ) -> bool:
     """编辑生产订单,支持状态变更(级联同步明细状态)"""
-    order = db.execute(
-        text("SELECT * FROM ark_production_orders WHERE id = :id AND deleted_flag = 0"),
-        {"id": order_id},
-    ).mappings().first()
+    order = db.execute(select(ProductionOrder.__table__).where(
+        ProductionOrder.id == order_id, ProductionOrder.deleted_flag == 0,
+    ).with_for_update()).mappings().first()
 
     if not order:
         return False
@@ -358,6 +380,9 @@ def update_order(
     old_status = order["status"]
     updates = []
     params: dict[str, Any] = {"id": order_id}
+
+    if (status is not None and status != old_status) or (batch_no is not None and batch_no != order["batch_no"]):
+        _require_no_pending_inbound(db, [item["id"] for item in _locked_items(db, order_id=order_id)])
 
     if batch_no is not None:
         # 校验新批次号唯一(排除自己)
@@ -422,24 +447,18 @@ def delete_order(
     operator_name: str = "",
 ) -> bool:
     """软删生产订单(已入库的不允许删除)"""
-    order = db.execute(
-        text("""
-            SELECT o.*, COALESCE(SUM(i.received_qty), 0) AS total_received
-            FROM ark_production_orders o
-            LEFT JOIN ark_production_order_items i ON i.order_id = o.id
-            WHERE o.id = :id AND o.deleted_flag = 0
-            GROUP BY o.id
-        """),
-        {"id": order_id},
-    ).mappings().first()
+    order = db.execute(select(ProductionOrder.__table__).where(
+        ProductionOrder.id == order_id, ProductionOrder.deleted_flag == 0,
+    ).with_for_update()).mappings().first()
 
     if not order:
         return False
 
     # 已入库的不允许删除
-    total_received = int(order["total_received"] or 0)
-    if total_received > 0:
+    items = list(_locked_items(db, order_id=order_id))
+    if sum(item["received_qty"] for item in items) > 0:
         raise ValueError("该生产订单已有入库记录,不允许删除")
+    _require_no_pending_inbound(db, [item["id"] for item in items])
 
     db.execute(
         text("UPDATE ark_production_orders SET deleted_flag = 1, updated_at = NOW() WHERE id = :id"),
@@ -556,10 +575,7 @@ def update_order_item(
     operator_name: str = "",
 ) -> bool:
     """编辑明细(数量/备注/加急/预计交期)"""
-    item = db.execute(
-        text("SELECT * FROM ark_production_order_items WHERE id = :id"),
-        {"id": item_id},
-    ).mappings().first()
+    item = _locked_items(db, item_id=item_id).first()
 
     if not item:
         return False
@@ -570,6 +586,8 @@ def update_order_item(
     if order_qty is not None:
         if order_qty < item["received_qty"]:
             raise ValueError("生产下单数量不能小于已入库数量")
+        if order_qty < item["received_qty"] + _pending_inbound_qty(db, [item_id]):
+            raise ValueError("生产下单数量不足以保留待回写的工厂到货预占")
         updates.append("order_qty = :order_qty")
         params["order_qty"] = order_qty
 
@@ -617,10 +635,7 @@ def update_item_status(
     operator_name: str = "",
 ) -> bool:
     """修改明细状态,同步更新订单状态(双向同步)"""
-    item = db.execute(
-        text("SELECT * FROM ark_production_order_items WHERE id = :id"),
-        {"id": item_id},
-    ).mappings().first()
+    item = _locked_items(db, item_id=item_id).first()
 
     if not item:
         return False
@@ -628,6 +643,7 @@ def update_item_status(
     old_status = item["status"]
     if old_status == status:
         return True
+    _require_no_pending_inbound(db, [item_id])
 
     db.execute(
         text("UPDATE ark_production_order_items SET status = :status, updated_at = NOW() WHERE id = :id"),
@@ -637,10 +653,7 @@ def update_item_status(
     order_id = item["order_id"]
 
     # 检查是否所有明细都变更为同一状态,若是则同步更新订单状态
-    all_items = db.execute(
-        text("SELECT status FROM ark_production_order_items WHERE order_id = :order_id"),
-        {"order_id": order_id},
-    ).mappings().all()
+    all_items = _locked_items(db, order_id=order_id).all()
 
     all_same = all(i["status"] == status for i in all_items)
     if all_same:
@@ -676,16 +689,15 @@ def update_item_received(
     if received_qty < 0:
         raise ValueError("已入库数量不能小于0")
 
-    item = db.execute(
-        text("SELECT * FROM ark_production_order_items WHERE id = :id"),
-        {"id": item_id},
-    ).mappings().first()
+    item = _locked_items(db, item_id=item_id).first()
 
     if not item:
         return False
 
     if received_qty > item["order_qty"]:
         raise ValueError("已入库数量不能大于生产下单数量")
+    if received_qty + _pending_inbound_qty(db, [item_id]) > item["order_qty"]:
+        raise ValueError("已入库数量不足以保留待回写的工厂到货预占")
 
     old_received = item["received_qty"]
     new_status = item["status"]
@@ -727,16 +739,14 @@ def delete_order_item(
     operator_name: str = "",
 ) -> bool:
     """删除明细(已入库的不允许删除)"""
-    item = db.execute(
-        text("SELECT * FROM ark_production_order_items WHERE id = :id"),
-        {"id": item_id},
-    ).mappings().first()
+    item = _locked_items(db, item_id=item_id).first()
 
     if not item:
         return False
 
     if item["received_qty"] > 0:
         raise ValueError("该明细已有入库记录,不允许删除")
+    _require_no_pending_inbound(db, [item_id])
 
     db.execute(
         text("DELETE FROM ark_production_order_items WHERE id = :id"),

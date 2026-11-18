@@ -1,5 +1,21 @@
 # 莱莎方舟 数据库表参考
 
+## 工厂到货核对（274_factory_inbound_review）
+
+迁移接 `273_product_sales_insights`。所有业务时间按北京时间保存。
+
+| 表 | 范围 |
+| --- | --- |
+| `ark_factory_inbound_note_sequences` | 按北京业务日期锁行分配流水号 |
+| `ark_factory_inbound_notes` | 私有图片相对路径、原始识别、识别尝试、人工确认编号和草稿版本。生成列对未作废的工厂加编号组合实施唯一约束 |
+| `ark_factory_inbound_lines` | 识别原文、复核字段、匹配和人工决定快照、勾选与回写意图 |
+| `ark_factory_inbound_line_types` | 识别时注入的行类型。待核对类型须人工归类 |
+| `ark_factory_inbound_aliases` | 工艺、颜色和等级共用一张表，以 `kind + factory_term` 唯一。种子含已知初始工艺和 GC，等级留待确认 |
+| `ark_factory_inbound_alias_suggestions` | 颜色建议及其审核状态 |
+| `ark_factory_inbound_edit_logs` | 编号更正、明细核对、重识别和作废的操作历史 |
+
+P2 迁移 `275_factory_inbound_batch` 增加 `ark_factory_inbound_batches` 与 `ark_factory_inbound_allocations`。批次保存确认快照、`purchase_intent`（单号、价格、数量、经办人与小满租户配置指纹）、`sync_checkpoint`（阶段、请求、已领取的发送权及核对结果）、小满完成凭据及回写状态。确认幂等键和小满入库内部 ID 均唯一。分配保存到货行、订单明细、数量和生效状态，`ark_factory_inbound_lines.batch_id` 绑定已提交行。
+
 ## 单产品库存同步审计（253_inventory_sync_audit，本地实现，待发布）
 
 接 `252_alibaba_feed_business`，新增方舟库 `ark_inventory_sync_logs`：`id`、`product_id`、`created_by`、`observed_at`、`before_data`、`after_data`、`created_at`，按产品与创建时间索引。前后库存快照为 JSON；时间为北京时间，`observed_at` 是小满拉取开始时间，防止把拉取期间新发生的占库误判为已反映。

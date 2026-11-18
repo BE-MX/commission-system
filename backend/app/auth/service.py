@@ -391,6 +391,9 @@ def seed_role_permissions(db: Session):
         ("project_radar:admin",   "project_radar", "admin",   "维护项目雷达字典与全局扫描"),
         ("project_radar:read_all", "project_radar", "read_all", "查看全部项目雷达订阅（数据范围，二期）"),
         # 备货管理（2026-07-12 日报页拆独立码，stock:read 保留给销量备货一览）
+        ("factory_inbound:read", "factory_inbound", "read", "查看工厂到货单"),
+        ("factory_inbound:write", "factory_inbound", "write", "拍照并核对自己的工厂到货单"),
+        ("factory_inbound:admin", "factory_inbound", "admin", "管理工厂到货单与词表"),
         ("stock:read",            "stock",   "read",          "查看销量备货一览"),
         ("stock:write",           "stock",   "write",         "设置安全库存 / AI 生成建议 / 同步小满库存"),
         ("stock:admin",           "stock",   "admin",         "手动触发日报生成 / 调试推送"),

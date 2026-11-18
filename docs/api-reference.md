@@ -1,5 +1,28 @@
 # 莱莎方舟 API 参考
 
+## 工厂到货拍照核对
+
+所有路径以 `/api/factory-inbound` 开头。JSON 响应使用统一信封。办公室启用 `FACTORY_INBOUND_ENABLED` 后开放。
+
+| 方法和路径 | 权限 | 行为 |
+| --- | --- | --- |
+| GET `/settings` | read / write / admin | 上传总大小限制、启用的行类型和 `sync_enabled` |
+| POST `/notes` | write / admin | 接收 multipart 的 `scan` 和可选 `original`，创建草稿并排队识别，返回 201 |
+| GET `/notes` | read / write / admin | 按编号、日期、状态、创建人筛选和分页。仅有 write 时返回本人记录 |
+| GET `/notes/{id}` 与 `/notes/{id}/image?original=true` | read / write / admin | 单据及修订记录，或经鉴权的私有 JPG。仅有 write 时限本人 |
+| PATCH `/notes/{id}/delivery` | 本人 write / admin | 携带 `version` 和 `confirmed=true` 确认或更正编号。冲突返回疑似重复记录供人工核对 |
+| POST `/notes/{id}/recognize` 与 `/notes/{id}/void` | 本人 write / admin | 携带 `version` 重识别或作废草稿 |
+| POST `/notes/{id}/lines` 与 PATCH `/notes/{id}/lines/{line_id}` | 本人 write / admin | 补录、修正、重匹配、选取候选、勾选与登记回写意图。版本冲突返回 409 |
+| GET `/notes/{id}/batches` | read / write / admin | 返回本单批次、是否可续办和小满单号。仅有 write 时限本人 |
+| POST `/notes/{id}/batches/preview` | 本人 write / admin | 携带 `version` 和 `line_ids`，返回当前分配、未分配数量、跨单确认要求和 `preview_digest` |
+| POST `/notes/{id}/batches` | 本人 write / admin | 携带预览用的 `version` 和 `line_ids`，以及 `preview_digest`、`idempotency_key`、`unit_prices` 和按需提交的 `confirm_cross=true`。确认后冻结批次并推进小满采购、入库和本地回写 |
+| POST `/notes/{id}/batches/{batch_id}/resume` | 本人 write / admin | 核对同一批次的持久化进度并推进可验证的步骤，无请求体 |
+| GET `/aliases/{kind}` | read / write / admin | 查看工艺、颜色或等级词表 |
+| POST `/aliases/{kind}` 与 PATCH `/aliases/{kind}/{id}` | admin | 维护词条 |
+| GET `/aliases/suggestions` 与 PATCH `/aliases/suggestions/{id}` | admin | 列出和审核颜色建议 |
+
+批次写入口由默认关闭的 `FACTORY_INBOUND_SYNC_ENABLED` 控制，关闭时返回 503。每个 `unit_prices` 项提供 `product_id`、`sku_id` 和正整数 USD `unit_price`。分配预览发生变化时返回 409，请重新核对。批次提交或续办出现客户端超时后，先读取同一单据的批次进度。
+
 ## TM 资料一店一人试点
 
 `GET /api/alibaba-feed/pilot` 返回单一试点、可绑定的专用采集应用和有资料读取权限的业务员。`PUT /api/alibaba-feed/pilot` 接受 `expected_version`、`source_account_uid`、`name`、`integration_app_id`、`user_id` 和精确 `owner_alias`，只保存关闭态配置。`POST /api/alibaba-feed/pilot/activation` 接受 `expected_version` 与 `enabled`，启用另需 `consent_confirmed=true`。三个接口都要求用户 JWT 和实时 `alibaba_feed:admin`。状态冲突返回 409，采集 Token 和聊天内容不进入管理响应。

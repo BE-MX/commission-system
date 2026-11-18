@@ -1,5 +1,11 @@
 # 统一部署入口
 
+## 工厂到货拍照核对
+
+P1 的图片保存在办公室 `CommissionSystem` 的 `FACTORY_INBOUND_STORAGE_ROOT`，默认 `D:/WORKSOURCE/factory-inbound`。为该账号授予私有目录读写权限。功能默认关闭，授权发布后将 `FACTORY_INBOUND_ENABLED=true` 仅配置到办公室实例。迁移由常规发布流程执行。
+
+路由沿用两地办公室通道。取得路由变更授权后，用 `deploy.bat --factory-inbound-routing-only --prepare-only` 核对两端候选，正式激活使用相同入口去掉 `--prepare-only`。整个 `/api/factory-inbound` 前缀经本机 8002 转发，7 MiB 代理限制为 6 MiB 业务限制预留 multipart 开销。上线验收需覆盖北京、新加坡和办公室内网的鉴权上传、识别与原图读取。
+
 2026-11-13 办公室主入口与受限反向隧道已切到北京，原新加坡通道保留。分阶段命令、配置备份和精确回退见[办公室公网入口迁移](office-beijing-ingress.md)。小程序审核/发布及 PDA 安装独立记录，不由服务器发布自动完成。
 
 ## 2026-11-13 色块路由探测中断恢复

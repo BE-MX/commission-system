@@ -5,7 +5,7 @@ import vm from 'node:vm'
 import realAxios from 'axios'
 import * as vue from 'vue'
 import * as pinia from 'pinia'
-import { isDocumentScanPath } from '../src/router/documentScanRoute.js'
+import { isDocumentScanPath, isFactoryInboundScanPath } from '../src/router/documentScanRoute.js'
 
 const read = name => fs.readFileSync(new URL('../src/' + name, import.meta.url), 'utf8')
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -34,7 +34,7 @@ async function harness({ path = '/invoice/manage', search = '', hash = '' } = {}
   const imports = {
     axios: { default: realAxios },
     '@/utils/feedback': { msgError(value) { effects.messages.push(typeof value === 'string' ? value : value.message) } },
-    '@/router/documentScanRoute': { isDocumentScanPath },
+    '@/router/documentScanRoute': { isDocumentScanPath, isFactoryInboundScanPath },
     '@/composables/useLoading': { useLoading: () => ({ show() { effects.loading++ }, hide() { effects.loading-- } }) },
   }
   await request.link(name => {
@@ -187,6 +187,16 @@ test('current document scan auth failure returns to the responsive scan page', a
   await pending.reject()
   assert.deepEqual(h.effects.redirects, ['/login?redirect=' + encodeURIComponent('/document-scan?from=mobile')])
   assert.equal(h.effects.loading, 0)
+})
+
+test('factory inbound 401 preserves the selected draft', async () => {
+  const path = '/factory-inbound/scan'
+  const query = '?note=72'
+  const h = await harness({ path, search: query })
+  await h.login()
+  const pending = await h.client().start()
+  await pending.reject()
+  assert.deepEqual(h.effects.redirects, ['/login?redirect=' + encodeURIComponent(path + query)])
 })
 
 test('late invitation failure respects rotating custom authorization', async () => {

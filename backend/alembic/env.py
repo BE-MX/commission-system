@@ -19,6 +19,8 @@ import app.models  # noqa: F401
 import app.core.storage.models  # noqa: F401
 import app.battle_report.models  # noqa: F401
 import app.domestic_followup.collaboration_models  # noqa: F401
+import app.factory_inbound.models  # noqa: F401
+import app.factory_inbound.batch_models  # noqa: F401
 
 config = context.config
 

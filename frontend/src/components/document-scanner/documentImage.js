@@ -49,12 +49,12 @@ export async function readScanPhoto(file) {
   }
 }
 
-export function scanBlob(canvas) {
+export function scanBlob(canvas, quality = 0.94) {
   return new Promise((resolve, reject) => {
     canvas.toBlob(blob => {
       if (blob) resolve(blob)
       else reject(new Error('JPEG encoding failed'))
-    }, 'image/jpeg', 0.94)
+    }, 'image/jpeg', quality)
   })
 }
 

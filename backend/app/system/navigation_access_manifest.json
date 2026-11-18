@@ -1,5 +1,5 @@
 {
-  "source_sha256": "1e38c402c90553fc5583075571eb654d0b80c7b5a7345d205d9acb15ec2e0c4c",
+  "source_sha256": "14c47f0a1c5df61e6c501e409b182cd7dbda1ff3e071c0674f0b31f1e2c6ecfe",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -1827,6 +1827,74 @@
       },
       {
         "permission": "production:read"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "FactoryInboundList": [
+      {
+        "anyPermission": [
+          "factory_inbound:read",
+          "factory_inbound:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "factory_inbound:read",
+          "factory_inbound:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "FactoryInboundScan": [
+      {
+        "anyPermission": [
+          "factory_inbound:write",
+          "factory_inbound:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "factory_inbound:write",
+          "factory_inbound:admin"
+        ]
       },
       {
         "anyPermission": [

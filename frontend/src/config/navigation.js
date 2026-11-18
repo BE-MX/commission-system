@@ -938,6 +938,20 @@ export const NAV_ENTRIES = [
       permission: 'production:read',
     },
   },
+  {
+    path: '/factory-inbound', name: 'FactoryInboundList', title: '工厂到货入库',
+    component: () => import('@/views/factory-inbound/FactoryInboundList.vue'),
+    anyPermission: ['factory_inbound:read', 'factory_inbound:admin'],
+    menu: { group: 'stock', title: '工厂到货入库', icon: Box, order: 45,
+      anyPermission: ['factory_inbound:read', 'factory_inbound:admin'] },
+  },
+  {
+    path: '/factory-inbound/scan', name: 'FactoryInboundScan', title: '工厂到货拍照',
+    component: () => import('@/views/factory-inbound/FactoryInboundScan.vue'),
+    anyPermission: ['factory_inbound:write', 'factory_inbound:admin'], fullscreen: true,
+    menu: { group: 'stock', title: '工厂到货拍照', icon: Camera, order: 46,
+      anyPermission: ['factory_inbound:write', 'factory_inbound:admin'] },
+  },
   { path: '/production/native', name: 'NativeProduction', component: () => import('@/views/production/native/NativeProduction.vue'), title: '本地生产', permission: 'production:read', menu: { group: 'stock', title: '本地生产', icon: Box, order: 39, permission: 'production:read' } },
 
   {

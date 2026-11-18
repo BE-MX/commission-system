@@ -1,7 +1,6 @@
 // 拍照扫描：直接调用方舟「文档扫描」DEMO 的真实算法模块（找边、透视校正、增强），
-// 流程对应 frontend/src/views/document-scan/DocumentScan.vue。
-// 开发时这些模块会迁到 frontend/src/components/document-scanner/（设计开发文档 3.2），届时改这里的路径。
-const BASE = '../../../../frontend/src/views/document-scan/'
+// 原型复用生产扫描组件的纯 JS 模块。
+const BASE = '../../../../frontend/src/components/document-scanner/'
 const { detectDocument } = await import(BASE + 'documentEdges.js')
 const { canvasFrom, readDetectionPixels, readScanPhoto, rectifyDocument, renderScan, scanBlob } = await import(BASE + 'documentImage.js')
 const { distance, fullFrame, padDetectedQuad } = await import(BASE + 'documentQuad.js')

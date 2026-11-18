@@ -26,6 +26,7 @@ export const insightClient = createApiClient({ baseURL: '/api/insight', timeout:
 export const projectRadarClient = createApiClient({ baseURL: '/api/project-radar', timeout: 90000 })
 export const projectRadarPublicClient = createApiClient({ baseURL: '/api/project-radar', timeout: 30000, redirectOnUnauthorized: false })
 export const customerHubClient = createApiClient({ baseURL: '/api/customer-hub', timeout: 90000 })
+export const factoryInboundClient = createApiClient({ baseURL: '/api/factory-inbound', timeout: 45000 })
 export const stockClient = createApiClient({ baseURL: '/api/stock', timeout: 90000 })
 export const semifinishedClient = createApiClient({ baseURL: '/api/semifinished', timeout: 90000 })
 export const systemClient = createApiClient({ baseURL: '/api/system', timeout: 30000 })

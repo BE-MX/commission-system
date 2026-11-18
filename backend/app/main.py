@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError, TimeoutError as DBTimeoutError
 
 from app.core.config import get_settings
-from app.core.database import engine
+from app.core.database import SessionLocal, engine
 from app.core.storage.cos import ObjectMissing, StorageError
 from app.bootstrap import (
     check_database_connection, load_business_rules, initialize_portal_outbound,
@@ -63,7 +63,6 @@ async def lifespan(app: FastAPI):
             load_business_rules()
             seed_admin_and_permissions()
             if settings.CLIENT_DESK_ENABLED:
-                from app.core.database import SessionLocal
                 from app.client_desk.service import seed_grade_dictionary
                 from app.client_desk.board import seed_tag_dictionary
                 with SessionLocal() as desk_db:
@@ -89,6 +88,11 @@ async def lifespan(app: FastAPI):
             resources.callback(cleanup, stop_owned_scheduler)
 
             auto_init_ai_presets()
+            if settings.FACTORY_INBOUND_ENABLED:
+                from app.factory_inbound.recognition_service import recover_stale
+
+                with SessionLocal() as factory_db:
+                    recover_stale(factory_db)
             from app.pm.bootstrap import init_pm_module
             init_pm_module()
             from app.core.storage.worker import start_worker, stop_worker

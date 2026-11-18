@@ -277,6 +277,17 @@ class Settings(BaseSettings):
     CUSTOMER_IMAGE_PUBLIC_RATE_PER_MINUTE: _PositiveInt = 30
     CUSTOMER_IMAGE_MAX_REQUIREMENT_CHARS: _PositiveInt = 500
 
+    # ── 工厂到货 ───────────────────────────────────────────
+    FACTORY_INBOUND_ENABLED: bool = False
+    FACTORY_INBOUND_SYNC_ENABLED: bool = False
+    FACTORY_INBOUND_STORAGE_ROOT: str = r"D:\WORKSOURCE\factory-inbound"
+    FACTORY_INBOUND_FACTORY_CODE: str = "juancheng"
+    FACTORY_INBOUND_OKKI_SUPPLIER_ID: int = 0
+    FACTORY_INBOUND_OKKI_WAREHOUSE_ID: int = 0
+    FACTORY_INBOUND_OKKI_PURCHASING_STATUS_ID: int = 0
+    FACTORY_INBOUND_ORDER_LOOKBACK_DAYS: int = 335
+    FACTORY_INBOUND_MAX_UPLOAD_BYTES: int = 6 * 1024 * 1024
+
     # ── AI 方案对话 ───────────────────────────────────────
     AI_CHAT_STORAGE_ROOT: str = r"D:\WORKSOURCE\ai-chat"
     AI_CHAT_MAX_UPLOAD_BYTES: _PositiveInt = 4 * 1024 * 1024

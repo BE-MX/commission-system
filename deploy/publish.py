@@ -442,6 +442,7 @@ if __name__ == "__main__":
     parser.add_argument("--office-lan-https", metavar="PLAN", help="Configure only office LAN HTTPS using an existing domain certificate")
     parser.add_argument("--shipping-video-routing-only", action="store_true", help="Enable 100MB private shipping video uploads on existing backends")
     parser.add_argument("--voucher-routing-only", action="store_true", help="Route recharge uploads and voucher reads to each site's COS backend")
+    parser.add_argument("--factory-inbound-routing-only", action="store_true", help="Route factory delivery review and private images to the office")
     parser.add_argument("--receipt-routing-only", action="store_true", help="Route receipts and 10MiB proofs to the office only")
     parser.add_argument("--whatsapp-routing-only", action="store_true", help="Route WhatsApp connector APIs to the single office connector")
     parser.add_argument("--colorwork-routing-only", action="store_true", help="Route colorwork to the existing healthy Beijing module")
@@ -608,6 +609,11 @@ if __name__ == "__main__":
                 raise RuntimeError('Storage routing only accepts --prepare-only')
             from storage_routing import execute
             execute(args.prepare_only, args.storage_routing_only)
+        elif args.factory_inbound_routing_only:
+            if any(value for key, value in vars(args).items() if key not in {"factory_inbound_routing_only", "prepare_only"}):
+                raise RuntimeError("Factory inbound routing only accepts --prepare-only")
+            from voucher_routing import execute
+            execute(args.prepare_only, feature="factory-inbound")
         elif args.receipt_routing_only:
             if any(value for key, value in vars(args).items() if key not in {"receipt_routing_only", "prepare_only"}):
                 raise RuntimeError("Receipt routing only accepts --prepare-only")
@@ -672,7 +678,7 @@ if __name__ == "__main__":
         if any(getattr(locals().get('args'), key, None) for key in ['candidate_retention_only', 'static_retention_only', 'okki_sync_only', 'mail_worker_stage', 'colorwork_backup_policy', 'storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
             print('STORAGE MAINTENANCE FAILED: ' + str(error), file=sys.stderr, flush=True)
             sys.exit(1)
-        if not getattr(locals().get("args"), "office_beijing_ingress", None) and not getattr(locals().get("args"), "whatsapp_routing_only", False) and not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "invoice_schema_only", None) and not getattr(locals().get("args"), "recover_invoice_166", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
+        if not getattr(locals().get("args"), "factory_inbound_routing_only", False) and not getattr(locals().get("args"), "office_beijing_ingress", None) and not getattr(locals().get("args"), "whatsapp_routing_only", False) and not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "invoice_schema_only", None) and not getattr(locals().get("args"), "recover_invoice_166", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
             journal = marker("publish-current")
             if journal.get('status') != 'succeeded':
                 journal.update(status="failed", error_type=type(error).__name__)
