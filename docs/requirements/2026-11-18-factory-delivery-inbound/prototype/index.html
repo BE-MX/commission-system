@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>工厂到货入库原型</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <!-- 颜色与字体变量的唯一来源：主站 tokens.css。需从仓库根目录起静态服务打开本页。 -->
+  <link rel="stylesheet" href="../../../../frontend/src/styles/tokens.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="proto-bar">
+    <h1>工厂到货入库<small>高保真原型 · 示例数据</small></h1>
+    <div class="seg" role="group" aria-label="切换端">
+      <button data-view-btn="mobile" aria-pressed="true">手机拍照</button>
+      <button data-view-btn="desktop" aria-pressed="false">桌面列表</button>
+    </div>
+  </div>
+  <main class="proto-stage" id="stage" data-view="mobile"></main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

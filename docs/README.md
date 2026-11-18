@@ -13,6 +13,8 @@
 
 ## 近期专题入口
 
+工厂手写发货单拍照识别入库：[需求与设计 v0.4](requirements/2026-11-18-factory-delivery-inbound/README.md) · [设计开发文档](requirements/2026-11-18-factory-delivery-inbound/design.md) · [高保真原型](requirements/2026-11-18-factory-delivery-inbound/prototype/index.html)（切换前写小满采购入库；对应生产备货订单与订单发票生产单两类，备货单回写、发票只记对应；未开发）。
+
 内贸客户跟进统计看板：[需求与原型](requirements/2026-11-12-followup-stats-board/README.md)、[P1/P2 实施与验收](requirements/2026-11-12-followup-stats-board/implementation.md)（Git 交付，未部署）。
 
 内贸客户跟进协作：[客户总览与接力协作定稿](requirements/2026-11-09-domestic-followup-collaboration.md)，含 10 项业务口径、权限矩阵和 28 项验收场景。
