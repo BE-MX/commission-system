@@ -75,6 +75,25 @@
   overflow-wrap: anywhere;
 }
 
+.summary-card__amounts {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.summary-card__amounts > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+
+.summary-card__amounts dt { color: var(--invoice-muted); font-size: 12px; }
+.summary-card__amounts dd { margin: 0; text-align: right; }
+.summary-grid .summary-card .summary-card__amounts strong { font-size: clamp(14px, 1.3vw, 18px); }
+
 .summary-card--gmv { --metric-ink: var(--invoice-summary-total-fg); --metric-bg: var(--invoice-summary-total-bg); }
 .summary-card--received { --metric-ink: var(--metric-violet-ink); --metric-bg: var(--metric-violet-bg); }
 .summary-card--new { --metric-ink: var(--color-success-text); --metric-bg: var(--color-success-bg); }
@@ -155,4 +174,18 @@
   .summary-section--compact .summary-card__icon { left: 12px; top: 12px; width: 28px; height: 28px; }
   .summary-section--compact .summary-card strong { font-size: 20px; }
   .summary-note { margin-top: 6px; }
+}
+
+@media (min-width: 601px) {
+  .summary-section--compact .summary-card--received { padding-inline-start: 14px; }
+  .summary-section--compact .summary-card--received > span {
+    display: flex;
+    align-items: center;
+    min-height: 30px;
+    padding-inline-start: 44px;
+  }
+}
+
+@media (min-width: 901px) and (max-height: 800px) {
+  .summary-section--compact .summary-card--received > span { min-height: 28px; padding-inline-start: 36px; }
 }

@@ -75,7 +75,8 @@ def test_summary_uses_all_visible_synced_invoices_not_current_page(db):
         assert summary == {
             "gmv": 390.0, "new_sign_count": 2, "unknown_new_sign_count": 1,
             "order_count": 5, "average_order_amount": 97.5, "non_usd_count": 1,
-            "first_return_count": 0, "received_amount": None, "received_amount_partial": False,
+            "first_return_count": 0, "receivable_amount": 390.0, "received_amount": None,
+            "received_amount_partial": False,
         }
         page = client.get("/api/invoice/invoices", params={"page_size": 1})
         assert page.status_code == 200
@@ -97,7 +98,7 @@ def test_summary_uses_all_visible_synced_invoices_not_current_page(db):
         assert result.json()["data"]["new_sign_count"] == 1
 
 
-def test_summary_and_list_exclude_fees_but_preserve_payable_and_sort_before_paging(db):
+def test_summary_includes_fees_in_receivable_and_excludes_them_from_gmv(db):
     seed_authority(db, 5, "invoice:read")
     _invoice(db, "FEE", amount="130.35", fee="20.25")
     _invoice(db, "NO-FEE", amount="120.20")
@@ -110,6 +111,7 @@ def test_summary_and_list_exclude_fees_but_preserve_payable_and_sort_before_pagi
             "date_from": "2026-09-01", "date_to": "2026-09-30",
         }).json()["data"]
         assert summary["gmv"] == 230.30
+        assert summary["receivable_amount"] == 250.55
         assert summary["average_order_amount"] == 115.15
         assert summary["order_count"] == 3
         assert summary["non_usd_count"] == 1
@@ -140,6 +142,7 @@ def test_summary_rejects_invalid_range_and_requires_read_permission(db):
             "date_from": "2026-10-01", "date_to": "2026-10-31",
         })
         assert empty.json()["data"]["gmv"] == 0.0
+        assert empty.json()["data"]["receivable_amount"] == 0.0
         assert empty.json()["data"]["average_order_amount"] == 0.0
         result = client.get("/api/invoice/invoices/summary", params={
             "date_from": "2026-10-01", "date_to": "2026-09-30",
