@@ -4,7 +4,7 @@ from decimal import Decimal
 from fastapi import HTTPException
 
 from app.battle_report.access import load_report, select_members, visible_members
-from app.battle_report.award_statistics import cohort_orders, normalize_facts, order_key, source_facts
+from app.battle_report.award_statistics import cohort_customer_id, cohort_orders, normalize_facts, order_key, source_facts
 from app.battle_report.statistics import money
 from app.core.list_sort import apply_items_sort
 from app.core.time import beijing_now
@@ -26,7 +26,7 @@ def list_metric_orders(db, report_id, user, *, metric, customer=None, order_name
     raw, synced = source_facts(db, report, members, now)
     orders, issues, _, _, _ = normalize_facts(report, raw, now)
     groups = cohort_orders(orders)
-    rows = []
+    rows, customers = [], set()
     for member in allowed:
         group = groups.get(str(member.okki_user_id), {})
         selected = (group.get("new_sign", []) + group.get("repeat", []) if metric == "combined"
@@ -38,6 +38,8 @@ def list_metric_orders(db, report_id, user, *, metric, customer=None, order_name
                 continue
             if order_name and order_name.strip().casefold() not in order["order_name"].casefold():
                 continue
+            if order.get("source_type") != "sales_return":
+                customers.add(cohort_customer_id(order))
             rows.append({"order_id": order["id"], "order_no": order["order_no"],
                          "source_type": order.get("source_type", "okki"), "return_id": order.get("return_id"),
                          "original_order_id": order.get("original_order_id", order["id"]),
@@ -53,7 +55,7 @@ def list_metric_orders(db, report_id, user, *, metric, customer=None, order_name
     total_amount = sum((Decimal(row["amount_usd"]) for row in rows), Decimal(0))
     start = (page - 1) * page_size
     return {"items": rows[start:start + page_size], "total": len(rows), "page": page, "page_size": page_size,
-            "customer_count": len({row["company_id"] for row in rows if row["source_type"] != "sales_return"}), "total_amount": money(total_amount),
+            "customer_count": len(customers), "total_amount": money(total_amount),
             "currency": "USD", "data_complete": not issues,
             "amount_scope": "original_new_customer_cohort",
             "amount_note": ("按原新签客户归属汇总；PK总览新签金额按订单负责人统计，客户转交后可能不同。"

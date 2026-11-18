@@ -13,6 +13,9 @@ from app.battle_report.statistics import money
 from app.battle_report.order_decisions import decision_index, resolve_order_role
 
 NEW_DEAL_FIELD = "22595163468"
+# Owner-approved identity correction for the 2026 annual award. All three
+# OKKI order details carry the same company serial (2088643).
+ANNUAL_2026_OKKI_CUSTOMER_IDS = ("86941221128408", "87303977263880")
 ZERO = Decimal(0)
 logger = logging.getLogger(__name__)
 
@@ -36,23 +39,38 @@ def source_facts(db, report, members, now):
                  "custom_fields": {NEW_DEAL_FIELD: r["new_deal"]}, "order_name": r["order_no"]}
                 for r in rows if r["company_id"] in customers] + effects, state["last_projected_at"]
     schema = get_settings().BUSINESS_DB_NAME
+    params = {"start": report.start_date, "end": min(report.end_date, now.date()),
+              "users": [m.okki_user_id for m in members]}
+    cohort_company = "o.company_id"
+    linked_scope = ""
+    if report.award_kind == "annual_repurchase" and report.start_date == date(2026, 1, 1):
+        params["old_company"], params["current_company"] = ANNUAL_2026_OKKI_CUSTOMER_IDS
+        cohort_company = "CASE WHEN o.company_id = :old_company THEN :current_company ELSE o.company_id END"
+        # Include either ID after a handover only if the pair intersects the roster.
+        linked_scope = f"""OR (
+            o.company_id IN (:old_company, :current_company) AND EXISTS (
+                SELECT 1 FROM `{schema}`.okki_orders s
+                WHERE s.company_id IN (:old_company, :current_company)
+                  AND s.user_id IN :users AND s.account_date BETWEEN :start AND :end
+            )
+        )"""
     query = text(f"""
         SELECT o.order_id, o.order_no, o.user_id, o.company_id, o.account_date, o.amount_usd,
+               {cohort_company} AS cohort_company_id,
                o.name AS order_name, COALESCE(c.company_name, '') AS company_name,
                o.custom_fields, o.synced_at, {goods_order_sql('o')} AS is_goods
         FROM `{schema}`.okki_orders o
-        LEFT JOIN `{schema}`.customer_info c ON c.company_id = o.company_id
+        LEFT JOIN `{schema}`.customer_info c ON c.company_id = {cohort_company}
         WHERE (o.status = '13972831656' OR (o.status = '13972831654' AND o.status_name = '已结清'))
           AND (o.trail IS NULL OR CAST(o.trail AS CHAR) NOT LIKE '%个人%')
           AND (o.account_date BETWEEN :start AND :end OR o.account_date IS NULL)
           AND (o.user_id IN :users OR o.company_id IN (
               SELECT s.company_id FROM `{schema}`.okki_orders s
               WHERE s.user_id IN :users AND s.account_date BETWEEN :start AND :end
-          ))
+          ) {linked_scope})
         ORDER BY o.account_date, o.order_id
     """).bindparams(bindparam("users", expanding=True))
-    rows = db.execute(query, {"start": report.start_date, "end": min(report.end_date, now.date()),
-                              "users": [m.okki_user_id for m in members]}).mappings().all()
+    rows = db.execute(query, params).mappings().all()
     synced = db.execute(text(f"SELECT MAX(synced_at) FROM `{schema}`.okki_orders")).scalar()
     from app.sales_return.gmv import adjustments
     effects = adjustments(db, report.start_date, min(report.end_date, now.date()), [m.okki_user_id for m in members])
@@ -117,6 +135,7 @@ def normalize_facts(report, raw, now):
                 continue
             seen[oid] = fact
             orders.append({"id": oid, "uid": uid, "cid": cid, "day": day,
+                           "cohort_cid": str(row.get("cohort_company_id") or cid),
                            "order_no": row.get("order_no") or oid, "order_name": row.get("order_name") or "",
                            "company_name": row.get("company_name") or "",
                            "amount": amount, "new": True if role == "new_sign" else False if role == "repeat" else None, "goods": fact[-1]})
@@ -130,6 +149,10 @@ def order_key(order):
     return (order["day"], int(order["id"]) if order["id"].isdigit() else 0, order["id"])
 
 
+def cohort_customer_id(order):
+    return order.get("cohort_cid", order["cid"])
+
+
 def cohort_orders(orders):
     """One ownership/selection contract for award totals and source detail tabs."""
     cohorts = {}
@@ -137,7 +160,7 @@ def cohort_orders(orders):
         if order.get("source_type") == "sales_return":
             continue
         if order["new"]:
-            cohorts.setdefault(order["cid"], order)
+            cohorts.setdefault(cohort_customer_id(order), order)
     groups = {}
     for order in orders:
         if order.get("source_type") == "sales_return":
@@ -145,11 +168,12 @@ def cohort_orders(orders):
             if order["new"] is not None:
                 group["new_sign" if order["new"] else "repeat"].append(order)
             continue
-        first = cohorts.get(order["cid"])
+        customer_id = cohort_customer_id(order)
+        first = cohorts.get(customer_id)
         if first is None:
             continue
         group = groups.setdefault(first["uid"], {"customers": set(), "new_sign": [], "repeat": []})
-        group["customers"].add(order["cid"])
+        group["customers"].add(customer_id)
         if order["new"] is True:
             group["new_sign"].append(order)
         elif order["new"] is False and order_key(order) > order_key(first):
@@ -178,7 +202,7 @@ def calculate(report, members, raw, now, synced_at=None, *, native=False, source
                "gmv_complete": source_complete and uid not in gmv_issues,
                "gmv": format(sum((o["amount"] for o in owned), ZERO), "f"),
                "new_count": len(new), "new_amount": format(sum((o["amount"] for o in owned if o["new"]), ZERO), "f"),
-               "repeat_count": len({o["cid"] for o in repeats if o.get("source_type") != "sales_return"}),
+               "repeat_count": len({cohort_customer_id(o) for o in repeats if o.get("source_type") != "sales_return"}),
                "repeat_orders": sum(o.get("source_type") != "sales_return" for o in repeats),
                "repeat_amount": format(sum((o["amount"] for o in amount_orders), ZERO), "f")}
         rows.append(row)
