@@ -77,8 +77,15 @@ def case(db, monkeypatch, request):
     return SimpleNamespace(db=db, id=identity, key=attempt.key, remote=remote, calls=calls, clock=clock)
 
 
-def test_get_recovery_binds_once_queues_and_preserves_receipt_intent(case):
+@pytest.mark.parametrize('created_at', [
+    '2026-10-26 11:54:01',
+    '2026-10-26 11:53:43',  # 17 seconds early
+    '2026-10-26 11:53:40',  # 20 seconds early
+    '2026-10-26 11:53:30',  # Earliest acceptable value
+])
+def test_get_recovery_binds_once_queues_and_preserves_receipt_intent(case, created_at):
     c = case
+    c.remote['create_time'] = created_at
     intent_before = push.state(c.db.scalar(select(ReceiptIntent)))
     c.db.rollback()
     assert recovery.recover(c.db, c.id) == {'status': 'verified'}
@@ -97,7 +104,7 @@ def test_get_recovery_binds_once_queues_and_preserves_receipt_intent(case):
     assert len(c.calls) == 4
 
 
-@pytest.mark.parametrize('fault', ['amount', 'quantity', 'fees', 'uid', 'company', 'old_order', 'sales_split', 'department_split', 'remark', 'flag'])
+@pytest.mark.parametrize('fault', ['amount', 'quantity', 'fees', 'uid', 'company', 'old_order', 'past_lease', 'sales_split', 'department_split', 'remark', 'flag'])
 def test_nonmatching_provider_evidence_never_changes_business(case, fault):
     c = case
     if fault == 'amount': c.remote['amount'] = 99
@@ -105,7 +112,8 @@ def test_nonmatching_provider_evidence_never_changes_business(case, fault):
     if fault == 'fees': c.remote['cost_list'][0]['cost'] = 99
     if fault == 'uid': c.remote['product_list'][0].pop('unique_id')
     if fault == 'company': c.remote['company_id'] = 'different'
-    if fault == 'old_order': c.remote['create_time'] = '2026-10-26 08:00:00'
+    if fault == 'old_order': c.remote['create_time'] = '2026-10-26 11:53:29'
+    if fault == 'past_lease': c.remote['create_time'] = '2026-10-26 11:59:01'
     if fault == 'sales_split': c.remote['users'][0]['rate'] = 50
     if fault == 'department_split': c.remote['departments'][0]['rate'] = 50
     if fault == 'remark': c.remote['remark'] = 'External edit'
@@ -199,14 +207,21 @@ def test_disabled_outbound_does_not_disable_query_or_release_receipt(case, monke
 
 
 def test_window_crosses_beijing_midnight_without_using_invoice_date():
-    lower, upper = plan.window(datetime(2026, 10, 25, 23, 59, 50), '2026-10-26T00:04:50')
+    started_at = datetime(2026, 10, 25, 23, 59, 50)
+    lower, upper = plan.window(started_at, '2026-10-26T00:04:51')
     assert lower.date() != upper.date()
-    with pytest.raises(ValueError): plan.window(lower, '2026-10-27T00:04:50')
+    assert upper == datetime(2026, 10, 26, 0, 4, 51)
+    with pytest.raises(ValueError, match='Invalid original send window'):
+        plan.window(started_at, '2026-10-26T00:04:52')
 
 
-def test_midnight_candidate_is_found_across_both_beijing_dates(case):
+@pytest.mark.parametrize(('started_at', 'lease_until', 'created_at'), [
+    (datetime(2026, 10, 25, 23, 59, 50), '2026-10-26T00:04:50', '2026-10-26 00:00:01'),
+    (datetime(2026, 10, 26, 0, 0, 10), '2026-10-26T00:05:10', '2026-10-25 23:59:50'),
+])
+def test_midnight_candidate_is_found_across_both_beijing_dates(case, started_at, lease_until, created_at):
     c = case
-    c.remote['create_time'] = '2026-10-26 00:00:01'
+    c.remote['create_time'] = created_at
     request = facts.get(c.db, c.id, c.key, facts.START).safe_diff_json['query_request']
     invoice = c.db.get(Invoice, c.id)
     target = SimpleNamespace(customer_id=invoice.customer_id, currency=invoice.currency,
@@ -218,7 +233,8 @@ def test_midnight_candidate_is_found_across_both_beijing_dates(case):
         if path.endswith('/list'):
             return {'count': 1, 'list': [{'order_id': '424242', 'name': c.remote['name']}]}
         return deepcopy(c.remote)
-    plan.find(read, target, request, datetime(2026, 10, 25, 23, 59, 50), datetime(2026, 10, 26, 0, 4, 50))
+    lower, upper = plan.window(started_at, lease_until)
+    plan.find(read, target, request, lower, upper)
     assert params_seen[0]['start_time'] == '2026-10-25 00:00:00'
     assert params_seen[0]['end_time'] == '2026-10-26 23:59:59'
 

@@ -1,6 +1,6 @@
 """Pure original-request projection and bounded GET-only supplier verification."""
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -28,7 +28,8 @@ def window(start, end):
     upper = datetime.fromisoformat(end)
     if upper <= lower or (upper - lower).total_seconds() > 301:
         raise ValueError('Invalid original send window')
-    return lower, upper
+    # The provider records creation time using its own clock.
+    return lower - timedelta(seconds=30), upper
 
 
 def verify(invoice, request, detail, lower, upper):
