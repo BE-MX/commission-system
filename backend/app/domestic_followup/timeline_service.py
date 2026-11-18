@@ -67,6 +67,7 @@ def customer_timeline(db, user, customer_id, *, today, offset=0, event_type="all
     if customer is None:
         raise LookupError("客户不存在")
     writable = visibility.can_write_customer(db, user, customer)
+    record_only = not writable and visibility.can_record_lost_customer(db, user, customer)
     readable = visibility.in_customer_scope(db, user, customer_id)
     shipment_readable = visibility.can_read_all(user) or visibility.in_legacy_customer_scope(db, user, customer_id)
     records = select(DomesticFollowup).where(
@@ -75,7 +76,7 @@ def customer_timeline(db, user, customer_id, *, today, offset=0, event_type="all
     if not readable:
         records = records.where(visibility.followup_filter(user))
     last = db.scalar(records.with_only_columns(func.max(DomesticFollowup.followup_date)))
-    if not readable and not writable and last is None:
+    if not readable and not writable and not record_only and last is None:
         active_task = db.scalar(select(DomesticFollowupTask.id).where(
             DomesticFollowupTask.customer_id == customer_id, DomesticFollowupTask.assignee_user_id == visibility.uid(user),
             DomesticFollowupTask.status == "todo",
@@ -95,7 +96,7 @@ def customer_timeline(db, user, customer_id, *, today, offset=0, event_type="all
             "lifecycle_status": customer.lifecycle_status, "owner_user_id": customer.owner_user_id,
             "last_followup_date": last.isoformat() if last else None,
             "days_since_followup": (today - last).days if last else None,
-            "frequency_days": frequency, "writable": writable, "readable": readable,
+            "frequency_days": frequency, "writable": writable, "readable": readable, "record_only": record_only,
             "shipment_readable": shipment_readable,
             "responsibility_version": responsibility.version if responsibility else None,
             "can_record_history": can_record_history(db, user, customer),

@@ -12,7 +12,7 @@ import {
 
 const TODAY = '2026-10-30'
 
-async function composerForTest() {
+async function composerForTest(apiOverrides = {}) {
   const source = await readFile(new URL('../src/views/domestic_followup/composables/useFollowupComposer.js', import.meta.url), 'utf8')
   const { code } = await transform(source, { format: 'cjs', loader: 'js' })
   const calls = [], warnings = []
@@ -20,6 +20,7 @@ async function composerForTest() {
     directSave: async payload => { calls.push(['save', payload]); return {} },
     confirmDraft: async (id, payload) => { calls.push(['confirm', payload]); return {} },
     createDraft: async payload => { calls.push(['draft', payload]); return { id: 1 } },
+    ...apiOverrides,
   }
   const requireStub = id => {
     if (id === 'vue') return { ...Vue, onBeforeUnmount: () => {} }
@@ -61,6 +62,36 @@ test('AI draft creation remains available without an outcome', async () => {
     assert.equal(calls[0][1].result_code, null)
     assert.deepEqual(warnings, [])
   } finally { composer.close() }
+})
+
+test('a searched lost customer can be selected and saved with facts only', async () => {
+  const customer = { id: 1, shop_name: '流失门店', writable: true, record_only: true }
+  const { composer, calls } = await composerForTest({
+    searchCustomers: async () => [customer],
+    timeline: async () => ({ customer: { ...customer, writable: false }, open_items: [] }),
+    tasks: async () => ({ items: [{ id: 6, task_type: 'plan', due_date: TODAY }] }),
+  })
+  Object.assign(composer.form.value, {
+    next_date: '2026-11-02', next_plan: '其他客户的计划', shared_summary: '旧摘要',
+    issues: [{ text: '客户反馈包装破损', record_only: false, handler_user_id: 7 }],
+    result_code: '有效沟通',
+  })
+  await composer.searchCustomers('流失门店')
+  assert.equal(composer.customerOptions.value[0].writable, true)
+  await composer.loadCustomerContext(1)
+  assert.equal(composer.customerWritable.value, true)
+  assert.equal(composer.recordOnly.value, true)
+  await composer.confirm()
+  assert.equal(calls.length, 1)
+  const [action, payload] = calls[0]
+  assert.equal(action, 'confirm')
+  assert.equal(payload.customer_id, 1)
+  assert.equal(payload.next_date, null)
+  assert.equal(payload.shared_summary, null)
+  assert.deepEqual(payload.close_task_ids, [])
+  assert.equal(payload.items[0].text, '客户反馈包装破损')
+  assert.equal(payload.items[0].record_only, true)
+  assert.equal(payload.items[0].handler_user_id, null)
 })
 
 test('weekdayLabel maps ISO calendar dates to weekday labels', () => {

@@ -27,6 +27,9 @@ def due_slot(now, report=None):
     if report is not None and report.award_kind != "gmv":
         minute = 1 if report.award_kind == "new_sign_pk" else 0
         if now.weekday() < 5 and now.hour in (9, 16) and now.minute in (minute, minute + 5, minute + 15):
+            if report.award_kind == "annual_repurchase" and now.minute == minute and now.second < 30:
+                return None
+            # The start second is independent of the persisted minute slot.
             return f"{now.hour:02d}:{minute:02d}"
         return None
     if now.hour == 13 and now.minute in (0, 5, 15):

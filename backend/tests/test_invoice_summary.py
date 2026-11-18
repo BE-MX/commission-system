@@ -32,14 +32,15 @@ def _client(db, *, user_id=5, permissions=("invoice:read",)):
 
 def _invoice(db, number, *, day=date(2026, 9, 15), salesperson=5, creator=5,
              customer="A", amount="100.00", currency="USD", new_deal=0,
-             sync_status="synced", status="ready", fee="0.00"):
-    db.add(Invoice(
+             sync_status="synced", status="ready", fee="0.00", **fields):
+    db.add(invoice := Invoice(
         invoice_no=number, order_type="stock", customer_id=customer,
         customer_name=f"Customer {customer}", invoice_date=day,
         sales_user_id=salesperson, created_by=creator,
         total_amount=Decimal(amount), surcharge_amount=Decimal(fee), currency=currency, okki_new_deal=new_deal,
-        sync_status=sync_status, status=status,
+        sync_status=sync_status, status=status, **fields,
     ))
+    return invoice
 
 
 def test_summary_uses_all_visible_synced_invoices_not_current_page(db):
@@ -74,6 +75,7 @@ def test_summary_uses_all_visible_synced_invoices_not_current_page(db):
         assert summary == {
             "gmv": 390.0, "new_sign_count": 2, "unknown_new_sign_count": 1,
             "order_count": 5, "average_order_amount": 97.5, "non_usd_count": 1,
+            "first_return_count": 0, "received_amount": None, "received_amount_partial": False,
         }
         page = client.get("/api/invoice/invoices", params={"page_size": 1})
         assert page.status_code == 200
@@ -178,3 +180,66 @@ def test_list_date_range_filters_before_count_and_pagination_without_changing_sc
         assert client.get("/api/invoice/invoices", params={"date_from": "invalid"}).status_code == 422
     with _client(db, user_id=8, permissions=("invoice:read", "invoice:read_all")) as client:
         assert client.get("/api/invoice/invoices", params=params).json()["data"]["total"] == 3
+
+
+def test_overview_metrics_drill_into_the_same_visible_synced_date_scope(db):
+    seed_authority(db, 5, "invoice:read")
+    seed_authority(db, 6, "invoice:read")
+    _invoice(db, "NEW-1", new_deal=1, okki_first_return=0)
+    _invoice(db, "NEW-2", new_deal=1, okki_first_return=None)
+    _invoice(db, "RETURN-1", customer="B", okki_first_return=1)
+    _invoice(db, "RETURN-2", customer="B", okki_first_return=1, currency="EUR")
+    _invoice(db, "CANCEL-PENDING", customer="C", new_deal=1, okki_first_return=1, status="cancel_pending")
+    _invoice(db, "CANCELLED", customer="D", new_deal=1, okki_first_return=1, status="cancelled")
+    _invoice(db, "DRAFT", customer="E", new_deal=1, okki_first_return=1, sync_status="not_synced")
+    _invoice(db, "OUT-OF-RANGE", customer="F", new_deal=1, okki_first_return=1, day=date(2026, 8, 31))
+    _invoice(db, "OTHER-OWNER", customer="G", new_deal=1, okki_first_return=1, salesperson=6, creator=6)
+    db.commit()
+
+    params = {"date_from": "2026-09-01", "date_to": "2026-09-30"}
+    with _client(db) as client:
+        summary = client.get("/api/invoice/invoices/summary", params=params).json()["data"]
+        assert summary["new_sign_count"] == summary["first_return_count"] == 1
+        for metric, prefix in (("new_sign", "NEW"), ("first_return", "RETURN")):
+            filters = {**params, "overview_metric": metric, "page_size": 1, "sort_field": "invoice_no", "sort_order": "asc"}
+            first = client.get("/api/invoice/invoices", params=filters).json()["data"]
+            second = client.get("/api/invoice/invoices", params={**filters, "page": 2}).json()["data"]
+            assert first["total"] == second["total"] == 2
+            assert [result["items"][0]["invoice_no"] for result in (first, second)] == [f"{prefix}-1", f"{prefix}-2"]
+            searched = client.get("/api/invoice/invoices", params={**filters, "keyword": "-2"}).json()["data"]
+            assert searched["total"] == 1 and searched["items"][0]["invoice_no"] == f"{prefix}-2"
+        assert client.get("/api/invoice/invoices", params={**params, "overview_metric": "unknown"}).status_code == 422
+
+
+def test_summary_receipts_follow_list_amounts_and_receipt_authorization(db):
+    from tests.test_invoice_list_projection import receipt, remote_row, snapshot
+
+    seed_authority(db, 5, "invoice:read", "invoice:read_all", "receipt:read")
+    seed_authority(db, 7, "invoice:read", "invoice:read_all", "receipt:read", "receipt:read_all")
+    seed_authority(db, 8, "invoice:read", "invoice:read_all")
+    own = _invoice(db, "CONFIRMED", xiaoman_order_id="901")
+    other = _invoice(db, "OTHER", xiaoman_order_id="902", salesperson=6, creator=6)
+    _invoice(db, "USD-ZERO", xiaoman_order_id="903")
+    eur = _invoice(db, "EUR", xiaoman_order_id="904", currency="EUR")
+    cancelled = _invoice(db, "CANCEL-PENDING", xiaoman_order_id="905", status="cancel_pending")
+    db.flush()
+    for invoice in (own, other, eur, cancelled):
+        receipt(db, invoice, xiaoman_receipt_id=f"R{invoice.xiaoman_order_id}", sync_status="synced")
+    rows = [remote_row(f"R{invoice.xiaoman_order_id}", invoice.xiaoman_order_id, "48", 1, currency=invoice.currency)
+            for invoice in (own, other, eur, cancelled)]
+    snapshot(db, rows)
+    db.commit()
+
+    def totals(user_id):
+        with _client(db, user_id=user_id) as client:
+            summary = client.get("/api/invoice/invoices/summary", params={
+                "date_from": "2026-09-01", "date_to": "2026-09-30",
+            }).json()["data"]
+            return summary["received_amount"], summary["received_amount_partial"]
+
+    assert totals(5) == (50.0, True)
+    assert totals(7) == (100.0, False)
+    assert totals(8) == (None, False)
+    snapshot(db, rows, age=121)
+    db.commit()
+    assert totals(7) == (None, False)

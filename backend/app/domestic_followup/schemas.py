@@ -294,6 +294,7 @@ class AiItem(_Lenient):
     category: str | None = None
     severity: str | None = None
     origin: str = "user"
+    handled_source: AiSource | None = None
 
 
 class AiNext(_Lenient):

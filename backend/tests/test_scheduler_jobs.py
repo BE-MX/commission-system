@@ -12,6 +12,7 @@
     monkeypatch 进程级生效 OK
 """
 
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -232,6 +233,26 @@ class TestSchedulerRegistration:
 
         from app.schedulers.registry import start_scheduler
         assert start_scheduler(outbound_mode="legacy") is None
+
+
+def test_battle_award_cron_starts_after_order_sync():
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+    from app.schedulers.registry import _register_jobs
+
+    scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
+    _register_jobs(scheduler, outbound_mode="legacy")
+    awards = scheduler.get_job("battle_awards").trigger
+    pk = scheduler.get_job("battle_pk").trigger
+    for hour in (9, 16):
+        start = datetime.fromisoformat(f"2026-11-17T{hour:02d}:00:00+08:00")
+        previous = None
+        now = start
+        for minute in (0, 5, 15):
+            fire = awards.get_next_fire_time(previous, now)
+            assert fire == start.replace(minute=minute, second=30)
+            previous = now = fire
+        assert pk.get_next_fire_time(None, start) == start.replace(minute=1)
 
 
 # ── 单 job smoke tests ───────────────────────────────

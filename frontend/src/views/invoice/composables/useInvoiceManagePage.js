@@ -24,6 +24,7 @@ import { currentBeijingDate } from '@/utils/datetime'
 import { useAuthStore } from '@/stores/auth'
 
 export function useInvoiceManagePage() {
+  const summaryMetric = ref('')
   const listPage = useListPage((params, { signal }) => {
     if (params.order_id) params.order_id = params.order_id.trim()
     if (!params.order_id) delete params.order_id
@@ -31,12 +32,13 @@ export function useInvoiceManagePage() {
     const [dateFrom, dateTo] = summaryDateRange.value
     params.date_from = dateFrom
     params.date_to = dateTo
+    if (summaryMetric.value) params.overview_metric = summaryMetric.value
     return listInvoices(params, { signal, suppressToast: true })
   }, { searchForm: { keyword: '', order_id: '', status: '', order_type: '' } })
   const {
     loading, list: invoices, searchForm: filters, page, pageSize, total,
     appliedSearchForm, errorMessage: listErrorMessage, hasLoaded, hasData, dataPage, hasPendingSearch,
-    handleReset: resetFilters, handlePageChange, handleSizeChange,
+    handlePageChange, handleSizeChange,
   } = listPage
   const today = currentBeijingDate()
   const month = today.slice(0, 7)
@@ -48,7 +50,7 @@ export function useInvoiceManagePage() {
   const summaryError = ref('')
   let summaryRequestId = 0
   let summaryController
-  const hasActiveFilters = computed(() => Object.values(appliedSearchForm.value).some(Boolean))
+  const hasActiveFilters = computed(() => Boolean(summaryMetric.value) || Object.values(appliedSearchForm.value).some(Boolean))
 
   // 列配置数组：TableTools 列显隐的数据源 + 表格渲染驱动（Action Bar Spec / List Page Spec 第 9 节）
   const columnDefs = [
@@ -152,6 +154,22 @@ export function useInvoiceManagePage() {
 
   function handleSearch() {
     return listPage.handleSearch()
+  }
+
+  function setSummaryMetric(metric) {
+    summaryMetric.value = metric
+    invoices.value = []
+    total.value = 0
+  }
+
+  function toggleSummaryMetric(metric) {
+    setSummaryMetric(summaryMetric.value === metric ? '' : metric)
+    return listPage.handlePageChange(1)
+  }
+
+  function resetFilters() {
+    if (summaryMetric.value) setSummaryMetric('')
+    return listPage.handleReset()
   }
 
   function handleDateRangeChange() {
@@ -337,7 +355,7 @@ export function useInvoiceManagePage() {
     loading, money, openSyncLogs, page, pageSize, total, removeInvoice, statusText, statusType,
     listErrorMessage, hasLoaded, hasData, dataPage, hasPendingSearch,
     handleSearch, handlePageChange, handleSaved, refreshUpdate,
-    summary, summaryDateRange, summaryError, summaryLoading, loadSummary, handleDateRangeChange,
+    summary, summaryDateRange, summaryError, summaryLoading, summaryMetric, toggleSummaryMetric, loadSummary, handleDateRangeChange,
     syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
     isInvoiceSyncing, resolveUncertain, validateAndSync,
     isInvoiceDeleting, usesRelatedInvoiceDeletion,

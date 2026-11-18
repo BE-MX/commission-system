@@ -65,15 +65,19 @@ def detail(db, user, record_id):
     row = _record(db, user, record_id)
     customer = db.get(DomesticCustomer, row.customer_id)
     managed = customer is not None and collaboration_access.customer_is_managed(db, customer)
-    return {**followup_service.serialize(db, row), "can_edit": bool(customer and customer.status == 1 and can_edit(user, row)),
+    may_edit = customer and customer.status == 1 and can_edit(user, row) and (
+        not row.recorded_outside_scope or collaboration_access.has_live_write(db, user)
+    )
+    return {**followup_service.serialize(db, row), "can_edit": bool(may_edit),
             "historical_edit": _historical_edit(db, user, row, customer, _tasks(db, row)),
-            "planning_editable": not managed}
+            "recorded_outside_scope": row.recorded_outside_scope,
+            "planning_editable": not managed and not row.recorded_outside_scope}
 
 
 def _historical_edit(db, user, row, customer, tasks, *, lock=False):
     from app.domestic_followup import collaboration_access
 
-    if customer is None or not collaboration_access.customer_is_managed(db, customer, lock=lock):
+    if row.recorded_outside_scope or customer is None or not collaboration_access.customer_is_managed(db, customer, lock=lock):
         return False
     return not visibility.can_write_customer(db, user, customer, lock=lock) or any(
         task.task_type == "plan" and task.assignee_user_id != row.author_user_id
@@ -95,6 +99,12 @@ def _historical_items(row, payload, items):
                 or entry.handler_user_id not in (None, prior.handler_user_id)):
             raise ValueError("历史记录更正须保留原有异常或意见，处理请使用异常意见入口")
     return [i for i in payload.items if i.kind == "content"], [i for i in items if i.kind == "content"]
+
+
+def _ensure_record_only(payload):
+    if (payload.next_date or payload.next_plan or payload.next_method or payload.shared_summary
+            or payload.effective_progress or any(item.kind != "content" and not item.record_only for item in payload.items)):
+        raise PermissionError("这条跟进仅可更正沟通记录，不能新增跟进安排或共享进度")
 
 
 def _tasks(db, row, lock=False):
@@ -196,12 +206,14 @@ def update(db, user, record_id, payload):
         if customer is None or customer.status != 1:
             raise PermissionError("客户已停用，历史记录仅供查看")
         managed = collaboration_access.customer_is_managed(db, customer, lock=True)
-        if managed and not collaboration_access.has_live_write(db, user, lock=True):
+        if (managed or row.recorded_outside_scope) and not collaboration_access.has_live_write(db, user, lock=True):
             raise PermissionError("当前账号没有跟进编辑权限")
         if managed and any(getattr(payload, name) != getattr(row, name) for name in ("next_plan", "next_method")):
             raise ValueError("请通过新跟进或待办更新当前跟进计划和沟通方式")
         items = (db.query(Item).filter(Item.followup_id == row.id).order_by(Item.id)
                  .populate_existing().with_for_update().all())
+        if row.recorded_outside_scope:
+            _ensure_record_only(payload)
         _validate_edit(db, row, payload, items)
         followup_service._template_values(db, payload)
         tasks = _tasks(db, row, lock=True)

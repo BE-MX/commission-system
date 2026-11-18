@@ -53,6 +53,8 @@ class DomesticFollowup(Base):
     shared_summary = Column(Text, nullable=True, comment="明确允许协作范围共享的摘要")
     effective_progress = Column(Boolean, nullable=False, default=False, server_default="0", comment="已确认有效推进")
     responsibility_version = Column(Integer, nullable=True, comment="记录提交所依据的跟进责任版本")
+    recorded_outside_scope = Column(Boolean, nullable=False, default=False, server_default="0",
+                                    comment="凭流失客户例外录入的记录，不授予历史补录资格或续期公海跟进钟")
     disposition = Column(String(16), nullable=True, comment="无下一步处置：waiting_customer/paused/closed")
     disposition_note = Column(String(200), nullable=True, comment="等待客户、暂停或关闭的一句理由")
     prep_id = Column(BigInteger, nullable=True, index=True, comment="生成这条记录的准备卡")

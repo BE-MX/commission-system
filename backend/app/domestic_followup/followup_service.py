@@ -5,7 +5,7 @@
 import logging
 from datetime import date, timedelta
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -197,7 +197,9 @@ def _apply_and_confirm(db: Session, current_user: dict, followup: Followup, fiel
     values = dict_service.load_values(db)
     _validate(fields, values, followup.followup_date)
     validate_outcome(values, fields.result_code, fields.obstacles, fields.effective_progress, required=True)
-    customer, responsibility, task_only = record_access.confirm_access(db, current_user, followup, fields)
+    customer, responsibility, restricted, recorded_outside_scope = record_access.confirm_access(
+        db, current_user, followup, fields,
+    )
 
     followup.customer_id = customer.id
     followup.channel = fields.channel or followup.channel
@@ -210,6 +212,7 @@ def _apply_and_confirm(db: Session, current_user: dict, followup: Followup, fiel
     for name in OUTCOME_FIELDS:
         setattr(followup, name, getattr(fields, name))
     followup.responsibility_version = responsibility.version if responsibility else None
+    followup.recorded_outside_scope = recorded_outside_scope
     followup.disposition = fields.disposition
     followup.disposition_note = (fields.disposition_note or "").strip() or None
     template_code, template_version, template_answers = _template_values(db, fields)
@@ -232,7 +235,7 @@ def _apply_and_confirm(db: Session, current_user: dict, followup: Followup, fiel
     if followup.source_task_id:
         close_ids.add(followup.source_task_id)
     task_service.close_tasks_for_followup(db, current_user, customer.id, close_ids, followup.id)
-    if not task_only and not fields.historical_only:
+    if not restricted and not fields.historical_only:
         plan_owner = record_access.plan_assignee(db, responsibility, fields)
         task_service.create_plan_task(db, followup, customer.shop_name, assignee_id=plan_owner, purpose=fields.plan_purpose)
         task_service.create_action_tasks(db, followup, customer.shop_name, steps=fields.next_steps,
@@ -530,12 +533,18 @@ def list_followups(db: Session, current_user: dict, *, customer_id: int | None =
         customers = select(DomesticCustomer.id).where(or_(
             DomesticCustomer.shop_name.contains(keyword, autoescape=True),
             DomesticCustomer.custom_code.contains(keyword, autoescape=True),
-            DomesticCustomer.contact.contains(keyword, autoescape=True),
         ))
+        contacts = select(DomesticCustomer.id).where(DomesticCustomer.contact.contains(keyword, autoescape=True))
+        contact_match = Followup.customer_id.in_(contacts)
+        if not visibility.can_read_all(current_user):
+            contact_match = and_(contact_match, or_(
+                Followup.recorded_outside_scope.is_(False),
+                Followup.customer_id.in_(contacts.where(visibility.customer_search_scope(current_user))),
+            ))
         items = select(DomesticFollowupItem.followup_id).where(
             DomesticFollowupItem.text.contains(keyword, autoescape=True),
             or_(DomesticFollowupItem.status.is_(None), DomesticFollowupItem.status != "withdrawn"))
-        query = query.filter(or_(Followup.customer_id.in_(customers), Followup.id.in_(items),
+        query = query.filter(or_(Followup.customer_id.in_(customers), contact_match, Followup.id.in_(items),
                                  Followup.summary.contains(keyword, autoescape=True),
                                  Followup.raw_text.contains(keyword, autoescape=True)))
     total = query.count()

@@ -90,11 +90,12 @@ export function followupOutcome(source = {}) {
   }
 }
 
-export function formToPayload(form) {
+export function formToPayload(form, { recordOnly = false } = {}) {
+  const issueDetails = item => recordOnly ? { ...tracked(item), record_only: true, handler_user_id: null } : tracked(item)
   const items = [
     ...form.contents.map(i => ({ kind: 'content', text: clean(i.text), origin: i.origin || 'user', nature: i.nature || null, record_only: false })),
-    ...form.issues.map(i => ({ kind: 'issue', ...tracked(i), text: clean(i.text) })),
-    ...form.suggestions.map(i => ({ kind: 'suggestion', ...tracked(i), text: clean(i.text) })),
+    ...form.issues.map(i => ({ kind: 'issue', ...issueDetails(i), text: clean(i.text) })),
+    ...form.suggestions.map(i => ({ kind: 'suggestion', ...issueDetails(i), text: clean(i.text) })),
   ].filter(i => i.text)
   const hasNextStepCandidates = Boolean((form.nextSteps || []).length)
   const selectedNextSteps = nextStepsPayload(form.nextSteps)

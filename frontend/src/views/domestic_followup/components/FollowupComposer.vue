@@ -32,6 +32,7 @@
               <span class="option-meta">{{ optionMeta(opt) }}</span>
             </el-option>
           </el-select>
+          <p v-if="c.recordOnly.value" class="hint">可记录流失客户的沟通，客户归属和待办不变。</p>
           <GlassButton v-if="!c.form.value.historical_only && !c.form.value.source_task_id" variant="link" left-icon="Plus" class="prospect-btn" @click="prospectRef.open()">新客户，快速建档</GlassButton>
         </el-form-item>
         <div class="row-2">
@@ -77,11 +78,11 @@
             <GlassButton variant="outline" link-tone="success" @click="actionDialogs.open('complete', task)">完成</GlassButton>
           </div>
         </section>
-        <FollowupOutcomeFields :form="c.form.value" :dicts="c.dicts" :shareable="!c.form.value.historical_only && !c.taskOnly.value && !!c.form.value.customer_id"
-                               :progress="!!c.form.value.responsibility_version" :stage="!c.form.value.historical_only && !c.taskOnly.value && !!c.form.value.responsibility_version" />
+        <FollowupOutcomeFields :form="c.form.value" :dicts="c.dicts" :shareable="!c.form.value.historical_only && !c.restricted.value && !!c.form.value.customer_id"
+                               :progress="!!c.form.value.responsibility_version" :stage="!c.form.value.historical_only && !c.restricted.value && !!c.form.value.responsibility_version" />
         <FollowupGuideFields :form="c.form.value" />
         <p v-if="c.form.value.historical_only" class="hint">填写今天以前的实际沟通日期，记录保存到客户历史。</p>
-        <div v-if="!c.form.value.historical_only && !c.taskOnly.value" class="row-2">
+        <div v-if="!c.form.value.historical_only && !c.restricted.value" class="row-2">
           <el-form-item label="下次跟进（可选，填了就生成待办）">
             <el-date-picker v-model="c.form.value.next_date" type="date" value-format="YYYY-MM-DD" clearable
                             :disabled-date="beforeFollowup" class="full" />
@@ -93,7 +94,7 @@
           </el-form-item>
         </div>
         <FollowupPlanPurpose v-if="c.needsPlanPurpose.value" :form="c.form.value" :assignees="c.planAssignees.value" />
-        <el-form-item v-if="c.form.value.next_date && !c.form.value.historical_only && !c.taskOnly.value" label="下次跟进内容">
+        <el-form-item v-if="c.form.value.next_date && !c.form.value.historical_only && !c.restricted.value" label="下次跟进内容">
           <el-input v-model="c.form.value.next_plan" maxlength="500" />
         </el-form-item>
       </el-form>
@@ -127,6 +128,7 @@
               <span class="option-meta">{{ optionMeta(opt) }}</span>
             </el-option>
           </el-select>
+          <p v-if="c.recordOnly.value" class="hint">可记录流失客户的沟通，客户归属和待办不变。</p>
           <p v-if="!c.customerWritable.value" class="hint hint-danger">这个客户不归你负责，不能记录跟进，请换一个客户</p>
           <p v-if="c.form.value.customerConfidence" class="hint">AI 匹配，置信度 {{ Math.round(c.form.value.customerConfidence * 100) }}%，请确认</p>
         </el-form-item>
@@ -144,27 +146,27 @@
         <el-form-item label="一句话摘要">
           <el-input v-model="c.form.value.summary" maxlength="500" />
         </el-form-item>
-        <FollowupOutcomeFields :form="c.form.value" :dicts="c.dicts" :shareable="!c.taskOnly.value"
-                               :progress="!!c.form.value.responsibility_version" :stage="!c.taskOnly.value && !!c.form.value.responsibility_version" />
+        <FollowupOutcomeFields :form="c.form.value" :dicts="c.dicts" :shareable="!c.restricted.value"
+                               :progress="!!c.form.value.responsibility_version" :stage="!c.restricted.value && !!c.form.value.responsibility_version" />
 
         <FollowupFactGroups v-model:contents="c.form.value.contents" v-model:questions="c.form.value.questionsToSalesperson"
                             v-model:next-steps="c.form.value.nextSteps" @add="c.addRow('contents', 'content')" />
         <FollowupItemList title="异常" kind="issue" :rows="c.form.value.issues"
-                          :categories="c.dicts.domestic_followup_category" @add="c.addRow('issues', 'issue')" />
+                          :categories="c.dicts.domestic_followup_category" :record-only="c.recordOnly.value" @add="c.addRow('issues', 'issue')" />
         <FollowupItemList title="意见建议" kind="suggestion" :rows="c.form.value.suggestions"
-                          :categories="c.dicts.domestic_followup_category" @add="c.addRow('suggestions', 'suggestion')" />
+                          :categories="c.dicts.domestic_followup_category" :record-only="c.recordOnly.value" @add="c.addRow('suggestions', 'suggestion')" />
 
         <el-form-item label="客户状态变化">
           <el-check-tag v-for="v in c.dicts.domestic_followup_state_change" :key="v" class="state-tag"
                         :checked="c.form.value.state_changes.includes(v)" @change="toggleState(v)">{{ v }}</el-check-tag>
         </el-form-item>
 
-        <FollowupNextSteps v-if="!c.form.value.historical_only && !c.taskOnly.value && (c.form.value.nextSteps.length || (!c.form.value.next_date && !c.form.value.next_plan))"
+        <FollowupNextSteps v-if="!c.form.value.historical_only && !c.restricted.value && (c.form.value.nextSteps.length || (!c.form.value.next_date && !c.form.value.next_plan))"
                            v-model="c.form.value.nextSteps" v-model:disposition="c.form.value.disposition"
                            v-model:disposition-note="c.form.value.disposition_note"
                            :has-responsibility="!!c.form.value.responsibility_version" :assignees="c.planAssignees.value"
                            :channels="c.dicts.domestic_followup_channel" />
-        <div v-if="!c.taskOnly.value && !c.form.value.nextSteps.length && (c.form.value.next_date || c.form.value.next_plan)" class="row-2">
+        <div v-if="!c.restricted.value && !c.form.value.nextSteps.length && (c.form.value.next_date || c.form.value.next_plan)" class="row-2">
           <el-form-item label="下次跟进日期">
             <el-date-picker v-model="c.form.value.next_date" type="date" value-format="YYYY-MM-DD" clearable
                             :disabled-date="beforeFollowup" class="full" />
@@ -176,11 +178,11 @@
           </el-form-item>
         </div>
         <FollowupPlanPurpose v-if="c.needsPlanPurpose.value && !c.form.value.nextSteps.length" :form="c.form.value" :assignees="c.planAssignees.value" />
-        <p v-if="c.form.value.next_date && !c.taskOnly.value && !c.form.value.nextSteps.length" class="hint">
+        <p v-if="c.form.value.next_date && !c.restricted.value && !c.form.value.nextSteps.length" class="hint">
           {{ weekdayLabel(c.form.value.next_date) }}<template v-if="c.form.value.nextExpression"> · 依据：原话「{{ c.form.value.nextExpression }}」</template>
         </p>
-        <p v-if="basisHint && !c.taskOnly.value && !c.form.value.nextSteps.length" class="hint hint-warn">{{ basisHint }}</p>
-        <el-form-item v-if="!c.taskOnly.value && !c.form.value.nextSteps.length && (c.form.value.next_date || c.form.value.next_plan)" label="下次跟进内容">
+        <p v-if="basisHint && !c.restricted.value && !c.form.value.nextSteps.length" class="hint hint-warn">{{ basisHint }}</p>
+        <el-form-item v-if="!c.restricted.value && !c.form.value.nextSteps.length && (c.form.value.next_date || c.form.value.next_plan)" label="下次跟进内容">
           <el-input v-model="c.form.value.next_plan" maxlength="500" placeholder="留空则不生成待办" />
         </el-form-item>
 
@@ -273,6 +275,7 @@ const isResolved = item => c.form.value.resolvedItems.some(r => r.item_id === it
 const resolvedRow = item => c.form.value.resolvedItems.find(r => r.item_id === item.id)
 
 function optionMeta(opt) {
+  if (opt.record_only) return '流失 · 可记跟进'
   if (opt.writable === false) return `当前跟进人 ${opt.assignee_name || opt.owner_name || '待分配'} · 请在客户总览查看协作操作`
   return opt.matched_alias ? `别名：${opt.matched_alias}` : (opt.owner_name || '')
 }

@@ -4,8 +4,9 @@ from datetime import date, datetime
 
 import pytest
 
-from app.domestic_followup import ai_parse_service
-from app.domestic_followup.models import DomesticFollowup, DomesticFollowupAttachment
+from app.domestic_followup import ai_parse_service, followup_service, task_service
+from app.domestic_followup.models import DomesticFollowup, DomesticFollowupAttachment, DomesticFollowupItem
+from app.domestic_followup.schemas import ConfirmIn
 from tests.domestic_followup_helpers import make_customer, make_shipment, make_user, seed_dicts
 
 FRI = date(2026, 10, 30)
@@ -48,9 +49,13 @@ def _record_ocr(monkeypatch):
     return calls
 
 
+def _user_text(sent):
+    message = next(message for message in sent["messages"] if message["role"] == "user")
+    return message["content"][0]["text"]
+
+
 def _context(sent):
-    text = sent["messages"][0]["content"][0]["text"]
-    line = next(row for row in text.split("\n") if row.startswith("背景："))
+    line = next(row for row in _user_text(sent).split("\n") if row.startswith("背景："))
     return json.loads(line[len("背景："):])
 
 
@@ -78,8 +83,9 @@ def test_injects_enums_and_normalizes_output(db, monkeypatch):
     _run(db, followup, user)
 
     assert sent["preset_name"] == "domestic_followup_parse" and sent["snapshot_mode"] == "metadata"
-    user_text = sent["messages"][0]["content"][0]["text"]
+    user_text = _user_text(sent)
     assert "竞争品牌增加" in user_text and "售后退换" in user_text and "2026-10-30 周五" in user_text
+    assert any(message["role"] == "system" and "handled_source" in message["content"] for message in sent["messages"])
     assert "均哥三家店" in user_text  # 未选客户 → 注入候选
     assert '"detail"' not in json.dumps(sent["messages"], ensure_ascii=False)
 
@@ -92,6 +98,47 @@ def test_injects_enums_and_normalizes_output(db, monkeypatch):
     assert draft["next"] == {"date": "2026-11-02", "weekday": "周一", "expression": "下周一", "basis": "mismatch",
                              "method": "电话", "plan": "问开通进度"}
     assert draft["unreadable"] == ["第2张截图含语音条2″"]
+
+
+@pytest.mark.parametrize(("kind", "source", "record_only"), [
+    ("suggestion", {"kind": "attachment", "attachment_index": 0}, True),
+    ("issue", {"kind": "raw_text"}, True),
+    ("suggestion", {"kind": "attachment", "attachment_index": 1}, False),
+    ("suggestion", None, False),
+], ids=["answered_in_screenshot", "answered_in_notes", "wrong_screenshot", "still_pending"])
+def test_ai_objection_creates_a_todo_only_if_still_open(db, monkeypatch, kind, source, record_only):
+    seed_dicts(db)
+    user = make_user(db, "fu_ai_price")
+    customer = make_customer(db, user, "试单店")
+    followup = _draft(db, user, "ai-price-objection", customer_id=customer.id)
+    objection = "客户认为15厘米发片1598元偏贵"
+    reply = "分界最短规格是20厘米，所以按20厘米规格报价"
+    ocr_text = f"客户：15厘米发片1598元有点贵\n我：{reply}"
+    if source is None:
+        ocr_text += "\n客户：还是贵，麻烦再申请一下折扣\n我：我去问问，明天回复你"
+    if source and source["kind"] == "raw_text":
+        followup.raw_text = f"{objection}。我已解释：{reply}。"
+    _attachment(db, followup, user, monkeypatch)
+
+    def fake_chat(**_kwargs):
+        return {"content": json.dumps({
+            f"{kind}s": [{"text": objection, "handled_source": {**source, "excerpt": reply} if source else None}],
+            "ocr": [{"attachment_index": 0, "text": ocr_text}],
+        }, ensure_ascii=False)}
+
+    monkeypatch.setattr(ai_parse_service, "chat", fake_chat)
+    monkeypatch.setattr(followup_service, "beijing_today", lambda: FRI)
+    _run(db, followup, user)
+
+    draft_items = followup.ai_result["items"]
+    followup_service.confirm_draft(db, _ctx(user), followup.id, ConfirmIn(
+        version=followup.version, customer_id=customer.id, result_code="有效沟通", items=draft_items,
+    ))
+    item = db.query(DomesticFollowupItem).filter_by(followup_id=followup.id).one()
+    assert task_service.list_tasks(db, _ctx(user), task_type="issue")["total"] == (0 if record_only else 1)
+    assert item.status == ("closed_no_action" if record_only else "open")
+    assert objection in item.text
+    assert (reply in item.text) is record_only
 
 
 def test_blank_and_null_fields_from_model_are_tolerated(db, monkeypatch):

@@ -7,7 +7,7 @@
       </el-alert>
       <template v-if="e.form.value">
         <p>{{ e.record.value.shop_name }} · 原录入人：{{ e.record.value.author_name }}</p>
-        <el-alert :title="planningEditable ? '未完成待办随修改同步。' : '下次跟进日期只更新本条记录。当前安排请通过新跟进或待办调整。'"
+        <el-alert :title="recordedOutsideScope ? '这条跟进只记录沟通，不影响待办。' : planningEditable ? '未完成待办随修改同步。' : '下次跟进日期只更新本条记录。当前安排请通过新跟进或待办调整。'"
                   type="info" :closable="false" />
         <el-form label-position="top" :disabled="e.saving.value || e.uncertain.value" class="edit-form">
           <div class="edit-grid">
@@ -37,7 +37,7 @@
                   <el-option v-for="v in categories" :key="v" :value="v" :label="v" />
                 </el-select>
                 <el-checkbox v-model="item.severity" true-value="紧急" false-value="一般">紧急</el-checkbox>
-                <el-checkbox v-model="item.record_only" :disabled="!canToggleRecordOnly(item, e.record.value)">仅记录，不跟进</el-checkbox>
+                <el-checkbox v-model="item.record_only" :disabled="!canToggleRecordOnly(item, e.record.value) || recordedOutsideScope">仅记录，不跟进</el-checkbox>
               </div>
               <GlassButton variant="link" left-icon="Delete" :disabled="frozen || !canRemoveEditItem(item, e.record.value)"
                            @click="e.form.value.items.splice(e.form.value.items.indexOf(item), 1)">删除</GlassButton>
@@ -55,14 +55,14 @@
               </AppUpload>
             </div>
           </el-form-item>
-          <div class="edit-grid">
+          <div v-if="!recordedOutsideScope" class="edit-grid">
             <el-form-item label="下次跟进日期"><el-date-picker v-model="e.form.value.next_date" :disabled-date="beforeFollowup"
               class="edit-control" type="date" value-format="YYYY-MM-DD" :value-on-clear="null" clearable /></el-form-item>
             <el-form-item label="下次沟通方式"><el-select v-model="e.form.value.next_method" :disabled="!planningEditable" class="edit-control" clearable>
               <el-option v-for="v in channels" :key="v" :value="v" :label="v" />
             </el-select></el-form-item>
           </div>
-          <el-form-item label="下次计划"><el-input v-model="e.form.value.next_plan" :readonly="!planningEditable" type="textarea" autosize maxlength="500" /></el-form-item>
+          <el-form-item v-if="!recordedOutsideScope" label="下次计划"><el-input v-model="e.form.value.next_plan" :readonly="!planningEditable" type="textarea" autosize maxlength="500" /></el-form-item>
           <el-form-item label="修改原因" required><el-input v-model="e.form.value.reason" type="textarea" autosize maxlength="500" placeholder="说明本次更正内容" /></el-form-item>
         </el-form>
       </template>
@@ -93,6 +93,7 @@ const GROUPS = [{ kind: 'content', label: '跟进要点' }, { kind: 'issue', lab
 const uploading = ref(false), uploads = ref([])
 const frozen = computed(() => e.saving.value || e.uncertain.value)
 const planningEditable = computed(() => e.record.value?.planning_editable !== false)
+const recordedOutsideScope = computed(() => !!e.record.value?.recorded_outside_scope)
 const isFuture = date => formatCalendarDate(date) > currentBeijingDate()
 const beforeFollowup = date => Boolean(e.form.value?.followup_date) && formatCalendarDate(date) < e.form.value.followup_date
 const channels = computed(() => [...new Set([...(e.dicts.value.domestic_followup_channel || []), e.form.value?.channel, e.form.value?.next_method].filter(Boolean))])
@@ -101,7 +102,7 @@ const states = computed(() => [...new Set([...(e.dicts.value.domestic_followup_s
 let itemKey = 0
 function addItem(kind) {
   e.form.value.items.push({ kind, text: '', origin: 'user', severity: kind === 'content' ? null : '一般',
-    category: null, nature: kind === 'content' ? null : undefined, record_only: false, key: ++itemKey })
+    category: null, nature: kind === 'content' ? null : undefined, record_only: kind !== 'content' && recordedOutsideScope.value, key: ++itemKey })
 }
 function attachmentName(id) {
   return [...e.record.value.attachments, ...uploads.value].find(a => a.id === id)?.file_name || `截图 ${id}`

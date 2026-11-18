@@ -17,7 +17,7 @@ from app.domestic_followup.collaboration_models import (
     FollowupResponsibility as Responsibility,
     FollowupScope,
 )
-from app.domestic_followup.constants import PROSPECT_LIFECYCLE
+from app.domestic_followup.constants import LOST_LIFECYCLE, PROSPECT_LIFECYCLE
 from app.domestic_followup.models import DomesticFollowup as Followup
 from app.system.models import SysDict
 
@@ -109,6 +109,9 @@ def _candidate_customers(db, user, scope, keyword, customer_id=None):
         .outerjoin(Profile, Profile.customer_id == Customer.id)
         .where(Customer.status == 1, allowed)
     )
+    record_only = and_(Customer.lifecycle_status == LOST_LIFECYCLE, ~func.coalesce(writable, false()),
+                       literal(collaboration_access.has_live_write(db, user)))
+    query = query.add_columns(record_only.label("record_only"))
     if customer_id is not None:
         query = query.where(Customer.id == customer_id)
     if keyword.strip():
@@ -236,7 +239,7 @@ def _overview_rows(db, candidates, today):
         select(
             c.id, c.shop_name, c.custom_code, c.province, c.city, c.contact, c.phone, c.wechat,
             c.lifecycle_status, c.assignee_user_id, c.collaboration_status, c.stage, c.responsibility_version,
-            c.can_view_timeline, c.can_record, c.incoming,
+            c.can_view_timeline, c.can_record, c.record_only, c.incoming,
             c.can_view_contacts, c.can_edit_contact, c.can_verify_deal, c.can_edit_deal, c.can_claim,
             owner.real_name.label("owner_name"), assignee.real_name.label("assignee_name"),
             recipient.real_name.label("handoff_recipient_name"),
@@ -292,7 +295,7 @@ def _serialize_row(row):
     for key in ("first_deal_date", "last_followup_date", "next_date"):
         if data[key] is not None:
             data[key] = data[key].isoformat()
-    for key in ("can_view_timeline", "can_record", "incoming", "sample_only", "deal_conflict", "can_view_contacts",
+    for key in ("can_view_timeline", "can_record", "record_only", "incoming", "sample_only", "deal_conflict", "can_view_contacts",
                 "can_edit_contact", "can_verify_deal", "can_edit_deal", "can_claim"):
         data[key] = bool(data[key])
     return data

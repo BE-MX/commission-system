@@ -43,7 +43,9 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
   const selectedCustomer = computed(() => customerOptions.value.find(o => o.id === form.value.customer_id) || null)
   // 选项里查不到时不拦（后端仍会校验）；明确不可写才禁用确认
   const customerWritable = computed(() => selectedCustomer.value?.writable !== false)
-  const needsPlanPurpose = computed(() => !!(form.value.responsibility_version && form.value.next_date && !taskOnly.value && !form.value.historical_only))
+  const recordOnly = computed(() => !form.value.historical_only && !taskOnly.value && !!selectedCustomer.value?.record_only)
+  const restricted = computed(() => taskOnly.value || recordOnly.value)
+  const needsPlanPurpose = computed(() => !!(form.value.responsibility_version && form.value.next_date && !restricted.value && !form.value.historical_only))
   const nextValidation = computed(() => nextStepValidation(form.value.nextSteps, Boolean(form.value.responsibility_version)))
   const canSave = computed(() => !loadingContext.value && customerWritable.value && nextValidation.value.valid
     && (!needsPlanPurpose.value || Boolean(form.value.plan_purpose)))
@@ -191,10 +193,17 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
       const head = timeline.customer
       taskOnly.value = Boolean(form.value.source_task_id && !head.writable)
       form.value.responsibility_version = head.responsibility_version
-      const selected = { ...customerOptions.value.find(option => option.id === head.id), ...head, writable: head.writable || taskOnly.value }
+      const selected = { ...customerOptions.value.find(option => option.id === head.id), ...head, writable: head.writable || head.record_only || taskOnly.value }
       customerOptions.value = [selected, ...customerOptions.value.filter(option => option.id !== head.id)]
-      if (taskOnly.value) {
-        openTasks.value = openTasks.value.filter(task => task.id === form.value.source_task_id)
+      if (restricted.value) {
+        openTasks.value = taskOnly.value ? openTasks.value.filter(task => task.id === form.value.source_task_id) : []
+        if (recordOnly.value) {
+          openActionTasks.value = []
+          form.value.responsibility_version = null
+          if (form.value.prep_id) {
+            Object.assign(form.value, { prep_id: null, prep: null, template_code: null, template_version: null, template_answers: null })
+          }
+        }
         openItems.value = []
         Object.assign(form.value, { next_date: null, next_plan: '', next_method: null, nextSteps: [], disposition: null, disposition_note: '', plan_purpose: null, shared_summary: null, effective_progress: false })
       }
@@ -238,7 +247,7 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
     saving.value = true
     try {
       const saved = await followupApi.directSave({
-        ...basePayload(), ...formToPayload(form.value),
+        ...basePayload(), ...formToPayload(form.value, { recordOnly: recordOnly.value }),
         // 输入步看不到待办列表：只关闭发起本次记录的那张，别悄悄关掉用户没看到的
         close_task_ids: form.value.source_task_id ? [form.value.source_task_id] : [],
         resolved_items: [],
@@ -315,7 +324,7 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
     }
     await loadCustomerContext(form.value.customer_id, gen)
     if (gen === pollGen) {
-      if (manualFields?.customer_id === form.value.customer_id && !taskOnly.value) {
+      if (manualFields?.customer_id === form.value.customer_id && !restricted.value) {
         form.value.development_stage = manualFields.development_stage
         form.value.plan_purpose = manualFields.plan_purpose
         if (form.value.next_date && planAssignees.value.some(person => person.user_id === manualFields.plan_assignee_user_id)) {
@@ -336,7 +345,9 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
     if (!canSave.value) return
     saving.value = true
     try {
-      const saved = await followupApi.confirmDraft(form.value.id, { version: form.value.version, ...formToPayload(form.value) })
+      const saved = await followupApi.confirmDraft(form.value.id, {
+        version: form.value.version, ...formToPayload(form.value, { recordOnly: recordOnly.value }),
+      })
       if (saved.warnings?.length) msgWarning(saved.warnings.join('；'))
       finish('跟进已确认')
     } catch (e) {
@@ -427,7 +438,7 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
   onBeforeUnmount(stopPolling)
 
   return {
-    visible, step, saving, uploading, canSubmit, canSave, customerWritable, taskOnly, needsPlanPurpose, planAssignees, dicts, loadDicts, form, attachments,
+    visible, step, saving, uploading, canSubmit, canSave, customerWritable, restricted, recordOnly, needsPlanPurpose, planAssignees, dicts, loadDicts, form, attachments,
     customerOptions, searching, openTasks, openActionTasks, openItems, aiFailed, nextValidation,
     reviewDirty, open, resume, close, handleClosed, uploadAttachment, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, selectProspect,
     loadCustomerContext, saveDirect, startAi, confirm, discard, addRow, toggleResolved, changePrep,

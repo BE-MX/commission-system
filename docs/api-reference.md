@@ -779,7 +779,11 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET|POST|DELETE /price/customer-rules` — 客户价格规则（fixed/percent 二选一，有符号）；`GET /price/customer-rules/by-customer/{id}` — 单客户规则
   - `GET /invoices` — 发票列表（分页+搜索+状态+order_type；可选 `date_from`/`date_to`，格式 `YYYY-MM-DD`，按 `invoice_date` 含首尾日期过滤后计算总数和分页；可单独传起止日期，不传则不限制日期，起始晚于结束返回 422。订单发票页顶部日期同时应用于概览和列表，默认北京时间当月；切换日期回到第一页，保留已应用的列表筛选与排序。普通用户返回 `sales_user_id=本人`，以及 `created_by=本人` 且代办授权仍有效的订单；不会因获授权而看到归属人的其他历史订单）
     - 列表行含 `item_count`（当前型号明细行数）和 `total_quantity`（件数之和），均包含配件、排除预售归档行。已回款 `received_amount` 按发票原币返回，沿用回款查看动作、本人/全量范围及跨归属批次限制；本地订单取累计核销金额，小满订单取近期完整快照中的财务生效回款（匹配到方舟回款时含手续费，计入已生效的退款冲销，不含独立运费）。已知无生效款返回 0；无权限、快照不可用、截图已匹配既有小满订单但尚未绑定、回款发送结果待核对或关联数据不一致返回 null。回款颜色比较使用 `receipt_payable_amount`（扣除退货冲减后的应收），原应付合计列口径不变。列表只读，不向小满发起实时核验。
-  - `GET /invoices/summary?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` — 订单发票页概览（invoice:read）：按发票日期闭区间汇总当前用户可查看的全部已同步发票，排除取消处理中及已取消单据，不受列表分页与搜索影响；`invoice:read_all`/超管沿用列表的全量范围。列表 `/invoices` 同时返回 `order_amount`（订单金额，不含手续费），支持 `sort_field=order_amount` 在分页前排序；原 `total_amount` 仍为含手续费应付合计。概览返回 `gmv`、`new_sign_count`（`okki_new_deal=1` 的客户去重数）、`unknown_new_sign_count`（历史 NULL 标记单据数，未计入新签）、`order_count`、`average_order_amount`、`non_usd_count`；金额仅汇总 USD 发票的订单金额 `total_amount - surcharge_amount`（不含手续费，保留运费与包装费），平均金额分母仅为 USD 发票数，非 USD 单据仍计入订单数与新签数。开始日期晚于结束日期返回 422。  此外，列表与概览在查询前以 JWT 识别员工并重新读取数据库当前 active/role/action/scope：旧 JWT 不保留已撤范围，当前新授予无需重签 token；当前无读取动作 403、授权数据库不可用 503、借用已有事务 409。普通读取不获取写屏障、不承诺召回在途响应。
+  - `GET /invoices/summary?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` 汇总发票日期闭区间内当前用户可见的已同步发票，排除取消处理中及已取消单据。概览独立于列表分页与搜索，支持 `invoice:read_all` 和超管的全量范围。开始日期晚于结束日期返回 422。
+    - `gmv` 汇总 USD 发票的 `total_amount - surcharge_amount`，保留运费与包装费。`received_amount` 按同一批订单汇总列表中可见且已核验的 USD「已回款」金额，沿用回款权限、快照时效和退款口径。缺少权限或全部金额无法核验时返回 `null`，汇总部分订单时 `received_amount_partial=true`。
+    - `new_sign_count` 按 `okki_new_deal=1` 的客户去重，`first_return_count` 按 `okki_first_return=1` 的客户去重，`order_count` 统计订单张数。非 USD 发票参与数量统计。`unknown_new_sign_count` 报告新成交标记为 NULL 的单据数，`non_usd_count` 报告非 USD 单据数。API 仍返回 `average_order_amount`，分母为 USD 发票数。
+    - `GET /invoices` 接受 `overview_metric=new_sign|first_return`，在计数和分页之前，按同一统计范围和相应标记与现有列表条件取交集。下钻返回全部对应订单，同一客户可显示多张。列表返回 `order_amount`，支持 `sort_field=order_amount`，`total_amount` 为含手续费的应付合计。
+    - 列表与概览以 JWT 识别员工，并在查询前从数据库读取当前账号状态、角色、操作及数据范围权限。权限撤销和授予即时生效。缺少读取权限返回 403，授权数据库不可用返回 503，借用已有事务返回 409。普通读取不会锁定权限或召回在途响应。
   - `POST /invoices` — 创建普通发票；请求显式提交 `sales_user_id`，后端校验本人/代办授权并从该用户生成姓名、电话、邮箱快照，忽略客户端伪造文本；保存 `created_by=实际录入人`。截图来源发票必须走 `/import/screenshot/create`；同来源订单或同图唯一约束防并发重复创建。
   - `GET /invoices/{id}` — 发票详情；详情、同步日志和Excel/HTML/PDF导出均在首次发票查询前重新读取当前数据库active/deleted/角色/读取动作和数据范围。撤读取动作或停用员工403；撤全量范围后的他人订单404，本人及当前有效代办订单可读。当前新grant无需重签JWT；拒绝发生在序列化、日志读取或文件生成之前。授权数据库不可用503，借用已有事务409；普通读取不获取写屏障、不召回已在途响应。
   - `PUT /invoices/{id}` — 更新发票（`sales_user_id` 与 order_type 创建后不可改；金额与折扣由服务端重算）
@@ -2879,7 +2883,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | GET/PUT | `/config` | 回访天数、上线日、紧急接收人、兜底负责人、推送频率等配置；PUT 需 `admin`，紧急接收人须持有 `domestic_followup:read_all`（或超管）。 |
 | GET | `/dicts` | 三个 sys_dict type（状态变化/分类/沟通方式）当前值域，供前端下拉和 AI 运行时注入复用。 |
 | GET | `/users` | 按关键字搜索可指派用户（转交、兜底负责人用）：只返回持有 `domestic_followup:write` 的在职用户，超管视同持有。 |
-| GET | `/customers/search` | 按当前用户可见范围搜索客户，`q` 关键字。 |
+| GET | `/customers/search` | 按当前用户可见范围搜索客户，`q` 关键字。有实时跟进写权限时，也可按店名或编号找到启用的流失客户；原可见范围外的联系人和微信备注不参与搜索。仅能录入沟通时返回 `writable: true, record_only: true`。 |
 | POST | `/customers/prospect` | 按店铺名建潜在客户（未成交线索先建档才能录跟进）。 |
 | GET | `/customers/{customer_id}/timeline` | 客户时间线：跟进记录 + 任务 + 发货/AI 背景；可读/可写分开判定，不可读时隐藏发货和 AI 背景（见模块说明）。 |
 | POST | `/attachments` | 上传跟进截图，≤10MB；先上传拿到附件 ID，建草稿或直接保存时再绑定。 |
@@ -2887,7 +2891,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | POST | `/followups` | 直接保存一条跟进（不经 AI 草稿），`result_code` 本次结果必填且需符合当前字典；缺失或空白返回 400。`followup_date` 可为今天或过去日期；协作客户带下一步计划或显式更新当前进度时不再限制为今天，仍校验责任版本与权限。已绑定未 OCR 的附件在后台线程补跑 OCR。 |
 | GET | `/followups` | 已确认记录列表，支持 `customer_id`、`mine`、`author_user_id`、`keyword`、`date_from` / `date_to`（跟进日期，含首尾）和分页；筛选始终与当前用户可见范围取交集。关键字按字面匹配客户名/编码/联系人及原文/摘要/条目，反向日期范围返回 400。 |
 | GET | `/followups/authors` | 查看权限即可读取；返回当前可见已确认记录的录入人 `{id, real_name}`，含历史停用/离职录入人；不返回仅有草稿或范围外记录的录入人。 |
-| GET | `/followups/{id}` | 单条已确认记录，沿用原查看范围，返回 `can_edit`。 |
+| GET | `/followups/{id}` | 单条已确认记录，沿用原查看范围，返回 `can_edit`；凭流失客户例外录入的记录返回 `recorded_outside_scope: true`，只可更正沟通内容。 |
 | PUT | `/followups/{id}` | 需 write；仅原作者或 super_admin 可修改，read_all 不授予编辑他人记录权。提交 `version`、`request_id`、必填 `reason` 与完整可编辑字段、保留的条目 ID/截图 ID；`result_code` 合并原记录后必须非空，存量空结果需补选，不能清空已有结果；客户、作者和原待办来源不可改。旧版本/同请求不同内容返回 409；同请求同内容安全重放。事务内留存前后快照并同步待办，新增截图后台 OCR。 |
 | GET | `/followups/{id}/history` | 原查看范围内读取修改历史；包含修改人、时间、原因、版本、记录及关联待办前后快照。归档截图保留鉴权读取。 |
 | POST | `/drafts` | 建 AI 草稿；创建成功后在后台线程跑 `ai_parse_service.run_parse`，前端轮询状态。 |
@@ -2902,6 +2906,8 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | GET | `/items` | 异常/意见条目看板：`status`、`kind`（issue/suggestion）、`category`、`customer_id`、`mine`，分页。 |
 | POST | `/items/{item_id}/resolve` | 处理条目（关闭时校验操作人是当前处理人）。 |
 | POST | `/items/{item_id}/transfer` | 转交条目处理人；目标须持有 `domestic_followup:write`，否则 400。 |
+
+流失客户例外同时适用于直接保存、建 AI 草稿和确认草稿；确认时重新锁定客户并校验启用状态、生命周期和实时跟进写权限。仅凭此例外录入时，不允许安排或完成待办、变更开发进度或共享摘要；`timeline.customer.record_only` 为 true 表示能新增沟通，既有历史的查看范围不变。
 
 AI 整理走 `app.ai.service.chat` facade，预设 `domestic_followup_parse`（文字归一化）与 `domestic_followup_ocr`（截图 OCR）；两个 preset 启动时自动绑定与 `invoice_screenshot_extract` 相同的视觉 provider/模型（不退回其他 provider）。后台 AI/OCR 走 `jobs.py` 独立线程池（上限 3）。输出宽进：坏字段只丢弃该字段，不整条拒绝。
 
