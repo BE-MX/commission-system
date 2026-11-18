@@ -166,6 +166,17 @@ async function initialize() {
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_orders_customer_time ON orders(customer_phone, created_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_orders_status_time ON orders(status, created_at)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS order_logistics (
+      order_id INTEGER PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
+      tracking_no TEXT NOT NULL DEFAULT '', phone_last4 TEXT NOT NULL DEFAULT '',
+      revision TEXT NOT NULL, events TEXT NOT NULL DEFAULT '[]', state TEXT NOT NULL DEFAULT 'pending',
+      checked_at TEXT, next_check_at TEXT, lease_token TEXT,
+      last_error TEXT NOT NULL DEFAULT '', failures INTEGER NOT NULL DEFAULT 0,
+      sandbox INTEGER NOT NULL DEFAULT 0
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS logistics_query_budget (
+      name TEXT PRIMARY KEY, window_key TEXT NOT NULL, used INTEGER NOT NULL DEFAULT 0
+    )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS order_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_id INTEGER NOT NULL,

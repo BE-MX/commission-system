@@ -64,6 +64,13 @@
       "when": 1793956779335,
       "tag": "0008_safe_starjammers",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1794993680937,
+      "tag": "0009_friendly_ikaris",
+      "breakpoints": true
     }
   ]
 }

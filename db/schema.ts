@@ -153,6 +153,23 @@ export const orders = sqliteTable("orders", {
   index("idx_orders_status_time").on(table.status, table.createdAt),
 ]);
 
+export const orderLogistics = sqliteTable("order_logistics", {
+  orderId: integer("order_id").primaryKey().references(() => orders.id, { onDelete: "cascade" }),
+  trackingNo: text("tracking_no").notNull().default(""),
+  phoneLast4: text("phone_last4").notNull().default(""),
+  revision: text("revision").notNull(),
+  events: text("events").notNull().default("[]"),
+  state: text("state").notNull().default("pending"),
+  checkedAt: text("checked_at"), nextCheckAt: text("next_check_at"), leaseToken: text("lease_token"),
+  lastError: text("last_error").notNull().default(""),
+  failures: integer("failures").notNull().default(0),
+  sandbox: integer("sandbox").notNull().default(0),
+});
+
+export const logisticsQueryBudget = sqliteTable("logistics_query_budget", {
+  name: text("name").primaryKey(), windowKey: text("window_key").notNull(), used: integer("used").notNull().default(0),
+});
+
 export const orderItems = sqliteTable("order_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   orderId: integer("order_id").notNull(),

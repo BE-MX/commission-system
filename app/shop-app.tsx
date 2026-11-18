@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { OrderTrackingDetails } from "./components/order-logistics";
 import type { CustomerProfile, LevelCode, Order, Product, Promotion, SalesPerson, WholesaleAccount, WholesaleLevel } from "./lib/types";
 
 type Mode = "retail" | "wholesale";
@@ -172,7 +173,7 @@ function ProfileView({ mode, level, account, retailPhone, levels, center }: { mo
   const displayPhone = (account?.phone ?? retailPhone)?.replace(/(\d{3})\d{4}(\d{4})/, "$1****$2");
   return <section className="inner-page"><div className="profile-card"><span className="profile-avatar">莱</span><div><p>{center.profile?.storeName || (mode === "retail" ? "莱莎零售会员" : account?.companyName)}</p><strong>{mode === "retail" ? `${displayPhone} · 零售客户` : `批发${level.toUpperCase()}等级账户 · 手机已验证`}</strong></div></div>
     <div className="account-detail"><div><span>验证手机号</span><strong>{displayPhone}</strong></div><div><span>来源销售员</span><strong>{center.profile?.salesPerson ?? account?.salesPerson ?? "林青"}</strong></div><div><span>{mode === "wholesale" ? "升级进度" : "分销权益"}</span><strong>{mode === "wholesale" ? (level === "b" ? "已达最高演示等级" : `距批发B还差 ¥${Math.max(0, threshold - 8920).toLocaleString()}`) : (center.distributor.eligible ? "已开通" : "首购后开通")}</strong></div></div>
-    <div className="order-center" id="orders"><div className="app-section-title"><div><span>MY ORDERS</span><h2>订单与物流</h2></div><small>实时查看发货进度</small></div>{center.orders.length ? center.orders.map((order) => <article key={order.id}><header><strong>{order.orderNo}</strong><b>{order.status}</b></header><div><span>{new Date(order.createdAt).toLocaleDateString("zh-CN")} · {order.itemCount}件商品</span><strong>¥{order.amount}</strong></div><footer><i /> <span>{order.logisticsStatus || "等待仓库发货"}{order.trackingNo ? ` · ${order.logisticsCompany} ${order.trackingNo}` : ""}</span></footer></article>) : <div className="order-empty">还没有订单，购买后可在这里查看物流轨迹。</div>}</div>
+    <div className="order-center" id="orders"><div className="app-section-title"><div><span>MY ORDERS</span><h2>订单与物流</h2></div><small>实时查看发货进度</small></div>{center.orders.length ? center.orders.map((order) => <article key={order.id}><header><strong>{order.orderNo}</strong><b>{order.status}</b></header><div><span>{new Date(order.createdAt).toLocaleDateString("zh-CN")} · {order.itemCount}件商品</span><strong>¥{order.amount}</strong></div><footer><i /> <span>{order.logisticsStatus || "等待仓库发货"}{order.trackingNo ? ` · ${order.logisticsCompany} ${order.trackingNo}` : ""}</span></footer><OrderTrackingDetails orderId={order.id} mode={mode} /></article>) : <div className="order-empty">还没有订单，购买后可在这里查看物流轨迹。</div>}</div>
     <div className="profile-menu">{mode === "retail" && <a href="/retail/tryon"><span>AI 发型试戴</span><b>一次免费体验 ›</b></a>}<a href={`${mode === "retail" ? "/retail" : "/wholesale"}/marketing`}><span>营销工具</span><b>推广码与宣传素材 ›</b></a><a href="#service"><span>销售员</span><b>{center.salesperson?.name ?? account?.salesPerson ?? "林青"} ›</b></a><a href="#service"><span>专属客服</span><b>{center.profile?.customerService ?? "小莱客服"} ›</b></a><a href="/admin"><span>演示后台</span><b>管理人员进入 ›</b></a></div>
   </section>;
 }

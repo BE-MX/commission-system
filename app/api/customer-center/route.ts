@@ -28,7 +28,7 @@ export async function GET(request: Request) {
     status, created_at AS createdAt, last_login_at AS lastLoginAt FROM customer_profiles WHERE phone=? LIMIT 1`).bind(phone).first();
   const orders = await db.prepare(`SELECT id, order_no AS orderNo, status, payment_status AS paymentStatus,
     logistics_company AS logisticsCompany, tracking_no AS trackingNo, logistics_status AS logisticsStatus,
-    item_count AS itemCount, amount, created_at AS createdAt FROM orders WHERE customer_phone=? ORDER BY created_at DESC LIMIT 20`).bind(phone).all();
+    item_count AS itemCount, amount, created_at AS createdAt FROM orders WHERE customer_phone=? AND channel=? ORDER BY created_at DESC LIMIT 20`).bind(phone, mode).all();
   const promotions = await db.prepare(`SELECT id, title, audience, benefit_type AS benefitType, benefit_value AS benefitValue,
     description, status, ends_at AS endsAt FROM promotions WHERE status='active' ORDER BY id`).all();
   const salespersonName = wholesale?.salesPerson ?? (profile as { salesPerson?: string } | null)?.salesPerson ?? "林青";

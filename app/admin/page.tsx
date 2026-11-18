@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ShipmentDialog } from "../components/order-logistics";
 import type { AccessLog, CustomerProfile, LevelCode, Order, Product, SalesPerson, WholesaleAccount, WholesaleLevel } from "../lib/types";
 
 const emptyProduct: Omit<Product, "id" | "createdAt"> = {
@@ -20,6 +21,7 @@ export default function AdminPage() {
   const [accessLogs, setAccessLogs] = useState<AccessLog[]>([]);
   const [wholesaleAccounts, setWholesaleAccounts] = useState<WholesaleAccount[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [shippingOrder, setShippingOrder] = useState<Order | null>(null);
   const [customers, setCustomers] = useState<CustomerProfile[]>([]);
   const [sales, setSales] = useState<SalesPerson[]>([]);
   const [referrals, setReferrals] = useState<Array<{ id: number; code: string; ownerName: string; visitorPhone: string; orderNo: string; amount: number; commission: number; status: string; createdAt: string }>>([]);
@@ -132,13 +134,7 @@ export default function AdminPage() {
     setNotice("客户身份、店面和备注已更新"); await load();
   };
 
-  const shipOrder = async (order: Order) => {
-    const trackingNo = window.prompt("请输入物流单号", order.trackingNo || `SF${Date.now()}`);
-    if (!trackingNo) return;
-    const logisticsCompany = window.prompt("请输入物流公司", order.logisticsCompany || "顺丰速运") || "顺丰速运";
-    await fetch(`/api/orders/${order.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "已发货", logisticsCompany, trackingNo, logisticsStatus: "快件已揽收，等待运输" }) });
-    setNotice("订单已发货，客户现在可以查看物流轨迹"); await load();
-  };
+  const shipOrder = (order: Order) => setShippingOrder(order);
 
   const addSalesPerson = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -275,6 +271,7 @@ export default function AdminPage() {
         </>}
       </main>
 
+      {shippingOrder && <ShipmentDialog order={shippingOrder} onClose={() => setShippingOrder(null)} onSaved={async () => { setNotice("顺丰发货信息已保存，客户可在订单中查询轨迹"); await load(); }} />}
       {modalOpen && <div className="modal-backdrop" onMouseDown={() => setModalOpen(false)}>
         <form className="product-modal" onSubmit={saveProduct} onMouseDown={(event) => event.stopPropagation()}>
           <div className="modal-head"><div><small>{editing ? "编辑商品" : "新增商品"}</small><h2>{editing ? editing.name : "添加假发款式"}</h2></div><button type="button" onClick={() => setModalOpen(false)} aria-label="关闭">×</button></div>

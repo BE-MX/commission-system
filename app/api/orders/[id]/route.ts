@@ -1,18 +1,16 @@
-import { ensureDatabase, getD1 } from "../../../../db/runtime";
 import { requireAdminApi } from "../../../lib/admin-auth";
+import { readLogisticsOrder, saveShipment } from "../../../lib/order-logistics";
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   const unauthorized = await requireAdminApi();
   if (unauthorized) return unauthorized;
-  await ensureDatabase();
   const { id } = await context.params;
-  const body = await request.json() as Record<string, unknown>;
-  const status = String(body.status ?? "待发货");
-  const logisticsCompany = String(body.logisticsCompany ?? "").trim();
-  const trackingNo = String(body.trackingNo ?? "").trim();
-  const logisticsStatus = String(body.logisticsStatus ?? (trackingNo ? "快件已揽收" : "山东仓正在配货")).trim();
-  const shippedAt = trackingNo ? new Date().toISOString() : null;
-  await getD1().prepare(`UPDATE orders SET status=?, logistics_company=?, tracking_no=?, logistics_status=?, shipped_at=? WHERE id=?`)
-    .bind(status, logisticsCompany, trackingNo, logisticsStatus, shippedAt, Number(id)).run();
+  if (!/^\d+$/.test(id) || !Number.isSafeInteger(Number(id))) return Response.json({ error: "订单不存在" }, { status: 404 });
+  const order = await readLogisticsOrder(Number(id));
+  if (!order) return Response.json({ error: "订单不存在" }, { status: 404 });
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "请填写物流信息" }, { status: 400 });
+  const result = await saveShipment(order, body as Record<string, unknown>);
+  if (result.error) return Response.json({ error: result.error }, { status: result.status });
   return Response.json({ ok: true });
 }
