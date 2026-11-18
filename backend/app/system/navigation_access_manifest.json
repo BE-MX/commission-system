@@ -1,5 +1,5 @@
 {
-  "source_sha256": "25d803365755fb5ce059e8e293ceb1826caa80595e4e69a4188ea3ebc89672e5",
+  "source_sha256": "1e38c402c90553fc5583075571eb654d0b80c7b5a7345d205d9acb15ec2e0c4c",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -621,6 +621,27 @@
           "customer_radar:read",
           "customer_pcw:read"
         ]
+      },
+      {
+        "anyPermission": [
+          "customer:read",
+          "client_desk:read",
+          "alibaba_feed:admin",
+          "sales_automation:read",
+          "customer_opportunity:read",
+          "customer_radar:read",
+          "mail_outreach:read",
+          "mail_outreach:write",
+          "mail_outreach:admin"
+        ]
+      }
+    ],
+    "ProductRadar": [
+      {
+        "permission": "product_sales:read"
+      },
+      {
+        "permission": "product_sales:read"
       },
       {
         "anyPermission": [

@@ -254,6 +254,16 @@ def _bump_mapping_epoch() -> None:
     _mapping_epoch += 1
 
 
+def mapping_version(db: Session) -> tuple:
+    """映射版本：进程内写入计数 + 行数 + 最近更新时间，用于各类缓存键。"""
+    return (_mapping_epoch, *_mapping_version(db))
+
+
+def persistent_mapping_version(db: Session) -> tuple:
+    """跨进程一致的映射版本（不含进程内计数），用于存表的 AI 解读复用键。"""
+    return _mapping_version(db)
+
+
 def _mapping_version(db: Session) -> tuple:
     count, latest = db.query(func.count(ProductSalesNameMapping.id), func.max(ProductSalesNameMapping.updated_at)).one()
     return count, latest.isoformat() if latest else None

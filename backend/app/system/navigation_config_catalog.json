@@ -1,5 +1,5 @@
 {
-  "source_sha256": "25d803365755fb5ce059e8e293ceb1826caa80595e4e69a4188ea3ebc89672e5",
+  "source_sha256": "1e38c402c90553fc5583075571eb654d0b80c7b5a7345d205d9acb15ec2e0c4c",
   "nodes": [
     {
       "id": "customerPortal",
@@ -923,6 +923,26 @@
       "path": "/customer-hub/customers",
       "external": false,
       "rule": "customer:read / customer_radar:read / customer_pcw:read / customer:read / customer_radar:read / customer_pcw:read / customer:read / client_desk:read / alibaba_feed:admin / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
+      "business": "",
+      "phase": false
+    },
+    {
+      "id": "ProductRadar",
+      "kind": "page",
+      "label": "产品风向标",
+      "icon": "TrendCharts",
+      "parent": "customerOperations",
+      "order": 12,
+      "visible": true,
+      "builtin": true,
+      "protected": false,
+      "badge": "",
+      "badgePlace": "text",
+      "badgeTone": "gold",
+      "titleSync": false,
+      "path": "/customer-hub/product-radar",
+      "external": false,
+      "rule": "product_sales:read / product_sales:read / customer:read / client_desk:read / alibaba_feed:admin / sales_automation:read / customer_opportunity:read / customer_radar:read / mail_outreach:read / mail_outreach:write / mail_outreach:admin",
       "business": "",
       "phase": false
     },

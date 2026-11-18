@@ -393,6 +393,17 @@ export const NAV_ENTRIES = [
     },
   },
   {
+    path: '/customer-hub/product-radar',
+    name: 'ProductRadar',
+    component: () => import('@/views/product_sales/ProductRadar.vue'),
+    title: '产品风向标',
+    permission: 'product_sales:read',
+    menu: {
+      group: 'customerOperations', title: '产品风向标', icon: TrendCharts, order: 12,
+      permission: 'product_sales:read',
+    },
+  },
+  {
     path: '/customer-hub/acquisition',
     name: 'CustomerHubAcquisition',
     component: () => import('@/views/customer_hub/AcquisitionTasks.vue'),

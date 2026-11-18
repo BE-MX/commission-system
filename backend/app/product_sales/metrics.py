@@ -77,6 +77,8 @@ def classify_line(row: dict, mappings: dict[str, ProductSalesNameMapping], known
         "order_id": str(row.get("order_id") or ""),
         "company_id": str(row.get("company_id") or ""),
         "user_id": str(row.get("user_id") or ""),
+        "user_name": _clean(row.get("user_name")),
+        "team": _clean(row.get("team")),
         "account_date": row.get("account_date"),
         "country": _clean(row.get("country")) or UNKNOWN_LABEL,
         "product_name": _clean(name),
@@ -141,12 +143,15 @@ def load_raw_rows(db: Session, date_from: date, date_to: date) -> list[dict]:
     sql = f"""
         SELECT o.order_id, o.company_id, o.user_id, o.account_date,
                COALESCE(NULLIF(NULLIF(TRIM(ci.country_name), ''), '0'), '未知') country,
+               COALESCE(rt.Name, ub.full_name, o.user_id) user_name, COALESCE(rt.Team, '') team,
                oi.product_name, oi.quantity,
                p.model p_model, p.color p_color, p.size p_size, p.unit p_unit
         FROM `{schema}`.okki_orders o
         JOIN `{schema}`.okki_order_items oi ON oi.order_id = o.order_id
         LEFT JOIN `{schema}`.customer_info ci ON ci.company_id = o.company_id
         LEFT JOIN `{schema}`.okki_products p ON p.product_id = oi.product_id
+        LEFT JOIN `{schema}`.user_rel_team rt ON rt.user_id = o.user_id
+        LEFT JOIN `{schema}`.user_basic ub ON ub.user_id = o.user_id
         WHERE {VALID_ORDER_SQL}
           AND o.account_date >= :date_from AND o.account_date <= :date_to
     """

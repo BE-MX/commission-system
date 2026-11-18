@@ -1,7 +1,8 @@
-## 2026-11-18 产品风向标 P0：历史品名映射（Claude，分支 claude/product-sales-radar，未合并）
+## 2026-11-18 产品风向标 P0 + P1（Claude，分支 claude/product-sales-radar，未合并）
 
 - 需求与分期见 [产品风向标需求](requirements/2026-11-18-product-sales-radar/README.md)。P0 只开放「备货管理 → 历史品名映射」（`product_sales:admin`），业务员页面在 P1。新表 `ark_product_sales_name_mappings` 迁移 272，未在任何库执行，随部署入口执行。
 - 实测：旧产品库时期（2025 至 2026-03）品名只含型号，颜色/发长不可恢复，亮哥决定历史只看型号级 kg。2026 年确切 kg 2,419.580 与 Codex 报告一致；按件数口径，可信月从 2026-08 起。预填覆盖历史件数 58%，余下多为英文长品名需人工确认。
+- P1：「客户经营 → 产品风向标」（`product_sales:read`）。颜色×发长涨跌、品类、小款冒头，点开看 12 个月走势与型号/国家分布，「解读这款」走 AI（preset `product_sales_insight`，表 `ark_product_sales_ai_insights` 迁移 273），可深链到决策台客户行动清单（带颜色/型号筛选，决策台读取 `?tab=&models=&colors=`）。当前近 90 天对比期（5–8 月）确切占比 74%，页面会提示涨跌只作参考。
 - 同分支另含决策台颜色解析修复（982ada15，`#8TP8/18` 不再被截成 18）。
 - 验证：后端定向 75 项、前端构建、导航测试、约定检查通过；两轮对抗性审查已修复。浏览器端到端未验（新表无隔离库）。上线后需在角色页分配 `product_sales:admin`，再点「扫描新品名」生成队列。
 
