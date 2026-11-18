@@ -14,7 +14,7 @@ import {
   isExpoKioskTarget,
 } from './expoKioskRoute'
 import { readSessionItem } from '@/utils/safeSessionStorage'
-import { isShippingInspectionPath, isShippingStationPath, shippingStationLogin } from './shippingStationRoute'
+import { isShippingStationPath, shippingStationLogin } from './shippingStationRoute'
 import { FX_APP_PATH, FX_DESKTOP_PATH, isFxSettlementPath, fxSettlementLogin } from './fxSettlementRoute'
 import { captureRetailTryOnSession } from '@/views/expo/retailTryOnSession'
 
@@ -54,6 +54,10 @@ const routes = [
     name: 'Login',
     component: () => import('@/views/auth/LoginPage.vue'),
     meta: { title: '登录', public: true },
+  },
+  {
+    path: '/m/:retiredPath(.*)*',
+    redirect: { path: '/dashboard', query: {}, hash: '' },
   },
   {
     // 零售商城专属试戴。短期 grant 只进入 /api/expo/retail，和展会设备会话隔离。
@@ -121,21 +125,6 @@ router.beforeEach(async (to, from, next) => {
   const desktopMode = readSessionItem('ark_desktop_mode') === '1'
   if (isMobileUA && !desktopMode && to.path.replace(/\/+$/, '') === FX_DESKTOP_PATH) {
     return next({ path: FX_APP_PATH, query: to.query, hash: to.hash, replace: true })
-  }
-
-  // 移动端访问登录页：直接走移动端独立登录页
-  // 例外：目标是展会 kiosk（展位 iPad 用主站登录，不进移动端素材页）
-  // 例外：客户跟进（钉钉推送入口）
-  const redirectTarget = String(to.query.redirect || '')
-  if (isMobileUA && !desktopMode && to.path === '/login' && !redirectTarget.startsWith('/expo') && !isShippingStationPath(redirectTarget) && !isShippingInspectionPath(redirectTarget) && !isFxSettlementPath(redirectTarget) && !redirectTarget.startsWith('/domestic/followups') && !redirectTarget.startsWith('/client-desk')) {
-    window.location.href = '/m/login.html'
-    return false
-  }
-
-  // 移动端访问素材管理相关页面时，直接跳转到移动端独立页面
-  if (isMobileUA && !desktopMode && to.path.startsWith('/asset/')) {
-    window.location.href = '/m/'
-    return false
   }
 
   // 设置页面标题

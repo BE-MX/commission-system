@@ -52,7 +52,7 @@ UI 注意：从 DetailDrawer 打开的核查弹窗必须 append-to-body，避免
 - JWT Access Token（短期）+ Refresh Token（HttpOnly Cookie，路径 `/api/auth`）
 - 后端 `auth/router.py` 提供 `/login` `/refresh` `/logout` `/me` 四个端点
 - 页面刷新时 `App.vue` 在 `onMounted` 恢复登录态，路由守卫通过 `initPromise` 等待后再判断登录。**判据是 `!auth.user` 而非 `!isLoggedIn`**（accessToken 会从 localStorage 预恢复，isLoggedIn 开局即可能为 true）：user 为空就拉 `/me`，token 失效走 refresh 换新重试，全失败 clearAuthState + 复位 store ref——否则会出现"半登录态"（token 在、权限空、右上角显示占位"用户"、到处提示权限不足）
-- **前端 token 管理**：`stores/auth.js` 导出模块级 `getAccessToken()` / `clearAuthState()`，`api/request.js` 拦截器通过这两个函数注入/清除 token（不依赖 Pinia 初始化时机）。**token 同时同步到 `localStorage`（key=`ark_access_token`）**，供移动端独立页面（`frontend/public/m/`）读取登录态；`logout()` 时清除 localStorage
+- **前端 token 管理**：`stores/auth.js` 导出模块级 `getAccessToken()` / `clearAuthState()`，`api/request.js` 拦截器通过这两个函数注入/清除 token（不依赖 Pinia 初始化时机）。主站刷新时从 `localStorage.ark_access_token` 恢复 access token，`logout()` 时清除此键。
 - 权限种子在后端启动时由 `seed_role_permissions()`（`auth/service.py`）写入数据库（幂等）
 - **新增权限时**：修改 `seed_role_permissions` → 重启后端（权限自动写入）→ 角色管理页重新分配
 

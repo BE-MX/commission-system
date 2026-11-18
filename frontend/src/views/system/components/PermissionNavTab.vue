@@ -85,11 +85,6 @@ const EXEMPT_PAGES = [
     required: ['expo:write'], exempt: true,
     note: '展位 iPad 全屏页在 router 顶层注册，勾掉 expo:write 菜单无变化但展位会被拦',
   },
-  {
-    key: 'exempt-mobile-asset', title: '移动端素材（/m/）', path: '/m/', name: '',
-    required: ['asset:read'], exempt: true,
-    note: '移动端独立页面依赖 asset:read，勾掉后手机端素材库不可用',
-  },
 ]
 
 const navGroups = computed(() => {

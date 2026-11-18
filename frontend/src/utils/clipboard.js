@@ -1,5 +1,4 @@
 // Returns true only when the browser confirms that text was copied.
-// This module also ships unchanged to the standalone /m/ asset page.
 export async function copyText(text) {
   if (typeof text !== 'string' || !text) return false
   if (globalThis.navigator?.clipboard?.writeText) {

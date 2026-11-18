@@ -11,7 +11,7 @@ import { clearAuthState, isAuthOperationSuperseded, useAuthStore } from '@/store
 const auth = useAuthStore()
 
 // 页面刷新时恢复登录态。
-// 注意：accessToken 会从 localStorage 预恢复（供移动端 /m/ 共享），
+// 注意：accessToken 会从 localStorage 预恢复，
 // 所以 isLoggedIn=true 不代表用户信息已加载——只要 user 为空就必须拉 /me，
 // 否则会卡在"半登录态"：token 在、权限为空，右上角显示"用户"、到处提示权限不足。
 onMounted(async () => {

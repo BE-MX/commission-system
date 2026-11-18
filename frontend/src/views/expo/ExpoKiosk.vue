@@ -139,7 +139,7 @@ const quotaBlocked = computed(() =>
 // APK 的 themes.xml 声明 windowLayoutInDisplayCutoutMode=shortEdges + 全屏沉浸，页面会被主动
 // 画到刘海/状态栏底下。没有 viewport-fit=cover 时 WebView 不暴露 env(safe-area-inset-*)，
 // 52px 高的顶栏正好整条落进系统手势区——「上一步 / 主页」看得见点不着（手机实测）。
-// 只在本页改 meta、离开还原：全站其余页面（含 PC 与 /m/）的视口行为一个字不动。
+// 只在本页改 viewport meta，离开时还原。
 let prevViewport = null
 const viewportMeta = () => document.querySelector('meta[name="viewport"]')
 onMounted(() => {

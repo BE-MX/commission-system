@@ -2,7 +2,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
-import { isShippingInspectionPath } from '../src/router/shippingStationRoute.js'
 const source = fs.readFileSync(new URL('../src/views/shipping/composables/useInspectionRecords.js', import.meta.url), 'utf8')
   .replace(/^import .*$/gm, '').replace('export function', 'function')
 function setup(downloadInspectionPdf, listInspectionRecords = async () => ({ data: { items: [], total: 0 } })) {
@@ -15,10 +14,6 @@ function setup(downloadInspectionPdf, listInspectionRecords = async () => ({ dat
   vm.runInContext(source+';this.s=useInspectionRecords()',ctx)
   return {s:ctx.s,pushes,downloads,route, fetchPage: params=>fetchPage(params,{signal:new AbortController().signal,isCurrent:()=>true})}
 }
-test('notification route match is exact and never accepts external URLs',()=>{
-  assert.equal(isShippingInspectionPath('/shipping/inspections?pdf=42&version=3'),true)
-  for(const path of ['/shipping/inspections-other','//evil.test/shipping/inspections','https://evil.test/shipping/inspections'])assert.equal(isShippingInspectionPath(path),false)
-})
 test('download sends the notification version and restores exact target after expiry',async()=>{
   const calls=[]
   const {s,pushes,route}=setup(async(...args)=>{calls.push(args);throw {response:{status:401}}})
