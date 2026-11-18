@@ -651,6 +651,7 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 
 ## 订单经营 AI 简报（迁移 109，2026-08-12）
 
+- `ark_product_sales_name_mappings`（迁移 272，2026-11-18）：旧产品库时期订单品名 → 型号 + 每件默认克重。`name_hash` 为规范化品名 SHA-256（唯一 `uq_ps_mapping_name_hash`）；`status` 为 suggested/confirmed/ignored，confirmed 只代表采纳克重假设（口径仍是 assumed），ignored 为非发制品不计重量；`line_count/quantity_total/last_seen_date` 是扫描时的统计快照；`catalog_sku_id` 预留给产品主档挂钩；`confirmed_by_user_id → ark_users.id SET NULL`。`idx_ps_mapping_status_qty` 支撑按状态、件数排序的确认队列。
 - `ark_order_intelligence_brief_jobs`：持久化后台简报任务，`owner_user_id → ark_users.id CASCADE`，状态为 `queued/running/succeeded/failed`。`active_key` 在活动期固定为 `user:{ark_user_id}` 并建唯一约束，终态置 NULL，从数据库层阻止同一用户双击、多标签页和并发提交重复调用 AI。任务冻结提交时的日期、focus 与数据范围快照，并保存简报内容、来源、证据及失败原因。`idx_oi_brief_owner_created` 支撑用户历史，`idx_oi_brief_status_updated` 支撑状态与超时扫描。
 
 ## 运行与自动化治理（迁移 110 / 111，2026-08-12）

@@ -870,6 +870,18 @@ export const NAV_ENTRIES = [
     },
   },
 
+  // ── 产品风向标（2026-11-18，P0 仅映射维护） ─────────────────
+  {
+    path: '/stock/product-name-mappings',
+    name: 'ProductNameMappings',
+    component: () => import('@/views/product_sales/NameMappings.vue'),
+    title: '历史品名映射',
+    permission: 'product_sales:admin',
+    menu: {
+      group: 'stock', title: '历史品名映射', icon: List, order: 60,
+      permission: 'product_sales:admin',
+    },
+  },
   // ── 备货管理 ───────────────────────────────────────────
   {
     path: '/stock/overview',

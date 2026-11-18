@@ -238,7 +238,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"battle_report:read_all", "customer_media:read_all", "customer_media_account:read_all", "receipt:read_all", "tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all", "domestic_decision:read_all", "shipping_inspection:read_all", "shipping_inspection:inspection_read_all"}
+_DATA_KIND_CODES = {"battle_report:read_all", "customer_media:read_all", "customer_media_account:read_all", "receipt:read_all", "tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "product_sales:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all", "domestic_decision:read_all", "shipping_inspection:read_all", "shipping_inspection:inspection_read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 _DATA_KIND_CODES.add("sales_return:read_all")
 _DATA_KIND_CODES.add("domestic_followup:read_all")
@@ -486,6 +486,10 @@ def seed_role_permissions(db: Session):
         # 订单经营智能分析：默认仅本人，read_all 放开全公司/团队/个人筛选。
         ("order_intelligence:read",     "order_intelligence", "read",     "查看订单经营分析（仅本人数据）"),
         ("order_intelligence:read_all", "order_intelligence", "read_all", "查看全部订单经营分析（数据范围）"),
+        # 产品风向标（2026-11-18）：read 看公司级产品汇总与本人份额；read_all 放开团队/个人筛选；admin 维护历史品名映射
+        ("product_sales:read",     "product_sales", "read",     "查看产品风向标（公司级产品汇总 + 本人份额）"),
+        ("product_sales:read_all", "product_sales", "read_all", "查看全部业务员的产品销量份额（数据范围）"),
+        ("product_sales:admin",    "product_sales", "admin",    "维护历史品名映射与销量可信度"),
         # 客户售后管理（2026-07-12 售后分析拆独立码；2026-07-14 审核拆 aftersales:review，
         # 支持 仅录单 / 录单+审核 / 仅审核 三档，069 迁移已给存量 write 角色补授 review）
         ("aftersales:read",       "aftersales", "read",       "查看授权范围内售后单"),

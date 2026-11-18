@@ -1660,6 +1660,18 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 `/attendance/sync` 前端超时设 300 秒（client 默认 60 秒）：132 次钉钉调用实测跑一分钟出头，60 秒会在服务端仍在写库时掐断请求，界面显示「超时」而数据其实同步成功了，HR 于是重试，又是一分钟加一次限流额度。
 
+## 产品风向标（`/api/product-sales`，2026-11-18，P0）
+
+P0 只有历史品名映射维护与可信度，全部端点要求 `product_sales:admin`。只读 `lsordertest` 订单、明细与产品表，映射写 commission_db。口径与分期见 [需求](requirements/2026-11-18-product-sales-radar/README.md)。
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/mappings` | `product_sales:admin` | `status`（suggested/confirmed/ignored）、`keyword`、`page`、`page_size`；按涉及件数降序，返回 `status_counts` |
+| POST | `/mappings/refresh` | `product_sales:admin` | 扫描 2025-01 起未命中产品表的品名，新品名写预填，已有行只刷新统计；不覆盖人工结论；并发冲突 409 |
+| PUT | `/mappings` | `product_sales:admin` | body `{items:[{id,status,model,unit_grams}]}`（≤200）；confirmed 必须有型号和克重；ignored 不计重量、不清型号 |
+| GET | `/models` | `product_sales:admin` | 当前产品表型号及其最常见克重，供下拉选择 |
+| GET | `/coverage` | `product_sales:admin` | `date_from`/`date_to`（默认 2025-01-01 至今）；按月件数分档与 kg，`credible`=exact+derived 件数占比 ≥90%；按窗口+映射版本缓存 5 分钟 |
+
 ## 订单经营智能分析（`/api/order-intelligence`，2026-08-12）
 
 全部端点要求 `order_intelligence:read`；默认数据范围是当前账号绑定的 OKKI 业务员，`order_intelligence:read_all` 才能查看全公司并使用 `team/user_id` 筛选。读取 `lsordertest` 的订单、客户、订单明细、产品与人员投影，不回写业务库。

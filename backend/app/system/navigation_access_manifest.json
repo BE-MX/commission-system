@@ -1,5 +1,5 @@
 {
-  "source_sha256": "366b8961a88db5e7665c5f3d57b8eab94160d079f7276473b92f66b9865d4163",
+  "source_sha256": "25d803365755fb5ce059e8e293ceb1826caa80595e4e69a4188ea3ebc89672e5",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -1685,6 +1685,34 @@
           "tracking:read",
           "tracking:write",
           "tracking:daily_report"
+        ]
+      }
+    ],
+    "ProductNameMappings": [
+      {
+        "permission": "product_sales:admin"
+      },
+      {
+        "permission": "product_sales:admin"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
         ]
       }
     ],

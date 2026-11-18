@@ -1,5 +1,5 @@
 {
-  "source_sha256": "366b8961a88db5e7665c5f3d57b8eab94160d079f7276473b92f66b9865d4163",
+  "source_sha256": "25d803365755fb5ce059e8e293ceb1826caa80595e4e69a4188ea3ebc89672e5",
   "nodes": [
     {
       "id": "customerPortal",
@@ -1663,6 +1663,26 @@
       "path": "/tracking/daily-report",
       "external": false,
       "rule": "tracking:daily_report / tracking:daily_report / tracking:read / tracking:write / tracking:daily_report",
+      "business": "",
+      "phase": false
+    },
+    {
+      "id": "ProductNameMappings",
+      "kind": "page",
+      "label": "历史品名映射",
+      "icon": "List",
+      "parent": "stock",
+      "order": 60,
+      "visible": true,
+      "builtin": true,
+      "protected": false,
+      "badge": "",
+      "badgePlace": "text",
+      "badgeTone": "gold",
+      "titleSync": false,
+      "path": "/stock/product-name-mappings",
+      "external": false,
+      "rule": "product_sales:admin / product_sales:admin / stock:read / stock:write / stock:admin / stock_daily:read / catalog:read / inventory:read / production:read / production:write / production:print / production:admin / production_product:read / production_dashboard:read / production_route:read / semifinished:read / semifinished:write / semifinished:admin",
       "business": "",
       "phase": false
     },
