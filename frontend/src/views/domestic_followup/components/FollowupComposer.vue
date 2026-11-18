@@ -177,7 +177,7 @@
             </el-select>
           </el-form-item>
         </div>
-        <FollowupPlanPurpose v-if="c.needsPlanPurpose.value && !c.form.value.nextSteps.length" :form="c.form.value" :assignees="c.planAssignees.value" />
+        <FollowupPlanPurpose v-if="c.needsPlanPurpose.value" :form="c.form.value" :assignees="c.planAssignees.value" />
         <p v-if="c.form.value.next_date && !c.restricted.value && !c.form.value.nextSteps.length" class="hint">
           {{ weekdayLabel(c.form.value.next_date) }}<template v-if="c.form.value.nextExpression"> · 依据：原话「{{ c.form.value.nextExpression }}」</template>
         </p>
@@ -218,6 +218,7 @@
     </section>
 
     <template #footer>
+      <p v-if="c.step.value === 'review' && c.saveBlocker.value" class="hint hint-warn save-blocker" role="status">{{ c.saveBlocker.value }}</p>
       <div class="dialog-footer composer-footer">
         <template v-if="c.step.value === 'input'">
           <GlassButton :disabled="!c.canSubmit.value || !c.canSave.value" :loading="c.saving.value" @click="c.saveDirect">直接保存</GlassButton>
@@ -360,6 +361,7 @@ async function discardWithConfirm() {
 .plain-list { margin: 4px 0 0; padding-left: 18px; }
 .ocr-box pre { white-space: pre-wrap; font-size: 12px; background: var(--tag-neutral-bg); padding: 8px; border-radius: var(--radius-sm, 6px); }
 .composer-footer { display: flex; justify-content: flex-end; gap: 8px; }
+.save-blocker { margin: 0 0 8px; text-align: end; }
 .action-tasks { display: flex; flex-direction: column; gap: 8px; }
 .action-tasks h3 { margin: 0; font-size: 14px; }
 .action-tasks h3 span { margin-left: 6px; color: var(--text-secondary); font-size: 12px; font-weight: 400; }

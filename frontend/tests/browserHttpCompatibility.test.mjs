@@ -66,7 +66,6 @@ test('blocked copy gives manual-copy feedback without a false success', async ()
   assert.equal(state.errors.length, 1)
   assert.equal(state.nodes.length, 0)
 })
-
 test('HTTP request keys use secure entropy, preserve UUID bits, and do not repeat', () => {
   const context = vm.createContext({ crypto: { getRandomValues: webcrypto.getRandomValues.bind(webcrypto) } })
   loadUtility(context, 'requestKey')
@@ -116,32 +115,4 @@ test('copy restores selected document text and cleans up even if fallback throws
   assert.equal(state.errors.length, 1)
   assert.deepEqual(restored, ['clear', savedRange])
   assert.equal(state.nodes.length, 0)
-})
-
-test('mobile manual-copy prompt does not report automatic success', async () => {
-  const source = read('../public/m/index.html'), start = source.indexOf('async function copyShareLink(url)'), end = source.indexOf('\n}', start) + 2
-  const prompts = [], context = vm.createContext({ copyText: async () => false,
-    window: { prompt: (...args) => prompts.push(args) } })
-  vm.runInContext(source.slice(start, end), context)
-  assert.equal(await context.copyShareLink('https://example.test/share'), false)
-  assert.equal(prompts[0][1], 'https://example.test/share')
-})
-
-test('all four mobile copy actions stop success status and audit when automatic copy fails', async () => {
-  const source = read('../public/m/index.html')
-  const methods = [...source.matchAll(/    async function copyLink\(([^)]*)\) \{([\s\S]*?)\n    \}/g)]
-  assert.equal(methods.length, 4)
-  for (const method of methods) {
-    const messages = [], actions = []
-    const context = vm.createContext({ copyShareLink: async () => false,
-      API: { getShareLink: async () => ({ url: 'https://example.test/share' }), recordAction: (...args) => { actions.push(args); return Promise.resolve() } },
-      asset: { value: { id: 1 } }, copied: { value: false }, setTimeout() {},
-      toast: { show: (...args) => messages.push(args) } })
-    vm.runInContext(`async function copyLink(${method[1]}) {${method[2]}\n}`, context)
-    await context.copyLink({ id: 1 })
-    assert.equal(context.copied.value, false)
-    assert.equal(actions.length, 0)
-    assert.equal(messages.length, 1)
-    assert.equal(messages[0][1], 'error')
-  }
 })

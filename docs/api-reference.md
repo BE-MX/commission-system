@@ -1,5 +1,28 @@
 # 莱莎方舟 API 参考
 
+## 工厂到货拍照核对
+
+所有路径以 `/api/factory-inbound` 开头。JSON 响应使用统一信封。办公室启用 `FACTORY_INBOUND_ENABLED` 后开放。
+
+| 方法和路径 | 权限 | 行为 |
+| --- | --- | --- |
+| GET `/settings` | read / write / admin | 上传总大小限制、启用的行类型和 `sync_enabled` |
+| POST `/notes` | write / admin | 接收 multipart 的 `scan` 和可选 `original`，创建草稿并排队识别，返回 201 |
+| GET `/notes` | read / write / admin | 按编号、日期、状态、创建人筛选和分页。仅有 write 时返回本人记录 |
+| GET `/notes/{id}` 与 `/notes/{id}/image?original=true` | read / write / admin | 单据及修订记录，或经鉴权的私有 JPG。仅有 write 时限本人 |
+| PATCH `/notes/{id}/delivery` | 本人 write / admin | 携带 `version` 和 `confirmed=true` 确认或更正编号。冲突返回疑似重复记录供人工核对 |
+| POST `/notes/{id}/recognize` 与 `/notes/{id}/void` | 本人 write / admin | 携带 `version` 重识别或作废草稿 |
+| POST `/notes/{id}/lines` 与 PATCH `/notes/{id}/lines/{line_id}` | 本人 write / admin | 补录、修正、重匹配、选取候选、勾选与登记回写意图。版本冲突返回 409 |
+| GET `/notes/{id}/batches` | read / write / admin | 返回本单批次、是否可续办和小满单号。仅有 write 时限本人 |
+| POST `/notes/{id}/batches/preview` | 本人 write / admin | 携带 `version` 和 `line_ids`，返回当前分配、未分配数量、跨单确认要求和 `preview_digest` |
+| POST `/notes/{id}/batches` | 本人 write / admin | 携带预览用的 `version` 和 `line_ids`，以及 `preview_digest`、`idempotency_key`、`unit_prices` 和按需提交的 `confirm_cross=true`。确认后冻结批次并推进小满采购、入库和本地回写 |
+| POST `/notes/{id}/batches/{batch_id}/resume` | 本人 write / admin | 核对同一批次的持久化进度并推进可验证的步骤，无请求体 |
+| GET `/aliases/{kind}` | read / write / admin | 查看工艺、颜色或等级词表 |
+| POST `/aliases/{kind}` 与 PATCH `/aliases/{kind}/{id}` | admin | 维护词条 |
+| GET `/aliases/suggestions` 与 PATCH `/aliases/suggestions/{id}` | admin | 列出和审核颜色建议 |
+
+批次写入口由默认关闭的 `FACTORY_INBOUND_SYNC_ENABLED` 控制，关闭时返回 503。每个 `unit_prices` 项提供 `product_id`、`sku_id` 和正整数 USD `unit_price`。分配预览发生变化时返回 409，请重新核对。批次提交或续办出现客户端超时后，先读取同一单据的批次进度。
+
 ## TM 资料一店一人试点
 
 `GET /api/alibaba-feed/pilot` 返回单一试点、可绑定的专用采集应用和有资料读取权限的业务员。`PUT /api/alibaba-feed/pilot` 接受 `expected_version`、`source_account_uid`、`name`、`integration_app_id`、`user_id` 和精确 `owner_alias`，只保存关闭态配置。`POST /api/alibaba-feed/pilot/activation` 接受 `expected_version` 与 `enabled`，启用另需 `consent_confirmed=true`。三个接口都要求用户 JWT 和实时 `alibaba_feed:admin`。状态冲突返回 409，采集 Token 和聊天内容不进入管理响应。
@@ -780,7 +803,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET /invoices` — 发票列表（分页+搜索+状态+order_type；可选 `date_from`/`date_to`，格式 `YYYY-MM-DD`，按 `invoice_date` 含首尾日期过滤后计算总数和分页；可单独传起止日期，不传则不限制日期，起始晚于结束返回 422。订单发票页顶部日期同时应用于概览和列表，默认北京时间当月；切换日期回到第一页，保留已应用的列表筛选与排序。普通用户返回 `sales_user_id=本人`，以及 `created_by=本人` 且代办授权仍有效的订单；不会因获授权而看到归属人的其他历史订单）
     - 列表行含 `item_count`（当前型号明细行数）和 `total_quantity`（件数之和），均包含配件、排除预售归档行。已回款 `received_amount` 按发票原币返回，沿用回款查看动作、本人/全量范围及跨归属批次限制；本地订单取累计核销金额，小满订单取近期完整快照中的财务生效回款（匹配到方舟回款时含手续费，计入已生效的退款冲销，不含独立运费）。已知无生效款返回 0；无权限、快照不可用、截图已匹配既有小满订单但尚未绑定、回款发送结果待核对或关联数据不一致返回 null。回款颜色比较使用 `receipt_payable_amount`（扣除退货冲减后的应收），原应付合计列口径不变。列表只读，不向小满发起实时核验。
   - `GET /invoices/summary?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` 汇总发票日期闭区间内当前用户可见的已同步发票，排除取消处理中及已取消单据。概览独立于列表分页与搜索，支持 `invoice:read_all` 和超管的全量范围。开始日期晚于结束日期返回 422。
-    - `gmv` 汇总 USD 发票的 `total_amount - surcharge_amount`，保留运费与包装费。`received_amount` 按同一批订单汇总列表中可见且已核验的 USD「已回款」金额，沿用回款权限、快照时效和退款口径。缺少权限或全部金额无法核验时返回 `null`，汇总部分订单时 `received_amount_partial=true`。
+    - `gmv` 汇总 USD 发票的 `total_amount - surcharge_amount`，保留运费与包装费。`receivable_amount` 汇总同一日期和发票可见范围的 USD「应付合计」`total_amount`，包含手续费，空范围返回 0。`received_amount` 按同一批订单汇总列表中可见且已核验的 USD「已回款」金额，沿用回款权限、快照时效和退款口径。缺少权限或全部金额无法核验时返回 `null`，汇总部分订单时 `received_amount_partial=true`。
     - `new_sign_count` 按 `okki_new_deal=1` 的客户去重，`first_return_count` 按 `okki_first_return=1` 的客户去重，`order_count` 统计订单张数。非 USD 发票参与数量统计。`unknown_new_sign_count` 报告新成交标记为 NULL 的单据数，`non_usd_count` 报告非 USD 单据数。API 仍返回 `average_order_amount`，分母为 USD 发票数。
     - `GET /invoices` 接受 `overview_metric=new_sign|first_return`，在计数和分页之前，按同一统计范围和相应标记与现有列表条件取交集。下钻返回全部对应订单，同一客户可显示多张。列表返回 `order_amount`，支持 `sort_field=order_amount`，`total_amount` 为含手续费的应付合计。
     - 列表与概览以 JWT 识别员工，并在查询前从数据库读取当前账号状态、角色、操作及数据范围权限。权限撤销和授予即时生效。缺少读取权限返回 403，授权数据库不可用返回 503，借用已有事务返回 409。普通读取不会锁定权限或召回在途响应。
@@ -1093,7 +1116,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET /recent` — 最近使用记录（基于下载日志，需 `asset:read`）
   - `DELETE /favorites/folders/{id}/items/by-asset/{asset_id}` — 移动端通过 asset_id 移除收藏（需 `asset:read`）
   - `GET /favorites/folders/{id}/mobile-items` — 移动端收藏夹内容（分页 + is_valid + invalid_reason，需 `asset:read`）
-- **移动端素材管理**：`frontend/public/m/index.html`（Vue 3 CDN 独立页面），构建后通过 `https://leshine.work/m/` 访问。移动端有独立登录页 `frontend/public/m/login.html`（`POST /api/auth/login` → `localStorage.ark_access_token` → 跳 `/m/`），移动 UA 访问 `/login` 或 `/asset/*` 会自动分流到移动端入口。顶部切换栏含「退出登录」调用 `/api/auth/logout` 并清 token 回登录页。
+- **素材管理页面**使用主站 `/asset/*` 路由及权限。原独立移动端 `/m/` 和其子路径统一跳转工作台，未登录时先走主站登录。
 - `/api/color` — 发色数字化管理（色板数据库/混合色/色彩计算/趋势/色板图生成）
   - `GET /colors` / `POST /colors` / `PUT /colors/{id}` / `DELETE /colors/{id}` — 色号 CRUD（需 `color:read/write/admin`）
   - `GET /blends` / `POST /blends` / `PUT /blends/{id}` / `DELETE /blends/{id}` — 混合色 CRUD（需 `color:read/write/admin`）
@@ -1659,6 +1682,22 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 三处前端**刻意不复制**后端逻辑：`ready_to_calculate` 用后端的，不自己数 `blocking_count`；下一步按钮打哪个端点由 `next_steps[].endpoint` 决定（锁定走 `/confirm` 且权限是 `admin`，是特例），不在前端写状态判断；中文状态/事件文案一律用接口回的 `*_label`，两边各写一份必然漂。
 
 `/attendance/sync` 前端超时设 300 秒（client 默认 60 秒）：132 次钉钉调用实测跑一分钟出头，60 秒会在服务端仍在写库时掐断请求，界面显示「超时」而数据其实同步成功了，HR 于是重试，又是一分钟加一次限流额度。
+
+## 产品风向标（`/api/product-sales`，2026-11-18）
+
+映射与可信度端点要求 `product_sales:admin`；风向端点要求 `product_sales:read`：公司级产品汇总对所有业务员开放（只到产品级 kg/件数），「我的份额」默认取本人 OKKI 绑定，`product_sales:read_all` 才能用 `user_id/team` 切换。只读 `lsordertest` 订单、明细与产品表，映射写 commission_db。口径与分期见 [需求](requirements/2026-11-18-product-sales-radar/README.md)。
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/mappings` | `product_sales:admin` | `status`（suggested/confirmed/ignored）、`keyword`、`page`、`page_size`；按涉及件数降序，返回 `status_counts` |
+| POST | `/mappings/refresh` | `product_sales:admin` | 扫描 2025-01 起未命中产品表的品名，新品名写预填，已有行只刷新统计；不覆盖人工结论；并发冲突 409 |
+| PUT | `/mappings` | `product_sales:admin` | body `{items:[{id,status,model,unit_grams}]}`（≤200）；confirmed 必须有型号和克重；ignored 不计重量、不清型号 |
+| GET | `/models` | `product_sales:admin` | 当前产品表型号及其最常见克重，供下拉选择 |
+| GET | `/radar` | `product_sales:read` | `window`（30/90/180，默认 90）、`models[]`、`user_id`/`team`（read_all）；返回可信度与可比标记、总览与份额、颜色×发长涨跌榜、品类、小款冒头、型号选项。全公司明细按窗口+映射版本缓存 5 分钟 |
+| GET | `/radar/item` | `product_sales:read` | `dimension`（color_size/category/item）、`key`、`window`；近 12 个月走势（含可信月标记）、主要型号/国家、份额；无销量 404 |
+| GET | `/radar/scopes` | `product_sales:read` + read_all | 窗口内有销量的团队与业务员，供份额切换；无 read_all 403 |
+| POST | `/radar/insight` | `product_sales:read` | body `{dimension,key,window,user_id?,team?}`；AI 解读（preset `product_sales_insight`，30 秒总超时，失败降级规则摘要），按范围+款+窗口+日期+映射版本存 `ark_product_sales_ai_insights` 24 小时复用 |
+| GET | `/coverage` | `product_sales:admin` | `date_from`/`date_to`（默认 2025-01-01 至今）；按月件数分档与 kg，`credible`=exact+derived 件数占比 ≥90%；按窗口+映射版本缓存 5 分钟 |
 
 ## 订单经营智能分析（`/api/order-intelligence`，2026-08-12）
 

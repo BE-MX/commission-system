@@ -265,6 +265,16 @@
   "cos_file_migration": "deferred by owner",
   "internal_modules": [
     {
+      "component": "factory-inbound",
+      "host": "office",
+      "path": "/api/factory-inbound",
+      "service": "CommissionSystem",
+      "listen": "127.0.0.1:8001",
+      "data": "D:/WORKSOURCE/factory-inbound",
+      "owner": "office",
+      "deploy": "deploy.bat --factory-inbound-routing-only"
+    },
+    {
       "component": "colorwork-workbench",
       "host": "ubuntu@154.8.205.162",
       "path": "/api/colorwork/workbench",

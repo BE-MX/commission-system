@@ -1,5 +1,11 @@
 # 莱莎方舟 模块专题笔记（含各模块已踩坑）
 
+## 工厂到货拍照核对
+
+手机端复用文档扫描的校正和增强算法，办公室后端私有存放校正图和原图。模型只转写，SKU 匹配由代码按单号、目录规格和词表计算。数量吻合用于排序，规则改写颜色需要人工复核。缺少明确等级的全目录匹配需人工选 SKU。发票号原文按当前账号权限和数据范围返回。
+
+答卷模板及离线评分入口为 `scripts/factory_inbound_eval.py template <私有照片目录>`、`scripts/factory_inbound_eval.py score <仓库校对JSON> <正式preset预测JSON>`。JSON 以照片文件名为键，字段见[设计开发文档](requirements/2026-11-18-factory-delivery-inbound/design.md)。仓库需核对照片的行拆分和原文，再记录实际 SKU 和订单命中情况。照片、答卷和预测保存在私有位置。
+
 ## WhatsApp AI 消息助手（2026-10-13，本地候选）
 
 聊天页“AI消息助手”选择北京时间区间，按整个账号或当前会话生成逐对象总结、未决问题、知识引用建议和跟进清单。用户明确清单仅留助手，勾选持久保存，不自动建任务中心事项或发送WhatsApp消息。当前正文权限与AI外发独立检查，知识只用本人可读已发布版本；数据更新/撤权后旧结果不再展示。短证据ID只用于模型传输，最终还原稳定消息UID。迁移193接192，部署需核对并行链。详见 [实现约定](requirements/2026-10-13-whatsapp-ai-assistant.md)。
@@ -52,7 +58,7 @@ UI 注意：从 DetailDrawer 打开的核查弹窗必须 append-to-body，避免
 - JWT Access Token（短期）+ Refresh Token（HttpOnly Cookie，路径 `/api/auth`）
 - 后端 `auth/router.py` 提供 `/login` `/refresh` `/logout` `/me` 四个端点
 - 页面刷新时 `App.vue` 在 `onMounted` 恢复登录态，路由守卫通过 `initPromise` 等待后再判断登录。**判据是 `!auth.user` 而非 `!isLoggedIn`**（accessToken 会从 localStorage 预恢复，isLoggedIn 开局即可能为 true）：user 为空就拉 `/me`，token 失效走 refresh 换新重试，全失败 clearAuthState + 复位 store ref——否则会出现"半登录态"（token 在、权限空、右上角显示占位"用户"、到处提示权限不足）
-- **前端 token 管理**：`stores/auth.js` 导出模块级 `getAccessToken()` / `clearAuthState()`，`api/request.js` 拦截器通过这两个函数注入/清除 token（不依赖 Pinia 初始化时机）。**token 同时同步到 `localStorage`（key=`ark_access_token`）**，供移动端独立页面（`frontend/public/m/`）读取登录态；`logout()` 时清除 localStorage
+- **前端 token 管理**：`stores/auth.js` 导出模块级 `getAccessToken()` / `clearAuthState()`，`api/request.js` 拦截器通过这两个函数注入/清除 token（不依赖 Pinia 初始化时机）。主站刷新时从 `localStorage.ark_access_token` 恢复 access token，`logout()` 时清除此键。
 - 权限种子在后端启动时由 `seed_role_permissions()`（`auth/service.py`）写入数据库（幂等）
 - **新增权限时**：修改 `seed_role_permissions` → 重启后端（权限自动写入）→ 角色管理页重新分配
 
@@ -1372,6 +1378,7 @@ Agent 委派只允许现有 customer_order_copilot 的只读准备型工具。re
 **跟进闭环（267–270，2026-11-16 本地实现）**：设计、交互与验收入口为[客户跟进闭环](requirements/2026-11-16-followup-closed-loop/README.md)。
 - 模板只在保存时新增版本，准备卡和历史记录始终按当时版本读取；生产迁移 267 只补不存在的 T01–T10 v1，后台修改不会回写迁移种子。
 - 下一步只有原文可核对且有日期的客户约定默认勾选；我方承诺仅提示建议采纳，截图、事件、我方计划和 AI 建议均不默认生成任务。主下一步沿用 `plan` 保持统计口径，其余 `action` 只能人工填写说明后完成或取消，不能被新跟进或编辑悄悄关闭。
+- 核对 AI 草稿时，有下一步候选就按勾选项校验和提交。旧格式的单条计划只在没有候选时生效。确认保存按钮置灰时，页脚会显示当前的阻塞原因。
 - 准备卡读权限实时判定：当前主要跟进人可读全部，作者必须仍在客户范围内；第三人及失去范围的原作者均不可读。策略输入按作者当时范围裁剪，拒绝和紧急售后的 mode 由后端全量状态强制，不能靠模型放宽；证据 ID/版本、数字白名单、模板时长和 avoid 均服务端复核。
 - 准备卡只在确认记录时加锁绑定；重复绑定不阻断记录本身，而是解除并返回 warning。未使用卡在归属变化或超过 14 天时收口；普通与托管客户的交接、释放路径均覆盖。
 - 引导录入保留四类事实与逐条出处。说话人不明或出处不匹配会降为待确认；截图始终标转写待核。AI 只填模板允许的字段和空答案，手选 `evidence_kind` 不被覆盖，旧记录性质为空显示未分类。

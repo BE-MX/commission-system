@@ -155,9 +155,7 @@ import WorldMapCanvas from '@/components/WorldMapCanvas.vue'
 import ArkWakeCanvas from '@/components/ArkWakeCanvas.vue'
 import logoGold from '@/assets/leshine-logo-gold.png'
 import { EXPO_KIOSK_PATH } from '@/router/expoKioskRoute'
-import { isShippingInspectionPath, isShippingStationPath } from '@/router/shippingStationRoute'
 import { isFxSettlementPath } from '@/router/fxSettlementRoute'
-import { readSessionItem } from '@/utils/safeSessionStorage'
 
 const titleTextRef = ref(null)
 const brandPanelRef = ref(null)
@@ -201,14 +199,6 @@ const handleSubmit = async () => {
     msgSuccessText('登录成功')
     // 深链恢复：守卫带来的 redirect 优先（如展位 iPad 打开 /expo/kiosk 被引到登录页）
     const redirect = String(route.query.redirect || '')
-    // 移动 UA 默认进移动端，除非用户主动选了「切换到完整版」（ark_desktop_mode=1）
-    // 或目标是展会 kiosk（展位 iPad 不进移动端素材页）
-    const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-    const desktopMode = readSessionItem('ark_desktop_mode') === '1'
-    if (isMobileUA && !desktopMode && !redirect.startsWith('/expo') && !isShippingStationPath(redirect) && !isShippingInspectionPath(redirect) && !isFxSettlementPath(redirect) && !redirect.startsWith('/domestic/followups') && !redirect.startsWith('/client-desk')) {
-      window.location.href = '/m/'
-      return
-    }
     if (redirect === EXPO_KIOSK_PATH && !authStore.hasPermission('expo:write')) {
       msgError('当前账号没有展会试戴权限，请更换展会设备账号')
       reject()

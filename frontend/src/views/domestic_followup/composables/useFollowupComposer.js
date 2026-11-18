@@ -45,10 +45,22 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
   const customerWritable = computed(() => selectedCustomer.value?.writable !== false)
   const recordOnly = computed(() => !form.value.historical_only && !taskOnly.value && !!selectedCustomer.value?.record_only)
   const restricted = computed(() => taskOnly.value || recordOnly.value)
-  const needsPlanPurpose = computed(() => !!(form.value.responsibility_version && form.value.next_date && !restricted.value && !form.value.historical_only))
+  // 有新版下一步候选时，核对页和提交都忽略旧的单条计划。
+  const needsPlanPurpose = computed(() => !form.value.nextSteps.length && Boolean(
+    form.value.responsibility_version && form.value.next_date && !restricted.value && !form.value.historical_only,
+  ))
   const nextValidation = computed(() => nextStepValidation(form.value.nextSteps, Boolean(form.value.responsibility_version)))
-  const canSave = computed(() => !loadingContext.value && customerWritable.value && nextValidation.value.valid
-    && (!needsPlanPurpose.value || Boolean(form.value.plan_purpose)))
+  const saveBlocker = computed(() => {
+    if (loadingContext.value) return '正在读取客户的跟进安排'
+    if (!customerWritable.value) return '请选择有跟进权限的客户'
+    const validation = nextValidation.value
+    if (validation.missingDates) return '请为已勾选的下一步填写日期，或取消勾选'
+    if (validation.missingPurpose) return '请在「下一步」为主下一步选择计划用途'
+    if (!validation.valid) return '请在「下一步」指定一条主下一步'
+    if (needsPlanPurpose.value && !form.value.plan_purpose) return '请选择下次跟进的计划用途'
+    return ''
+  })
+  const canSave = computed(() => !saveBlocker.value)
   watch(() => form.value.next_date, date => { if (!date) form.value.plan_assignee_user_id = null }, { flush: 'sync' })
 
   async function loadDicts() {
@@ -438,7 +450,7 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
   onBeforeUnmount(stopPolling)
 
   return {
-    visible, step, saving, uploading, canSubmit, canSave, customerWritable, restricted, recordOnly, needsPlanPurpose, planAssignees, dicts, loadDicts, form, attachments,
+    visible, step, saving, uploading, canSubmit, canSave, saveBlocker, customerWritable, restricted, recordOnly, needsPlanPurpose, planAssignees, dicts, loadDicts, form, attachments,
     customerOptions, searching, openTasks, openActionTasks, openItems, aiFailed, nextValidation,
     reviewDirty, open, resume, close, handleClosed, uploadAttachment, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, selectProspect,
     loadCustomerContext, saveDirect, startAi, confirm, discard, addRow, toggleResolved, changePrep,

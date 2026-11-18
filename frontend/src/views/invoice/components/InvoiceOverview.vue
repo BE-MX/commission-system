@@ -32,8 +32,17 @@
       </div>
       <div class="summary-card summary-card--received lg-card is-static">
         <el-icon class="summary-card__icon" aria-hidden="true"><Money /></el-icon>
-        <span>回款金额（USD）</span>
-        <strong>{{ summary?.received_amount == null ? '—' : money(summary.received_amount) }}</strong>
+        <span>应收/回款金额（USD）</span>
+        <dl class="summary-card__amounts">
+          <div>
+            <dt title="按 USD 发票的应付合计汇总，含手续费">应收</dt>
+            <dd><strong>{{ summary?.receivable_amount == null ? '—' : money(summary.receivable_amount) }}</strong></dd>
+          </div>
+          <div>
+            <dt>回款</dt>
+            <dd><strong>{{ summary?.received_amount == null ? '—' : money(summary.received_amount) }}</strong></dd>
+          </div>
+        </dl>
         <el-icon class="summary-card__watermark" aria-hidden="true"><Money /></el-icon>
       </div>
       <button type="button" class="summary-card summary-card--new lg-card is-static"

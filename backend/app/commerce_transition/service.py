@@ -122,6 +122,7 @@ def set_policy(db, *, phase, expected_version, min_writer_version=1,
             db.query(ResourceScope.id).filter_by(route="local").with_for_update().first()):
         raise TransitionError("已有本地正式责任，禁止退回旧路线模式")
     if phase == "local_only":
+        _require_factory_receipts_resolved(db)
         from app.finance.transition_identity import unmapped_legacy_money
         if unmapped_legacy_money(db):
             raise TransitionError("仍有账户身份不明的旧款，不能完成全量切换")
@@ -424,6 +425,14 @@ def authority_view(db, invoice_id):
                                                             SendingClaim.state.notin_(TERMINAL)).count()}
 
 
+def _require_factory_receipts_resolved(db):
+    from app.factory_inbound.batch_models import Batch
+
+    if (db.query(Batch.id).filter(Batch.purchase_intent.is_not(None),
+            Batch.writeback_status != "done").with_for_update().first()):
+        raise TransitionError("工厂到货批次仍待核清或回写，不能切换旧库存责任")
+
+
 def require_no_legacy_physical_inflight(db):
     """No unproved old physical effect may survive assigning a new pilot scope.
 
@@ -431,6 +440,7 @@ def require_no_legacy_physical_inflight(db):
     Conservatively wait for their exact outcomes instead of guessing a bucket.
     """
     _lock_policy(db)
+    _require_factory_receipts_resolved(db)
     if db.query(SendingClaim.id).filter(SendingClaim.route == 'legacy',
             SendingClaim.operation.contains('outbound'),
             SendingClaim.state.notin_(TERMINAL)).with_for_update().first():

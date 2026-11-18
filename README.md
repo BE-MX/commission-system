@@ -85,8 +85,7 @@ commission-system/
 ├── services/
 │   └── whatsapp-connector/  # WhatsApp Web Node.js 独立服务（whatsapp-web.js）
 ├── frontend/
-│   ├── public/
-│   │   └── m/            # 移动端素材管理独立页面（Vue 3 CDN，构建后 /m/ 访问）
+│   ├── public/          # 公共静态资源
 │   ├── src/
 │   │   ├── api/          # Axios 请求封装 (createApiClient factory + clients.js)
 │   │   ├── config/       # navigation.js — 路由 + 菜单单一来源

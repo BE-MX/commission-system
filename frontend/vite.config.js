@@ -9,22 +9,13 @@ export default defineConfig({
     vue(),
     navManifestPlugin(),
     {
-      // public/<dir>/ 静态页（/m/、/caigoujie/ 等）的目录 URL：Vite dev 不解析
+      // public/<dir>/ 静态页（如 /caigoujie/）的目录 URL：Vite dev 不解析
       // 目录 index.html，会回退成 SPA 壳导致白屏。这里对齐生产 Nginx / 8001
       // 的行为——无斜杠先 301 补斜杠，再直出该目录的 index.html
       name: 'public-dir-index-serve',
-      generateBundle() {
-        this.emitFile({ type: 'asset', fileName: 'm/clipboard.js',
-          source: fs.readFileSync(path.resolve(__dirname, 'src/utils/clipboard.js'), 'utf-8') })
-      },
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
           const [urlPath, query] = req.url.split('?')
-          if (urlPath === '/m/clipboard.js') {
-            res.setHeader('Content-Type', 'text/javascript; charset=utf-8')
-            res.end(fs.readFileSync(path.resolve(__dirname, 'src/utils/clipboard.js'), 'utf-8'))
-            return
-          }
           if (urlPath === '/' || urlPath.includes('..')) return next()
           const dirPath = urlPath.endsWith('/') ? urlPath : urlPath + '/'
           const indexPath = path.resolve(__dirname, 'public', dirPath.slice(1), 'index.html')

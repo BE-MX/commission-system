@@ -122,6 +122,8 @@ from app.knowledge.models import (
     KnowledgeAuditLog,
 )
 from app.order_intelligence.models import OrderIntelligenceBriefJob
+from app.product_sales.models import ProductSalesNameMapping
+from app.product_sales.insight_models import ProductSalesAiInsight
 from app.operations.db_models import (
     JobRun,
     OperationAudit,
@@ -285,6 +287,8 @@ __all__ = [
     "KnowledgeAuditLog",
     # 订单经营 AI 简报
     "OrderIntelligenceBriefJob",
+    "ProductSalesNameMapping",
+    "ProductSalesAiInsight",
     # 运行与自动化中心
     "JobRun",
     "OperationAudit",

@@ -87,7 +87,7 @@ def test_summary_preserves_main_statistics_and_current_delegation(receipt_app,wi
         summary=client.get('/api/invoice/invoices/summary',headers=token,params=params)
         assert summary.status_code==200
         assert summary.json()['data']=={'gmv':390.0,'new_sign_count':2,'unknown_new_sign_count':1,'order_count':5,'average_order_amount':97.5,'non_usd_count':1,
-            'first_return_count':1,'received_amount':None,'received_amount_partial':False}
+            'first_return_count':1,'receivable_amount':390.0,'received_amount':None,'received_amount_partial':False}
         page=client.get('/api/invoice/invoices',headers=token,params={'page_size':1,'keyword':prefix})
         assert page.status_code==200 and len(page.json()['data']['items'])==1
         first_return=client.get('/api/invoice/invoices',headers=token,params={**params,'overview_metric':'first_return'})
@@ -99,7 +99,7 @@ def test_summary_preserves_main_statistics_and_current_delegation(receipt_app,wi
         # Each parameter owns a separate year; exact six excludes other-scope drafts/cancellations/out-of-range rows.
         assert all_rows.status_code==200
         assert all_rows.json()['data']=={'gmv':1390.0,'new_sign_count':3,'unknown_new_sign_count':1,'order_count':6,'average_order_amount':278.0,'non_usd_count':1,
-            'first_return_count':2,'received_amount':None,'received_amount_partial':False}
+            'first_return_count':2,'receivable_amount':1390.0,'received_amount':None,'received_amount_partial':False}
         change_user(client,c,root,{'role_ids':[c.sales_role,c.roles['both'],roles['private']]})
         if withdrawal=='grant':
             with Session(c.ctx.engine) as db:db.delete(db.get(InvoiceDelegateGrant,grant_id));db.commit()
@@ -110,7 +110,7 @@ def test_summary_preserves_main_statistics_and_current_delegation(receipt_app,wi
         reduced=client.get('/api/invoice/invoices/summary',headers=token,params=params)
         assert reduced.status_code==200
         assert reduced.json()['data']=={'gmv':190.0,'new_sign_count':1,'unknown_new_sign_count':1,'order_count':4,'average_order_amount':round(190/3,2),'non_usd_count':1,
-            'first_return_count':0,'received_amount':None,'received_amount_partial':False}
+            'first_return_count':0,'receivable_amount':190.0,'received_amount':None,'received_amount_partial':False}
         listing=client.get('/api/invoice/invoices',headers=token,params={'page_size':100,'keyword':prefix})
         assert listing.status_code==200 and ids['B'] not in {row['id'] for row in listing.json()['data']['items']}
         assert snapshot(c)==before and c.calls==[]
@@ -123,7 +123,7 @@ def test_summary_invalid_and_empty_ranges_keep_current_permission_gate(receipt_a
         token=login(client,c,c.owner_name);before=snapshot(c)
         empty=client.get('/api/invoice/invoices/summary',headers=token,params={'date_from':'2071-10-01','date_to':'2071-10-31'})
         assert empty.status_code==200 and empty.json()['data']=={'gmv':0.0,'new_sign_count':0,'unknown_new_sign_count':0,'order_count':0,'average_order_amount':0.0,'non_usd_count':0,
-            'first_return_count':0,'received_amount':0.0,'received_amount_partial':False}
+            'first_return_count':0,'receivable_amount':0.0,'received_amount':0.0,'received_amount_partial':False}
         reverse=client.get('/api/invoice/invoices/summary',headers=token,params={'date_from':'2071-10-01','date_to':'2071-09-30'})
         assert reverse.status_code==422
         change_user(client,c,root,{'role_ids':[c.sales_role,c.roles['both']]})

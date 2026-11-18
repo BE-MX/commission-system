@@ -22,6 +22,7 @@ from app.ai_gateway.router import router as ai_gateway_router, admin_router as a
 from app.insight.router import router as insight_router
 from app.project_radar.router import router as project_radar_router
 from app.stock.router import router as stock_router
+from app.factory_inbound.router import router as factory_inbound_router
 from app.stock.public_router import router as stock_public_router
 from app.asset.router import router as asset_router
 from app.color.router import router as color_router
@@ -64,6 +65,7 @@ from app.customer.router import router as customer_hub_router
 from app.knowledge.router import router as knowledge_router
 from app.announcement.router import router as announcement_router
 from app.order_intelligence.router import router as order_intelligence_router
+from app.product_sales.router import router as product_sales_router
 from app.operations.router import router as operations_router
 from app.customer_media.router import router as customer_media_router
 from app.customer_media.public_router import (
@@ -127,6 +129,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(insight_router, prefix="/api/insight", tags=["方舟洞见"])
     app.include_router(project_radar_router, prefix="/api/project-radar", tags=["项目雷达"])
     app.include_router(stock_router, prefix="/api/stock", tags=["备货管理"])
+    app.include_router(factory_inbound_router, prefix="/api/factory-inbound", tags=["工厂到货入库"])
     app.include_router(stock_public_router, prefix="/api/public/stock", tags=["对外库存查询"])
     app.include_router(semifinished_router, prefix="/api/semifinished", tags=["半成品订单与库存"])
     app.include_router(asset_router, prefix="/api/assets", tags=["素材管理"])
@@ -172,6 +175,7 @@ def register_routers(app: FastAPI) -> None:
         prefix="/api/order-intelligence",
         tags=["订单经营智能分析"],
     )
+    app.include_router(product_sales_router, prefix="/api/product-sales", tags=["产品风向标"])
     app.include_router(operations_router, prefix="/api/operations", tags=["运行与自动化中心"])
     app.include_router(agent_runtime_router, prefix="/api/agent-runtime", tags=["AI Agent 任务中心"])
     app.include_router(agent_runtime_worker_router, prefix="/api/agent-runtime/worker", tags=["AI Agent Worker"])

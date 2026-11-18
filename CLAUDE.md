@@ -88,7 +88,7 @@ miniprogram/  pda-reporting/  tablet-kiosk/  services/whatsapp-connector/  deplo
 18. **搬移/重命名函数前全局 grep 旧引用**（含函数体内延迟 import）——注册期不报错、运行期才炸
 19. **提交按变更意图组织**：每个提交保持可理解、可验证；不固定拆成 3~5 个，不为了流程制造提交
 20. 展会试戴(expo)文案禁用词：便宜/划算/性价比/打折/薅羊毛；发量头皮判断只进 internal 字段
-21. **移动端 `/m/` 冻结为素材域专用**，不再往里加新领域；新移动端需求走主站响应式或微信小程序两条既有路径
+21. **原移动端素材管理 `/m/` 已停用**，旧地址统一回主站工作台；移动端需求走主站响应式或微信小程序
 22. **多智能体 Git**：唯一规范见根目录 `AGENTS.md`（worktree 归属、推送与合并授权、交接、迁移编号与巡检），不在此重复
 23. **全平台业务时间统一北京时间**：
     - 写 MySQL `DATETIME` 一律用 `app.core.time.beijing_now()`（naive UTC+8），业务日期用 `beijing_today()`；禁止任何直接 `datetime.now(...)` / `datetime.utcnow()` / `datetime.today()` / `date.today()`

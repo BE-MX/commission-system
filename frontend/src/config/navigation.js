@@ -21,6 +21,7 @@ import {
   DataLine, Printer, Brush, Tickets, Goods, Postcard, Shop, Wallet, Monitor,
   Finished, ChatDotRound,
 } from '@element-plus/icons-vue'
+import { DOCUMENT_SCAN_PATH } from '../router/documentScanRoute.js'
 
 const FESTIVAL_PERMISSION = 'festival:read'
 const FESTIVAL_ORDER_PERMISSION = 'festival_order:read'
@@ -265,6 +266,13 @@ export const NAV_ENTRIES = [
     menu: { icon: DataAnalysis, order: 0 },
   },
   {
+    path: DOCUMENT_SCAN_PATH,
+    name: 'DocumentScan',
+    component: () => import('@/views/document-scan/DocumentScan.vue'),
+    title: '文档扫描',
+    menu: { icon: Camera, order: 7 },
+  },
+  {
     path: '/announcements',
     name: 'Announcements',
     component: () => import('@/views/announcement/AnnouncementList.vue'),
@@ -382,6 +390,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'customerOperations', title: '客户工作台', icon: OfficeBuilding, order: 0,
       anyPermission: ['customer:read', 'customer_radar:read', 'customer_pcw:read'],
+    },
+  },
+  {
+    path: '/customer-hub/product-radar',
+    name: 'ProductRadar',
+    component: () => import('@/views/product_sales/ProductRadar.vue'),
+    title: '产品风向标',
+    permission: 'product_sales:read',
+    menu: {
+      group: 'customerOperations', title: '产品风向标', icon: TrendCharts, order: 12,
+      permission: 'product_sales:read',
     },
   },
   {
@@ -862,6 +881,18 @@ export const NAV_ENTRIES = [
     },
   },
 
+  // ── 产品风向标（2026-11-18，P0 仅映射维护） ─────────────────
+  {
+    path: '/stock/product-name-mappings',
+    name: 'ProductNameMappings',
+    component: () => import('@/views/product_sales/NameMappings.vue'),
+    title: '历史品名映射',
+    permission: 'product_sales:admin',
+    menu: {
+      group: 'stock', title: '历史品名映射', icon: List, order: 60,
+      permission: 'product_sales:admin',
+    },
+  },
   // ── 备货管理 ───────────────────────────────────────────
   {
     path: '/stock/overview',
@@ -906,6 +937,20 @@ export const NAV_ENTRIES = [
       group: 'stock', title: '生产订单管理', icon: Box, order: 40,
       permission: 'production:read',
     },
+  },
+  {
+    path: '/factory-inbound', name: 'FactoryInboundList', title: '工厂到货入库',
+    component: () => import('@/views/factory-inbound/FactoryInboundList.vue'),
+    anyPermission: ['factory_inbound:read', 'factory_inbound:admin'],
+    menu: { group: 'stock', title: '工厂到货入库', icon: Box, order: 45,
+      anyPermission: ['factory_inbound:read', 'factory_inbound:admin'] },
+  },
+  {
+    path: '/factory-inbound/scan', name: 'FactoryInboundScan', title: '工厂到货拍照',
+    component: () => import('@/views/factory-inbound/FactoryInboundScan.vue'),
+    anyPermission: ['factory_inbound:write', 'factory_inbound:admin'], fullscreen: true,
+    menu: { group: 'stock', title: '工厂到货拍照', icon: Camera, order: 46,
+      anyPermission: ['factory_inbound:write', 'factory_inbound:admin'] },
   },
   { path: '/production/native', name: 'NativeProduction', component: () => import('@/views/production/native/NativeProduction.vue'), title: '本地生产', permission: 'production:read', menu: { group: 'stock', title: '本地生产', icon: Box, order: 39, permission: 'production:read' } },
 

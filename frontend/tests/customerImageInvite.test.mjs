@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { AxiosHeaders, isCancel } from 'axios'
 import { isFxSettlementPath } from '../src/router/fxSettlementRoute.js'
+import { isDocumentScanPath, isFactoryInboundScanPath } from '../src/router/documentScanRoute.js'
 
 import {
   INVITE_KEY,
@@ -55,6 +56,8 @@ function loadCreateApiClient({ accessToken = 'ark-token' } = {}) {
     'getAuthEpoch',
     'clearAuthState',
     'isFxSettlementPath',
+    'isDocumentScanPath',
+    'isFactoryInboundScanPath',
     `${body}; return createApiClient`,
   )(
     axios,
@@ -64,6 +67,8 @@ function loadCreateApiClient({ accessToken = 'ark-token' } = {}) {
     () => 0,
     () => { cleared += 1 },
     isFxSettlementPath,
+    isDocumentScanPath,
+    isFactoryInboundScanPath,
   )
   return { factory, handlers, cleared: () => cleared }
 }

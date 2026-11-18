@@ -35,43 +35,52 @@ try {
     await page.close()
 
   }
-  // The standalone mobile page must work from both dev and the production bundle.
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } }), page = await context.newPage()
-  const errors = [], unexpected = [], actions = [], prompts = []
-  let blocked = false
-  page.on('pageerror', error => errors.push(error.message))
-  page.on('dialog', async dialog => { prompts.push({ message: dialog.message(), value: dialog.defaultValue() }); await dialog.dismiss() })
-  await context.addInitScript(() => localStorage.setItem('ark_access_token', 'synthetic-local-test'))
-  await page.route(base + '/api/**', async route => {
-    const request = route.request(), path = new URL(request.url()).pathname
-    let data
-    if (path === '/api/assets/1') data = { id: 1, file_name: 'Synthetic asset', file_type: 'document', tags: [], versions: [], status: 'latest' }
-    else if (path === '/api/assets/1/share-link') data = { url: 'https://example.test/share/1' }
-    else if (path === '/api/assets/1/actions') { actions.push(request.postDataJSON().action); data = {} }
-    else { unexpected.push(path); await route.abort(); return }
-    await route.fulfill({ json: { code: 200, data } })
-  })
-  await page.goto(base + '/m/#/assets/1')
-  await page.getByText('Synthetic asset', { exact: true }).first().waitFor()
-  assert.equal(await page.evaluate(() => isSecureContext), false)
-  const copyButton = page.getByRole('button', { name: /复制链接/ })
-  await copyButton.click()
-  await page.getByRole('button', { name: /已复制/ }).waitFor()
-  await page.waitForFunction(() => !document.querySelector('.btn-copied'))
-  assert.equal(actions.filter(action => action === 'copy_link').length, 1)
-  await page.evaluate(() => { document.execCommand = () => false })
-  blocked = true
-  await copyButton.click()
-  await page.getByText('自动复制未成功，请手动复制分享链接', { exact: true }).waitFor()
-  assert.equal(prompts.length, 1)
-  assert.equal(prompts[0].value, 'https://example.test/share/1')
-  assert.equal(actions.filter(action => action === 'copy_link').length, 1)
-  assert.equal(await page.locator('.btn-copied').count(), 0)
-  assert.deepEqual(errors, []); assert.deepEqual(unexpected, [])
-  await page.screenshot({ path: output + '/mobile-copy-failure.png', fullPage: true })
-  results.push({ scenario: production ? 'production mobile HTTP copy' : 'dev mobile HTTP copy', blocked,
-    actions, prompts, errors, unexpected })
-  await context.close()
+  // API responses are synthetic and off-origin requests are blocked in every routing scenario.
+  const origin = new URL(base).origin
+  const syntheticUser = { id: 1, username: 'synthetic', real_name: 'Synthetic', roles: ['super_admin'], permissions: [] }
+  async function routingScenario({ name, mobile, initial, authenticated = true, login = false, expected, selector }) {
+    const context = await browser.newContext({
+      viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 },
+      ...(mobile ? { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1' } : {}),
+    })
+    const page = await context.newPage(), errors = [], api = [], external = []
+    page.on('pageerror', error => errors.push(error.message))
+    if (authenticated) await context.addInitScript(() => localStorage.setItem('ark_access_token', 'synthetic-local-test'))
+    await context.route('**/*', async route => {
+      const url = new URL(route.request().url())
+      if (url.origin !== origin) { external.push(url.origin); return route.abort() }
+      if (!url.pathname.startsWith('/api/')) return route.continue()
+      api.push(url.pathname)
+      if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 401, json: { detail: 'No synthetic session' } })
+      if (url.pathname === '/api/auth/login') return route.fulfill({ json: { access_token: 'synthetic-local-test', user: syntheticUser } })
+      if (url.pathname === '/api/auth/me') return route.fulfill({ json: syntheticUser })
+      return route.fulfill({ json: { code: 200, data: [] } })
+    })
+    try {
+      await page.goto(base + initial)
+      if (login) {
+        await page.getByLabel('用户名').fill('synthetic')
+        await page.getByLabel('密码', { exact: true }).fill('synthetic')
+        await page.getByRole('button', { name: '登 录', exact: true }).click()
+      }
+      await page.waitForURL(url => url.pathname + url.search + url.hash === expected)
+      await page.locator(selector).waitFor()
+      assert.equal(new URL(page.url()).pathname + new URL(page.url()).search + new URL(page.url()).hash, expected)
+      assert.deepEqual(errors, [])
+      results.push({ scenario: name, mode: production ? 'production bundle' : 'development', expected, api, blockedExternalOrigins: [...new Set(external)], errors })
+    } finally { await context.close() }
+  }
+  await routingScenario({ name: 'mobile default login', mobile: true, initial: '/login', authenticated: false, login: true, expected: '/dashboard', selector: '.dashboard-page' })
+  for (const initial of ['/m', '/m/', '/m/login.html', '/m/?old=1#/assets/1']) {
+    await routingScenario({ name: `retired bookmark ${initial}`, mobile: true, initial, expected: '/dashboard', selector: '.dashboard-page' })
+  }
+  await routingScenario({ name: 'unauthenticated retired bookmark', mobile: true, initial: '/m/login.html?old=1#/assets/1', authenticated: false, login: true, expected: '/dashboard', selector: '.dashboard-page' })
+  await routingScenario({ name: 'desktop retired bookmark', mobile: false, initial: '/m/assets/1?old=1#detail', expected: '/dashboard', selector: '.dashboard-page' })
+  for (const mobile of [true, false]) {
+    await routingScenario({ name: `${mobile ? 'mobile' : 'desktop'} asset library`, mobile, initial: '/asset/library', expected: '/asset/library', selector: '.asset-library-page' })
+    await routingScenario({ name: `${mobile ? 'mobile' : 'desktop'} login restores asset deep link`, mobile, initial: '/asset/library?source=bookmark#test', authenticated: false, login: true, expected: '/asset/library?source=bookmark#test', selector: '.asset-library-page' })
+  }
+  await routingScenario({ name: 'mobile login restores FX deep link', mobile: true, initial: '/fx-settlement?source=bookmark', authenticated: false, login: true, expected: '/fx-settlement?source=bookmark', selector: '.fx-page' })
   await writeFile(output + '/results.json', JSON.stringify(results, null, 2))
   process.stdout.write(JSON.stringify(results, null, 2) + '\n')
 } finally { await browser.close() }

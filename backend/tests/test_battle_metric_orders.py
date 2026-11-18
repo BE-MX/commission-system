@@ -157,6 +157,60 @@ def test_real_source_query_returns_names_and_filters_status(setup, monkeypatch):
     assert data['items'][0]['order_name'] == '来源订单'
 
 
+def test_annual_award_links_confirmed_customer_ids_in_totals_and_details(setup, monkeypatch):
+    s = setup
+    now = datetime(2026, 9, 22, 12)
+    monkeypatch.setattr(order_details, "beijing_now", lambda: now)
+    monkeypatch.setattr(stats, "goods_order_sql", lambda alias: "1")
+    s.db.execute(text("ALTER TABLE lsordertest.okki_orders ADD COLUMN synced_at TEXT"))
+    s.db.execute(text("DELETE FROM lsordertest.okki_orders"))
+    legacy_id, current_id, unrelated_id = "86941221128408", "87303977263880", "99999999999999"
+    for cid in (current_id, unrelated_id):
+        s.db.execute(text("INSERT INTO lsordertest.customer_info (company_id, company_name) VALUES (:id, '同名客户')"), {"id": cid})
+    for oid, cid, uid, day, amount, mark in (
+        ("100", legacy_id, "U1", "2026-09-15", "10.00", "是"),
+        ("101", legacy_id, "U1", "2026-09-16", "20.00", "否"),
+        ("102", current_id, "outside", "2026-09-17", "30.00", "否"),
+        ("103", unrelated_id, "U1", "2026-09-18", "40.00", "否"),
+    ):
+        s.db.execute(text("""INSERT INTO lsordertest.okki_orders
+            (order_id, order_no, name, company_id, user_id, account_date, amount_usd, status,
+             status_name, trail, synced_at, custom_fields)
+            VALUES (:oid, :oid, '货物订单', :cid, :uid, :day, :amount, '13972831656',
+                    '已结清', '公司', '2026-09-22 11:59:00', :fields)"""),
+            {"oid": oid, "cid": cid, "uid": uid, "day": day, "amount": amount,
+             "fields": '{"22595163468":"'+mark+'"}'})
+    bases = [{"ark_user_id": m["ark_user_id"], "hired_date": "2023-01-01",
+              "gmv_2025_usd": "100", "target_gmv_usd": "130"} for m in s.payload["members"]]
+    payload = {**s.payload, "name": "年度奖", "start_date": "2026-01-01", "end_date": "2026-12-31",
+               "award_kind": "annual_repurchase",
+               "award_rules": {"push_start_date": "2026-09-01", "baselines": bases}}
+    response = s.client.post("/api/battle-reports", json=payload)
+    assert response.status_code == 200, response.text
+    s.url = f"/api/battle-reports/{response.json()['data']['id']}"
+    assert s.client.post(s.url + "/state", json={"action": "publish", "version": 1}).status_code == 200
+
+    overview = s.client.get(s.url + "/overview").json()["data"]
+    row = next(r for r in overview["people"] if r["ark_user_id"] == bases[0]["ark_user_id"])
+    assert overview["data_complete"]
+    assert (row["new_count"], row["repeat_count"], row["repeat_orders"]) == (1, 1, 2)
+    assert Decimal(row["repeat_amount"]) == Decimal("60.00")
+    assert Decimal(row["gmv"]) == Decimal("70.00")
+
+    combined = get(s, customer="同名客户").json()["data"]
+    assert (combined["total"], combined["customer_count"], combined["total_amount"]) == (3, 1, "60.00")
+    assert {o["order_no"]: o["company_id"] for o in combined["items"]} == {
+        "100": legacy_id, "101": legacy_id, "102": current_id,
+    }
+    repeat = get(s, "repeat").json()["data"]
+    assert (repeat["total"], repeat["customer_count"], repeat["total_amount"]) == (2, 1, "50.00")
+
+    pk = campaign("new_sign_pk")
+    pk.start_date, pk.end_date = now.date().replace(day=1), now.date()
+    pk_rows, _ = stats.source_facts(s.db, pk, [member(i) for i in (1, 2, 3)], now)
+    assert all(r["order_id"] != "102" for r in pk_rows)
+
+
 def test_pk_cohort_details_explicitly_distinguish_owner_based_pk_amount(details):
     from app.battle_report.models import BattleReport
     s = details

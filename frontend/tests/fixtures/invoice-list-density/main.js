@@ -71,7 +71,7 @@ for (const client of Object.values(clients)) {
       const items = keyword ? eligible.filter(row => row.invoice_no.includes(keyword) || row.customer_name.includes(keyword)) : eligible
       data = { items, total: items.length }
     } else if (request.url === '/invoices/summary') {
-      data = { gmv: 12345.67, received_amount: 5292.58, new_sign_count: 2, first_return_count: 1, order_count: overviewOrders.length, non_usd_count: 1 }
+      data = { gmv: 1234567.89, receivable_amount: 1265432.10, received_amount: 5292.58, new_sign_count: 2, first_return_count: 1, order_count: overviewOrders.length, non_usd_count: 1 }
     }
     else if (request.url === '/shipments/capabilities') data = { enabled: true }
     else if (request.url === '/navigation-config/effective') data = { nodes: [] }

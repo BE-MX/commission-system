@@ -55,6 +55,25 @@ def test_whatsapp_rejects_unowned_regex_routes(pattern):
         routing.render(config('cloud') + f'\nlocation ~ {pattern} {{}}', source, 'cloud', 'whatsapp')
 
 
+@pytest.mark.parametrize("region", ["cloud", "office"])
+def test_factory_inbound_routes_whole_private_prefix_to_office(region):
+    source = (DEPLOY / "nginx" / f"factory-inbound-{region}.conf").read_text()
+    candidate = routing.render(config(region), source, region, "factory-inbound")
+    assert routing.render(candidate, source, region, "factory-inbound") == candidate
+    pattern = re.search(r"location ~ (.+) \{", source).group(1)
+    assert all(re.match(pattern, path) for path in (
+        "/api/factory-inbound", "/api/factory-inbound/notes", "/api/factory-inbound/notes/17/image",
+    ))
+    assert not re.match(pattern, "/api/factory-inbound-other")
+    assert "client_max_body_size 7m;" in source
+    assert "proxy_pass http://127.0.0.1:8002;" in source
+    assert "proxy_set_header Authorization $http_authorization;" in source
+    assert "proxy_next_upstream off;" in source
+    assert "private, no-store" in source
+    with pytest.raises(ValueError, match="Conflicting"):
+        routing.render(config(region) + "\nlocation /api/factory-inbound/ {}", source, region, "factory-inbound")
+
+
 def test_whatsapp_preserves_independent_translation_route():
     source = (DEPLOY / 'nginx/whatsapp-cloud.conf').read_text()
     original = config('cloud') + '\nlocation /api/whatsapp-translation/ { proxy_pass http://127.0.0.1:8001; }'

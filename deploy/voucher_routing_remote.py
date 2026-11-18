@@ -36,7 +36,7 @@ def digest(content):
 
 def render(original, snippet, region, feature="voucher"):
     _, port, expected = SPECS[region]
-    if feature not in {"voucher", "shipping-video", "receipt", "whatsapp"}:
+    if feature not in {"voucher", "shipping-video", "receipt", "whatsapp", "factory-inbound"}:
         raise ValueError("Unknown routing feature")
     begin, end, conflict = (BEGIN, END, "/api/domestic/") if feature == "voucher" else (
         "# BEGIN ARK SHIPPING VIDEO ROUTING", "# END ARK SHIPPING VIDEO ROUTING", "/api/mini/shipping-inspection/videos")
@@ -44,6 +44,8 @@ def render(original, snippet, region, feature="voucher"):
         begin, end, conflict = "# BEGIN ARK RECEIPT ROUTING", "# END ARK RECEIPT ROUTING", "/api/receipts"
     if feature == "whatsapp":
         begin, end, conflict = "# BEGIN ARK WHATSAPP ROUTING", "# END ARK WHATSAPP ROUTING", "/api/whatsapp(?:"
+    if feature == "factory-inbound":
+        begin, end, conflict = "# BEGIN ARK FACTORY INBOUND ROUTING", "# END ARK FACTORY INBOUND ROUTING", "/api/factory-inbound"
     # Replace only our blocks. Unknown layout or conflicting rules must be reviewed.
     clean = re.sub(re.escape(begin) + r".*?" + re.escape(end) + r"\n?", "", original, flags=re.S)
     checked = clean

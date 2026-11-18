@@ -1,5 +1,5 @@
 {
-  "source_sha256": "ce617a02ecb80306774d0a63a02c21b61f2b55d9660acd7f02f7531546db5d15",
+  "source_sha256": "14c47f0a1c5df61e6c501e409b182cd7dbda1ff3e071c0674f0b31f1e2c6ecfe",
   "favorite_access": {
     "NavigationManagement": [
       {
@@ -419,6 +419,10 @@
       {},
       {}
     ],
+    "DocumentScan": [
+      {},
+      {}
+    ],
     "Announcements": [
       {
         "anyPermission": [
@@ -617,6 +621,27 @@
           "customer_radar:read",
           "customer_pcw:read"
         ]
+      },
+      {
+        "anyPermission": [
+          "customer:read",
+          "client_desk:read",
+          "alibaba_feed:admin",
+          "sales_automation:read",
+          "customer_opportunity:read",
+          "customer_radar:read",
+          "mail_outreach:read",
+          "mail_outreach:write",
+          "mail_outreach:admin"
+        ]
+      }
+    ],
+    "ProductRadar": [
+      {
+        "permission": "product_sales:read"
+      },
+      {
+        "permission": "product_sales:read"
       },
       {
         "anyPermission": [
@@ -1684,6 +1709,34 @@
         ]
       }
     ],
+    "ProductNameMappings": [
+      {
+        "permission": "product_sales:admin"
+      },
+      {
+        "permission": "product_sales:admin"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
     "StockOverview": [
       {
         "permission": "stock:read"
@@ -1774,6 +1827,74 @@
       },
       {
         "permission": "production:read"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "FactoryInboundList": [
+      {
+        "anyPermission": [
+          "factory_inbound:read",
+          "factory_inbound:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "factory_inbound:read",
+          "factory_inbound:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "FactoryInboundScan": [
+      {
+        "anyPermission": [
+          "factory_inbound:write",
+          "factory_inbound:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "factory_inbound:write",
+          "factory_inbound:admin"
+        ]
       },
       {
         "anyPermission": [

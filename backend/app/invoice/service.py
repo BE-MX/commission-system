@@ -157,12 +157,13 @@ def summarize_invoices(
         Invoice.invoice_date.between(date_from, date_to),
     )
     is_usd = func.upper(Invoice.currency) == "USD"
-    order_count, new_sign_count, first_return_count, unknown_new_sign_count, gmv, usd_order_count = query.with_entities(
+    order_count, new_sign_count, first_return_count, unknown_new_sign_count, gmv, receivable_amount, usd_order_count = query.with_entities(
         func.count(Invoice.id),
         func.count(func.distinct(case((_OVERVIEW_METRIC_FLAGS["new_sign"] == 1, Invoice.customer_id)))),
         func.count(func.distinct(case((_OVERVIEW_METRIC_FLAGS["first_return"] == 1, Invoice.customer_id)))),
         func.coalesce(func.sum(case((Invoice.okki_new_deal.is_(None), 1), else_=0)), 0),
         func.coalesce(func.sum(case((is_usd, Invoice.total_amount - Invoice.surcharge_amount), else_=0)), 0),
+        func.coalesce(func.sum(case((is_usd, Invoice.total_amount), else_=0)), 0),
         func.coalesce(func.sum(case((is_usd, 1), else_=0)), 0),
     ).one()
     gmv = _money(Decimal(gmv or 0))
@@ -172,6 +173,7 @@ def summarize_invoices(
     received, partial = list_receipts.summarize_usd(db, query.filter(is_usd), usd_order_count, user)
     return {
         "gmv": gmv,
+        "receivable_amount": _money(receivable_amount),
         "received_amount": received,
         "received_amount_partial": partial,
         "new_sign_count": int(new_sign_count or 0),
