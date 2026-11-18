@@ -1,4 +1,4 @@
-"""Read-only, page-scoped display of confirmed receipts in the invoice currency."""
+"""Read-only display of confirmed receipts in the invoice currency."""
 
 import logging
 from collections import defaultdict
@@ -6,8 +6,10 @@ from decimal import Decimal
 
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import load_only
 
 from app.invoice import detail_access, detail_receipt_snapshot
+from app.invoice.models import Invoice
 from app.invoice.screenshot_source import matched_order_id
 from app.models.business import OkkiReceipt
 from app.receipt import access, remote
@@ -16,6 +18,31 @@ from app.sales_return.models import ReturnEffect, ReturnReceipt
 
 
 logger = logging.getLogger(__name__)
+
+
+def summarize_usd(db, usd_invoices, expected_count, user):
+    if not user or not detail_access.allowed(user, "receipt"):
+        return None, False
+    total = Decimal("0.00")
+    if not expected_count:
+        return total, False
+
+    # Use the same receipt evidence and mixed-owner rules as the list, with
+    # bounded batches so large date ranges do not produce large IN clauses.
+    query = access.scope(usd_invoices, db, user).options(load_only(
+        Invoice.sales_user_id, Invoice.transaction_mode, Invoice.internal_received, Invoice.total_amount,
+        Invoice.xiaoman_order_id, Invoice.sync_status, Invoice.source_type, Invoice.source_order_id,
+        Invoice.order_type, Invoice.customer_id, Invoice.currency,
+    )).order_by(Invoice.id)
+    last_id = 0
+    known_count = 0
+    while batch := query.filter(Invoice.id > last_id).limit(200).all():
+        last_id = batch[-1].id
+        for paid, _ in amounts(db, batch, user).values():
+            if paid is not None:
+                total += paid
+                known_count += 1
+    return (total, known_count < expected_count) if known_count else (None, False)
 
 
 def amounts(db, invoices, user):

@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.invoice.models import Invoice,InvoiceDelegateGrant
+from mysql_current_fixture import current_queue_schema  # noqa: F401
 from test_mysql_full_application import assembled,boot,owner
 from test_mysql_receipt_authority import receipt_app,login,change_user,snapshot
 
@@ -70,10 +71,10 @@ def test_summary_preserves_main_statistics_and_current_delegation(receipt_app,wi
             fields.update(kw);row=Invoice(**fields);db.add(row);db.flush();ids[label]=row.id
         add('A1',invoice_date=date(year,9,1),customer_id=prefix+'A',okki_new_deal=1)
         add('A2',invoice_date=date(year,9,30),customer_id=prefix+'A',total_amount=Decimal('50'),okki_new_deal=1)
-        add('B',sales_user_id=c.other_id,total_amount=Decimal('200'),okki_new_deal=1)
+        add('B',sales_user_id=c.other_id,total_amount=Decimal('200'),okki_new_deal=1,okki_first_return=1)
         add('EUR',total_amount=Decimal('99'),currency='EUR')
         add('NULL',total_amount=Decimal('40'),okki_new_deal=None)
-        add('OTHER',sales_user_id=c.other_id,created_by=c.other_id,total_amount=Decimal('1000'),okki_new_deal=1)
+        add('OTHER',sales_user_id=c.other_id,created_by=c.other_id,total_amount=Decimal('1000'),okki_new_deal=1,okki_first_return=1)
         add('AUG',invoice_date=date(year,8,31),total_amount=Decimal('400'))
         add('DRAFT',sync_status='not_synced',total_amount=Decimal('300'))
         add('PENDING',status='cancel_pending',total_amount=Decimal('500'))
@@ -85,15 +86,20 @@ def test_summary_preserves_main_statistics_and_current_delegation(receipt_app,wi
         token=login(client,c,c.owner_name);before=snapshot(c)
         summary=client.get('/api/invoice/invoices/summary',headers=token,params=params)
         assert summary.status_code==200
-        assert summary.json()['data']=={'gmv':390.0,'new_sign_count':2,'unknown_new_sign_count':1,'order_count':5,'average_order_amount':97.5,'non_usd_count':1}
+        assert summary.json()['data']=={'gmv':390.0,'new_sign_count':2,'unknown_new_sign_count':1,'order_count':5,'average_order_amount':97.5,'non_usd_count':1,
+            'first_return_count':1,'received_amount':None,'received_amount_partial':False}
         page=client.get('/api/invoice/invoices',headers=token,params={'page_size':1,'keyword':prefix})
         assert page.status_code==200 and len(page.json()['data']['items'])==1
+        first_return=client.get('/api/invoice/invoices',headers=token,params={**params,'overview_metric':'first_return'})
+        assert first_return.status_code==200
+        assert [row['id'] for row in first_return.json()['data']['items']]==[ids['B']]
         assert snapshot(c)==before and c.calls==[]
         change_user(client,c,root,{'role_ids':[c.sales_role,c.roles['both'],roles['global']]})
         all_rows=client.get('/api/invoice/invoices/summary',headers=token,params=params)
         # Each parameter owns a separate year; exact six excludes other-scope drafts/cancellations/out-of-range rows.
         assert all_rows.status_code==200
-        assert all_rows.json()['data']=={'gmv':1390.0,'new_sign_count':3,'unknown_new_sign_count':1,'order_count':6,'average_order_amount':278.0,'non_usd_count':1}
+        assert all_rows.json()['data']=={'gmv':1390.0,'new_sign_count':3,'unknown_new_sign_count':1,'order_count':6,'average_order_amount':278.0,'non_usd_count':1,
+            'first_return_count':2,'received_amount':None,'received_amount_partial':False}
         change_user(client,c,root,{'role_ids':[c.sales_role,c.roles['both'],roles['private']]})
         if withdrawal=='grant':
             with Session(c.ctx.engine) as db:db.delete(db.get(InvoiceDelegateGrant,grant_id));db.commit()
@@ -103,7 +109,8 @@ def test_summary_preserves_main_statistics_and_current_delegation(receipt_app,wi
         before=snapshot(c)
         reduced=client.get('/api/invoice/invoices/summary',headers=token,params=params)
         assert reduced.status_code==200
-        assert reduced.json()['data']=={'gmv':190.0,'new_sign_count':1,'unknown_new_sign_count':1,'order_count':4,'average_order_amount':round(190/3,2),'non_usd_count':1}
+        assert reduced.json()['data']=={'gmv':190.0,'new_sign_count':1,'unknown_new_sign_count':1,'order_count':4,'average_order_amount':round(190/3,2),'non_usd_count':1,
+            'first_return_count':0,'received_amount':None,'received_amount_partial':False}
         listing=client.get('/api/invoice/invoices',headers=token,params={'page_size':100,'keyword':prefix})
         assert listing.status_code==200 and ids['B'] not in {row['id'] for row in listing.json()['data']['items']}
         assert snapshot(c)==before and c.calls==[]
@@ -115,7 +122,8 @@ def test_summary_invalid_and_empty_ranges_keep_current_permission_gate(receipt_a
         change_user(client,c,root,{'role_ids':[c.sales_role,c.roles['both'],roles['private']]})
         token=login(client,c,c.owner_name);before=snapshot(c)
         empty=client.get('/api/invoice/invoices/summary',headers=token,params={'date_from':'2071-10-01','date_to':'2071-10-31'})
-        assert empty.status_code==200 and empty.json()['data']=={'gmv':0.0,'new_sign_count':0,'unknown_new_sign_count':0,'order_count':0,'average_order_amount':0.0,'non_usd_count':0}
+        assert empty.status_code==200 and empty.json()['data']=={'gmv':0.0,'new_sign_count':0,'unknown_new_sign_count':0,'order_count':0,'average_order_amount':0.0,'non_usd_count':0,
+            'first_return_count':0,'received_amount':0.0,'received_amount_partial':False}
         reverse=client.get('/api/invoice/invoices/summary',headers=token,params={'date_from':'2071-10-01','date_to':'2071-09-30'})
         assert reverse.status_code==422
         change_user(client,c,root,{'role_ids':[c.sales_role,c.roles['both']]})

@@ -90,3 +90,39 @@ test('slow previous date response cannot replace the latest date rows or total',
   assert.deepEqual(page.invoices.value, [{ id: 2 }])
   assert.equal(page.total.value, 1)
 })
+
+test('overview cards filter the current list without submitting unrelated draft edits', async t => {
+  const { page, calls } = harness(t)
+  page.filters.keyword = 'Customer'
+  await page.handleSearch()
+  await page.handleTableSort({ prop: 'invoice_no', order: 'ascending' })
+  await page.handlePageChange(3)
+  page.filters.keyword = 'not submitted'
+
+  await page.toggleSummaryMetric('new_sign')
+  assert.deepEqual(calls.list.at(-1), {
+    keyword: 'Customer', status: '', overview_metric: 'new_sign', page: 1, page_size: 20,
+    date_from: '2026-11-01', date_to: '2026-11-30', sort_field: 'invoice_no', sort_order: 'asc',
+  })
+  assert.equal(page.summaryMetric.value, 'new_sign')
+  assert.equal(page.hasPendingSearch.value, true)
+  assert.equal(calls.summary.length, 0)
+
+  await page.toggleSummaryMetric('first_return')
+  await page.handlePageChange(2)
+  assert.equal(calls.list.at(-1).overview_metric, 'first_return')
+  page.summaryDateRange.value = ['2026-10-01', '2026-10-31']
+  await page.handleDateRangeChange()
+  assert.equal(calls.list.at(-1).overview_metric, 'first_return')
+  assert.equal(calls.list.at(-1).date_from, '2026-10-01')
+  assert.equal(calls.list.at(-1).page, 1)
+
+  await page.toggleSummaryMetric('first_return')
+  assert.ok(!('overview_metric' in calls.list.at(-1)))
+  assert.equal(calls.list.at(-1).keyword, 'Customer')
+  await page.toggleSummaryMetric('new_sign')
+  await page.resetFilters()
+  assert.equal(page.summaryMetric.value, '')
+  assert.ok(!('overview_metric' in calls.list.at(-1)))
+  assert.equal(calls.list.at(-1).keyword, '')
+})

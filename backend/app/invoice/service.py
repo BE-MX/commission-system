@@ -5,6 +5,7 @@ import re
 from datetime import date, datetime
 from app.core.time import beijing_today, beijing_now
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Literal
 
 from fastapi import HTTPException
 from app.core.list_sort import apply_list_sort
@@ -37,6 +38,9 @@ _SOURCE_FIELDS = (
     "source_image_sha256",
 )
 
+OverviewMetric = Literal["new_sign", "first_return"]
+_OVERVIEW_METRIC_FLAGS = {"new_sign": Invoice.okki_new_deal, "first_return": Invoice.okki_first_return}
+
 
 def list_invoices(
     db: Session,
@@ -49,6 +53,7 @@ def list_invoices(
     order_type: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    overview_metric: OverviewMetric | None = None,
     created_by: int | None = None,
     viewer_user_id: int | None = None,
     sort_field: str = "",
@@ -75,6 +80,8 @@ def list_invoices(
         query = query.filter(Invoice.invoice_date >= date_from)
     if date_to:
         query = query.filter(Invoice.invoice_date <= date_to)
+    if overview_metric:
+        query = _overview_scope(query).filter(_OVERVIEW_METRIC_FLAGS[overview_metric] == 1)
     total = query.count()
     item_count = func.count(InvoiceItem.id)
     total_quantity = func.coalesce(func.sum(InvoiceItem.quantity), 0)
@@ -129,6 +136,13 @@ def _visible_invoice_query(
     return query
 
 
+def _overview_scope(query):
+    return query.filter(
+        Invoice.sync_status == "synced",
+        Invoice.status.notin_(("cancel_pending", "cancelled")),
+    )
+
+
 def summarize_invoices(
     db: Session,
     *,
@@ -139,24 +153,29 @@ def summarize_invoices(
     user=None,
 ) -> dict:
     """Aggregate synced visible invoices by order date, independent of pagination."""
-    query = _visible_invoice_query(db, created_by=created_by, viewer_user_id=viewer_user_id, user=user).filter(
+    query = _overview_scope(_visible_invoice_query(db, created_by=created_by, viewer_user_id=viewer_user_id, user=user)).filter(
         Invoice.invoice_date.between(date_from, date_to),
-        Invoice.sync_status == "synced",
-        Invoice.status.notin_(("cancel_pending", "cancelled")),
     )
     is_usd = func.upper(Invoice.currency) == "USD"
-    order_count, new_sign_count, unknown_new_sign_count, gmv, usd_order_count = query.with_entities(
+    order_count, new_sign_count, first_return_count, unknown_new_sign_count, gmv, usd_order_count = query.with_entities(
         func.count(Invoice.id),
-        func.count(func.distinct(case((Invoice.okki_new_deal == 1, Invoice.customer_id)))),
+        func.count(func.distinct(case((_OVERVIEW_METRIC_FLAGS["new_sign"] == 1, Invoice.customer_id)))),
+        func.count(func.distinct(case((_OVERVIEW_METRIC_FLAGS["first_return"] == 1, Invoice.customer_id)))),
         func.coalesce(func.sum(case((Invoice.okki_new_deal.is_(None), 1), else_=0)), 0),
         func.coalesce(func.sum(case((is_usd, Invoice.total_amount - Invoice.surcharge_amount), else_=0)), 0),
         func.coalesce(func.sum(case((is_usd, 1), else_=0)), 0),
     ).one()
     gmv = _money(Decimal(gmv or 0))
     usd_order_count = int(usd_order_count or 0)
+    from app.invoice import list_receipts
+
+    received, partial = list_receipts.summarize_usd(db, query.filter(is_usd), usd_order_count, user)
     return {
         "gmv": gmv,
+        "received_amount": received,
+        "received_amount_partial": partial,
         "new_sign_count": int(new_sign_count or 0),
+        "first_return_count": int(first_return_count or 0),
         "unknown_new_sign_count": int(unknown_new_sign_count or 0),
         "order_count": int(order_count or 0),
         "average_order_amount": _money(gmv / usd_order_count) if usd_order_count else Decimal("0.00"),

@@ -53,6 +53,8 @@ const rows = entries.map(([invoice_no, customer_name, order_type, status, sync_s
     anomalies: anomaly ? ['order', 'outbound', 'receipt'] : [],
   }
 })
+const overviewOrders = rows.filter(row => row.sync_status === 'synced' && row.status !== 'cancelled')
+const overviewMetrics = { new_sign: [rows[0], rows[1]], first_return: [rows[2]] }
 const state = window.invoiceDensityTest = { requests: [], writes: [] }
 for (const client of Object.values(clients)) {
   if (!client?.defaults) continue
@@ -64,11 +66,13 @@ for (const client of Object.values(clients)) {
     }
     let data = { items: [], total: 0, has_more: false }
     if (request.url === '/invoices') {
-      const keyword = request.params?.keyword
-      const items = keyword ? rows.filter(row => row.invoice_no.includes(keyword) || row.customer_name.includes(keyword)) : rows
+      const { keyword, overview_metric: metric } = request.params || {}
+      const eligible = overviewMetrics[metric] || rows
+      const items = keyword ? eligible.filter(row => row.invoice_no.includes(keyword) || row.customer_name.includes(keyword)) : eligible
       data = { items, total: items.length }
+    } else if (request.url === '/invoices/summary') {
+      data = { gmv: 12345.67, received_amount: 5292.58, new_sign_count: 2, first_return_count: 1, order_count: overviewOrders.length, non_usd_count: 1 }
     }
-    else if (request.url === '/invoices/summary') data = { gmv: 12345.67, new_sign_count: 2, order_count: rows.length, average_order_amount: 1234.56 }
     else if (request.url === '/shipments/capabilities') data = { enabled: true }
     else if (request.url === '/navigation-config/effective') data = { nodes: [] }
     else if (request.url === '/customer-requests/pending-count') data = { count: 0 }

@@ -817,6 +817,7 @@ def list_invoices(
     order_type: str | None = Query(None, pattern="^(stock|production|presale)$"),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
+    overview_metric: service.OverviewMetric | None = Query(None),
     sort_field: str = "",
     sort_order: str = "",
     db: Session = Depends(get_db),
@@ -837,7 +838,7 @@ def list_invoices(
         db, sort_field=sort_field, sort_order=sort_order, page=page, page_size=page_size, keyword=keyword, order_id=order_id, status=status, order_type=order_type,
         created_by=created_by if _can_read_all(current_user) else None,
         viewer_user_id=None if _can_read_all(current_user) else viewer_user_id,
-        user=current_user, date_from=date_from, date_to=date_to,
+        user=current_user, date_from=date_from, date_to=date_to, overview_metric=overview_metric,
     )
     from app.invoice.document_anomalies import annotate
     annotate(db, current_user, items)

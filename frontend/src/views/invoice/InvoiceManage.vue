@@ -20,7 +20,9 @@
       :loading="summaryLoading"
       :error="summaryError"
       :money="money"
+      :active-metric="summaryMetric"
       @range-change="handleDateRangeChange"
+      @toggle-metric="toggleSummaryMetric"
     />
 
     <section ref="panelRef" class="table-card invoice-panel">
@@ -43,6 +45,9 @@
         <el-select v-model="filters.status" clearable placeholder="状态" aria-label="发票状态" class="filter-w-sm">
           <el-option v-for="option in statusOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
+        <el-tag v-if="summaryMetric" closable @close="toggleSummaryMetric(summaryMetric)">
+          {{ summaryMetric === 'new_sign' ? '新签订单' : '首返订单' }}
+        </el-tag>
       </FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
@@ -517,7 +522,7 @@ const {
   handleTableSort, actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
   loading, money, openSyncLogs, page, pageSize, total, removeInvoice, statusText, statusType,
   listErrorMessage, hasLoaded, hasData, dataPage, hasPendingSearch, handleSearch, handlePageChange, handleSaved, refreshUpdate,
-  summary, summaryDateRange, summaryError, summaryLoading, handleDateRangeChange,
+  summary, summaryDateRange, summaryError, summaryLoading, summaryMetric, toggleSummaryMetric, handleDateRangeChange,
   syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
   isInvoiceSyncing, resolveUncertain, validateAndSync,
   isInvoiceDeleting, usesRelatedInvoiceDeletion,
