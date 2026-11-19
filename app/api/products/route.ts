@@ -1,5 +1,6 @@
 import { ensureDatabase, getD1 } from "../../../db/runtime";
 import { requireAdminApi } from "../../lib/admin-auth";
+import { initialVariants, validateVariants, readVariants } from "../../lib/product-options";
 
 export const dynamic = "force-dynamic";
 
@@ -7,7 +8,7 @@ const selectSql = `SELECT id, name, material, length, color,
   retail_price AS retailPrice, price_a AS priceA, price_b AS priceB,
   min_level AS minLevel, stock, status, tone, category, sku, construction,
   hair_volume AS hairVolume, parting, craft, description, highlights, audience,
-  scenarios, images, video_url AS videoUrl, created_at AS createdAt FROM products`;
+  scenarios, images, variants, video_url AS videoUrl, created_at AS createdAt FROM products`;
 
 const parseList = (value: unknown) => {
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
@@ -23,6 +24,7 @@ export async function GET() {
   const rows = await getD1().prepare(`${selectSql} ORDER BY id DESC`).all();
   return Response.json({ products: rows.results.map((row) => ({
     ...row,
+    variants: readVariants(row.variants, String(row.length)),
     highlights: parseList((row as Record<string, unknown>).highlights),
     audience: parseList((row as Record<string, unknown>).audience),
     scenarios: parseList((row as Record<string, unknown>).scenarios),
@@ -37,6 +39,9 @@ export async function POST(request: Request) {
   const body = await request.json() as Record<string, unknown>;
   const name = String(body.name ?? "").trim();
   if (!name) return Response.json({ error: "请填写款式名称" }, { status: 400 });
+  let variants;
+  try { variants = validateVariants(body.variants ?? initialVariants(String(body.length ?? "")), String(body.length ?? "")); }
+  catch (error) { return Response.json({ error: error instanceof Error ? error.message : "规格无效" }, { status: 400 }); }
   const values = {
     material: String(body.material ?? "真人发"), length: String(body.length ?? "45cm"),
     color: String(body.color ?? "自然黑"), retailPrice: Number(body.retailPrice ?? 0),
@@ -56,12 +61,12 @@ export async function POST(request: Request) {
   const result = await getD1().prepare(`INSERT INTO products
     (name, material, length, color, retail_price, price_a, price_b, min_level, stock, status,
      tone, category, sku, construction, hair_volume, parting, craft, description, highlights,
-     audience, scenarios, images, video_url, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
+     audience, scenarios, images, video_url, variants, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
     .bind(name, values.material, values.length, values.color, values.retailPrice, values.priceA,
       values.priceB, values.minLevel, values.stock, values.status, values.tone, values.category, values.sku,
       values.construction, values.hairVolume, values.parting, values.craft, values.description,
       values.highlights, values.audience, values.scenarios, values.images, values.videoUrl,
-      new Date().toISOString()).first<{ id: number }>();
+      JSON.stringify(variants), new Date().toISOString()).first<{ id: number }>();
   return Response.json({ id: result?.id }, { status: 201 });
 }

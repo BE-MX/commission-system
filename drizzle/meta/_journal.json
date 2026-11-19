@@ -71,6 +71,13 @@
       "when": 1794993680937,
       "tag": "0009_friendly_ikaris",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1794996570848,
+      "tag": "0010_loving_selene",
+      "breakpoints": true
     }
   ]
 }

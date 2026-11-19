@@ -1,4 +1,4 @@
-import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const wholesaleLevels = sqliteTable("wholesale_levels", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -33,6 +33,7 @@ export const products = sqliteTable("products", {
   scenarios: text("scenarios").notNull().default("[]"),
   images: text("images").notNull().default("[]"),
   videoUrl: text("video_url").notNull().default(""),
+  variants: text("variants").notNull().default("[]"),
   createdAt: text("created_at").notNull(),
 }, (table) => [index("idx_products_status_level").on(table.status, table.minLevel)]);
 
@@ -148,9 +149,11 @@ export const orders = sqliteTable("orders", {
   commissionAmount: real("commission_amount").notNull().default(0),
   createdAt: text("created_at").notNull(),
   shippedAt: text("shipped_at"),
+  checkoutKey: text("checkout_key"), checkoutHash: text("checkout_hash"),
 }, (table) => [
   index("idx_orders_customer_time").on(table.customerPhone, table.createdAt),
   index("idx_orders_status_time").on(table.status, table.createdAt),
+  uniqueIndex("idx_orders_checkout_key").on(table.checkoutKey),
 ]);
 
 export const orderLogistics = sqliteTable("order_logistics", {
@@ -177,6 +180,8 @@ export const orderItems = sqliteTable("order_items", {
   productName: text("product_name").notNull(),
   unitPrice: real("unit_price").notNull(),
   quantity: integer("quantity").notNull(),
+  variantKey: text("variant_key").notNull().default(""),
+  variantLabel: text("variant_label").notNull().default(""),
 }, (table) => [index("idx_order_items_order").on(table.orderId)]);
 
 export const promotions = sqliteTable("promotions", {

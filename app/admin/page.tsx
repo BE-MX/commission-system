@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { minimumPrice } from "../lib/product-options";
+import { VariantEditor } from "../components/product-options";
 import { ShipmentDialog } from "../components/order-logistics";
 import type { AccessLog, CustomerProfile, LevelCode, Order, Product, SalesPerson, WholesaleAccount, WholesaleLevel } from "../lib/types";
 
@@ -8,7 +10,7 @@ const emptyProduct: Omit<Product, "id" | "createdAt"> = {
   name: "", material: "保鳞发", length: "15厘米", color: "自然色", retailPrice: 0,
   priceA: 0, priceB: 0, minLevel: "retail", stock: 0, status: "active", tone: "espresso", category: "安心系列", sku: "",
   construction: "递针旋", hairVolume: "常规款", parting: "", craft: "", description: "",
-  highlights: [], audience: [], scenarios: [], images: [], videoUrl: "",
+  highlights: [], audience: [], scenarios: [], images: [], videoUrl: "", variants: [],
 };
 const levelName: Record<LevelCode, string> = { retail: "所有客户", a: "批发A及以上", b: "仅批发B" };
 
@@ -184,7 +186,7 @@ export default function AdminPage() {
         </>}
 
         {tab === "products" && <>
-          <div className="admin-title"><div><p>商品中心</p><h1>假发款式与价格</h1><span>管理款式、不同等级价格和查看权限</span></div><button className="admin-primary" onClick={openCreate}>＋ 添加假发款式</button></div>
+          <div className="admin-title"><div><p>商品中心</p><h1>假发款式与价格</h1><span>管理款式、网底长度价格和查看权限</span></div><button className="admin-primary" onClick={openCreate}>＋ 添加假发款式</button></div>
           <section className="stat-grid">
             <article><span>商品款式</span><strong>{products.length}</strong><small>已上架 {activeCount} 款</small></article>
             <article><span>总库存</span><strong>{stockCount}</strong><small>山东仓现有件数</small></article>
@@ -193,10 +195,10 @@ export default function AdminPage() {
           </section>
           <section className="admin-panel">
             <div className="panel-head"><div><strong>全部商品</strong><span>价格修改后只影响新订单</span></div><label className="admin-search">⌕ <input aria-label="搜索商品" placeholder="搜索款式（演示）" /></label></div>
-            <div className="product-table-wrap"><table className="product-table"><thead><tr><th>款式</th><th>分类</th><th>零售价</th><th>批发A</th><th>批发B</th><th>查看权限</th><th>库存</th><th>状态</th><th>操作</th></tr></thead><tbody>
+            <div className="product-table-wrap"><table className="product-table"><thead><tr><th>款式</th><th>分类</th><th>规格起价</th><th>开放规格</th><th>待定价</th><th>查看权限</th><th>库存</th><th>状态</th><th>操作</th></tr></thead><tbody>
               {products.map((product) => <tr key={product.id}>
                 <td><div className={`table-art ${product.tone}`}>{product.images[0] ? <img src={product.images[0]} alt="" /> : <div className="tiny-hair" />}</div><div><strong>{product.name}</strong><small>{product.sku || "未设置货号"} · {product.material} · {product.length} · {product.color}</small></div></td>
-                <td>{product.category}</td><td>¥{product.retailPrice}</td><td>¥{product.priceA}</td><td>¥{product.priceB}</td>
+                <td>{product.category}</td><td>{minimumPrice(product.variants) != null ? `¥${minimumPrice(product.variants)}` : "待定价"}</td><td>{product.variants?.filter((item) => item.enabled).length ?? 0}</td><td>{product.variants?.filter((item) => item.enabled && item.price === null).length ?? 0}</td>
                 <td><span className={`access-pill ${product.minLevel}`}>{levelName[product.minLevel]}</span></td><td className={product.stock < 25 ? "stock-low" : ""}>{product.stock} 件</td>
                 <td><button className={`status-toggle ${product.status}`} onClick={() => toggleStatus(product)}><i />{product.status === "active" ? "已上架" : "已下架"}</button></td>
                 <td><button className="text-action" onClick={() => openEdit(product)}>编辑</button></td>
@@ -233,7 +235,7 @@ export default function AdminPage() {
         {tab === "orders" && <>
           <div className="admin-title"><div><p>订单履约</p><h1>订单、发货与物流</h1><span>客户提交订单后，仓库可录入物流公司和单号</span></div><button className="admin-primary" onClick={load}>刷新订单</button></div>
           <section className="stat-grid"><article><span>全部订单</span><strong>{orders.length}</strong><small>零售与批发合计</small></article><article><span>待发货</span><strong>{orders.filter((item) => item.status === "待发货").length}</strong><small>仓库待处理</small></article><article><span>运输中</span><strong>{orders.filter((item) => ["已发货", "运输中"].includes(item.status)).length}</strong><small>客户可查轨迹</small></article><article><span>商品数量</span><strong>{orders.reduce((sum, item) => sum + item.itemCount, 0)}</strong><small>订单总件数</small></article></section>
-          <section className="admin-panel"><div className="panel-head"><div><strong>全部订单</strong><span>发货后客户个人中心即时显示物流信息</span></div></div><div className="product-table-wrap"><table className="product-table order-table"><thead><tr><th>订单/客户</th><th>类型</th><th>商品</th><th>金额</th><th>销售归属</th><th>物流</th><th>状态</th><th>操作</th></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td><strong>{order.orderNo}</strong><small>{order.customerName} · {order.customerPhone}</small></td><td><span className={`channel-pill ${order.channel}`}>{order.channel === "retail" ? "零售" : `批发${order.level.toUpperCase()}`}</span></td><td>{order.itemCount} 件</td><td>¥{order.amount.toLocaleString()}</td><td>{order.salesPerson}</td><td><strong>{order.logisticsCompany || "待录入"}</strong><small>{order.trackingNo || order.logisticsStatus}</small></td><td><span className={`order-status ${order.status === "待发货" ? "pending" : "shipped"}`}>{order.status}</span></td><td><button className="text-action" onClick={() => shipOrder(order)}>{order.trackingNo ? "更新物流" : "立即发货"}</button></td></tr>)}</tbody></table></div></section>
+          <section className="admin-panel"><div className="panel-head"><div><strong>全部订单</strong><span>发货后客户个人中心即时显示物流信息</span></div></div><div className="product-table-wrap"><table className="product-table order-table"><thead><tr><th>订单/客户</th><th>类型</th><th>商品</th><th>金额</th><th>销售归属</th><th>物流</th><th>状态</th><th>操作</th></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td><strong>{order.orderNo}</strong><small>{order.customerName} · {order.customerPhone}</small></td><td><span className={`channel-pill ${order.channel}`}>{order.channel === "retail" ? "零售" : `批发${order.level.toUpperCase()}`}</span></td><td>{order.itemCount} 件{order.items?.map((item,index) => <small key={index}>{item.productName} · {item.variantLabel || "原款规格"} × {item.quantity}</small>)}</td><td>¥{order.amount.toLocaleString()}</td><td>{order.salesPerson}</td><td><strong>{order.logisticsCompany || "待录入"}</strong><small>{order.trackingNo || order.logisticsStatus}</small></td><td><span className={`order-status ${order.status === "待发货" ? "pending" : "shipped"}`}>{order.status}</span></td><td><button className="text-action" onClick={() => shipOrder(order)}>{order.trackingNo ? "更新物流" : "立即发货"}</button></td></tr>)}</tbody></table></div></section>
         </>}
 
         {tab === "sales" && <>
@@ -252,7 +254,7 @@ export default function AdminPage() {
         {tab === "analytics" && <>
           <div className="admin-title"><div><p>运营分析</p><h1>销量、客户与渠道数据</h1><span>查看不同身份、产品库存和销售推广表现</span></div></div>
           <section className="analytics-grid"><article className="admin-panel"><div className="panel-head"><div><strong>近期开单趋势</strong><span>订单金额按日期汇总</span></div></div><div className="bar-chart">{(dashboard.daily ?? []).map((item) => { const max = Math.max(...(dashboard.daily ?? []).map((day) => Number(day.revenue)), 1); return <div key={item.day}><span style={{ height: `${Math.max(12, Number(item.revenue) / max * 100)}%` }}><b>¥{Number(item.revenue).toLocaleString()}</b></span><small>{item.day.slice(5)}</small></div>; })}</div></article><article className="admin-panel channel-breakdown"><div className="panel-head"><div><strong>客户结构</strong><span>按账户身份统计</span></div></div><div className="donut-wrap"><div className="donut"><strong>{customers.length}</strong><span>客户总数</span></div><ul><li><i className="retail-dot" />零售客户 <b>{customers.filter((item) => item.channel === "retail").length}</b></li><li><i className="a-dot" />批发A <b>{customers.filter((item) => item.level === "a").length}</b></li><li><i className="b-dot" />批发B <b>{customers.filter((item) => item.level === "b").length}</b></li></ul></div></article></section>
-          <section className="admin-panel"><div className="panel-head"><div><strong>商品经营情况</strong><span>实时库存、价格和销售权限</span></div></div><div className="product-table-wrap"><table className="product-table"><thead><tr><th>款式</th><th>分类</th><th>库存</th><th>零售价</th><th>批发A</th><th>批发B</th><th>可见等级</th><th>状态</th></tr></thead><tbody>{products.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.sku || "未设置货号"}</small></td><td>{item.category}</td><td className={item.stock < 25 ? "stock-low" : ""}>{item.stock}</td><td>¥{item.retailPrice}</td><td>¥{item.priceA}</td><td>¥{item.priceB}</td><td>{levelName[item.minLevel]}</td><td>{item.status === "active" ? "已上架" : "已下架"}</td></tr>)}</tbody></table></div></section>
+          <section className="admin-panel"><div className="panel-head"><div><strong>商品经营情况</strong><span>实时库存、价格和销售权限</span></div></div><div className="product-table-wrap"><table className="product-table"><thead><tr><th>款式</th><th>分类</th><th>库存</th><th>规格起价</th><th>开放规格</th><th>待定价</th><th>可见等级</th><th>状态</th></tr></thead><tbody>{products.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.sku || "未设置货号"}</small></td><td>{item.category}</td><td className={item.stock < 25 ? "stock-low" : ""}>{item.stock}</td><td>{minimumPrice(item.variants) != null ? `¥${minimumPrice(item.variants)}` : "待定价"}</td><td>{item.variants?.filter((entry) => entry.enabled).length ?? 0}</td><td>{item.variants?.filter((entry) => entry.enabled && entry.price === null).length ?? 0}</td><td>{levelName[item.minLevel]}</td><td>{item.status === "active" ? "已上架" : "已下架"}</td></tr>)}</tbody></table></div></section>
         </>}
 
         {tab === "access" && <>
@@ -283,13 +285,11 @@ export default function AdminPage() {
             <label>长度<input value={form.length} onChange={(e) => updateForm("length", e.target.value)} placeholder="45cm" /></label>
             <label>颜色<input value={form.color} onChange={(e) => updateForm("color", e.target.value)} placeholder="自然黑" /></label>
             <label>库存数量<input type="number" min="0" value={form.stock} onChange={(e) => updateForm("stock", Number(e.target.value))} /></label>
-            <label>零售价（元）<input type="number" min="0" required value={form.retailPrice} onChange={(e) => updateForm("retailPrice", Number(e.target.value))} /></label>
-            <label>批发A价（元）<input type="number" min="0" required value={form.priceA} onChange={(e) => updateForm("priceA", Number(e.target.value))} /></label>
-            <label>批发B价（元）<input type="number" min="0" required value={form.priceB} onChange={(e) => updateForm("priceB", Number(e.target.value))} /></label>
             <label>展示色调<select value={form.tone} onChange={(e) => updateForm("tone", e.target.value)}><option value="espresso">自然黑</option><option value="honey">蜜茶棕</option><option value="chestnut">栗棕色</option><option value="charcoal">灰黑色</option></select></label>
             <label>发网结构<input value={form.construction} onChange={(e) => updateForm("construction", e.target.value)} placeholder="递针顶 / 递针旋" /></label>
             <label>发量要求<input value={form.hairVolume} onChange={(e) => updateForm("hairVolume", e.target.value)} placeholder="常规款 / 轻薄款" /></label>
             <label className="wide">分缝方式<input value={form.parting} onChange={(e) => updateForm("parting", e.target.value)} placeholder="例如：左分，可调整中分/侧分" /></label>
+            <VariantEditor referenceLength={form.length} value={form.variants} onChange={(variants) => setForm((current) => ({ ...current, variants }))} />
             <label className="wide">产品简介<textarea value={form.description} onChange={(e) => updateForm("description", e.target.value)} placeholder="介绍整体轮廓、风格与佩戴感受" /></label>
             <label className="wide">工艺特点<textarea value={form.craft} onChange={(e) => updateForm("craft", e.target.value)} placeholder="介绍发网与制作工艺" /></label>
             <label className="wide">核心卖点<textarea value={form.highlights.join("；")} onChange={(e) => setForm({ ...form, highlights: e.target.value.split(/[；;\n]+/).map((item) => item.trim()).filter(Boolean) })} placeholder="每条卖点用分号隔开" /></label>

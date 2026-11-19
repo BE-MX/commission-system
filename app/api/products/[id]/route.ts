@@ -1,5 +1,6 @@
 import { ensureDatabase, getD1 } from "../../../../db/runtime";
 import { requireAdminApi } from "../../../lib/admin-auth";
+import { validateVariants } from "../../../lib/product-options";
 
 const serializeList = (value: unknown) => JSON.stringify(Array.isArray(value)
   ? value.map(String).filter(Boolean)
@@ -11,6 +12,11 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   await ensureDatabase();
   const { id } = await context.params;
   const body = await request.json() as Record<string, unknown>;
+  const current = await getD1().prepare("SELECT variants FROM products WHERE id=?").bind(Number(id)).first<{ variants: string }>();
+  if (!current) return Response.json({ error: "商品不存在" }, { status: 404 });
+  let variants;
+  try { variants = validateVariants(body.variants ?? current.variants, String(body.length ?? "")); }
+  catch (error) { return Response.json({ error: error instanceof Error ? error.message : "规格无效" }, { status: 400 }); }
   const values = [
     String(body.name ?? "").trim(), String(body.material ?? "真人发"), String(body.length ?? "45cm"),
     String(body.color ?? "自然黑"), Number(body.retailPrice ?? 0), Number(body.priceA ?? 0),
@@ -19,13 +25,13 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     String(body.sku ?? "").trim(), String(body.construction ?? ""), String(body.hairVolume ?? ""),
     String(body.parting ?? ""), String(body.craft ?? ""), String(body.description ?? ""),
     serializeList(body.highlights), serializeList(body.audience), serializeList(body.scenarios),
-    serializeList(body.images), String(body.videoUrl ?? "").trim(), Number(id),
+    serializeList(body.images), String(body.videoUrl ?? "").trim(), JSON.stringify(variants), Number(id),
   ];
   if (!values[0]) return Response.json({ error: "请填写款式名称" }, { status: 400 });
   await getD1().prepare(`UPDATE products SET name=?, material=?, length=?, color=?, retail_price=?,
     price_a=?, price_b=?, min_level=?, stock=?, status=?, tone=?, category=?, sku=?, construction=?,
     hair_volume=?, parting=?, craft=?, description=?, highlights=?, audience=?, scenarios=?, images=?,
-    video_url=? WHERE id=?`).bind(...values).run();
+    video_url=?, variants=? WHERE id=?`).bind(...values).run();
   return Response.json({ ok: true });
 }
 

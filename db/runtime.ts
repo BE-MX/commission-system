@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { featuredProducts } from "./product-data";
+import { initialVariants } from "../app/lib/product-options";
 
 let ready: Promise<void> | null = null;
 
@@ -227,6 +228,14 @@ async function initialize() {
   if (!productColumnNames.has("video_url")) await db.prepare("ALTER TABLE products ADD COLUMN video_url TEXT NOT NULL DEFAULT ''").run();
 
   const tryonColumns = await db.prepare("PRAGMA table_info(retail_tryon_entitlements)").all<{ name: string }>();
+  if (!productColumnNames.has("variants")) await db.prepare("ALTER TABLE products ADD COLUMN variants TEXT NOT NULL DEFAULT '[]'").run();
+  const itemColumns = await db.prepare("PRAGMA table_info(order_items)").all<{ name: string }>();
+  if (!itemColumns.results.some((item) => item.name === "variant_key")) await db.prepare("ALTER TABLE order_items ADD COLUMN variant_key TEXT NOT NULL DEFAULT ''").run();
+  if (!itemColumns.results.some((item) => item.name === "variant_label")) await db.prepare("ALTER TABLE order_items ADD COLUMN variant_label TEXT NOT NULL DEFAULT ''").run();
+  const orderColumns = await db.prepare("PRAGMA table_info(orders)").all<{ name: string }>();
+  if (!orderColumns.results.some((item) => item.name === "checkout_key")) await db.prepare("ALTER TABLE orders ADD COLUMN checkout_key TEXT").run();
+  if (!orderColumns.results.some((item) => item.name === "checkout_hash")) await db.prepare("ALTER TABLE orders ADD COLUMN checkout_hash TEXT").run();
+  await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_checkout_key ON orders(checkout_key)").run();
   if (!tryonColumns.results.some((item) => item.name === "generation_claim")) {
     await db.prepare("ALTER TABLE retail_tryon_entitlements ADD COLUMN generation_claim TEXT").run();
   }
@@ -260,6 +269,20 @@ async function initialize() {
     await db.prepare("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('product_catalog_version', '16-styles-2026-11')").run();
   }
 
+  const variantVersion = await db.prepare("SELECT value FROM app_metadata WHERE key='product_variant_version'").first<{ value: string }>();
+  if (variantVersion?.value !== "cap-length-v1") {
+    const products = await db.prepare("SELECT id, length FROM products WHERE variants='[]'").all<{ id: number; length: string }>();
+    if (products.results.length) await db.batch(products.results.map((product) => db.prepare("UPDATE products SET variants=? WHERE id=? AND variants='[]'").bind(JSON.stringify(initialVariants(product.length)), product.id)));
+    await db.prepare("INSERT OR REPLACE INTO app_metadata (key,value) VALUES ('product_variant_version','cap-length-v1')").run();
+  }
+  await db.batch([
+    db.prepare(`CREATE TRIGGER IF NOT EXISTS order_item_stock_guard BEFORE INSERT ON order_items BEGIN
+      SELECT CASE WHEN NEW.quantity<=0 OR NEW.quantity<>CAST(NEW.quantity AS INTEGER)
+        OR NOT EXISTS(SELECT 1 FROM products WHERE id=NEW.product_id AND status='active' AND stock>=NEW.quantity)
+        THEN RAISE(ABORT,'INSUFFICIENT_STOCK') END; END`),
+    db.prepare(`CREATE TRIGGER IF NOT EXISTS order_item_stock_deduct AFTER INSERT ON order_items BEGIN
+      UPDATE products SET stock=stock-NEW.quantity WHERE id=NEW.product_id; END`),
+  ]);
   const accountCount = await db.prepare("SELECT COUNT(*) AS total FROM wholesale_accounts").first<{ total: number }>();
   if (!accountCount?.total) {
     const now = new Date().toISOString();

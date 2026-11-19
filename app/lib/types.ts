@@ -1,3 +1,4 @@
+import type { ProductVariant } from "./product-options";
 export type LevelCode = "retail" | "a" | "b";
 
 export type Product = {
@@ -6,6 +7,7 @@ export type Product = {
   stock: number; status: "active" | "draft"; tone: string; category: string; sku: string; createdAt: string;
   construction: string; hairVolume: string; parting: string; craft: string; description: string;
   highlights: string[]; audience: string[]; scenarios: string[]; images: string[]; videoUrl: string;
+  variants?: ProductVariant[];
 };
 
 export type WholesaleLevel = {
@@ -24,6 +26,7 @@ export type AccessLog = {
 };
 
 export type Order = {
+  items?: { productName: string; variantLabel: string; unitPrice: number; quantity: number }[];
   id: number; orderNo: string; channel: "retail" | "wholesale"; customerPhone: string;
   customerName: string; level: LevelCode; salesPerson: string; status: string; paymentStatus: string;
   logisticsCompany: string; trackingNo: string; logisticsStatus: string; itemCount: number;
