@@ -1,4 +1,6 @@
-# Ark WhatsApp Connector — Baileys candidate
+# Ark WhatsApp Connector — Baileys
+
+本页维护当前服务契约、配置和恢复条件。部署记录与真实账号验收状态见[项目交接](../../docs/handoff.md)；服务启动成功不代表历史消息已完整同步。
 
 本服务负责公司专用业务账号的关联设备连接、会话/消息采集和持久化增量回放。Ark 决定账号归属、有效同意和正文访问权限；凭据与 Signal 密钥始终留在 connector。`baileys` 固定为 `7.0.0-rc14`，运行入口不依赖 WhatsApp Web、Puppeteer 或浏览器。
 
@@ -96,7 +98,7 @@ account 包含 provider、session_generation、consent_version、status、connec
 
 创建关联时先提交授权，再连接 WhatsApp；返回 `pending` 仅代表操作建立，不表示二维码已经生成。受保护暂停、撤销或要求重连时，绑定查询返回相应终态，停止等待二维码。Ark 解绑先关闭尚未结束的绑定会话；历史残留的已停止会话在用户明确发起关联时退出待处理队列，不恢复原账号授权。连接结果仍未知且授权有效的操作继续按原 UID 查询，不自动重复 POST。
 
-2026-10-15 故障证据和未发布修复见 [二维码与关联恢复报告](../../docs/reports/2026-10-15-whatsapp-qr-recovery.md)。HTTPS/WebSocket 网络验证不能代替持有人扫码验收。
+2026-10-15 故障证据、修复和实际发布状态见 [二维码与关联恢复报告](../../docs/reports/2026-10-15-whatsapp-qr-recovery.md)。HTTPS/WebSocket 网络验证不能代替持有人扫码验收。
 
 不会读取、转换或导入 `.wwebjs_auth`、旧 session 文件或旧正文库。旧账户只通过 Ark 已批准的稳定 UID/owner metadata 重新登记，再建立 Baileys 连接；旧设备 logout 与新设备 rebind 的顺序由发布流程控制，不能让旧 whatsapp-web.js 与新 Baileys 同时采集同一账号。
 

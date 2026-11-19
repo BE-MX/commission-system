@@ -12,3 +12,5 @@ deploy\deploy.bat --recover-outbound-activation <reviewed-plan.json> --prepare-o
 ```
 
 计划仅接受 revision、release_id、journal_sha256。检查原九项完成记录、精确迁移链、实际源代码/运行参数/健康、原writer暂停状态、全部静态摘要、原出库制品/模式/指纹及基线。恢复只激活原已安装的出库制品，核验后恢复原writer、邮件worker和维护任务；不重跑DDL、应用启动、静态切换或业务出库请求。原始检查点先归档，已存在尝试回执拒绝重发；失败应查实际阶段后决定下一步。
+
+实际恢复控制器60bec0bb经prepare-only及正式入口完成，退出0。最终原release_id不变、11项目标完成、schema-writers=completed、mode=legacy，timer恢复active/enabled=true，邮件worker原inactive保持。数据维护在恢复前后各一次独立连接读回通过；未重跑DDL或切换应用/静态。

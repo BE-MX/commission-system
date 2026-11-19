@@ -22,3 +22,9 @@
 验证日志保留在本worktree的`backend/tmp/`。所有数据库测试使用无`.env`的worktree和显式新建的本机独占MySQL实例，网络连接限制由既有fixture守卫；未使用共享生产库进行写入型验证。
 
 最终`git diff --check`通过，构建产生的导航文件已还原，不夹带到本任务。工具安全策略拒绝了测试临时MySQL目录的递归清理；实例已由fixture关闭，初始化凭据文件已由fixture删除，测试目录与日志暂保留在本worktree。
+
+## Git交付结果
+
+已合入本地主目录main并推送origin/main `64372ed7`。本地集成提交`c8b26ba6`保留既有未推送历史；远端只包含本次差异。合并后前端43项、SQLite37项、约定检查和生产构建29.84秒再次通过；远端HEAD已核对。未部署。
+
+验证日志与合并前文档备份归档在主目录`tmp/invoice-save-sync-integration-20261104/`；119份无关既有文件哈希保持不变。已用Git标准worktree入口移除本任务已合并的干净worktree及两个本地任务分支，早先暂留的测试目录随该worktree清理。没有删除远端分支，原文档备份stash保留。

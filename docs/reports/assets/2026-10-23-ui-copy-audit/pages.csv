@@ -1,0 +1,191 @@
+﻿surface,route,title,file,group,findings,evidence
+主站,/portal/customers/:accessId/preview,客户目录预览,frontend/src/views/portal/CustomerPreview.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/portal/catalog,门户商品目录,frontend/src/views/portal/PortalCatalog.vue,customerPortal,,源码文本扫描；在线状态未验
+主站,/portal/settings,客户门户站点设置,frontend/src/views/portal/PortalSettings.vue,customerPortal,C14,源码文本扫描；在线状态未验
+主站,/portal/customers,客户访问与账号,frontend/src/views/portal/PortalCustomers.vue,customerPortal,C29,源码文本扫描；在线状态未验
+主站,/portal/access-requests,客户账号申请,frontend/src/views/portal/AccessRequestPanel.vue,customerPortal,,源码文本扫描；在线状态未验
+主站,/portal/orders,客户下单请求,frontend/src/views/portal/PortalOrders.vue,customerPortal,C28,源码文本扫描；在线状态未验
+主站,/dashboard,工作台,frontend/src/views/dashboard/Dashboard.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/announcements,公告管理,frontend/src/views/announcement/AnnouncementList.vue,ungrouped,C01,源码文本扫描；在线状态未验
+主站,/announcements/:documentId,公告详情,frontend/src/views/announcement/AnnouncementList.vue,ungrouped,C01,源码文本扫描；在线状态未验
+主站,/agent-runtime/tasks,AI Agent 任务中心,frontend/src/views/agent-runtime/AgentTaskCenter.vue,ungrouped,C07,源码文本扫描；在线状态未验
+主站,/agent-runtime/tasks/:runId,Agent 运行详情,frontend/src/views/agent-runtime/AgentRunDetail.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/knowledge,企业知识库,frontend/src/views/knowledge/KnowledgeWorkbench.vue,knowledge,,源码文本扫描；在线状态未验
+主站,/knowledge/ai-settings,AI 优化配置,frontend/src/views/knowledge/KnowledgeAiSettings.vue,knowledge,,源码文本扫描；在线状态未验
+主站,/employee/attribute,员工属性管理,frontend/src/views/employee/EmployeeAttribute.vue,personnel,,源码文本扫描；在线状态未验
+主站,/supervisor/relation,主管关系管理,frontend/src/views/supervisor/SupervisorRelation.vue,personnel,,源码文本扫描；在线状态未验
+主站,/customer/snapshot,客户归属管理,frontend/src/views/customer/CustomerSnapshot.vue,customer,,源码文本扫描；在线状态未验
+主站,/customer-hub/customers,客户工作台,frontend/src/views/customer_hub/CustomerProfiles.vue,customerOperations,,源码文本扫描；在线状态未验
+主站,/customer-hub/acquisition,获客任务,frontend/src/views/customer_hub/AcquisitionTasks.vue,customerOperations,,源码文本扫描；在线状态未验
+主站,/customer-hub/research,背调中心,frontend/src/views/customer_hub/ResearchCenter.vue,customerOperations,,源码文本扫描；在线状态未验
+主站,/customer-hub/opportunities,客户机会,frontend/src/views/customer_hub/CustomerOpportunities.vue,customerOperations,,源码文本扫描；在线状态未验
+主站,/customer-hub/radar,客户工作台,frontend/src/views/customer_hub/CustomerRadar.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/customer-hub/calendar,跟进日历,frontend/src/views/customer_hub/MaintenanceCalendar.vue,customerOperations,,源码文本扫描；在线状态未验
+主站,/customer-hub/workspace/:id,客户作战卡,frontend/src/views/customer_hub/CustomerWorkspace.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/mail-outreach,邮件触达队列,frontend/src/views/mail_outreach/MailOutreachQueue.vue,customerOperations,,源码文本扫描；在线状态未验
+主站,/invoice/manage,订单发票管理,frontend/src/views/invoice/InvoiceManage.vue,invoice,C02,源码文本扫描；在线状态未验
+主站,/invoice/receipts,回款单管理,frontend/src/views/receipt/ReceiptManage.vue,invoice,C04,源码文本扫描；在线状态未验
+主站,/invoice/price-config,价格与产品配置,frontend/src/views/invoice/InvoicePriceConfig.vue,invoice,C03,源码文本扫描；在线状态未验
+主站,/invoice/okki-settings,OKKI 推单设置,frontend/src/views/invoice/OkkiSyncSettings.vue,invoice,C18,源码文本扫描；在线状态未验
+主站,/invoice/receipt-repair,回款日期修复,frontend/src/views/invoice/ReceiptDateRepair.vue,invoice,,源码文本扫描；在线状态未验
+主站,/invoice/festival-orders,采购节数据明细,frontend/src/views/invoice/FestivalOrderDetail.vue,invoice,,源码文本扫描；在线状态未验
+主站,/invoice/battle-reports,临时战报,frontend/src/views/battle-report/BattleReports.vue,invoice,C05,源码文本扫描；在线状态未验
+主站,/invoice/order-intelligence,订单经营决策台,frontend/src/views/order_intelligence/OrderIntelligence.vue,invoice,"C11,C33",源码文本扫描；在线状态未验
+主站,/invoice/fx-settlement,结汇决策助手,frontend/src/views/fx-settlement/FxSettlement.vue,invoice,,源码文本扫描；在线状态未验
+主站,/fx-settlement,结汇决策助手,frontend/src/views/fx-settlement/FxSettlement.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/aftersales/cases,售后单,frontend/src/views/aftersales/AfterSalesList.vue,aftersales,,源码文本扫描；在线状态未验
+主站,/aftersales/reviews,待我审核,frontend/src/views/aftersales/AfterSalesList.vue,aftersales,,源码文本扫描；在线状态未验
+主站,/aftersales/cases/new,新建售后单,frontend/src/views/aftersales/AfterSalesWorkspace.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/aftersales/cases/:caseId,售后单工作台,frontend/src/views/aftersales/AfterSalesWorkspace.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/aftersales/sop,售后 SOP 管理,frontend/src/views/aftersales/SopManagement.vue,aftersales,,源码文本扫描；在线状态未验
+主站,/aftersales/analytics,售后分析,frontend/src/views/aftersales/AfterSalesAnalytics.vue,aftersales,C06,源码文本扫描；在线状态未验
+主站,/expo/wigs,试戴发型库,frontend/src/views/expo/WigLibrary.vue,expo,,源码文本扫描；在线状态未验
+主站,/expo/hair-colors,试戴发色库,frontend/src/views/expo/HairColorLibrary.vue,expo,,源码文本扫描；在线状态未验
+主站,/expo/scene-images,场景示意图,frontend/src/views/expo/SceneImages.vue,expo,,源码文本扫描；在线状态未验
+主站,/expo/prompt-versions,生图提示词,frontend/src/views/expo/PromptSettings.vue,expo,,源码文本扫描；在线状态未验
+主站,/expo/scripts,话术卡库,frontend/src/views/expo/ScriptLibrary.vue,expo,,源码文本扫描；在线状态未验
+主站,/expo/leads,展会线索台,frontend/src/views/expo/ExpoLeads.vue,expo,,源码文本扫描；在线状态未验
+主站,/expo/stores,门店管理,frontend/src/views/expo/StoreManagement.vue,expo,,源码文本扫描；在线状态未验
+主站,/expo/card-butler,名片管家,frontend/src/views/card/CardButler.vue,expo,,源码文本扫描；在线状态未验
+主站,/festival/,采购节看板,frontend/public/festival/index.html,invoice,,源码文本扫描；在线状态未验
+主站,/payment/sync,回款同步,frontend/src/views/payment/PaymentSync.vue,commission,,源码文本扫描；在线状态未验
+主站,/commission/my,我的提成,frontend/src/views/commission/SalesCommission.vue,commission,,源码文本扫描；在线状态未验
+主站,/commission/my/:batchId/details,我的提成明细,frontend/src/views/commission/SalesCommissionDetail.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/commission/batch,提成批次,frontend/src/views/commission/CommissionBatch.vue,commission,,源码文本扫描；在线状态未验
+主站,/commission/batch/:batchId/details,提成明细,frontend/src/views/commission/CommissionDetail.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/tracking,物流跟踪,frontend/src/views/tracking/TrackingList.vue,tracking,,源码文本扫描；在线状态未验
+主站,/tracking/:waybillNo,运单详情,frontend/src/views/tracking/TrackingDetail.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/tracking/upload,运单上传,frontend/src/views/tracking/WaybillUpload.vue,tracking,,源码文本扫描；在线状态未验
+主站,/tracking/daily-report,物流日报,frontend/src/views/tracking/ShippingDailyReport.vue,tracking,,源码文本扫描；在线状态未验
+主站,/stock/overview,销量备货一览,frontend/src/views/stock/StockOverview.vue,stock,,源码文本扫描；在线状态未验
+主站,/stock/safety-config,安全库存设置,frontend/src/views/stock/SafetyConfig.vue,stock,,源码文本扫描；在线状态未验
+主站,/stock/daily-report,安全库存日报,frontend/src/views/stock/DailyReport.vue,stock,,源码文本扫描；在线状态未验
+主站,/stock/production-orders,生产订单管理,frontend/src/views/stock/ProductionOrderManage.vue,stock,,源码文本扫描；在线状态未验
+主站,/stock/production-order-print,生产订单打印,frontend/src/views/stock/ProductionOrderPrint.vue,stock,,源码文本扫描；在线状态未验
+主站,/stock/semifinished-materials,半成品列表,frontend/src/views/semifinished/MaterialManage.vue,stock,,源码文本扫描；在线状态未验
+主站,/stock/semifinished-orders,半成品订单,frontend/src/views/semifinished/OrderManage.vue,stock,,源码文本扫描；在线状态未验
+主站,/stock/semifinished-inventory,半成品库存,frontend/src/views/semifinished/InventoryManage.vue,stock,,源码文本扫描；在线状态未验
+主站,/production/products,产品管理,frontend/src/views/production/ProductManage.vue,stock,,源码文本扫描；在线状态未验
+主站,/production/processes,工序管理,frontend/src/views/production/ProcessManage.vue,stock,,源码文本扫描；在线状态未验
+主站,/production/process-routes,工序路线管理,frontend/src/views/production/ProcessRouteManage.vue,stock,,源码文本扫描；在线状态未验
+主站,/production/dashboard,生产看板,frontend/src/views/production/ProductionDashboard.vue,stock,,源码文本扫描；在线状态未验
+主站,/production/print-card/:id,工艺流转卡打印,frontend/src/views/production/PrintCard.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/domestic/decision,内贸经营决策台,frontend/src/views/domestic_decision/DomesticDecision.vue,domestic,C10,源码文本扫描；在线状态未验
+主站,/domestic/orders,内贸订单,frontend/src/views/domestic/DomesticOrders.vue,domestic,,源码文本扫描；在线状态未验
+主站,/domestic/orders/create,业务订单下单,frontend/src/views/domestic/DomesticOrderCreate.vue,domestic,,源码文本扫描；在线状态未验
+主站,/domestic/production-orders/create,生产订单下单,frontend/src/views/domestic/DomesticProductionOrderCreate.vue,domestic,,源码文本扫描；在线状态未验
+主站,/domestic/products,内贸产品与工艺,frontend/src/views/domestic/DomesticProducts.vue,domestic,,源码文本扫描；在线状态未验
+主站,/domestic/customers,内贸客户,frontend/src/views/domestic/DomesticCustomers.vue,domestic,,源码文本扫描；在线状态未验
+主站,/domestic/customer-requests,充值调整审核,frontend/src/views/domestic/DomesticCustomerRequests.vue,domestic,,源码文本扫描；在线状态未验
+主站,/shipping/outbound,出库单打印,frontend/src/views/shipping/OutboundRecords.vue,invoice,,源码文本扫描；在线状态未验
+主站,/shipping/inspections,验货单列表,frontend/src/views/shipping/InspectionRecords.vue,invoice,,源码文本扫描；在线状态未验
+主站,/shipping/scan,共用手机发货质检,frontend/src/views/shipping/ShippingScan.vue,shipping,,源码文本扫描；在线状态未验
+主站,/asset/library,素材库,frontend/src/views/asset/AssetLibrary.vue,asset,C24,源码文本扫描；在线状态未验
+主站,/asset/upload,素材上传,frontend/src/views/asset/AssetUpload.vue,asset,,源码文本扫描；在线状态未验
+主站,/asset/favorites,我的收藏,frontend/src/views/asset/AssetFavorites.vue,asset,,源码文本扫描；在线状态未验
+主站,/asset/stats,下载统计,frontend/src/views/asset/AssetStats.vue,asset,,源码文本扫描；在线状态未验
+主站,/asset/tag-dimensions,标签维度管理,frontend/src/views/asset/TagDimensionManage.vue,asset,,源码文本扫描；在线状态未验
+主站,/color-management/palette,色板数据库,frontend/src/views/color/PaletteView.vue,color,,源码文本扫描；在线状态未验
+主站,/color-management/blends,混合色管理,frontend/src/views/color/BlendView.vue,color,,源码文本扫描；在线状态未验
+主站,/color-management/trends,色彩趋势看板,frontend/src/views/color/TrendView.vue,color,C19,源码文本扫描；在线状态未验
+主站,/color-management/swatch-generator,色板图生成器,frontend/src/views/color/SwatchGenerator.vue,color,,源码文本扫描；在线状态未验
+主站,/training/digests,培训速递,frontend/src/views/training/TrainingList.vue,insight,,源码文本扫描；在线状态未验
+主站,/training/digests/new,发布培训速递,frontend/src/views/training/TrainingEditor.vue,ungrouped,C50,源码文本扫描；在线状态未验
+主站,/training/digests/:id,培训速览,frontend/src/views/training/TrainingDetail.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/training/digests/:id/edit,编辑培训速递,frontend/src/views/training/TrainingEditor.vue,ungrouped,C50,源码文本扫描；在线状态未验
+主站,/insight/intelligence,行业情报速览,frontend/src/views/insight/IntelligenceOverview.vue,insight,C13,源码文本扫描；在线状态未验
+主站,/insight/library,情报采集库,frontend/src/views/insight/IntelligenceLibrary.vue,insight,C12,源码文本扫描；在线状态未验
+主站,/insight/industry-daily,行业情报日报,frontend/src/views/insight/IndustryDailyView.vue,insight,,源码文本扫描；在线状态未验
+主站,/insight/ai-tools,AI 工具速递,frontend/src/views/insight/AIToolsView.vue,insight,,源码文本扫描；在线状态未验
+主站,/insight/reports,内部经营报告,frontend/src/views/insight/InternalReportsView.vue,insight,,源码文本扫描；在线状态未验
+主站,/insight/cases,业务员案例库,frontend/src/views/insight/CaseLibraryView.vue,insight,,源码文本扫描；在线状态未验
+主站,/insight/minutes,周会纪要,frontend/src/views/insight/MeetingMinutesView.vue,insight,,源码文本扫描；在线状态未验
+主站,/insight/sources,信源配置,frontend/src/views/insight/SourcesAdminView.vue,insight,,源码文本扫描；在线状态未验
+主站,/design/image-studio,AI 工作台,frontend/src/views/design/image-studio/ImageStudio.vue,design,C15,源码文本扫描；在线状态未验
+主站,/design/customer-image,客户产品效果图,frontend/src/views/customer-image/admin/CustomerImageAdmin.vue,design,C08,源码文本扫描；在线状态未验
+主站,/design/ai-chat,AI 工作台,frontend/src/views/design/ai-chat/AiChat.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/design/gantt,排期甘特图,frontend/src/views/design/GanttView.vue,design,,源码文本扫描；在线状态未验
+主站,/design/submit,提交预约,frontend/src/views/design/SubmitRequest.vue,design,C31,源码文本扫描；在线状态未验
+主站,/design/my-requests,我的预约,frontend/src/views/design/MyRequests.vue,design,,源码文本扫描；在线状态未验
+主站,/design/media/portal,客户素材门户,frontend/src/views/design/customer-media/CustomerMediaPortalPreview.vue,design,,源码文本扫描；在线状态未验
+主站,/design/media/review,拍摄素材审核,frontend/src/views/design/CustomerMediaReview.vue,design,,源码文本扫描；在线状态未验
+主站,/design/media/accounts,客户素材门户账号,frontend/src/views/design/CustomerMediaAccounts.vue,design,,源码文本扫描；在线状态未验
+主站,/design/media/tasks/:taskId,客户拍摄素材,frontend/src/views/design/CustomerMediaWorkspace.vue,ungrouped,C32,源码文本扫描；在线状态未验
+主站,/design/audit,审批队列,frontend/src/views/design/AuditQueue.vue,design,,源码文本扫描；在线状态未验
+主站,/design/manage,设计管理,frontend/src/views/design/DesignManage.vue,design,,源码文本扫描；在线状态未验
+主站,/design/stats,设计统计,frontend/src/views/design/DesignStats.vue,design,,源码文本扫描；在线状态未验
+主站,/salary/profiles,员工薪资档案,frontend/src/views/salary/SalaryProfiles.vue,salary,,源码文本扫描；在线状态未验
+主站,/salary/rules,薪资规则配置,frontend/src/views/salary/SalaryRules.vue,salary,,源码文本扫描；在线状态未验
+主站,/salary/periods,月度工资批次,frontend/src/views/salary/SalaryPeriods.vue,salary,,源码文本扫描；在线状态未验
+主站,/salary/periods/:id,工资批次工作台,frontend/src/views/salary/SalaryWorkbench.vue,ungrouped,C34,源码文本扫描；在线状态未验
+主站,/system/component-showcase,组件与交互样例,frontend/src/views/system/ComponentShowcase.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/system/users,用户管理,frontend/src/views/system/UserManagement.vue,system,,源码文本扫描；在线状态未验
+主站,/system/roles,角色权限管理,frontend/src/views/system/RoleManagement.vue,system,,源码文本扫描；在线状态未验
+主站,/system/dicts,基础字典,frontend/src/views/system/DictManagement.vue,system,,源码文本扫描；在线状态未验
+主站,/system/ai,AI 接入管理,frontend/src/views/system/AIManager.vue,system,,源码文本扫描；在线状态未验
+主站,/system/operations,运行与自动化中心,frontend/src/views/system/OperationsCenter.vue,system,C35,源码文本扫描；在线状态未验
+主站,/system/mcp-tokens,Agent 接入凭证,frontend/src/views/system/McpTokenManagement.vue,system,,源码文本扫描；在线状态未验
+主站,/system/integration-apps,站点接入凭证,frontend/src/views/system/IntegrationAppManagement.vue,system,,源码文本扫描；在线状态未验
+主站,/system/dingtalk-gmv-daily,GMV 日报配置,frontend/src/views/system/GmvDailyConfig.vue,system,,源码文本扫描；在线状态未验
+主站,/system/external-bindings,外部账号绑定,frontend/src/views/system/ExternalBindings.vue,system,,源码文本扫描；在线状态未验
+主站,/system/whatsapp-connector,WhatsApp 同步,frontend/src/views/system/WhatsAppConnector.vue,system,,源码文本扫描；在线状态未验
+主站,/system/whatsapp-translation,WhatsApp 翻译,frontend/src/views/system/WhatsAppTranslation.vue,system,,源码文本扫描；在线状态未验
+主站,/report,报表中心,frontend/src/views/report/ReportCenter.vue,report,,源码文本扫描；在线状态未验
+主站,/report/view,查看报表,frontend/src/views/report/ReportView.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/governance/concepts,概念注册表,frontend/src/views/governance/ConceptRegistry.vue,governance,,源码文本扫描；在线状态未验
+主站,/governance/concepts/:conceptId,概念编辑,frontend/src/views/governance/ConceptEditor.vue,ungrouped,,源码文本扫描；在线状态未验
+主站,/governance/graph,全景关系图,frontend/src/views/governance/ConceptGraph.vue,governance,,源码文本扫描；在线状态未验
+主站,/governance/change-logs,变更历史,frontend/src/views/governance/ChangeLog.vue,governance,,源码文本扫描；在线状态未验
+主站,/colorwork/download,库存图直接下载,frontend/src/views/colorwork/ColorworkFrame.vue,colorwork,,仅外壳已查；SSO 子应用内部未覆盖
+主站,/colorwork/edit,实时库存图修改,frontend/src/views/colorwork/ColorworkFrame.vue,colorwork,,仅外壳已查；SSO 子应用内部未覆盖
+主站,/colorwork/master,原始库存图文件,frontend/src/views/colorwork/ColorworkFrame.vue,colorwork,,仅外壳已查；SSO 子应用内部未覆盖
+主站,/task,任务中心,frontend/src/views/task/TaskCenter.vue,task,C49,源码文本扫描；在线状态未验
+主站,/profile,个人设置,frontend/src/views/profile/ProfilePage.vue,ungrouped,,源码文本扫描；在线状态未验
+主站独立,/login,登录,frontend/src/views/auth/LoginPage.vue,standalone,,源码文本扫描；在线状态未验
+主站独立,/expo/kiosk,AI 试戴,frontend/src/views/expo/ExpoKiosk.vue,standalone,,源码文本扫描；在线状态未验
+主站独立,/inventory,公开库存,frontend/src/views/stock/PublicInventory.vue,standalone,,源码文本扫描；在线状态未验
+主站独立,/whatsapp-translation/authorize,翻译授权,frontend/src/views/system/WhatsAppTranslationAuthorize.vue,standalone,,源码文本扫描；在线状态未验
+主站独立,/create/:token?,客户效果图,frontend/src/views/customer-image/CustomerImagePortal.vue,standalone,,源码文本扫描；在线状态未验
+PM,/,GateView,frontend-pm/src/views/GateView.vue,pm,,源码文本扫描；在线状态未验
+PM,/dashboard,DashboardView,frontend-pm/src/views/DashboardView.vue,pm,C16,源码文本扫描；在线状态未验
+PM,/tasks,TasksView,frontend-pm/src/views/TasksView.vue,pm,,源码文本扫描；在线状态未验
+PM,/materials,MaterialsView,frontend-pm/src/views/MaterialsView.vue,pm,,源码文本扫描；在线状态未验
+PM,/materials/:id,MaterialDetailView,frontend-pm/src/views/MaterialDetailView.vue,pm,,源码文本扫描；在线状态未验
+PM,/activity,ActivityView,frontend-pm/src/views/ActivityView.vue,pm,C17,源码文本扫描；在线状态未验
+客户门户,/login,LoginView,frontend-portal/src/components/LoginView.vue,portal,,源码文本扫描；在线状态未验
+客户门户,登录页内申请访问,AccessRequestView,frontend-portal/src/components/AccessRequestView.vue,portal,,源码文本扫描；在线状态未验
+客户门户,/activate,ActivationView,frontend-portal/src/components/ActivationView.vue,portal,,源码文本扫描；在线状态未验
+客户门户,/collection,CollectionView,frontend-portal/src/components/CollectionView.vue,portal,C38,源码文本扫描；在线状态未验
+客户门户,/collection/:code,FamilyDetailView,frontend-portal/src/components/FamilyDetailView.vue,portal,,源码文本扫描；在线状态未验
+客户门户,/checkout (别名 /cart),CheckoutView,frontend-portal/src/components/CheckoutView.vue,portal,"C40,C42",源码文本扫描；在线状态未验
+客户门户,/orders,OrdersView,frontend-portal/src/components/OrdersView.vue,portal,C39,源码文本扫描；在线状态未验
+客户门户,/orders/:id[/proposal],OrdersView,frontend-portal/src/components/OrdersView.vue,portal,C39,源码文本扫描；在线状态未验
+小程序,pages/entry/entry,entry,miniprogram/pages/entry/entry.wxml,mini,,源码文本扫描；在线状态未验
+小程序,pages/scan/scan,scan,miniprogram/pages/scan/scan.wxml,mini,C46,源码文本扫描；在线状态未验
+小程序,pages/login/login,login,miniprogram/pages/login/login.wxml,mini,,源码文本扫描；在线状态未验
+小程序,pages/history/history,history,miniprogram/pages/history/history.wxml,mini,,源码文本扫描；在线状态未验
+小程序,pages/overview/overview,overview,miniprogram/pages/overview/overview.wxml,mini,,源码文本扫描；在线状态未验
+小程序,pages/domestic/scan/scan,scan,miniprogram/pages/domestic/scan/scan.wxml,mini,,源码文本扫描；在线状态未验
+小程序,pages/domestic/orders/orders,orders,miniprogram/pages/domestic/orders/orders.wxml,mini,,源码文本扫描；在线状态未验
+小程序,pages/domestic/lookup/lookup,lookup,miniprogram/pages/domestic/lookup/lookup.wxml,mini,,源码文本扫描；在线状态未验
+小程序,pages/domestic/unit-history/unit-history,unit-history,miniprogram/pages/domestic/unit-history/unit-history.wxml,mini,,源码文本扫描；在线状态未验
+小程序,pages/domestic/track/track,track,miniprogram/pages/domestic/track/track.wxml,mini,,源码文本扫描；在线状态未验
+小程序,pages/shipping/check/check,check,miniprogram/pages/shipping/check/check.wxml,mini,,源码文本扫描；在线状态未验
+静态入口,/6010/index.html,6010,frontend/public/6010/index.html,static,C48,源码文本扫描；在线状态未验
+静态入口,/caigoujie/index.html,caigoujie,frontend/public/caigoujie/index.html,static,,源码为示例/演示入口；不按生产功能验收
+静态入口,/caigoujie/liuli.html,caigoujie,frontend/public/caigoujie/liuli.html,static,,源码为示例/演示入口；不按生产功能验收
+静态入口,/caigoujie/xiangsu.html,caigoujie,frontend/public/caigoujie/xiangsu.html,static,,源码为示例/演示入口；不按生产功能验收
+静态入口,/card/ginny/index.html,ginny,frontend/public/card/ginny/index.html,static,,源码文本扫描；在线状态未验
+静态入口,/card/janny/index.html,janny,frontend/public/card/janny/index.html,static,,源码文本扫描；在线状态未验
+静态入口,/card/katy/index.html,katy,frontend/public/card/katy/index.html,static,,源码文本扫描；在线状态未验
+静态入口,/card/sylvia/index.html,sylvia,frontend/public/card/sylvia/index.html,static,,源码文本扫描；在线状态未验
+静态入口,/customer-media/index.html,customer-media,frontend/public/customer-media/index.html,static,C44,源码文本扫描；在线状态未验
+静态入口,/expo-sales/index.html,expo-sales,frontend/public/expo-sales/index.html,static,,源码文本扫描；在线状态未验
+静态入口,/festival/fugou.html,festival,frontend/public/festival/fugou.html,static,,源码文本扫描；在线状态未验
+静态入口,/festival/index.html,festival,frontend/public/festival/index.html,static,,源码文本扫描；在线状态未验
+静态入口,/festival/tuandui.html,festival,frontend/public/festival/tuandui.html,static,,源码文本扫描；在线状态未验
+静态入口,/festival/xinqian.html,festival,frontend/public/festival/xinqian.html,static,,源码文本扫描；在线状态未验
+静态入口,/festival/zhaiyao.html,festival,frontend/public/festival/zhaiyao.html,static,,源码文本扫描；在线状态未验
+静态入口,/festival/zhenying.html,festival,frontend/public/festival/zhenying.html,static,,源码文本扫描；在线状态未验
+静态入口,/m/index.html,m,frontend/public/m/index.html,static,,源码文本扫描；在线状态未验
+静态入口,/m/login.html,m,frontend/public/m/login.html,static,C45,源码文本扫描；在线状态未验

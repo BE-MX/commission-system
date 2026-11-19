@@ -6,7 +6,7 @@
 
 答卷模板及离线评分入口为 `scripts/factory_inbound_eval.py template <私有照片目录>`、`scripts/factory_inbound_eval.py score <仓库校对JSON> <正式preset预测JSON>`。JSON 以照片文件名为键，字段见[设计开发文档](requirements/2026-11-18-factory-delivery-inbound/design.md)。仓库需核对照片的行拆分和原文，再记录实际 SKU 和订单命中情况。照片、答卷和预测保存在私有位置。
 
-## WhatsApp AI 消息助手（2026-10-13，本地候选）
+## WhatsApp AI 消息助手（2026-10-13）
 
 聊天页“AI消息助手”选择北京时间区间，按整个账号或当前会话生成逐对象总结、未决问题、知识引用建议和跟进清单。用户明确清单仅留助手，勾选持久保存，不自动建任务中心事项或发送WhatsApp消息。当前正文权限与AI外发独立检查，知识只用本人可读已发布版本；数据更新/撤权后旧结果不再展示。短证据ID只用于模型传输，最终还原稳定消息UID。迁移193接192，部署需核对并行链。详见 [实现约定](requirements/2026-10-13-whatsapp-ai-assistant.md)。
 
@@ -1114,6 +1114,12 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 **模型配置（2026-11-16）**：工作台通过后台发布的 `parameters.chat` 列出可用预设，原 `customer_ai_chat` 默认保留；每轮可选模型，支持 direct/OpenAI 与 direct/Anthropic；不再与 `AI_CHAT_MODEL` 环境变量比对。API 地址、Key、型号和参数在 AI 接入管理配置，对后续新调用生效。图文功能需管理员选用支持图片输入的模型；不要为改一个业务而更换其他生图预设共用 Provider 的协议，应另建 Provider。预设/供应商缺失或停用时仍明确不可用，不回退其他配置。
 
+**历史配置记录（2026-10-19，以下模型门槛已由 2026-11-09 的预设配置改造替代）**
+
+**TeamRouter 配置红线**：方案对话必须新建或复用一个独立的 `provider_type=direct`、`api_type=anthropic` TeamRouter Provider。**绝不能把现有生图使用的 TeamRouter OpenAI Provider 改成 Anthropic**，否则 `/v1/images/*` 生图协议会被切成 `/v1/messages`，直接破坏生图链路。创建并启用 Preset `customer_ai_chat`，model 必须等于 `AI_CHAT_MODEL`（默认 `claude-fable-5`），绑定上述 Anthropic Provider，并写入前述附件安全 system prompt。Preset/Provider 缺失、禁用、协议/模型不匹配时返回“方案对话服务尚未配置，请联系管理员”，不回退其他 Provider 或模型。
+
+**模型名与诊断（2026-10-19）**：模型名改由 `AI_CHAT_MODEL` 配置（默认值不变），换模型只改配置或 env，不改代码；Preset 的 model 仍须与之完全一致。业务用户只看到通用文案；`ai_chat:admin` 或 super_admin 调 `GET /api/ai-chat/config` 时额外返回 `diagnostic`（`reason` + `detail`），逐条指出 `preset_missing / preset_deleted / preset_disabled / model_mismatch / provider_missing / provider_disabled / provider_type_mismatch / api_type_mismatch`，并在后端写 warning 日志。起因：2026-09-28 后台把该 Preset model 改成 `claude-fable-5-1`，代码常量仍要求 `claude-fable-5`，方案对话自此全部失败，而“预设测试”不走门禁所以显示正常；2026-10-19 已把生产同库该行改回 `claude-fable-5`（两个别名在 TeamRouter 目录中均存在且可调用）。
+
 **部署顺序**：① 在目标环境为 `AI_CHAT_STORAGE_ROOT` 建私有目录并授予后端服务账号读写权限；② 通过 `deploy/deploy.bat` 候选发布入口统一检查并执行所需迁移（含 100/124/265/266），禁止开发机升级生产库；③ 重启后端完成 `ai_chat:read/write/admin` 权限 seed，并在角色管理中分配 read/write；④ 在“系统管理 → AI 接入管理”配置适用协议的 Provider 与 `customer_ai_chat` Preset（API Key 只存后台配置，不进 git）；⑤ 用 `GET /api/ai-chat/config` 确认 `configured=true` 后再开放入口。用户点击停止只会关闭本次流、保存部分内容并标记 `stopped`；供应商可能已接收请求，界面和运维说明都不得承诺取消计费。
 
 **生成恢复与版本（v2）**：短周期落库、45 秒租约和 600 秒上限；配置/详情/发送入口恢复已过期记录，不自动调用供应商。重生成与继续生成保留原版本，预览不改变上下文。运行管理只汇总元数据，角色额度取已配置最小值，未知/中断用量不按完整账单估价。具体接口与字段见 API 和数据库参考。
@@ -1218,6 +1224,8 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 
 `/shipping/outbound` 首次加载慢的主要耗时在后端归属过滤：旧查询对每张镜像单重复扫描本地发票，并把同一出库队列的计数、分页各算一次。`outbound_service._owner_scope_clause` 现在先按有效 OKKI 绑定、成功创建日志、精确订单和客户关系汇成可见出库关联；MySQL 固定从绑定/发票走索引连接，避免相关子查询放大。`outbound_queue_service` 用窗口计数与分页同查，空页单独补总数；当页同步状态批量读取。权限口径、待出库去重和打印数据未变。只读实库同一 20 条列表口径：普通业务员约 12.2 秒降到 0.73 秒，管理员约 1.8 秒降到 0.75 秒；这是服务层单次测量，不含浏览器网络和渲染。
 
+
+
 2026-10-14 继续优化镜像归属分支：`company_id IN (SELECT company_id FROM okki_orders WHERE user_id=:scope_okki_user_id)` 取代逐出库记录相关 `EXISTS`，避免对同一客户的订单重复探测；本地方舟首推订单归属分支保持原规则。首页无结果直接返回总数 0，只有后续越界空页补查总数。北京云端对「翟 #261023」按实际数据执行只读处理函数对比，带归属权限的中位耗时从 540ms 降至 134ms，首次列表从 708ms 降至 151ms；6 组完整响应摘要一致。此为独立诊断进程中的候选代码测量，不含 HTTP 网络/浏览器渲染，也不代表已部署。见[验证记录](reports/2026-10-14-outbound-search-performance.md)。
 
 用户请求截图后进一步核实：线上 `www.leshine.cloud` 的列表仍命中整个 shipping 模块的办公室归属路由，经北京→新加坡→办公室，不能用北京本机函数耗时代表线上 API。候选 `deploy/nginx/shipping-video-cloud.conf` 为纯列表 URL 增加北京 exact 本机规则；该 GET 仅查共享数据库，权限与实时照片 COUNT 不变，不需要本地媒体/扫码会话/打印签名。用户随后要求打印与 Word 也在北京：核验两端当前/旧版二维码密钥、小满 base/client 与共享 token 一致，现有 token 的实单 GET 均成功，运行 venv 的 qrcode/python-docx 可生成含二维码文档后，增加严格 `outbound-records/[^/]+/(print-data|word)$` 本机规则。原打印状态行锁与小满 token 懒刷新提交不变；同步/删除、上传、验货资料和媒体继续办公室。这些例外需通过 `--shipping-video-routing-only` 单独授权、预检并激活；普通代码发布不会应用。激活前还需复核运行配置与同登录身份 HTTP/扫码验签。
@@ -1259,12 +1267,6 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 ### 2026-09-28 出库单待补验时先打印
 
 尹德魁 260970 在出库资料变更后，旧验货照片已作废、验货单为草稿；仓库仍需新照片，但打印当前出库单可作为重新验货的纸单入口。管理员可按单填写依据允许先打印，授权绑定本次已核实的小满出库版本并留操作审计；当前出库单打印/Word 解锁，旧媒体仍过期，补拍与提交校验不放松。再次同步或进入待同步状态时不继承该授权。
-
-### 2026-10-14 费用行变更与实物补验分开判定
-
-`Other Items` 费用行的新增、修改或删除不代表实物变化，不触发整单照片失效、实物补拍或已提交检验自动撤回。同步仍完整验证并保存费用明细，费用与实物互换、真实实物变化及发货备注变化保持补验保护；已有未完成的补验要求和旧媒体失效标记不能因本次费用修改清除。判定同时核对变更前后名称，缺失身份或未知名称按实物保守处理。
-
-该修复不自动恢复历史已打回检验、不代替质检人员提交，也不批量清除旧补验标记。历史费用误判须先按单核对同步前后实物、备注、当前镜像、检验版本与照片审计，获生产数据纠正授权后另行处理。
 
 ### 发票统一客户选择器（2026-09-17）
 
@@ -1347,14 +1349,14 @@ Agent 委派只允许现有 customer_order_copilot 的只读准备型工具。re
   - 异常/意见任务跟着条目处理人走，不跟客户走——三种情况都不动，因为问题已经发生，必须有人闭环。
   - **注册前提**：监听随 `app.domestic_followup.models` 被导入时注册。主应用和 scheduler 进程都经过 `routers.py` 导入，覆盖线上所有路径；只导入 `app.domestic` 的独立脚本改归属时，不会迁移待办。
   - **已知盲区**：`no_autoflush` 下查不到同一次 flush 里刚 `add`、还没 flush 的任务。业务上不存在「同一个 flush 里新建跟进任务又改客户归属」的路径，接受这个盲区。
-- **时间线可读/可写分开判定**：客户时间线（`GET /customers/{id}/timeline`）按当前用户对该客户的数据范围分别判定可读和可写；不可读时隐藏发货事实和 AI 背景两块，只露跟进记录本身,避免越权用户拼出完整客户画像。
-- **关闭待办时校验操作人**：`resolve_item` 只允许当前 `handler_user_id` 本人关闭异常/意见条目，否则 `PermissionError("无权处理该条目")`；转交（`transfer_item`）改变 `handler_user_id` 后处理权随之转移。
 - **客户流失态势与公海双钟（2026-11-13）**：规格 `docs/requirements/2026-11-13-followup-churn-ship/`。坑与约定：
   - 释放口径只在 `app/domestic/public_sea.py`，释放任务和 `/stats/churn-map` 都调它；图上的「距释放 N 天」用 `release_day` 正向搜索自然月，与任务的 `effective <= months_ago(today)` 逐日等价（有逐日对拍测试）。不要在别处写「加 90 天」。
   - 旧 `_months_ago` 月末回退错到上上个月底（5-31 往前 1 月得 3-31），让判定在月末倒退一天；已改为目标月最后一天。
   - 自动释放没有操作人，跟进协作事件表 `actor_user_id` 非空，所以因跟进钟结束责任时不写协作事件，只靠分析事件表与待办「客户释放」留痕。
   - 近 30 天落海读 `domestic_decision.ownership_events.latest_releases`：事件表无时间索引，必须先给客户 ID 再查。
   - 前端 three.js 只在沉浸层动态加载；`vite.config.js` 的 manualChunks 必须把 three 拆成 `vendor-three`，否则会并进全站 vendor 包。条目位置由 `shipLayout` 原地更新（非响应式），给侧栏的选中项要每次时间变化重新拷贝快照。
+- **时间线可读/可写分开判定**：客户时间线（`GET /customers/{id}/timeline`）按当前用户对该客户的数据范围分别判定可读和可写；不可读时隐藏发货事实和 AI 背景两块，只露跟进记录本身,避免越权用户拼出完整客户画像。
+- **关闭待办时校验操作人**：`resolve_item` 只允许当前 `handler_user_id` 本人关闭异常/意见条目，否则 `PermissionError("无权处理该条目")`；转交（`transfer_item`）改变 `handler_user_id` 后处理权随之转移。
 - 推送走发件箱表 `ark_domestic_followup_digests`，`(user_id, digest_date, kind, ref_key)` 唯一键防重；未绑定钉钉的人不重试。紧急异常接收人在配置 `urgent_receiver_user_ids` 里维护，不设则只记日志、不推送。
 - **每日汇总补发**：`send_daily_digest_job` 在 09:00（mon-sat）正式发送，09:05 和 09:15 各跑一次同任务作为补发（钉钉抖动兜底），发件箱唯一键保证同人同日不会重复推送。
 - **停用用户不收推送**：发送前按 `ark_users.is_active` 过滤接收人，已停用账号不生成推送记录。

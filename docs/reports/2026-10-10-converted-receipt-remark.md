@@ -21,4 +21,14 @@
 - `python scripts/check_conventions.py` 与 `git diff --check` 成功。
 - 独立 agent 审查并修复旧汇总响应回退、在途订单保存反向锁后复核通过。
 
-生产需要发布包含前次接口与本次入口的前后端。合并推送授权已存在；生产发布授权尚未取得，待用户明确授权后走 `deploy/deploy.bat`，发布完成需检查两端 OpenAPI 与真实静态版本，用户再正常保存该业务备注。
+## 授权生产发布与后检
+
+用户随后明确要求「根据git最新的代码进行生产环境的部署更新」。获取 `origin/main` 后固定完整候选 `e26d5c2398fa22a4c069ebb5a9d4b3e7028e5639`，从办公室受管候选的 `deploy/deploy.bat --live-root D:/commission-system --revision <SHA> --no-pull` 执行准备与正式发布。两个进程 exit 0，最终 `publish-current.json` 为 `succeeded`、范围 `office-and-cloud`、deferred 为空。
+
+- 办公室与北京源码 HEAD 均为候选 SHA；运行中 OpenAPI 均包含 `PATCH /api/receipts/{identity}/remark` 与 `PATCH /api/invoice/invoices/{invoice_id}/remark`。部署后 41 项只读检查的所有必需项通过，后端、共享数据库、隧道及两主域鉴权可达；6 项非必需结果记录为原停用状态或未纳管探针，未将其计作全部运行。
+- 两主域的前端制品均为 `445546e20b6e0a84690754843a7675fe822fe892c713cbad03f99650e7a453e3`；公网 index、InvoiceManage-BECaCqJB.js、共享 ReceiptPurposeCorrection-HNQdBXAJ.js 的 SHA256 与发布清单一致。实际公网 JS 包含「编辑备注」「保存备注」和订单页备注互斥字段。
+- `pm.leshine.work` 与 `media.leshine.cloud` 制品无需变更，激活及公网 index 摘要核验通过。办公室静态站、北京色块服务与已登记出库制品也完成发布流程；出库调度恢复并核验原 active/enabled 状态。邮件 Worker 制品核验到本候选，保留原停用状态，未擅自启用发信。
+- Schema 保持 `180_settlement_funding_amendment`，本次无 DDL。准备阶段两主域各传输 1,178,166 字节；正式阶段复用 staging，成功回执的 transfer_bytes 为 0。统一入口的 PM/Pantone 基础数据步骤均报告已有记录并跳过。
+- 原有主目录未提交内容保留；发布回执、完整日志、OpenAPI 与公网摘要证据存放 `tmp/converted-receipt-remark-delivery/`，服务器保留原部署备份及恢复材料。本次只读后检未修改真实订单或回款，实际业务备注由用户正常编辑保存验收。
+
+最新 Git 应用代码与备注入口已上线。小程序审核、平板 APK、尚未登记的站点与独立服务不在统一入口本次应用发布范围内。

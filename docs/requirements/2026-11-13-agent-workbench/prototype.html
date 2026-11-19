@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工作台原型 · 业务员的一天</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+/* 原型为独立静态页：色值抄自 frontend/src/styles/tokens.css，落地时改引用变量 */
+:root {
+  --gold: #D4941C; --gold-accent: #F5CB5C; --gold-soft: #FDF4DC;
+  --btn: #E0A50B; --btn-hover: #C9930A; --btn-ink: #211903; --link: #8F6508;
+  --text: #1a1a2e; --text-2: #4a5568; --text-3: #7b8597; --border: #e2e5ef;
+  --ok-bg: #E4F7F3; --ok-text: #0B6E63; --warn-bg: #FEF0DE; --warn-text: #9A4E08;
+  --info-bg: #EBF1FE; --info-text: #1D4ED8; --danger-bg: #FDEBEC; --danger-text: #C62A30;
+  --violet-bg: #F1EDF7; --violet-text: #7048a8;
+  --side-from: #262a33; --side-to: #1e2129;
+  --card-shadow: 0 10px 30px rgba(146,103,24,.14), inset 0 1px 0 rgba(255,255,255,.9);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --font-display: "Outfit", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-body: "DM Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font: 500 14px/1.6 var(--font-body); color: var(--text); background: #f8f3ea; }
+button { font: inherit; color: inherit; cursor: pointer; }
+h1, h2, h3, p { margin: 0; }
+
+/* ── 原型控件条（不属于产品） ── */
+.proto-bar { display: flex; align-items: center; gap: 10px; padding: 8px 16px; background: #14161b; color: #c9cdd6; font-size: 12px; flex-wrap: wrap; }
+.proto-bar strong { color: var(--gold-accent); font-family: var(--font-display); letter-spacing: .08em; }
+.proto-bar .spacer { flex: 1; }
+.proto-bar button { border: 1px solid #3a3f4b; background: none; color: #c9cdd6; border-radius: 6px; padding: 4px 10px; font-size: 12px; }
+
+/* ── 外壳 ── */
+.shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); min-height: calc(100% - 41px); }
+.side { background: linear-gradient(180deg, var(--side-from), var(--side-to)); color: #9C9590; padding: 20px 12px; }
+.brand { font: 800 16px var(--font-display); color: #fff; padding: 0 10px 18px; letter-spacing: .04em; }
+.brand span { color: var(--gold-accent); }
+.side a { display: flex; justify-content: space-between; padding: 9px 12px; border-radius: 10px; color: inherit; text-decoration: none; font-size: 13px; }
+.side a.on { background: var(--gold-accent); color: var(--btn-ink); font-weight: 600; }
+.side a b { background: var(--danger-text); color: #fff; border-radius: 999px; font-size: 11px; min-width: 18px; text-align: center; line-height: 18px; }
+.main { position: relative; padding: 28px 28px 80px;
+  background:
+    radial-gradient(640px 640px at 100% 0%, rgba(245,203,92,.42), transparent 68%),
+    radial-gradient(560px 560px at 0% 55%, rgba(230,160,60,.26), transparent 68%),
+    linear-gradient(155deg, #fdf8ec 0%, #f8f3ea 52%, #f9efe7 100%); }
+.wrap { max-width: 1160px; margin: 0 auto; }
+
+/* ── 开场 ── */
+.date { font: 700 11px var(--font-display); letter-spacing: .12em; color: var(--link); text-transform: uppercase; }
+.headline { font: 800 28px/1.3 var(--font-display); margin: 6px 0 18px; text-wrap: balance; }
+.headline em { font-style: normal; color: var(--gold); font-variant-numeric: tabular-nums; }
+.ask { position: relative; }
+.ask input { width: 100%; height: 50px; border-radius: 14px; border: 1px solid rgba(255,255,255,.9); background: rgba(255,255,255,.82);
+  box-shadow: var(--card-shadow); padding: 0 96px 0 46px; font: 500 15px var(--font-body); color: var(--text); outline: none; transition: box-shadow 200ms ease; }
+.ask input::placeholder { color: var(--text-3); }
+.ask input:focus { box-shadow: 0 0 0 3px rgba(224,165,11,.28), var(--card-shadow); }
+.ask svg { position: absolute; left: 16px; top: 15px; color: var(--gold); }
+.ask kbd { position: absolute; right: 14px; top: 13px; font: 600 11px var(--font-body); color: var(--text-3); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; background: #fff; }
+
+/* ── 一天的节奏条 ── */
+.rhythm { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 18px; padding: 4px;
+  background: rgba(255,255,255,.72); border: 1px solid rgba(255,255,255,.9); border-radius: 14px; box-shadow: var(--card-shadow);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+.rhythm a { display: flex; align-items: baseline; gap: 8px; padding: 9px 14px; border-radius: 10px; text-decoration: none; color: var(--text-2); font-size: 13px;
+  transition: background-color 160ms ease; }
+.rhythm a b { font: 700 18px var(--font-display); color: var(--text); font-variant-numeric: tabular-nums; }
+.rhythm a.hot b { color: var(--danger-text); }
+.rhythm a.calm b { color: var(--ok-text); }
+.rhythm a small { margin-left: auto; color: var(--text-3); font-size: 12px; }
+@media (hover: hover) and (pointer: fine) { .rhythm a:hover { background: rgba(245,203,92,.18); } }
+
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 316px; gap: 24px; margin-top: 24px; align-items: start; }
+section { scroll-margin-top: 70px; }
+section + section { margin-top: 30px; }
+.sec-title { display: flex; align-items: baseline; gap: 8px; font: 700 15px var(--font-display); margin-bottom: 12px; }
+.sec-title small { font: 500 12px var(--font-body); color: var(--text-3); }
+.list { display: flex; flex-direction: column; gap: 14px; }
+
+/* ── 卡片 ── */
+.card { background: linear-gradient(160deg, rgba(255,255,255,.92), rgba(255,255,255,.7)); border: 1px solid rgba(255,255,255,.9);
+  border-radius: 16px; box-shadow: var(--card-shadow); padding: 16px 20px; }
+.card.leaving { opacity: 0; transform: scale(.985); transition: opacity 140ms ease-out, transform 140ms ease-out; }
+.card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.tag { font: 600 12px var(--font-body); padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+.tag.c1688 { background: var(--warn-bg); color: var(--warn-text); }
+.tag.wa { background: var(--ok-bg); color: var(--ok-text); }
+.tag.after { background: var(--danger-bg); color: var(--danger-text); }
+.tag.rebuy { background: var(--info-bg); color: var(--info-text); }
+.tag.social { background: var(--violet-bg); color: var(--violet-text); }
+.tag.mine { background: var(--gold-soft); color: var(--link); }
+.tag.new { background: var(--danger-text); color: #fff; }
+.who { font-weight: 600; font-size: 13px; }
+.wait { margin-left: auto; font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.wait.late { color: var(--danger-text); font-weight: 600; }
+.said { font-size: 13px; color: var(--text-2); border-left: 3px solid var(--border); padding: 2px 0 2px 10px; margin-bottom: 8px; }
+.said small { display: block; color: var(--text-3); }
+.card h3 { font: 700 15px/1.5 var(--font-display); }
+.prep { margin-top: 10px; border-radius: 12px; background: rgba(255,255,255,.78); border: 1px solid var(--border); padding: 10px 14px; }
+.prep-label { font: 600 12px var(--font-body); color: var(--text-3); margin-bottom: 4px; }
+.draft { width: 100%; border: 0; background: none; resize: none; font: 400 13px/1.65 var(--font-body); color: var(--text); padding: 0; outline: none; display: block; }
+.draft:not([readonly]) { background: #fff; border-radius: 8px; padding: 8px 10px; box-shadow: 0 0 0 3px rgba(224,165,11,.28); }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 12px; color: var(--text-2); }
+.facts span::before { content: "✓ "; color: var(--ok-text); font-weight: 700; }
+.facts span.no::before { content: "! "; color: var(--danger-text); }
+.why-btn { margin-top: 8px; border: 0; background: none; padding: 0; font-size: 13px; color: var(--link); }
+.why-btn::after { content: " ›"; }
+.why-btn[aria-expanded="true"]::after { content: " ⌄"; }
+.why { margin: 6px 0 0; padding: 0 0 0 16px; font-size: 13px; color: var(--text-2); }
+.acts { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--border); background: #fff; border-radius: 10px; padding: 6px 14px; font: 600 13px var(--font-body); white-space: nowrap;
+  transition: transform 140ms var(--ease-out), background-color 160ms ease; }
+.btn:active { transform: scale(.97); }
+.btn.primary { background: var(--btn); border-color: var(--btn); color: var(--btn-ink); }
+.btn.quiet { border-color: transparent; background: none; color: var(--text-2); margin-left: auto; }
+.btn.sm { padding: 4px 10px; font-size: 12px; border-radius: 8px; }
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover { background: #F4F5F7; } .btn.primary:hover { background: var(--btn-hover); } .btn.quiet:hover { background: rgba(0,0,0,.04); }
+}
+:focus-visible { outline: 3px solid rgba(224,165,11,.5); outline-offset: 2px; }
+.empty { text-align: center; padding: 26px 20px; color: var(--text-2); }
+
+/* ── 订单流水线 ── */
+.pipe { padding: 6px 20px; }
+.row { display: grid; grid-template-columns: 150px 250px minmax(0, 1fr); gap: 16px; align-items: center; padding: 12px 0; border-top: 1px solid var(--border); }
+.row:first-child { border-top: 0; }
+.row .no { font: 600 13px var(--font-body); font-variant-numeric: tabular-nums; }
+.row .no small { display: block; font-weight: 500; color: var(--text-3); }
+.steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
+.steps i { font: 600 11px var(--font-body); font-style: normal; text-align: center; padding: 3px 0; border-radius: 5px; background: rgba(91,102,120,.09); color: var(--text-3); }
+.steps i.done { background: var(--ok-bg); color: var(--ok-text); }
+.steps i.stuck { background: var(--danger-bg); color: var(--danger-text); }
+.steps i.now { background: var(--gold-soft); color: var(--link); }
+.next { font-size: 13px; min-width: 0; }
+.next p { color: var(--text-2); }
+.next p b { color: var(--text); font-weight: 600; }
+.next .acts { margin-top: 6px; }
+.next input { height: 28px; border: 1px solid var(--border); border-radius: 8px; padding: 0 8px; font: 500 12px var(--font-body); width: 150px; }
+.next .settled { color: var(--ok-text); font-weight: 600; }
+.more { padding: 10px 0; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-3); }
+
+/* ── 侧列 ── */
+.aside { display: flex; flex-direction: column; gap: 20px; position: sticky; top: 16px; }
+.panel { background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.85); border-radius: 16px; padding: 16px 18px; transition: box-shadow 240ms ease; }
+.panel.due { box-shadow: 0 0 0 2px var(--btn), var(--card-shadow); background: rgba(255,255,255,.9); }
+.panel h2 { display: flex; align-items: baseline; font: 700 13px var(--font-display); color: var(--text-2); margin-bottom: 10px; }
+.panel h2 small { margin-left: auto; font: 500 12px var(--font-body); color: var(--text-3); }
+.tally { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; font-size: 13px; }
+.tally div { display: flex; justify-content: space-between; color: var(--text-2); }
+.tally b { font-variant-numeric: tabular-nums; color: var(--text); }
+.tally b.bump { animation: bump 320ms var(--ease-out); }
+@keyframes bump { from { color: var(--gold); transform: scale(1.25); } }
+.block-label { font: 600 12px var(--font-body); color: var(--text-3); margin: 12px 0 4px; }
+.blockers { width: 100%; min-height: 76px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font: 400 13px/1.6 var(--font-body); resize: vertical; background: rgba(255,255,255,.8); }
+.log { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.log li { display: flex; gap: 10px; padding: 7px 0; border-top: 1px solid rgba(226,229,239,.8); }
+.log li:first-child { border-top: 0; padding-top: 0; }
+.dot { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; background: var(--ok-text); }
+.dot.run { background: var(--btn); animation: pulse 1.1s ease-in-out infinite; }
+.log small { display: block; color: var(--text-3); }
+@keyframes pulse { 50% { opacity: .35; } }
+
+/* ── 提醒条 ── */
+.toast { position: fixed; left: 50%; bottom: 28px; z-index: 20; display: flex; align-items: center; gap: 14px; padding: 10px 14px 10px 18px;
+  background: #1e2129; color: #fff; border-radius: 12px; font-size: 13px; box-shadow: 0 12px 32px rgba(0,0,0,.24);
+  transform: translate(-50%, 16px); opacity: 0; pointer-events: none; transition: transform 220ms var(--ease-out), opacity 220ms var(--ease-out); }
+.toast.show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+.toast button { border: 0; background: none; color: var(--gold-accent); font-weight: 600; padding: 4px 6px; white-space: nowrap; }
+
+@media (max-width: 1080px) { .shell { grid-template-columns: 1fr; } .side { display: none; } .cols { grid-template-columns: 1fr; } .aside { position: static; }
+  .main { padding: 20px 16px 80px; } .headline { font-size: 22px; } .row { grid-template-columns: 1fr; gap: 8px; } .rhythm { grid-template-columns: 1fr 1fr; } .rhythm a small { display: none; } }
+@media (prefers-reduced-motion: reduce) { * { transition-duration: 1ms !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="proto-bar">
+  <strong>原型</strong><span>业务员 王琳 的一天 · 模拟提醒：</span>
+  <button id="simInquiry">来一条 1688 新询盘</button>
+  <button id="simEvening">跳到 17:30</button>
+  <span class="spacer"></span>
+  <button id="reset">重置</button>
+</div>
+
+<div class="shell">
+  <nav class="side" aria-label="主导航（示意）">
+    <div class="brand">LeShine <span>Ark</span></div>
+    <a class="on" href="#">工作台 <b id="navBadge"></b></a><a href="#">我的私海</a><a href="#">订单发票</a><a href="#">发货检验</a><a href="#">物流跟踪</a><a href="#">客户售后</a><a href="#">战报</a>
+  </nav>
+
+  <main class="main">
+    <div class="wrap">
+      <div class="date">11 月 13 日 · 周五 · <span id="clock">09:12</span></div>
+      <h1 class="headline" id="headline"></h1>
+
+      <form class="ask" id="ask">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg>
+        <input id="askInput" aria-label="交办任务或打开页面" placeholder="例如：给 Bella Hair 建一张 100 件 Body Wave 20 寸的订单" autocomplete="off">
+        <kbd>Enter</kbd>
+      </form>
+
+      <nav class="rhythm" id="rhythm" aria-label="今天的四件事"></nav>
+
+      <div class="cols">
+        <div>
+          <section id="sec-reply">
+            <div class="sec-title">客户在等你回 <small>等得最久的排最前，回复都已起草</small></div>
+            <div class="list" id="replyList"></div>
+          </section>
+          <section id="sec-orders">
+            <div class="sec-title">订单在走 <small>只列需要你动手的，正常推进的不打扰</small></div>
+            <div class="card pipe" id="pipe"></div>
+          </section>
+          <section id="sec-grow">
+            <div class="sec-title">可以主动出击 <small>Agent 昨晚看过客户网站和社媒后挑出来的</small></div>
+            <div class="list" id="growList"></div>
+          </section>
+        </div>
+
+        <aside class="aside">
+          <div class="panel" id="report">
+            <h2>今日日报 <small id="reportNote">随你的操作自动记</small></h2>
+            <div class="tally" id="tally"></div>
+            <div class="block-label">卡点（Agent 从卡住的单和未回的客户里整理，可改）</div>
+            <textarea class="blockers" id="blockers" aria-label="今日卡点"></textarea>
+            <div class="acts">
+              <button class="btn primary" id="submitReport">提交到 AI 表格</button>
+              <button class="btn" id="shareTeam">发到战队群</button>
+            </div>
+          </div>
+          <div class="panel"><h2>Agent 已替你办完</h2><ul class="log" id="done"></ul></div>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status"><span id="toastText"></span><button id="toastBtn">撤销</button></div>
+
+<script>
+const TALLY = { inq: '新询盘回复', quote: '老客户报价', order: '建单', ship: '发货推进', after: '售后处理', lead: '新机会' };
+
+const CARDS = () => [
+  { id: 'r1', sec: 'reply', tag: ['c1688', '1688 新询盘'], who: '深圳美妍贸易', wait: '已等 26 分钟', late: true, log: 'inq',
+    said: '13x4 蕾丝头套 18 寸有现货吗？先拿 50 顶，最快什么时候能发？',
+    title: '新客户，背调过了可以接。报价和发货时间已写进回复',
+    draft: '您好，13x4 蕾丝头套 18 寸现货充足，50 顶今天下单明天就能发。50 顶档单价 ¥268/顶，含检验和包装。需要的话我先发几张实拍图和检验视频给您看看？',
+    facts: ['18 寸现货 86 顶', '50 顶档价格取自当前价格矩阵', '企业注册 3 年，主营美发用品批发'],
+    why: ['1688 询盘 30 分钟内回复计入店铺响应率，这条已接近', '同类新客首单后 60 天内复购的占四成（近半年）'],
+    primary: '发送', done: '已回复 深圳美妍贸易', skip: '稍后' },
+  { id: 'r2', sec: 'reply', tag: ['wa', 'WhatsApp 老客户'], who: 'Bella Hair · Jessica', wait: '已等 2 小时 10 分', log: 'quote',
+    said: 'Can you do 100 pcs body wave 20" this week? Same price as last time?<small>这周能做 100 件 Body Wave 20 寸吗？价格和上次一样？</small>',
+    title: '库存够、价格可以沿用。回复写好了，订单草稿也顺手建了',
+    draft: 'Hi Jessica, yes — 100 pcs Body Wave 20" are in stock and can ship this week. Same price as your last order, $42.50/pc. I have prepared the invoice, shall I send it over?',
+    facts: ['20 寸现货 320 件', '上单单价 $42.50（INV-2610-188）', '订单草稿 INV-1113-06 已建，未提交'],
+    why: ['她过去 5 单都在确认价格后 24 小时内付款'],
+    primary: '发送并提交订单', done: '已回复 Jessica，订单 INV-1113-06 已提交', skip: '只回复', alsoLog: 'order' },
+  { id: 'r3', sec: 'reply', tag: ['after', '售后'], who: 'Luxe Wigs · Amara', wait: '昨天 22:40 发来', log: 'after',
+    said: '3 of the wigs are shedding badly, see photos.<small>有 3 顶掉发很严重，见图。（附 4 张照片）</small>',
+    title: '对上了订单和检验记录，建议补发 3 顶。售后单和回复都已起草',
+    draft: 'Hi Amara, so sorry about this. I have checked the photos and your order — we will send 3 replacement wigs with your next shipment at no cost. Could you keep the 3 pieces aside so we can look into the cause?',
+    facts: ['对应订单 INV-2610-212，10-28 发货', '发货检验记录正常，批次 B1026', '同批次暂无其他客户反馈'],
+    why: ['按售后政策：到货 30 天内的质量问题可补发', '4 张照片里 3 顶的发网走线一致，疑似同一工位'],
+    primary: '提交售后单并回复', done: '售后单已提交，已回复 Amara', skip: '转给主管' },
+  { id: 'g1', sec: 'grow', tag: ['rebuy', '复购窗口'], who: 'Nova Beauty · Zoe', wait: '距上次下单 58 天', log: 'quote',
+    title: '平均 60 天复购一次，该问一句了。按她常买的款写了开场',
+    draft: 'Hi Zoe, hope sales are going well! Your usual Straight 18" and Body Wave 20" are both fully stocked this week. Want me to reserve the same quantities as last time?',
+    facts: ['常买两款都有现货', '上单 09-16，$8,420'], why: ['近 5 单的间隔：55 / 62 / 58 / 64 / 61 天'],
+    primary: '发送', done: '已发给 Zoe', skip: '下周再说' },
+  { id: 'g2', sec: 'grow', tag: ['social', '社媒信号'], who: 'Glam Crown（Instagram）', wait: '昨天发帖', log: 'quote',
+    title: '她发帖说酒红色系卖断货了。我们 99J 有现货，可以借这个话题聊',
+    draft: 'Hi Tiana, saw your post — congrats on the burgundy sell-out! We have 99J in 16–22" ready to ship if you need a quick restock. Happy to send photos.',
+    facts: ['99J 现货 180 件', '她上次买 99J 是 8 月'], why: ['<a href="#">查看原帖</a>：“Burgundy is GONE y’all, restock coming soon”'],
+    primary: '发送', done: '已发给 Tiana', skip: '不合适' },
+  { id: 'g3', sec: 'grow', tag: ['social', '新线索'], who: '@hairbyzoe（TikTok 店铺）', wait: '不在任何人的私海', log: 'lead',
+    title: '近 30 天带货视频播放涨了 3 倍，官网在卖同类 13x4 头套',
+    facts: ['官网留有 WhatsApp 和邮箱', '未与现有客户重名'], why: ['主推款与我们的 13x4 HD Lace 规格接近', '<a href="#">查看店铺</a> · <a href="#">查看官网</a>'],
+    primary: '加入私海并背调', done: '已加入私海，背调进行中', skip: '不感兴趣' },
+];
+
+const ORDERS = () => [
+  { no: 'INV-1113-04', who: 'Bella Hair', at: 1, stuck: true, text: '<b>Body Wave 20 寸缺 20 件</b>，11-16 到货',
+    acts: [['拆单，先发 80 件', '已拆单：80 件今天走，20 件 11-16 补发', 1], ['等到 11-16 一起发', '已改交期为 11-16，并告知客户', 1]] },
+  { no: 'INV-1113-02', who: 'Nova Beauty', at: 2, text: '库存已锁，<b>发货单 FH-1113-02 已生成</b>',
+    acts: [['打印并通知仓库', '已打印，仓库已收到通知', 3]] },
+  { no: 'INV-1112-09', who: 'Glam Crown', at: 3, stuck: true, text: '<b>检验已 26 小时</b>，平时 4 小时内完成',
+    acts: [['催仓库（消息已写好）', '已催，仓库回复今天 11:00 前验完', 3]] },
+  { no: 'INV-1112-07', who: 'Luxe Wigs', at: 4, text: '检验通过，<b>该建 DHL 运单了</b>。收件信息和申报内容已整理好', waybill: true },
+];
+const STEPS = ['建单', '库存', '发货单', '检验', '发运'];
+
+const $ = id => document.getElementById(id);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const EASE = 'cubic-bezier(0.23, 1, 0.32, 1)';
+let cards, orders, tally, doneLog, undoState, toastTimer, toastAction, evening;
+
+function load() {
+  cards = CARDS(); orders = ORDERS(); evening = false; undoState = null; $('toast').classList.remove('show');
+  tally = { inq: 0, quote: 0, order: 1, ship: 2, after: 0, lead: 0 };
+  doneLog = [
+    { text: '昨晚 11 条 WhatsApp 消息已翻译并归到客户档案', time: '今天 07:30' },
+    { text: 'DHL 4471 已签收，已通知 Amara', time: '昨天 16:40' },
+    { text: '6 张在途订单状态已更新，都正常', time: '今天 08:00' },
+  ];
+  $('clock').textContent = '09:12'; $('report').classList.remove('due'); $('reportNote').textContent = '随你的操作自动记';
+  renderAll(); writeBlockers();
+}
+
+function renderAll() { renderLists(); renderPipe(); renderHead(); renderTally(); renderDone(); }
+
+function count() {
+  return { reply: cards.filter(c => c.sec === 'reply').length, stuck: orders.filter(o => o.stuck && !o.settled).length,
+    todo: orders.filter(o => !o.settled).length, grow: cards.filter(c => c.sec === 'grow').length };
+}
+
+function renderHead() {
+  const n = count(), parts = [];
+  if (n.reply) parts.push(`<em>${n.reply}</em> 位客户在等你回复`);
+  if (n.stuck) parts.push(`<em>${n.stuck}</em> 张单卡住了`);
+  $('headline').innerHTML = evening ? '王琳，日报已经写好，看一眼就能交' : parts.length ? `王琳，${parts.join('，')}` : '王琳，客户都回了，单都在走';
+  const total = Object.values(tally).reduce((a, b) => a + b, 0);
+  $('rhythm').innerHTML = `
+    <a href="#sec-reply" class="${n.reply ? 'hot' : 'calm'}"><b>${n.reply}</b>客户在等<small>1688 · WhatsApp · 售后</small></a>
+    <a href="#sec-orders" class="${n.stuck ? 'hot' : 'calm'}"><b>${n.todo}</b>订单待你动手<small>${n.stuck ? n.stuck + ' 张卡住' : '无卡点'}</small></a>
+    <a href="#sec-grow"><b>${n.grow}</b>主动出击<small>复购 · 社媒</small></a>
+    <a href="#report"><b>${total}</b>今日已做<small>${evening ? '该交日报了' : '日报自动记'}</small></a>`;
+  $('navBadge').textContent = n.reply || ''; $('navBadge').hidden = !n.reply;
+  document.title = (n.reply ? `(${n.reply}) ` : '') + '工作台原型 · 业务员的一天';
+}
+
+function renderLists() {
+  for (const [sec, box, empty] of [['reply', 'replyList', '客户的消息都回完了'], ['grow', 'growList', '今天挑出来的机会都处理了']]) {
+    const list = cards.filter(c => c.sec === sec);
+    $(box).innerHTML = list.length ? list.map(cardHtml).join('') : `<div class="card empty">${empty}</div>`;
+  }
+}
+
+function cardHtml(c) {
+  return `<article class="card" data-id="${c.id}">
+    <div class="card-top">${c.fresh ? '<span class="tag new">新</span>' : ''}<span class="tag ${c.tag[0]}">${c.tag[1]}</span><span class="who">${c.who}</span><span class="wait${c.late ? ' late' : ''}">${c.wait}</span></div>
+    ${c.said ? `<div class="said">${c.said}</div>` : ''}
+    <h3>${c.title}</h3>
+    ${c.draft ? `<div class="prep"><div class="prep-label">起草的${c.sec === 'reply' ? '回复' : '消息'}</div><textarea class="draft" rows="3" readonly aria-label="消息内容">${c.draft}</textarea></div>` : ''}
+    <div class="facts">${c.facts.map(f => `<span>${f}</span>`).join('')}</div>
+    <button type="button" class="why-btn" aria-expanded="false">依据</button>
+    <ul class="why" hidden>${c.why.map(w => `<li>${w}</li>`).join('')}</ul>
+    <div class="acts">
+      <button type="button" class="btn primary" data-act="ok">${c.primary}</button>
+      ${c.draft ? '<button type="button" class="btn" data-act="edit">修改</button>' : ''}
+      <button type="button" class="btn quiet" data-act="skip">${c.skip}</button>
+    </div></article>`;
+}
+
+function renderPipe() {
+  $('pipe').innerHTML = orders.map((o, i) => {
+    const steps = STEPS.map((s, k) => `<i class="${k < o.at ? 'done' : k === o.at ? (o.settled ? 'now' : o.stuck ? 'stuck' : 'now') : ''}">${s}</i>`).join('');
+    let next;
+    if (o.settled) next = `<p class="settled">${o.settled}</p>`;
+    else if (o.waybill) next = `<p>${o.text}</p><div class="acts">${o.copied
+      ? `<input id="wb${i}" placeholder="粘贴 DHL 运单号" aria-label="运单号"><button class="btn sm primary" data-wb="${i}">匹配发货单</button>`
+      : `<button class="btn sm primary" data-copy="${i}">复制收件信息，去 DHL 建单</button>`}</div>`;
+    else next = `<p>${o.text}</p><div class="acts">${o.acts.map((a, k) => `<button class="btn sm${k ? '' : ' primary'}" data-o="${i}" data-a="${k}">${a[0]}</button>`).join('')}</div>`;
+    return `<div class="row"><div class="no">${o.no}<small>${o.who}</small></div><div class="steps">${steps}</div><div class="next">${next}</div></div>`;
+  }).join('') + '<div class="more">另有 6 张单正常推进：2 张检验中，4 张运输中 · <a href="#" style="color:var(--link)">查看全部</a></div>';
+}
+
+function renderTally(bumped) {
+  $('tally').innerHTML = Object.entries(TALLY).map(([k, v]) => `<div>${v}<b class="${k === bumped ? 'bump' : ''}">${tally[k]}</b></div>`).join('');
+}
+function bump(key) { if (!key) return; tally[key]++; renderTally(key); }
+
+function writeBlockers() {
+  const lines = orders.filter(o => o.stuck && !o.settled).map(o => `${o.no} ${o.who}：${o.text.replace(/<[^>]+>/g, '')}`);
+  cards.filter(c => c.sec === 'reply' && c.late).forEach(c => lines.push(`${c.who} 的询盘还没回`));
+  $('blockers').value = lines.length ? lines.join('\n') : '今天没有卡点';
+}
+
+function renderDone() {
+  $('done').innerHTML = doneLog.map(d => `<li><span class="dot${d.running ? ' run' : ''}"></span><span>${d.text}<small>${d.time}</small></span></li>`).join('');
+}
+
+/* 列表增删用 FLIP：只动 transform/opacity，其余卡片平滑补位 */
+function flip(mutate) {
+  const all = () => [...document.querySelectorAll('.list > .card[data-id]')];
+  const before = new Map(all().map(el => [el.dataset.id, el.getBoundingClientRect().top]));
+  mutate();
+  if (reduced) return;
+  all().forEach(el => {
+    const top = before.get(el.dataset.id);
+    if (top == null) return el.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing: EASE });
+    const dy = top - el.getBoundingClientRect().top;
+    if (dy) el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 240, easing: EASE });
+  });
+}
+
+function resolve(el, act) {
+  const idx = cards.findIndex(c => c.id === el.dataset.id), c = cards[idx];
+  const text = act === 'ok' ? c.done : `已搁置：${c.who}`;
+  el.classList.add('leaving');
+  setTimeout(() => {
+    flip(() => { cards.splice(idx, 1); renderLists(); });
+    if (act === 'ok') { bump(c.log); bump(c.alsoLog); }
+    renderHead(); writeBlockers();
+    undoState = { c, idx, act };
+    toast(text, '撤销', undo);
+  }, reduced ? 0 : 140);
+}
+
+function undo() {
+  if (!undoState) return;
+  const { c, idx, act } = undoState; undoState = null;
+  flip(() => { cards.splice(idx, 0, c); renderLists(); });
+  if (act === 'ok') { tally[c.log]--; if (c.alsoLog) tally[c.alsoLog]--; renderTally(); }
+  renderHead(); writeBlockers();
+}
+
+function toast(text, label, action) {
+  $('toastText').textContent = text; toastAction = action;
+  $('toastBtn').hidden = !label; $('toastBtn').textContent = label || '';
+  $('toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $('toast').classList.remove('show'), 5000);
+}
+$('toastBtn').onclick = () => { $('toast').classList.remove('show'); toastAction && toastAction(); };
+
+document.querySelector('.cols').addEventListener('click', e => {
+  const t = e.target;
+  const why = t.closest('.why-btn');
+  if (why) { const open = why.getAttribute('aria-expanded') !== 'true'; why.setAttribute('aria-expanded', open); why.nextElementSibling.hidden = !open; return; }
+  const card = t.closest('.card[data-id]'), btn = t.closest('[data-act]');
+  if (card && btn) {
+    if (btn.dataset.act === 'edit') {
+      const ta = card.querySelector('.draft'), editing = ta.readOnly;
+      ta.readOnly = !editing; btn.textContent = editing ? '改好了' : '修改';
+      if (editing) ta.focus(); else cards.find(c => c.id === card.dataset.id).draft = ta.value;
+      return;
+    }
+    return resolve(card, btn.dataset.act);
+  }
+  if (t.dataset.o) { const o = orders[t.dataset.o], a = o.acts[t.dataset.a]; o.settled = a[1]; o.at = a[2]; settle(o); }
+  if (t.dataset.copy) { orders[t.dataset.copy].copied = true; renderPipe(); $('wb' + t.dataset.copy).focus(); toast('收件信息已复制。在 DHL 建好单后，把运单号粘回来'); }
+  if (t.dataset.wb) {
+    const o = orders[t.dataset.wb], v = $('wb' + t.dataset.wb).value.trim();
+    if (!v) return $('wb' + t.dataset.wb).focus();
+    o.settled = `运单 ${v} 已匹配发货单 FH-1112-07，已发给客户`; settle(o);
+  }
+});
+function settle(o) { renderPipe(); bump('ship'); renderHead(); writeBlockers(); toast(o.settled); }
+
+/* 输入框：命中页面名直达，否则交给 Agent，办完回到「客户在等你回」上方 */
+const PAGES = ['我的私海', '订单发票', '发货检验', '物流跟踪', '客户售后', '战报'];
+let seq = 0;
+$('ask').onsubmit = e => {
+  e.preventDefault();
+  const text = $('askInput').value.trim(); $('askInput').value = ''; if (!text) return;
+  const page = PAGES.find(p => text.includes(p));
+  if (page) return toast(`原型：这里会直接打开「${page}」`);
+  const entry = { text: `正在办：${text}`, time: '刚刚交办', running: true };
+  doneLog.unshift(entry); renderDone();
+  setTimeout(() => {
+    doneLog = doneLog.filter(d => d !== entry); renderDone();
+    flip(() => { cards.unshift({ id: 't' + (++seq), sec: 'reply', tag: ['mine', '你交办的'], who: '', wait: '刚刚完成', title: `「${text}」办好了，等你确认`,
+      facts: ['原型示意：这里列出 Agent 查了什么、做了什么'], why: ['真实环境里可逐步回看'], primary: '确认', done: `已确认：${text}`, skip: '不对，重做' }); renderLists(); });
+    renderHead();
+  }, 1600);
+};
+
+/* 模拟两种提醒：白天来新询盘、傍晚该交日报 */
+$('simInquiry').onclick = () => {
+  const id = 'n' + (++seq);
+  flip(() => { cards.unshift({ id, sec: 'reply', fresh: true, tag: ['c1688', '1688 新询盘'], who: '广州丝黛美发', wait: '刚刚', log: 'inq',
+    said: '你们的 99J 酒红色 20 寸什么价？要 30 顶。',
+    title: '新客户。99J 有现货，报价已写进回复',
+    draft: '您好，99J 酒红色 20 寸现货 180 顶，30 顶档单价 ¥295/顶，今天下单明天可发。需要我发实拍图给您吗？',
+    facts: ['99J 20 寸现货 180 顶', '30 顶档价格取自当前价格矩阵'], why: ['背调还在进行，约 2 分钟后补上'],
+    primary: '发送', done: '已回复 广州丝黛美发', skip: '稍后' }); renderLists(); });
+  renderHead();
+  toast('1688 新询盘：广州丝黛美发 问 99J 20 寸', '查看', () => document.querySelector(`[data-id=${id}]`).scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' }));
+};
+$('simEvening').onclick = () => {
+  evening = true; $('clock').textContent = '17:30'; $('report').classList.add('due'); $('reportNote').textContent = '已写好，可以交了';
+  writeBlockers(); renderHead(); $('report').scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+};
+$('submitReport').onclick = () => { $('report').classList.remove('due'); $('reportNote').textContent = '已提交 17:31'; toast('日报已写入 AI 表格'); };
+$('shareTeam').onclick = () => toast('今日小结已发到战队群');
+$('reset').onclick = load;
+
+load();
+</script>
+</body>
+</html>

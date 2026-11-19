@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>发货检验看板</title>
+<style>
+:root{
+  --bg:#060a13; --panel:#0c1322; --panel2:#101a2e; --line:#1b2740; --line2:#243354;
+  --text:#eaf0fd; --dim:#7f8db0; --mute:#4c5a7c;
+  --new:#ff6a2b; --new2:#ffb347; --s:#f6c445; --a:#33d6ec; --ok:#3ddc8a; --warn:#ff4d61; --mid:#ffa53a;
+  --num:"Bahnschrift","DIN Alternate","Roboto Condensed","Arial Narrow",sans-serif;
+  --cn:"HarmonyOS Sans SC","MiSans","Microsoft YaHei UI","PingFang SC",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:#03060c}
+body{font-family:var(--cn);color:var(--text);-webkit-font-smoothing:antialiased}
+.num{font-family:var(--num);font-variant-numeric:tabular-nums;letter-spacing:.01em}
+#stage{width:1920px;height:1080px;position:absolute;left:0;top:0;transform-origin:0 0;overflow:hidden;
+  background:
+    radial-gradient(1200px 500px at 15% -10%,rgba(51,214,236,.08),transparent 60%),
+    radial-gradient(900px 600px at 105% 110%,rgba(255,106,43,.06),transparent 60%),
+    linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px) 0 0/40px 40px,
+    linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px) 0 0/40px 40px,
+    var(--bg);}
+
+/* header */
+header{height:76px;display:flex;align-items:center;padding:0 28px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(16,26,46,.9),rgba(6,10,19,.6))}
+.brand{display:flex;align-items:center;gap:14px}
+.brand .mark{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--a),#1a7fd6);box-shadow:0 0 24px rgba(51,214,236,.35)}
+.brand h1{font-size:30px;font-weight:700;letter-spacing:.12em}
+.brand small{display:block;font-family:var(--num);font-size:12px;color:var(--dim);letter-spacing:.32em;margin-top:2px}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:30px}
+.sync{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:16px}
+.sync i{width:10px;height:10px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok);animation:blink 2s infinite}
+.date{color:var(--dim);font-size:18px;text-align:right;line-height:1.25}
+.clock{font-size:46px;font-weight:600;letter-spacing:.04em}
+
+/* layout */
+main{display:grid;grid-template-columns:1210px 1fr;gap:20px;padding:20px 24px;height:1004px}
+.panel{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:14px;position:relative}
+.ttl{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:600;color:#c9d4ee;letter-spacing:.06em}
+.ttl::before{content:"";width:4px;height:18px;border-radius:2px;background:var(--a)}
+.left{display:flex;flex-direction:column;gap:16px;min-height:0}
+.right{display:flex;flex-direction:column;gap:16px;min-height:0}
+
+/* summary tiles */
+.tiles{display:grid;grid-template-columns:1.25fr 1.15fr 1.2fr 1fr;gap:16px;height:150px}
+.tile{padding:18px 22px;display:flex;align-items:center;gap:18px;overflow:hidden}
+.tile .lbl{font-size:17px;color:var(--dim);letter-spacing:.08em}
+.tile .big{font-size:76px;font-weight:700;line-height:1}
+.tile .unit{font-size:22px;color:var(--dim);margin-left:4px;font-family:var(--cn)}
+.tile.hot{border-color:rgba(255,106,43,.55);box-shadow:inset 0 0 40px rgba(255,106,43,.12)}
+.tile.hot .big{color:var(--new2)}
+.tile.late{border-color:rgba(255,77,97,.45)}
+.tile.late .big{color:var(--warn)}
+.chips{display:flex;gap:8px;margin-top:10px}
+.chip{white-space:nowrap;flex:none;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:8px;font-size:17px;font-weight:600;background:rgba(255,255,255,.05)}
+.chip b{font-family:var(--num);font-size:20px}
+.stackbar{display:flex;height:14px;border-radius:7px;overflow:hidden;margin-top:14px;width:250px;background:#1a2440}
+.stackbar span{height:100%}
+
+/* queue */
+.queue{flex:1;display:flex;flex-direction:column;padding:16px 18px 14px;min-height:0}
+.qhead{display:flex;align-items:center;gap:18px;margin-bottom:12px}
+.legend{margin-left:auto;display:flex;gap:16px;font-size:15px;color:var(--dim)}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend i{width:12px;height:12px;border-radius:3px}
+.cols,.row{display:grid;grid-template-columns:8px 44px 128px 1fr 140px 230px 250px;align-items:center;column-gap:14px}
+.cols{font-size:14px;color:var(--mute);letter-spacing:.12em;padding:0 14px 8px 0;border-bottom:1px solid var(--line)}
+.rows{flex:1;display:flex;flex-direction:column;gap:7px;padding-top:9px;min-height:0;overflow:hidden}
+.row{height:63px;border-radius:10px;background:rgba(255,255,255,.025);border:1px solid transparent;padding-right:14px;position:relative;overflow:hidden;
+  animation:rowin .5s ease both}
+.row .stripe{height:100%;background:var(--line2)}
+.row .rank{font-family:var(--num);font-size:24px;color:var(--mute);text-align:center}
+.row.p-new{background:linear-gradient(90deg,rgba(255,106,43,.22),rgba(255,106,43,.04) 55%);border-color:rgba(255,106,43,.55);animation:rowin .5s ease both,newglow 1.8s ease-in-out infinite}
+.row.p-new .stripe{background:var(--new)}
+.row.p-s{background:linear-gradient(90deg,rgba(246,196,69,.13),rgba(246,196,69,.02) 50%);border-color:rgba(246,196,69,.28)}
+.row.p-s .stripe{background:var(--s)}
+.row.p-a{background:linear-gradient(90deg,rgba(51,214,236,.11),rgba(51,214,236,.02) 50%);border-color:rgba(51,214,236,.22)}
+.row.p-a .stripe{background:var(--a)}
+.row.pinned-gap{margin-bottom:6px}
+.tags{display:flex;gap:6px;align-items:center}
+.tag{height:30px;min-width:30px;padding:0 9px;border-radius:7px;display:inline-grid;place-items:center;font-size:16px;font-weight:700;letter-spacing:.04em}
+.tag.new{background:var(--new);color:#2a0c00;box-shadow:0 0 14px rgba(255,106,43,.6)}
+.tag.S{background:var(--s);color:#2a1d00;font-family:var(--num);font-size:19px}
+.tag.A{background:var(--a);color:#032a30;font-family:var(--num);font-size:19px}
+.tag.g{background:rgba(255,255,255,.07);color:var(--dim);font-family:var(--num);font-size:17px}
+.tag.detail{background:transparent;border:1.5px solid #b48cff;color:#cdb4ff;font-size:14px;padding:0 6px}
+.ob .no{white-space:nowrap;font-family:var(--num);font-size:27px;font-weight:600;letter-spacing:.02em;line-height:1.1}
+.ob .cu{font-size:15px;color:var(--dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sales{display:flex;align-items:center;gap:9px;font-size:19px}
+.av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:700;color:#06101c;flex:none}
+.age{display:flex;align-items:center;gap:12px}
+.age .v{font-size:28px;font-weight:600;width:76px;text-align:right}
+.age .v small{font-size:16px;color:var(--dim);margin-left:1px}
+.age .track{flex:1;height:10px;border-radius:5px;background:#18223a;overflow:hidden;position:relative}
+.age .track::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;background:rgba(255,255,255,.18)}
+.age .fill{height:100%;border-radius:5px}
+.load{display:flex;align-items:center;gap:10px}
+.load .blocks{display:flex;gap:3px;flex:1}
+.load .blocks i{flex:1;height:22px;border-radius:3px;background:#18223a}
+.load .blocks i.on{background:linear-gradient(180deg,#6fa8ff,#3c6fe0)}
+.load.heavy .blocks i.on{background:linear-gradient(180deg,#ff9b5e,#ff5a3c)}
+.load .meta{width:86px;text-align:right;line-height:1.1;white-space:nowrap}
+.load .meta b{font-family:var(--num);font-size:24px}
+.load .meta small{display:block;font-size:14px;color:var(--dim);font-family:var(--num);margin-top:1px}
+.heavy-ico{position:absolute;right:-2px;top:-2px}
+.pager{display:flex;align-items:center;justify-content:center;gap:8px;padding-top:10px}
+.pager i{width:26px;height:6px;border-radius:3px;background:var(--line2);transition:.3s}
+.pager i.on{background:var(--a);width:44px}
+.late-flag{color:var(--warn)}
+
+/* right: today */
+.today{padding:18px 22px;height:262px;display:flex;flex-direction:column}
+.today-body{flex:1;display:flex;align-items:center;gap:22px;margin-top:6px}
+.ring{position:relative;width:176px;height:176px;flex:none;margin-right:-6px}
+.ring .c{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.ring .c b{font-family:var(--num);font-size:44px;line-height:1}
+.ring .c small{display:block;font-size:14px;color:var(--dim);margin-top:4px}
+.kpis{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.kpi{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:12px 12px;white-space:nowrap;display:flex;align-items:center;gap:14px}
+.kpi .ic{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;flex:none}
+.kpi .v{font-size:36px;font-weight:700;line-height:1}
+.kpi .v small{font-size:16px;color:var(--dim);font-family:var(--cn);margin-left:3px;font-weight:400}
+.kpi .l{font-size:15px;color:var(--dim);margin-top:4px}
+
+.trend{padding:16px 22px 10px;height:300px;display:flex;flex-direction:column}
+.trend svg{flex:1}
+.tleg{margin-left:auto;display:flex;gap:16px;font-size:14px;color:var(--dim);font-weight:400;letter-spacing:0}
+.tleg span{display:flex;align-items:center;gap:6px}
+
+.done{flex:1;padding:16px 18px 12px;display:flex;flex-direction:column;min-height:0}
+.insp{display:flex;gap:10px;margin:10px 0 10px}
+.insp .p{flex:1;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:7px 10px}
+.insp .p b{font-family:var(--num);font-size:24px;margin-left:auto}
+.insp .p span{font-size:16px}
+.dcols,.drow{display:grid;grid-template-columns:150px 1fr 82px 66px 76px;column-gap:10px;align-items:center}
+.dcols{font-size:13px;color:var(--mute);letter-spacing:.1em;padding:0 8px 6px;border-bottom:1px solid var(--line)}
+.dwrap{flex:1;overflow:hidden;position:relative;min-height:0}
+.dwrap::after{content:"";position:absolute;left:0;right:0;bottom:0;height:40px;background:linear-gradient(transparent,var(--panel));pointer-events:none}
+.dlist{display:flex;flex-direction:column}
+.drow{height:46px;padding:0 8px;border-bottom:1px dashed rgba(255,255,255,.05);font-size:17px}
+.drow .no{font-family:var(--num);font-size:19px;display:flex;align-items:center;gap:7px}
+.drow .no i{width:16px;height:16px;border-radius:50%;background:var(--ok);display:grid;place-items:center;flex:none}
+.drow .cu{color:#c9d4ee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drow .sl{color:var(--dim)}
+.drow .tm{font-family:var(--num);color:var(--dim);font-size:18px}
+.drow .ins{font-weight:600}
+.drow.fresh{animation:fresh 2.4s ease}
+
+/* modal */
+#alert{position:absolute;inset:0;z-index:50;display:none;place-items:center;
+  background:radial-gradient(circle at 50% 50%,rgba(255,106,43,.28),rgba(3,6,12,.92) 62%)}
+#alert.show{display:grid;animation:fadein .35s ease}
+#alert::before{content:"";position:absolute;inset:0;border:10px solid var(--new);animation:edge 1s ease-in-out infinite;pointer-events:none}
+.acard{width:1240px;border-radius:26px;overflow:hidden;background:linear-gradient(180deg,#1a1210,#0e0b0c);
+  border:2px solid var(--new);box-shadow:0 0 120px rgba(255,106,43,.55),0 40px 80px rgba(0,0,0,.6);animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
+.aband{height:96px;display:flex;align-items:center;gap:18px;padding:0 44px;
+  background:repeating-linear-gradient(-45deg,var(--new) 0 28px,#ff7f45 28px 56px);animation:stripe 1.2s linear infinite;background-size:200% 100%}
+.aband b{font-size:44px;letter-spacing:.3em;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.25)}
+.abody{padding:46px 56px 40px;text-align:center}
+.awho{font-size:52px;font-weight:700}
+.awho em{font-style:normal;color:var(--new2)}
+.ano{font-family:var(--num);font-size:136px;font-weight:700;line-height:1.05;margin:20px 0 8px;letter-spacing:.02em;white-space:nowrap;color:#fff;text-shadow:0 0 40px rgba(255,106,43,.6)}
+.ameta{display:flex;justify-content:center;gap:16px;margin:12px 0 30px}
+.ameta span{display:flex;align-items:center;gap:10px;height:54px;padding:0 22px;border-radius:12px;background:rgba(255,255,255,.07);font-size:26px}
+.ameta b{font-family:var(--num);font-size:32px}
+.acta{display:inline-flex;align-items:center;gap:16px;height:92px;padding:0 60px;border-radius:46px;background:var(--new);font-size:46px;font-weight:800;letter-spacing:.2em;color:#2a0c00;
+  box-shadow:0 0 0 0 rgba(255,106,43,.7);animation:ring 1.4s infinite}
+.acount{height:8px;background:rgba(255,255,255,.08)}
+.acount i{display:block;height:100%;background:var(--new2);width:100%}
+
+@keyframes blink{50%{opacity:.35}}
+@keyframes rowin{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+@keyframes newglow{50%{box-shadow:0 0 26px rgba(255,106,43,.45);border-color:rgba(255,160,90,.9)}}
+@keyframes fresh{0%{background:rgba(61,220,138,.28)}100%{background:transparent}}
+@keyframes fadein{from{opacity:0}}
+@keyframes pop{from{transform:scale(.7);opacity:0}}
+@keyframes edge{50%{opacity:.25}}
+@keyframes stripe{to{background-position:-112px 0}}
+@keyframes ring{70%{box-shadow:0 0 0 26px rgba(255,106,43,0)}100%{box-shadow:0 0 0 0 rgba(255,106,43,0)}}
+@keyframes shrink{from{width:100%}to{width:0}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <header>
+    <div class="brand">
+      <div class="mark"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#04131c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M8 12l3 3 5-6"/></svg></div>
+      <div><h1>发货检验看板</h1><small>OUTBOUND QC BOARD</small></div>
+    </div>
+    <div class="hdr-right">
+      <div class="sync"><i></i>OKKI 实时同步</div>
+      <div class="date"><div id="dDate"></div><div id="dWeek"></div></div>
+      <div class="clock num" id="clock">--:--:--</div>
+    </div>
+  </header>
+
+  <main>
+    <section class="left">
+      <div class="tiles">
+        <div class="panel tile">
+          <svg width="110" height="110" viewBox="0 0 110 110" id="donut"></svg>
+          <div><div class="lbl">待检出库单</div><div><span class="big num" id="tPending">0</span><span class="unit">单</span></div></div>
+        </div>
+        <div class="panel tile" style="flex-direction:column;align-items:flex-start;justify-content:center;gap:0">
+          <div class="lbl">待检产品</div>
+          <div><span class="big num" id="tQty">0</span><span class="unit">件</span></div>
+          <div class="stackbar" id="qtyBar"></div>
+        </div>
+        <div class="panel tile hot">
+          <svg width="58" height="58" viewBox="0 0 24 24" fill="none" stroke="#ff6a2b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6.5 7 .9-5.1 4.8 1.3 7L12 17.8 5.8 21.2l1.3-7L2 9.4l7-.9z" fill="rgba(255,106,43,.18)"/></svg>
+          <div><div class="lbl">优先检验</div><div><span class="big num" id="tPri">0</span><span class="unit">单</span></div>
+            <div class="chips" id="priChips"></div></div>
+        </div>
+        <div class="panel tile late">
+          <svg width="58" height="58" viewBox="0 0 24 24" fill="none" stroke="#ff4d61" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg>
+          <div><div class="lbl">等待超 24h</div><div><span class="big num" id="tLate">0</span><span class="unit">单</span></div></div>
+        </div>
+      </div>
+
+      <div class="panel queue">
+        <div class="qhead">
+          <div class="ttl">待检验出库单</div>
+          <div class="legend">
+            <span><i style="background:var(--new)"></i>新签</span>
+            <span><i style="background:var(--s)"></i>S 级客户</span>
+            <span><i style="background:var(--a)"></i>A 级客户</span>
+            <span><i style="border:1.5px solid #b48cff"></i>详检</span>
+            <span><i style="background:#ff5a3c"></i>大单 ≥30 行</span>
+          </div>
+        </div>
+        <div class="cols"><span></span><span style="text-align:center">#</span><span>标记</span><span>出库单 / 客户</span><span>业务员</span><span>已等待</span><span>检验工作量</span></div>
+        <div class="rows" id="rows"></div>
+        <div class="pager" id="pager"></div>
+      </div>
+    </section>
+
+    <section class="right">
+      <div class="panel today">
+        <div class="ttl">今日已完成</div>
+        <div class="today-body">
+          <div class="ring"><svg width="176" height="176" viewBox="0 0 176 176" id="ringSvg"></svg>
+            <div class="c"><div><b id="ringPct">0%</b><small>今日完成率</small></div></div></div>
+          <div class="kpis">
+            <div class="kpi"><div class="ic" style="background:rgba(61,220,138,.14)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3ddc8a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M9 14l2 2 4-4"/></svg></div>
+              <div><div class="v num" id="kOrd">0<small>单</small></div><div class="l">出库单</div></div></div>
+            <div class="kpi"><div class="ic" style="background:rgba(111,168,255,.14)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="2" stroke-linejoin="round"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg></div>
+              <div><div class="v num" id="kQty">0<small>件</small></div><div class="l">产品数量</div></div></div>
+            <div class="kpi"><div class="ic" style="background:rgba(246,196,69,.14)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f6c445" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M17 4a4 4 0 010 8M22 21c0-3-1.5-5-4-5.6"/></svg></div>
+              <div><div class="v num" id="kCus">0<small>家</small></div><div class="l">客户</div></div></div>
+            <div class="kpi"><div class="ic" style="background:rgba(51,214,236,.14)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#33d6ec" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
+              <div><div class="v num" id="kAmt">0</div><div class="l">订单金额 USD</div></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel trend">
+        <div class="ttl">近 7 天检验量
+          <div class="tleg"><span><i style="width:12px;height:12px;border-radius:3px;background:#3c6fe0"></i>出库单</span><span><i style="width:18px;height:3px;background:var(--ok)"></i>产品件数</span></div>
+        </div>
+        <svg id="chart" viewBox="0 0 610 240" preserveAspectRatio="none"></svg>
+      </div>
+
+      <div class="panel done">
+        <div class="ttl">已完成检验</div>
+        <div class="insp" id="insp"></div>
+        <div class="dcols"><span>出库单号</span><span>客户</span><span>业务员</span><span>提交</span><span>检验员</span></div>
+        <div class="dwrap"><div class="dlist" id="dlist"></div></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="alert">
+    <div class="acard">
+      <div class="aband">
+        <svg width="54" height="54" viewBox="0 0 24 24" fill="#fff"><path d="M12 3a7 7 0 00-7 7v6H4v2h16v-2h-1v-6a7 7 0 00-7-7zm-2 17a2 2 0 004 0z"/></svg>
+        <b>新签订单</b>
+      </div>
+      <div class="abody">
+        <div class="awho"><em id="aSales">Tessie</em> 业务员有新签订单</div>
+        <div class="ano" id="aNo">CK20261028-047</div>
+        <div class="ameta" id="aMeta"></div>
+        <div class="acta">请优先检验</div>
+      </div>
+      <div class="acount"><i id="aBar"></i></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- mock data (prototype only) ---------- */
+const H = 3600e3, now0 = Date.now();
+const SALES = {Tessie:'#ff9fb2', Eva:'#8fd3ff', Lisa:'#c6a8ff', '刘也':'#ffd27a'};
+const mask = s => s ? s.slice(0,3) + '***' : '—';
+
+let pending = [
+  {no:'CK20261028-041',cu:'Glamour Locks LLC',g:'A',sales:'Eva',nw:1,lines:12,qty:186,h:1.6},
+  {no:'CK20261027-112',cu:'Royal Crown Hair',g:'S',sales:'Lisa',detail:1,lines:46,qty:920,h:18.5},
+  {no:'CK20261028-036',cu:'Luxe Strands Inc',g:'S',sales:'Tessie',lines:8,qty:140,h:3.1},
+  {no:'CK20261027-098',cu:'Ama Beauty Supply',g:'A',sales:'刘也',lines:27,qty:412,h:26.4},
+  {no:'CK20261028-029',cu:'Velvet Mane Co',g:'A',sales:'Eva',lines:5,qty:60,h:4.2},
+  {no:'CK20261026-201',cu:'Nala Hair House',g:'B',sales:'Lisa',detail:1,lines:38,qty:655,h:41.0},
+  {no:'CK20261027-105',cu:'Crown & Glory',g:'B',sales:'Tessie',lines:19,qty:300,h:22.7},
+  {no:'CK20261028-033',cu:'Silk Press Studio',g:'C',sales:'刘也',lines:3,qty:24,h:3.6},
+  {no:'CK20261027-120',cu:'Pure Remy Store',g:'B',sales:'Eva',lines:14,qty:210,h:15.2},
+  {no:'CK20261028-038',cu:'Halo Extensions',g:null,sales:'Lisa',lines:6,qty:85,h:2.0},
+  {no:'CK20261027-087',cu:'Divine Tresses',g:'B',sales:'Tessie',lines:22,qty:368,h:28.9},
+  {no:'CK20261028-044',cu:'Opulent Hair Lab',g:'C',sales:'刘也',lines:2,qty:18,h:0.9},
+  {no:'CK20261028-031',cu:'Queen Bee Wigs',g:'B',sales:'Eva',lines:9,qty:132,h:5.5},
+].map(r => ({...r, t: now0 - r.h*H}));
+const incoming = {no:'CK20261028-047',cu:'Bella Hair Studio',g:'S',sales:'Tessie',nw:1,lines:32,qty:518,t:Date.now()};
+
+// [单号, 客户, 等级, 业务员, 提交时间, 检验员, 件数, 订单号, 订单金额USD]
+const doneRaw = [
+ ['CK20261028-002','Bella Hair Studio','S','Tessie','08:12','张伟',260,'O1',3200],
+ ['CK20261028-004','Royal Crown Hair','S','Lisa','08:31','李娜',860,'O2',12800],
+ ['CK20261028-001','Nala Hair House','B','Lisa','08:47','王强',95,'O3',1450],
+ ['CK20261028-006','Silk Press Studio','C','刘也','09:05','张伟',40,'O4',620],
+ ['CK20261028-003','Ama Beauty Supply','A','刘也','09:22','陈静',220,'O5',3900],
+ ['CK20261028-008','Halo Extensions',null,'Lisa','09:40','李娜',110,'O6',1780],
+ ['CK20261028-010','Luxe Strands Inc','S','Tessie','10:03','张伟',410,'O7',7600],
+ ['CK20261028-011','Luxe Strands Inc','S','Tessie','10:15','王强',30,'O7',7600],
+ ['CK20261028-007','Queen Bee Wigs','B','Eva','10:38','陈静',150,'O8',2100],
+ ['CK20261028-012','Velvet Mane Co','A','Eva','10:56','李娜',72,'O9',1150],
+ ['CK20261028-014','Divine Tresses','B','Tessie','11:20','张伟',330,'O10',5200],
+ ['CK20261028-015','Crown & Glory','B','Tessie','11:42','王强',96,'O11',1600],
+ ['CK20261028-016','Opulent Hair Lab','C','刘也','13:05','李娜',20,'O12',380],
+ ['CK20261028-017','Pure Remy Store','B','Eva','13:18','陈静',168,'O13',2600],
+ ['CK20261028-019','Mane Attraction','B','Lisa','13:36','张伟',140,'O14',2300],
+ ['CK20261028-020','Hair Haven NG','A','Eva','13:52','李娜',230,'O15',3800],
+ ['CK20261028-018','Bella Hair Studio','S','Tessie','14:05','王强',64,'O16',900],
+ ['CK20261028-021','Tress Couture','B','刘也','14:21','张伟',380,'O17',6900],
+ ['CK20261028-022','Royal Crown Hair','S','Lisa','14:38','陈静',190,'O18',4100],
+ ['CK20261028-023','Sleek & Co','C','Eva','14:55','李娜',88,'O19',1350],
+ ['CK20261028-024','Glow Up Hair','B','Lisa','15:10','张伟',120,'O20',1900],
+ ['CK20261028-025','Wig Palace','B','Tessie','15:26','王强',150,'O21',2450],
+ ['CK20261028-026','Ama Beauty Supply','A','刘也','15:41','李娜',96,'O22',1800],
+];
+const done = doneRaw.map(([no,cu,g,sales,tm,ins,qty,oid,amt]) => ({no,cu,g,sales,tm,ins,qty,oid,amt}));
+const week = [ // 前 6 天历史；今日由已完成列表实时计算
+  {d:'10/22',w:'四',o:18,q:1420},{d:'10/23',w:'五',o:22,q:1760},{d:'10/24',w:'六',o:15,q:1180},
+  {d:'10/25',w:'日',o:9,q:640},{d:'10/26',w:'一',o:26,q:2050},{d:'10/27',w:'二',o:31,q:2380},
+];
+
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString('en-US');
+const ageH = r => (Date.now() - r.t) / H;
+const pri = r => r.nw ? 0 : r.g === 'S' ? 1 : r.g === 'A' ? 2 : 3;
+const ageText = h => h < 1 ? `${Math.max(1,Math.round(h*60))}<small>m</small>` : h < 10 ? `${h.toFixed(1)}<small>h</small>` : `${Math.round(h)}<small>h</small>`;
+const ageColor = h => h < 8 ? 'var(--ok)' : h < 24 ? 'var(--mid)' : 'var(--warn)';
+function sorted(){
+  return [...pending].sort((a,b) => pri(a)-pri(b) || (pri(a)===0 ? b.t-a.t : a.t-b.t));
+}
+
+/* ---------- summary ---------- */
+function renderSummary(){
+  const list = sorted();
+  const cnt = {n:0,s:0,a:0,o:0}, q = {n:0,s:0,a:0,o:0};
+  list.forEach(r => { const k = ['n','s','a','o'][pri(r)]; cnt[k]++; q[k]+=r.qty; });
+  const total = list.length, qty = list.reduce((s,r)=>s+r.qty,0);
+  $('tPending').textContent = total;
+  $('tQty').textContent = fmt(qty);
+  $('tPri').textContent = cnt.n + cnt.s + cnt.a;
+  $('tLate').textContent = list.filter(r => ageH(r) >= 24).length;
+  const col = {n:'var(--new)',s:'var(--s)',a:'var(--a)',o:'#3a4a70'};
+  $('priChips').innerHTML =
+    `<span class="chip" style="color:var(--new2)">新签 <b>${cnt.n}</b></span>`+
+    `<span class="chip" style="color:var(--s)">S <b>${cnt.s}</b></span>`+
+    `<span class="chip" style="color:var(--a)">A <b>${cnt.a}</b></span>`;
+  $('qtyBar').innerHTML = ['n','s','a','o'].map(k => `<span style="width:${q[k]/qty*100}%;background:${col[k]}"></span>`).join('');
+  // donut
+  let acc = 0; const R = 44, C = 2*Math.PI*R;
+  $('donut').innerHTML = `<circle cx="55" cy="55" r="${R}" fill="none" stroke="#18223a" stroke-width="14"/>` +
+    ['n','s','a','o'].map(k => { const len = cnt[k]/total*C; const s = `<circle cx="55" cy="55" r="${R}" fill="none" stroke="${col[k]}" stroke-width="14" stroke-dasharray="${Math.max(len-2,0)} ${C}" stroke-dashoffset="${-acc}" transform="rotate(-90 55 55)"/>`; acc += len; return s; }).join('');
+}
+
+/* ---------- queue (pinned priority + paged normal) ---------- */
+let page = 0;
+const SLOTS = 11;
+function rowHTML(r, i){
+  const h = ageH(r), heavy = r.lines >= 30;
+  const cls = r.nw ? 'p-new' : r.g === 'S' ? 'p-s' : r.g === 'A' ? 'p-a' : '';
+  const tags = (r.nw ? '<span class="tag new">新签</span>' : '') +
+    (r.g ? `<span class="tag ${['S','A'].includes(r.g) ? r.g : 'g'}">${r.g}</span>` : '') +
+    (r.detail ? '<span class="tag detail">详检</span>' : '');
+  const on = Math.min(10, Math.ceil(r.lines/5));
+  const blocks = Array.from({length:10},(_,k)=>`<i class="${k<on?'on':''}"></i>`).join('');
+  return `<div class="row ${cls}" style="animation-delay:${i*40}ms">
+    <span class="stripe"></span>
+    <span class="rank">${i+1}</span>
+    <span class="tags">${tags}</span>
+    <div class="ob"><div class="no">${r.no}</div><div class="cu">${mask(r.cu)}</div></div>
+    <div class="sales"><span class="av" style="background:${SALES[r.sales]}">${r.sales[0]}</span>${r.sales}</div>
+    <div class="age"><span class="v num ${h>=24?'late-flag':''}">${ageText(h)}</span>
+      <div class="track"><div class="fill" style="width:${Math.min(h/48,1)*100}%;background:${ageColor(h)}"></div></div></div>
+    <div class="load ${heavy?'heavy':''}"><div class="blocks">${blocks}</div>
+      <div class="meta"><b>${r.lines}</b><small style="display:inline;margin-left:3px">行</small><small>${fmt(r.qty)} 件</small></div></div>
+  </div>`;
+}
+function renderQueue(){
+  const list = sorted();
+  const pinned = list.filter(r => pri(r) < 3), rest = list.filter(r => pri(r) === 3);
+  const per = Math.max(1, SLOTS - pinned.length);
+  const pages = Math.max(1, Math.ceil(rest.length / per));
+  page = page % pages;
+  const shown = rest.slice(page*per, page*per + per);
+  $('rows').innerHTML = pinned.map((r,i)=>rowHTML(r,i)).join('') +
+    shown.map((r,i)=>rowHTML(r, pinned.length + page*per + i)).join('');
+  const last = $('rows').children[pinned.length-1];
+  if (last && shown.length) last.classList.add('pinned-gap');
+  $('pager').innerHTML = pages > 1 ? Array.from({length:pages},(_,k)=>`<i class="${k===page?'on':''}"></i>`).join('') : '';
+}
+
+/* ---------- today ---------- */
+function renderToday(){
+  const ord = done.length, qty = done.reduce((s,r)=>s+r.qty,0);
+  const cus = new Set(done.map(r=>r.cu)).size;
+  const amt = [...new Map(done.map(r=>[r.oid,r.amt])).values()].reduce((s,v)=>s+v,0); // 同一订单拆多张出库单只计一次
+  $('kOrd').innerHTML = `${ord}<small>单</small>`;
+  $('kQty').innerHTML = `${fmt(qty)}<small>件</small>`;
+  $('kCus').innerHTML = `${cus}<small>家</small>`;
+  $('kAmt').innerHTML = `${(amt/1000).toFixed(1)}<small>k</small>`;
+  const pct = ord / (ord + pending.length);
+  $('ringPct').textContent = Math.round(pct*100) + '%';
+  const R = 74, C = 2*Math.PI*R;
+  $('ringSvg').innerHTML = `<defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3ddc8a"/><stop offset="1" stop-color="#33d6ec"/></linearGradient></defs>
+    <circle cx="88" cy="88" r="${R}" fill="none" stroke="#18223a" stroke-width="16"/>
+    <circle cx="88" cy="88" r="${R}" fill="none" stroke="url(#rg)" stroke-width="16" stroke-linecap="round" stroke-dasharray="${pct*C} ${C}" transform="rotate(-90 88 88)" style="transition:stroke-dasharray 1s"/>`;
+  renderChart({d:'今天',w:'三',o:ord,q:qty});
+  // inspectors
+  const by = {}; done.forEach(r => by[r.ins] = (by[r.ins]||0) + 1);
+  const ic = {'张伟':'#6fa8ff','李娜':'#ff9fb2','王强':'#ffd27a','陈静':'#8ff0c0'};
+  $('insp').innerHTML = Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([n,c]) =>
+    `<div class="p"><span class="av" style="background:${ic[n]}">${n[0]}</span><span>${n}</span><b>${c}</b></div>`).join('');
+  const recent = [...done].reverse();
+  $('dlist').innerHTML = recent.map((r,i) => `<div class="drow ${i===0&&r._fresh?'fresh':''}">
+    <span class="no"><i><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#04210f" stroke-width="4"><path d="M5 12l5 5 9-10"/></svg></i>${r.no.slice(2)}</span>
+    <span class="cu">${mask(r.cu)}</span><span class="sl">${r.sales}</span><span class="tm">${r.tm}</span>
+    <span class="ins" style="color:${ic[r.ins]}">${r.ins}</span></div>`).join('');
+}
+
+/* ---------- 7-day chart ---------- */
+function renderChart(today){
+  const data = [...week, today], W = 610, Hh = 240, pl = 34, pr = 44, pt = 26, pb = 40;
+  const cw = (W - pl - pr) / data.length, maxO = 40, maxQ = Math.ceil(Math.max(...data.map(d=>d.q))*1.15/1000)*1000;
+  const y = (v,m) => pt + (Hh-pt-pb) * (1 - v/m);
+  let s = '<defs><linearGradient id="bg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6fa8ff"/><stop offset="1" stop-color="#2b4fb0"/></linearGradient>' +
+          '<linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5ff0d0"/><stop offset="1" stop-color="#1c8f73"/></linearGradient>' +
+          '<linearGradient id="ar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(61,220,138,.28)"/><stop offset="1" stop-color="rgba(61,220,138,0)"/></linearGradient></defs>';
+  [0,10,20,30,40].forEach(v => { const yy = y(v,maxO);
+    s += `<line x1="${pl}" x2="${W-pr}" y1="${yy}" y2="${yy}" stroke="#1b2740" stroke-dasharray="${v?'3 5':''}"/>` +
+         `<text x="${pl-8}" y="${yy+4}" fill="#4c5a7c" font-size="12" text-anchor="end" font-family="Bahnschrift">${v}</text>` +
+         `<text x="${W-pr+8}" y="${yy+4}" fill="#4c5a7c" font-size="12" font-family="Bahnschrift">${v ? (v/maxO*maxQ/1000).toFixed(1)+'k' : 0}</text>`; });
+  const pts = [];
+  data.forEach((d,i) => {
+    const cx = pl + cw*i + cw/2, bw = cw*.46, isT = i === data.length-1, by = y(d.o,maxO);
+    s += `<rect x="${cx-bw/2}" y="${by}" width="${bw}" height="${Hh-pb-by}" rx="5" fill="url(#${isT?'bg2':'bg1'})" opacity="${isT?1:.85}"/>` +
+         `<text x="${cx}" y="${by-8}" fill="${isT?'#5ff0d0':'#c9d4ee'}" font-size="${isT?17:15}" font-weight="600" text-anchor="middle" font-family="Bahnschrift">${d.o}</text>` +
+         `<text x="${cx}" y="${Hh-pb+20}" fill="${isT?'#eaf0fd':'#7f8db0'}" font-size="14" text-anchor="middle" font-family="Bahnschrift,Microsoft YaHei UI">${d.d}</text>` +
+         `<text x="${cx}" y="${Hh-pb+36}" fill="#4c5a7c" font-size="12" text-anchor="middle" font-family="Microsoft YaHei UI">周${d.w}</text>`;
+    pts.push([cx, y(d.q,maxQ)]);
+  });
+  const line = pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  s += `<path d="${line} L${pts.at(-1)[0]} ${Hh-pb} L${pts[0][0]} ${Hh-pb}Z" fill="url(#ar)"/>` +
+       `<path d="${line}" fill="none" stroke="#3ddc8a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>` +
+       pts.map((p,i)=>`<circle cx="${p[0]}" cy="${p[1]}" r="${i===pts.length-1?6:4}" fill="#060a13" stroke="#3ddc8a" stroke-width="2.5"/>`).join('');
+  $('chart').innerHTML = s;
+}
+
+/* ---------- new-sign alert ---------- */
+let alertTimer;
+function chime(){
+  try{ const ac = new (window.AudioContext||window.webkitAudioContext)();
+    [880,1175,1568].forEach((f,i)=>{ const o=ac.createOscillator(), g=ac.createGain(); o.frequency.value=f; o.connect(g); g.connect(ac.destination);
+      const t=ac.currentTime+i*.18; g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.25,t+.02); g.gain.exponentialRampToValueAtTime(.0001,t+.5); o.start(t); o.stop(t+.55); });
+  }catch(e){}
+}
+function showAlert(r, ms=20000){
+  $('aSales').textContent = r.sales;
+  $('aNo').textContent = r.no;
+  $('aMeta').innerHTML =
+    (r.g ? `<span><b style="color:${r.g==='S'?'var(--s)':r.g==='A'?'var(--a)':'#fff'}">${r.g}</b>级客户</span>` : '') +
+    `<span>明细 <b>${r.lines}</b> 行</span><span>产品 <b>${fmt(r.qty)}</b> 件</span>`;
+  const bar = $('aBar'); bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = `shrink ${ms}ms linear forwards`;
+  $('alert').classList.add('show'); chime();
+  clearTimeout(alertTimer); alertTimer = setTimeout(()=> $('alert').classList.remove('show'), ms);
+}
+$('alert').addEventListener('click', () => $('alert').classList.remove('show'));
+function arrive(r){ r.t = Date.now(); pending.push(r); page = 0; renderAll(); showAlert(r); }
+
+/* ---------- clock / scale / loop ---------- */
+function tick(){
+  const d = new Date();
+  $('clock').textContent = d.toLocaleTimeString('zh-CN',{hour12:false});
+  $('dDate').textContent = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+  $('dWeek').textContent = '星期' + '日一二三四五六'[d.getDay()];
+}
+function fit(){ const s = Math.min(innerWidth/1920, innerHeight/1080);
+  const st = $('stage'); st.style.transform = `scale(${s})`;
+  st.style.left = (innerWidth - 1920*s)/2 + 'px'; st.style.top = (innerHeight - 1080*s)/2 + 'px'; }
+function renderAll(){ renderSummary(); renderQueue(); renderToday(); }
+
+fit(); addEventListener('resize', fit);
+tick(); setInterval(tick, 1000);
+renderAll();
+setInterval(()=>{ page++; renderQueue(); }, 10000);          // 普通单分页轮播
+setInterval(()=>{ renderSummary(); renderQueue(); }, 60000); // 等待时长刷新
+
+const qs = new URLSearchParams(location.search);
+if (qs.has('alert')) arrive(incoming);                       // ?alert 立即演示弹框
+else if (!qs.has('static')) setTimeout(()=>arrive(incoming), 6000); // 默认 6 秒后模拟新签出库单到达
+</script>
+</body>
+</html>

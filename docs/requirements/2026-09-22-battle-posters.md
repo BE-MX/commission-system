@@ -1,6 +1,6 @@
 # 临时战报海报与定时群推送
 
-2026-10-14新增[奖项战报海报](2026-10-14-battle-awards.md)：年度个人图与11月团队PK图，各一张，按各奖项的推送窗口和锁数时间执行。以下每日双图13:00/17:01与计时工作日规则仍用于原GMV战报。奖项扩展本地已验证，尚未部署或启用生产推送。
+2026-10-14新增[奖项战报海报](2026-10-14-battle-awards.md)：年度个人图与11月团队PK图，各一张，按各奖项的推送窗口和锁数时间执行。以下每日双图13:00/17:01与计时工作日规则仍用于原GMV战报。奖项扩展已于2026-10-18完成生产部署及最终回执核验；正式数据待源标记核对，尚未创建生产奖项活动或启用奖项群推送。
 
 入口：订单管理 → 临时战报 → 战报海报，仅战报管理员可配置、预览或下载全员海报。
 
@@ -18,7 +18,7 @@
 
 1. 用统一 `deploy/deploy.bat` 发布入口部署前后端并执行迁移 164（父163_okki_presence_days）；开发机不可升级共享生产库。2026-09-22 已核验生产在 `163_okki_presence_days`，战报迁移尚未执行，因此从原163顺延，保留已上线出库快照迁移及数据。
 2. 配置专用 `BATTLE_REPORT_WEBHOOK_URL`、`BATTLE_REPORT_WEBHOOK_SECRET`、`BATTLE_REPORT_GROUP_NAME`、`BATTLE_REPORT_PUBLIC_BASE_URL`。根地址须为可从钉钉访问且路由到本后端的 HTTPS 地址。不会回退全局默认群；密钥只在运行环境，前端不返回密钥。
-3. 后端依赖含 `playwright==1.58.0`。每个会处理图片请求的后端运行账号需安装 Chromium（`python -m playwright install chromium`，Linux 还需对应系统依赖及 Noto Sans CJK），或将 `BATTLE_REPORT_BROWSER_PATH` 指向已安装的 Chrome。Windows 使用 Microsoft YaHei；必须在正式运行账号下预览验证中文字体。
+3. 后端依赖含 `playwright`。每个会处理图片请求的后端运行账号需要可用 Chromium：优先 `python -m playwright install chromium`；若未安装或版本缓存过期，服务端会自动发现本机 Chrome/Edge。也可将 `BATTLE_REPORT_BROWSER_PATH` 显式指向 `chrome.exe` / `msedge.exe`（服务器推荐固定路径）。Linux 另需 Noto Sans CJK；Windows 使用 Microsoft YaHei。必须在正式运行账号下预览验证中文字体。
 4. 管理页核对工作日、目标、海报，保存并显式开启推送。草稿只预览，只有 `published`、全活动可见、周期内且开关开启才发送。变更周期会清空计时配置并关闭推送；改为团队/个人可见也关闭推送。
 5. 每天（含非工作日）13:00 和17:01 各发送团队、个人两条带海报的 Markdown 群消息。图链可在钉钉展开或点击查看原图。日期结束或归档自动停止。
 
@@ -29,7 +29,7 @@
 - 每战报/北京时间日期/时段唯一投递记录，先持久化两图共享快照。MySQL 命名锁防止多个发送实例并发；每图发送前提交 `sending`。
 - 每张发送前结束此前只读事务并重新读取发布状态、可见范围和开关，避免 MySQL REPEATABLE READ 旧快照越权；目标群指纹变化会阻止本槽位重试。
 - 网络读超时、系统繁忙、异常响应及发送中进程退出视为 `uncertain`，不会自动重发，须人工核对群消息。历史槽位中超过10分钟的 `sending` 会在后续调度取得投递锁后转为待核对，仍持锁的发送不会被误判。
-- PNG 图链 HMAC 绑定记录ID、图片类型和到期时间，7天后失效；匿名端点只返回 PNG，不返回业务JSON。图片缓存位于仓库锚定的 `backend/data/battle-report-posters/` 私有目录，不经 uploads 静态暴露。多后端共享DB时，另一实例可从冻结快照重建同图；所有相关实例都需浏览器/字体。
+- PNG 图链 HMAC 绑定记录ID、图片类型和到期时间，7天后失效；匿名端点只返回 JPEG（渲染 PNG 入缓存时压成 quality=82 JPEG，钉钉 markdown 才能内联显示），不返回业务JSON。图片缓存位于仓库锚定的 `backend/data/battle-report-posters/` 私有目录，不经 uploads 静态暴露。多后端共享DB时，另一实例可从冻结快照重建同图；所有相关实例都需浏览器/字体。
 - 快照和投递历史保留；图片缓存可在链接到期后由运维清理，不能删除有效期内正在读取的文件。数据文件不随源码发布复制或覆盖。
 - 没有“立即群发送”或“不确定强制重发”按钮；预览下载不触发群消息。
 

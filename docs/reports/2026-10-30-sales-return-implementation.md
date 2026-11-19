@@ -1,6 +1,6 @@
 # 外贸退货单本地实施与验收
 
-日期：2026-10-30。分支 `codex/sales-return-design`，基点 `ecfba4b7f0f13f880bf5fd63375cd33e4f216742`。工作区 `D:/MyProgram/commission-system-codex-sales-return-design`。开发与验收已完成；本轮用户追加授权提交、合并并推送 origin/main，不部署、不执行生产迁移。Git 结果以提交和远端引用读回为准。
+日期：2026-10-30。分支 `codex/sales-return-design`，基点 `ecfba4b7f0f13f880bf5fd63375cd33e4f216742`。工作区 `D:/MyProgram/commission-system-codex-sales-return-design`。开发验收与 Git 交付已完成；后续获用户生产授权，2026-10-30 已部署 f79af949 并执行迁移214，见[生产发布记录](2026-10-30-full-main-production-release-f79af949.md)。下文保留开发验收阶段证据。
 
 ## 交付行为
 

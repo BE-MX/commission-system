@@ -27,6 +27,8 @@
 
 ## 2026-11-04 原始实现记录
 
+2026-11-04 已生产部署 `59f93e79`，数据库为 `250_client_desk`，功能保持关闭。实际版本、四表与服务状态见[生产核验记录](../../reports/2026-11-04-private-sea-assistant-production-verification.md)。下文保留开发阶段的验证与开通条件。
+
 2026-11-04 · 独立分支 `codex/private-sea-assistant` · 本地实现，默认关闭
 
 工作目录为 `D:/MyProgram/commission-system-codex-private-sea-assistant`。依据产品 v0.2、三份开发文档与两块原型实现。开发阶段的事实和启用前需要验证的条件分别列在下方。

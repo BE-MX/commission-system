@@ -1,0 +1,996 @@
+[
+  {
+    "path": "/portal/customers/:accessId/preview",
+    "title": "客户目录预览",
+    "external": false,
+    "component": "() => import('@/views/portal/CustomerPreview.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/portal/catalog",
+    "title": "门户商品目录",
+    "external": false,
+    "component": "() => import('@/views/portal/PortalCatalog.vue')",
+    "group": "customerPortal"
+  },
+  {
+    "path": "/portal/settings",
+    "title": "客户门户站点设置",
+    "external": false,
+    "component": "() => import('@/views/portal/PortalSettings.vue')",
+    "group": "customerPortal"
+  },
+  {
+    "path": "/portal/customers",
+    "title": "客户访问与账号",
+    "external": false,
+    "component": "() => import('@/views/portal/PortalCustomers.vue')",
+    "group": "customerPortal"
+  },
+  {
+    "path": "/portal/access-requests",
+    "title": "客户账号申请",
+    "external": false,
+    "component": "() => import('@/views/portal/AccessRequestPanel.vue')",
+    "group": "customerPortal"
+  },
+  {
+    "path": "/portal/orders",
+    "title": "客户下单请求",
+    "external": false,
+    "component": "() => import('@/views/portal/PortalOrders.vue')",
+    "group": "customerPortal"
+  },
+  {
+    "path": "/dashboard",
+    "title": "工作台",
+    "external": false,
+    "component": "() => import('@/views/dashboard/Dashboard.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/announcements",
+    "title": "公告管理",
+    "external": false,
+    "component": "() => import('@/views/announcement/AnnouncementList.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/announcements/:documentId",
+    "title": "公告详情",
+    "external": false,
+    "component": "() => import('@/views/announcement/AnnouncementList.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/agent-runtime/tasks",
+    "title": "AI Agent 任务中心",
+    "external": false,
+    "component": "() => import('@/views/agent-runtime/AgentTaskCenter.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/agent-runtime/tasks/:runId",
+    "title": "Agent 运行详情",
+    "external": false,
+    "component": "() => import('@/views/agent-runtime/AgentRunDetail.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/knowledge",
+    "title": "企业知识库",
+    "external": false,
+    "component": "() => import('@/views/knowledge/KnowledgeWorkbench.vue')",
+    "group": "knowledge"
+  },
+  {
+    "path": "/knowledge/ai-settings",
+    "title": "AI 优化配置",
+    "external": false,
+    "component": "() => import('@/views/knowledge/KnowledgeAiSettings.vue')",
+    "group": "knowledge"
+  },
+  {
+    "path": "/employee/attribute",
+    "title": "员工属性管理",
+    "external": false,
+    "component": "() => import('@/views/employee/EmployeeAttribute.vue')",
+    "group": "personnel"
+  },
+  {
+    "path": "/supervisor/relation",
+    "title": "主管关系管理",
+    "external": false,
+    "component": "() => import('@/views/supervisor/SupervisorRelation.vue')",
+    "group": "personnel"
+  },
+  {
+    "path": "/customer/snapshot",
+    "title": "客户归属管理",
+    "external": false,
+    "component": "() => import('@/views/customer/CustomerSnapshot.vue')",
+    "group": "customer"
+  },
+  {
+    "path": "/customer-hub/customers",
+    "title": "客户工作台",
+    "external": false,
+    "component": "() => import('@/views/customer_hub/CustomerProfiles.vue')",
+    "group": "customerOperations"
+  },
+  {
+    "path": "/customer-hub/acquisition",
+    "title": "获客任务",
+    "external": false,
+    "component": "() => import('@/views/customer_hub/AcquisitionTasks.vue')",
+    "group": "customerOperations"
+  },
+  {
+    "path": "/customer-hub/research",
+    "title": "背调中心",
+    "external": false,
+    "component": "() => import('@/views/customer_hub/ResearchCenter.vue')",
+    "group": "customerOperations"
+  },
+  {
+    "path": "/customer-hub/opportunities",
+    "title": "客户机会",
+    "external": false,
+    "component": "() => import('@/views/customer_hub/CustomerOpportunities.vue')",
+    "group": "customerOperations"
+  },
+  {
+    "path": "/customer-hub/radar",
+    "title": "客户工作台",
+    "external": false,
+    "component": "() => import('@/views/customer_hub/CustomerRadar.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/customer-hub/calendar",
+    "title": "跟进日历",
+    "external": false,
+    "component": "() => import('@/views/customer_hub/MaintenanceCalendar.vue')",
+    "group": "customerOperations"
+  },
+  {
+    "path": "/customer-hub/workspace/:id",
+    "title": "客户作战卡",
+    "external": false,
+    "component": "() => import('@/views/customer_hub/CustomerWorkspace.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/mail-outreach",
+    "title": "邮件触达队列",
+    "external": false,
+    "component": "() => import('@/views/mail_outreach/MailOutreachQueue.vue')",
+    "group": "customerOperations"
+  },
+  {
+    "path": "/invoice/manage",
+    "title": "订单发票管理",
+    "external": false,
+    "component": "() => import('@/views/invoice/InvoiceManage.vue')",
+    "group": "invoice"
+  },
+  {
+    "path": "/invoice/receipts",
+    "title": "回款单管理",
+    "external": false,
+    "component": "() => import('@/views/receipt/ReceiptManage.vue')",
+    "group": "invoice"
+  },
+  {
+    "path": "/invoice/price-config",
+    "title": "价格与产品配置",
+    "external": false,
+    "component": "() => import('@/views/invoice/InvoicePriceConfig.vue')",
+    "group": "invoice"
+  },
+  {
+    "path": "/invoice/okki-settings",
+    "title": "OKKI 推单设置",
+    "external": false,
+    "component": "() => import('@/views/invoice/OkkiSyncSettings.vue')",
+    "group": "invoice"
+  },
+  {
+    "path": "/invoice/receipt-repair",
+    "title": "回款日期修复",
+    "external": false,
+    "component": "() => import('@/views/invoice/ReceiptDateRepair.vue')",
+    "group": "invoice"
+  },
+  {
+    "path": "/invoice/festival-orders",
+    "title": "采购节数据明细",
+    "external": false,
+    "component": "() => import('@/views/invoice/FestivalOrderDetail.vue')",
+    "group": "invoice"
+  },
+  {
+    "path": "/invoice/battle-reports",
+    "title": "临时战报",
+    "external": false,
+    "component": "() => import('@/views/battle-report/BattleReports.vue')",
+    "group": "invoice"
+  },
+  {
+    "path": "/invoice/order-intelligence",
+    "title": "订单经营决策台",
+    "external": false,
+    "component": "() => import('@/views/order_intelligence/OrderIntelligence.vue')",
+    "group": "invoice"
+  },
+  {
+    "path": "/invoice/fx-settlement",
+    "title": "结汇决策助手",
+    "external": false,
+    "component": "() => import('@/views/fx-settlement/FxSettlement.vue')",
+    "group": "invoice"
+  },
+  {
+    "path": "/fx-settlement",
+    "title": "结汇决策助手",
+    "external": false,
+    "component": "() => import('@/views/fx-settlement/FxSettlement.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/aftersales/cases",
+    "title": "售后单",
+    "external": false,
+    "component": "() => import('@/views/aftersales/AfterSalesList.vue')",
+    "group": "aftersales"
+  },
+  {
+    "path": "/aftersales/reviews",
+    "title": "待我审核",
+    "external": false,
+    "component": "() => import('@/views/aftersales/AfterSalesList.vue')",
+    "group": "aftersales"
+  },
+  {
+    "path": "/aftersales/cases/new",
+    "title": "新建售后单",
+    "external": false,
+    "component": "() => import('@/views/aftersales/AfterSalesWorkspace.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/aftersales/cases/:caseId",
+    "title": "售后单工作台",
+    "external": false,
+    "component": "() => import('@/views/aftersales/AfterSalesWorkspace.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/aftersales/sop",
+    "title": "售后 SOP 管理",
+    "external": false,
+    "component": "() => import('@/views/aftersales/SopManagement.vue')",
+    "group": "aftersales"
+  },
+  {
+    "path": "/aftersales/analytics",
+    "title": "售后分析",
+    "external": false,
+    "component": "() => import('@/views/aftersales/AfterSalesAnalytics.vue')",
+    "group": "aftersales"
+  },
+  {
+    "path": "/expo/wigs",
+    "title": "试戴发型库",
+    "external": false,
+    "component": "() => import('@/views/expo/WigLibrary.vue')",
+    "group": "expo"
+  },
+  {
+    "path": "/expo/hair-colors",
+    "title": "试戴发色库",
+    "external": false,
+    "component": "() => import('@/views/expo/HairColorLibrary.vue')",
+    "group": "expo"
+  },
+  {
+    "path": "/expo/scene-images",
+    "title": "场景示意图",
+    "external": false,
+    "component": "() => import('@/views/expo/SceneImages.vue')",
+    "group": "expo"
+  },
+  {
+    "path": "/expo/prompt-versions",
+    "title": "生图提示词",
+    "external": false,
+    "component": "() => import('@/views/expo/PromptSettings.vue')",
+    "group": "expo"
+  },
+  {
+    "path": "/expo/scripts",
+    "title": "话术卡库",
+    "external": false,
+    "component": "() => import('@/views/expo/ScriptLibrary.vue')",
+    "group": "expo"
+  },
+  {
+    "path": "/expo/leads",
+    "title": "展会线索台",
+    "external": false,
+    "component": "() => import('@/views/expo/ExpoLeads.vue')",
+    "group": "expo"
+  },
+  {
+    "path": "/expo/stores",
+    "title": "门店管理",
+    "external": false,
+    "component": "() => import('@/views/expo/StoreManagement.vue')",
+    "group": "expo"
+  },
+  {
+    "path": "/expo/card-butler",
+    "title": "名片管家",
+    "external": false,
+    "component": "() => import('@/views/card/CardButler.vue')",
+    "group": "expo"
+  },
+  {
+    "path": "/festival/",
+    "title": "采购节看板",
+    "external": true,
+    "component": null,
+    "group": "invoice"
+  },
+  {
+    "path": "/payment/sync",
+    "title": "回款同步",
+    "external": false,
+    "component": "() => import('@/views/payment/PaymentSync.vue')",
+    "group": "commission"
+  },
+  {
+    "path": "/commission/my",
+    "title": "我的提成",
+    "external": false,
+    "component": "() => import('@/views/commission/SalesCommission.vue')",
+    "group": "commission"
+  },
+  {
+    "path": "/commission/my/:batchId/details",
+    "title": "我的提成明细",
+    "external": false,
+    "component": "() => import('@/views/commission/SalesCommissionDetail.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/commission/batch",
+    "title": "提成批次",
+    "external": false,
+    "component": "() => import('@/views/commission/CommissionBatch.vue')",
+    "group": "commission"
+  },
+  {
+    "path": "/commission/batch/:batchId/details",
+    "title": "提成明细",
+    "external": false,
+    "component": "() => import('@/views/commission/CommissionDetail.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/tracking",
+    "title": "物流跟踪",
+    "external": false,
+    "component": "() => import('@/views/tracking/TrackingList.vue')",
+    "group": "tracking"
+  },
+  {
+    "path": "/tracking/:waybillNo",
+    "title": "运单详情",
+    "external": false,
+    "component": "() => import('@/views/tracking/TrackingDetail.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/tracking/upload",
+    "title": "运单上传",
+    "external": false,
+    "component": "() => import('@/views/tracking/WaybillUpload.vue')",
+    "group": "tracking"
+  },
+  {
+    "path": "/tracking/daily-report",
+    "title": "物流日报",
+    "external": false,
+    "component": "() => import('@/views/tracking/ShippingDailyReport.vue')",
+    "group": "tracking"
+  },
+  {
+    "path": "/stock/overview",
+    "title": "销量备货一览",
+    "external": false,
+    "component": "() => import('@/views/stock/StockOverview.vue')",
+    "group": "stock"
+  },
+  {
+    "path": "/stock/safety-config",
+    "title": "安全库存设置",
+    "external": false,
+    "component": "() => import('@/views/stock/SafetyConfig.vue')",
+    "group": "stock"
+  },
+  {
+    "path": "/stock/daily-report",
+    "title": "安全库存日报",
+    "external": false,
+    "component": "() => import('@/views/stock/DailyReport.vue')",
+    "group": "stock"
+  },
+  {
+    "path": "/stock/production-orders",
+    "title": "生产订单管理",
+    "external": false,
+    "component": "() => import('@/views/stock/ProductionOrderManage.vue')",
+    "group": "stock"
+  },
+  {
+    "path": "/stock/production-order-print",
+    "title": "生产订单打印",
+    "external": false,
+    "component": "() => import('@/views/stock/ProductionOrderPrint.vue')",
+    "group": "stock"
+  },
+  {
+    "path": "/stock/semifinished-materials",
+    "title": "半成品列表",
+    "external": false,
+    "component": "() => import('@/views/semifinished/MaterialManage.vue')",
+    "group": "stock"
+  },
+  {
+    "path": "/stock/semifinished-orders",
+    "title": "半成品订单",
+    "external": false,
+    "component": "() => import('@/views/semifinished/OrderManage.vue')",
+    "group": "stock"
+  },
+  {
+    "path": "/stock/semifinished-inventory",
+    "title": "半成品库存",
+    "external": false,
+    "component": "() => import('@/views/semifinished/InventoryManage.vue')",
+    "group": "stock"
+  },
+  {
+    "path": "/production/products",
+    "title": "产品管理",
+    "external": false,
+    "component": "() => import('@/views/production/ProductManage.vue')",
+    "group": "stock"
+  },
+  {
+    "path": "/production/processes",
+    "title": "工序管理",
+    "external": false,
+    "component": "() => import('@/views/production/ProcessManage.vue')",
+    "group": "stock"
+  },
+  {
+    "path": "/production/process-routes",
+    "title": "工序路线管理",
+    "external": false,
+    "component": "() => import('@/views/production/ProcessRouteManage.vue')",
+    "group": "stock"
+  },
+  {
+    "path": "/production/dashboard",
+    "title": "生产看板",
+    "external": false,
+    "component": "() => import('@/views/production/ProductionDashboard.vue')",
+    "group": "stock"
+  },
+  {
+    "path": "/production/print-card/:id",
+    "title": "工艺流转卡打印",
+    "external": false,
+    "component": "() => import('@/views/production/PrintCard.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/domestic/decision",
+    "title": "内贸经营决策台",
+    "external": false,
+    "component": "() => import('@/views/domestic_decision/DomesticDecision.vue')",
+    "group": "domestic"
+  },
+  {
+    "path": "/domestic/orders",
+    "title": "内贸订单",
+    "external": false,
+    "component": "() => import('@/views/domestic/DomesticOrders.vue')",
+    "group": "domestic"
+  },
+  {
+    "path": "/domestic/orders/create",
+    "title": "业务订单下单",
+    "external": false,
+    "component": "() => import('@/views/domestic/DomesticOrderCreate.vue')",
+    "group": "domestic"
+  },
+  {
+    "path": "/domestic/production-orders/create",
+    "title": "生产订单下单",
+    "external": false,
+    "component": "() => import('@/views/domestic/DomesticProductionOrderCreate.vue')",
+    "group": "domestic"
+  },
+  {
+    "path": "/domestic/products",
+    "title": "内贸产品与工艺",
+    "external": false,
+    "component": "() => import('@/views/domestic/DomesticProducts.vue')",
+    "group": "domestic"
+  },
+  {
+    "path": "/domestic/customers",
+    "title": "内贸客户",
+    "external": false,
+    "component": "() => import('@/views/domestic/DomesticCustomers.vue')",
+    "group": "domestic"
+  },
+  {
+    "path": "/domestic/customer-requests",
+    "title": "充值调整审核",
+    "external": false,
+    "component": "() => import('@/views/domestic/DomesticCustomerRequests.vue')",
+    "group": "domestic"
+  },
+  {
+    "path": "/shipping/outbound",
+    "title": "出库单打印",
+    "external": false,
+    "component": "() => import('@/views/shipping/OutboundRecords.vue')",
+    "group": "invoice"
+  },
+  {
+    "path": "/shipping/inspections",
+    "title": "验货单列表",
+    "external": false,
+    "component": "() => import('@/views/shipping/InspectionRecords.vue')",
+    "group": "invoice"
+  },
+  {
+    "path": "/shipping/scan",
+    "title": "共用手机发货质检",
+    "external": false,
+    "component": "() => import('@/views/shipping/ShippingScan.vue')",
+    "group": "shipping"
+  },
+  {
+    "path": "/asset/library",
+    "title": "素材库",
+    "external": false,
+    "component": "() => import('@/views/asset/AssetLibrary.vue')",
+    "group": "asset"
+  },
+  {
+    "path": "/asset/upload",
+    "title": "素材上传",
+    "external": false,
+    "component": "() => import('@/views/asset/AssetUpload.vue')",
+    "group": "asset"
+  },
+  {
+    "path": "/asset/favorites",
+    "title": "我的收藏",
+    "external": false,
+    "component": "() => import('@/views/asset/AssetFavorites.vue')",
+    "group": "asset"
+  },
+  {
+    "path": "/asset/stats",
+    "title": "下载统计",
+    "external": false,
+    "component": "() => import('@/views/asset/AssetStats.vue')",
+    "group": "asset"
+  },
+  {
+    "path": "/asset/tag-dimensions",
+    "title": "标签维度管理",
+    "external": false,
+    "component": "() => import('@/views/asset/TagDimensionManage.vue')",
+    "group": "asset"
+  },
+  {
+    "path": "/color-management/palette",
+    "title": "色板数据库",
+    "external": false,
+    "component": "() => import('@/views/color/PaletteView.vue')",
+    "group": "color"
+  },
+  {
+    "path": "/color-management/blends",
+    "title": "混合色管理",
+    "external": false,
+    "component": "() => import('@/views/color/BlendView.vue')",
+    "group": "color"
+  },
+  {
+    "path": "/color-management/trends",
+    "title": "色彩趋势看板",
+    "external": false,
+    "component": "() => import('@/views/color/TrendView.vue')",
+    "group": "color"
+  },
+  {
+    "path": "/color-management/swatch-generator",
+    "title": "色板图生成器",
+    "external": false,
+    "component": "() => import('@/views/color/SwatchGenerator.vue')",
+    "group": "color"
+  },
+  {
+    "path": "/training/digests",
+    "title": "培训速递",
+    "external": false,
+    "component": "() => import('@/views/training/TrainingList.vue')",
+    "group": "insight"
+  },
+  {
+    "path": "/training/digests/new",
+    "title": "发布培训速递",
+    "external": false,
+    "component": "() => import('@/views/training/TrainingEditor.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/training/digests/:id",
+    "title": "培训速览",
+    "external": false,
+    "component": "() => import('@/views/training/TrainingDetail.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/training/digests/:id/edit",
+    "title": "编辑培训速递",
+    "external": false,
+    "component": "() => import('@/views/training/TrainingEditor.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/insight/intelligence",
+    "title": "行业情报速览",
+    "external": false,
+    "component": "() => import('@/views/insight/IntelligenceOverview.vue')",
+    "group": "insight"
+  },
+  {
+    "path": "/insight/library",
+    "title": "情报采集库",
+    "external": false,
+    "component": "() => import('@/views/insight/IntelligenceLibrary.vue')",
+    "group": "insight"
+  },
+  {
+    "path": "/insight/industry-daily",
+    "title": "行业情报日报",
+    "external": false,
+    "component": "() => import('@/views/insight/IndustryDailyView.vue')",
+    "group": "insight"
+  },
+  {
+    "path": "/insight/ai-tools",
+    "title": "AI 工具速递",
+    "external": false,
+    "component": "() => import('@/views/insight/AIToolsView.vue')",
+    "group": "insight"
+  },
+  {
+    "path": "/insight/reports",
+    "title": "内部经营报告",
+    "external": false,
+    "component": "() => import('@/views/insight/InternalReportsView.vue')",
+    "group": "insight"
+  },
+  {
+    "path": "/insight/cases",
+    "title": "业务员案例库",
+    "external": false,
+    "component": "() => import('@/views/insight/CaseLibraryView.vue')",
+    "group": "insight"
+  },
+  {
+    "path": "/insight/minutes",
+    "title": "周会纪要",
+    "external": false,
+    "component": "() => import('@/views/insight/MeetingMinutesView.vue')",
+    "group": "insight"
+  },
+  {
+    "path": "/insight/sources",
+    "title": "信源配置",
+    "external": false,
+    "component": "() => import('@/views/insight/SourcesAdminView.vue')",
+    "group": "insight"
+  },
+  {
+    "path": "/design/image-studio",
+    "title": "AI 工作台",
+    "external": false,
+    "component": "() => import('@/views/design/image-studio/ImageStudio.vue')",
+    "group": "design"
+  },
+  {
+    "path": "/design/customer-image",
+    "title": "客户产品效果图",
+    "external": false,
+    "component": "() => import('@/views/customer-image/admin/CustomerImageAdmin.vue')",
+    "group": "design"
+  },
+  {
+    "path": "/design/ai-chat",
+    "title": "AI 工作台",
+    "external": false,
+    "component": "() => import('@/views/design/ai-chat/AiChat.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/design/gantt",
+    "title": "排期甘特图",
+    "external": false,
+    "component": "() => import('@/views/design/GanttView.vue')",
+    "group": "design"
+  },
+  {
+    "path": "/design/submit",
+    "title": "提交预约",
+    "external": false,
+    "component": "() => import('@/views/design/SubmitRequest.vue')",
+    "group": "design"
+  },
+  {
+    "path": "/design/my-requests",
+    "title": "我的预约",
+    "external": false,
+    "component": "() => import('@/views/design/MyRequests.vue')",
+    "group": "design"
+  },
+  {
+    "path": "/design/media/portal",
+    "title": "客户素材门户",
+    "external": false,
+    "component": "() => import('@/views/design/customer-media/CustomerMediaPortalPreview.vue')",
+    "group": "design"
+  },
+  {
+    "path": "/design/media/review",
+    "title": "拍摄素材审核",
+    "external": false,
+    "component": "() => import('@/views/design/CustomerMediaReview.vue')",
+    "group": "design"
+  },
+  {
+    "path": "/design/media/accounts",
+    "title": "客户素材门户账号",
+    "external": false,
+    "component": "() => import('@/views/design/CustomerMediaAccounts.vue')",
+    "group": "design"
+  },
+  {
+    "path": "/design/media/tasks/:taskId",
+    "title": "客户拍摄素材",
+    "external": false,
+    "component": "() => import('@/views/design/CustomerMediaWorkspace.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/design/audit",
+    "title": "审批队列",
+    "external": false,
+    "component": "() => import('@/views/design/AuditQueue.vue')",
+    "group": "design"
+  },
+  {
+    "path": "/design/manage",
+    "title": "设计管理",
+    "external": false,
+    "component": "() => import('@/views/design/DesignManage.vue')",
+    "group": "design"
+  },
+  {
+    "path": "/design/stats",
+    "title": "设计统计",
+    "external": false,
+    "component": "() => import('@/views/design/DesignStats.vue')",
+    "group": "design"
+  },
+  {
+    "path": "/salary/profiles",
+    "title": "员工薪资档案",
+    "external": false,
+    "component": "() => import('@/views/salary/SalaryProfiles.vue')",
+    "group": "salary"
+  },
+  {
+    "path": "/salary/rules",
+    "title": "薪资规则配置",
+    "external": false,
+    "component": "() => import('@/views/salary/SalaryRules.vue')",
+    "group": "salary"
+  },
+  {
+    "path": "/salary/periods",
+    "title": "月度工资批次",
+    "external": false,
+    "component": "() => import('@/views/salary/SalaryPeriods.vue')",
+    "group": "salary"
+  },
+  {
+    "path": "/salary/periods/:id",
+    "title": "工资批次工作台",
+    "external": false,
+    "component": "() => import('@/views/salary/SalaryWorkbench.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/system/component-showcase",
+    "title": "组件与交互样例",
+    "external": false,
+    "component": "() => import('@/views/system/ComponentShowcase.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/system/users",
+    "title": "用户管理",
+    "external": false,
+    "component": "() => import('@/views/system/UserManagement.vue')",
+    "group": "system"
+  },
+  {
+    "path": "/system/roles",
+    "title": "角色权限管理",
+    "external": false,
+    "component": "() => import('@/views/system/RoleManagement.vue')",
+    "group": "system"
+  },
+  {
+    "path": "/system/dicts",
+    "title": "基础字典",
+    "external": false,
+    "component": "() => import('@/views/system/DictManagement.vue')",
+    "group": "system"
+  },
+  {
+    "path": "/system/ai",
+    "title": "AI 接入管理",
+    "external": false,
+    "component": "() => import('@/views/system/AIManager.vue')",
+    "group": "system"
+  },
+  {
+    "path": "/system/operations",
+    "title": "运行与自动化中心",
+    "external": false,
+    "component": "() => import('@/views/system/OperationsCenter.vue')",
+    "group": "system"
+  },
+  {
+    "path": "/system/mcp-tokens",
+    "title": "Agent 接入凭证",
+    "external": false,
+    "component": "() => import('@/views/system/McpTokenManagement.vue')",
+    "group": "system"
+  },
+  {
+    "path": "/system/integration-apps",
+    "title": "站点接入凭证",
+    "external": false,
+    "component": "() => import('@/views/system/IntegrationAppManagement.vue')",
+    "group": "system"
+  },
+  {
+    "path": "/system/dingtalk-gmv-daily",
+    "title": "GMV 日报配置",
+    "external": false,
+    "component": "() => import('@/views/system/GmvDailyConfig.vue')",
+    "group": "system"
+  },
+  {
+    "path": "/system/external-bindings",
+    "title": "外部账号绑定",
+    "external": false,
+    "component": "() => import('@/views/system/ExternalBindings.vue')",
+    "group": "system"
+  },
+  {
+    "path": "/system/whatsapp-connector",
+    "title": "WhatsApp 同步",
+    "external": false,
+    "component": "() => import('@/views/system/WhatsAppConnector.vue')",
+    "group": "system"
+  },
+  {
+    "path": "/system/whatsapp-translation",
+    "title": "WhatsApp 翻译",
+    "external": false,
+    "component": "() => import('@/views/system/WhatsAppTranslation.vue')",
+    "group": "system"
+  },
+  {
+    "path": "/report",
+    "title": "报表中心",
+    "external": false,
+    "component": "() => import('@/views/report/ReportCenter.vue')",
+    "group": "report"
+  },
+  {
+    "path": "/report/view",
+    "title": "查看报表",
+    "external": false,
+    "component": "() => import('@/views/report/ReportView.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/governance/concepts",
+    "title": "概念注册表",
+    "external": false,
+    "component": "() => import('@/views/governance/ConceptRegistry.vue')",
+    "group": "governance"
+  },
+  {
+    "path": "/governance/concepts/:conceptId",
+    "title": "概念编辑",
+    "external": false,
+    "component": "() => import('@/views/governance/ConceptEditor.vue')",
+    "group": "ungrouped"
+  },
+  {
+    "path": "/governance/graph",
+    "title": "全景关系图",
+    "external": false,
+    "component": "() => import('@/views/governance/ConceptGraph.vue')",
+    "group": "governance"
+  },
+  {
+    "path": "/governance/change-logs",
+    "title": "变更历史",
+    "external": false,
+    "component": "() => import('@/views/governance/ChangeLog.vue')",
+    "group": "governance"
+  },
+  {
+    "path": "/colorwork/download",
+    "title": "库存图直接下载",
+    "external": false,
+    "component": "() => import('@/views/colorwork/ColorworkFrame.vue')",
+    "group": "colorwork"
+  },
+  {
+    "path": "/colorwork/edit",
+    "title": "实时库存图修改",
+    "external": false,
+    "component": "() => import('@/views/colorwork/ColorworkFrame.vue')",
+    "group": "colorwork"
+  },
+  {
+    "path": "/colorwork/master",
+    "title": "原始库存图文件",
+    "external": false,
+    "component": "() => import('@/views/colorwork/ColorworkFrame.vue')",
+    "group": "colorwork"
+  },
+  {
+    "path": "/task",
+    "title": "任务中心",
+    "external": false,
+    "component": "() => import('@/views/task/TaskCenter.vue')",
+    "group": "task"
+  },
+  {
+    "path": "/profile",
+    "title": "个人设置",
+    "external": false,
+    "component": "() => import('@/views/profile/ProfilePage.vue')",
+    "group": "ungrouped"
+  }
+]

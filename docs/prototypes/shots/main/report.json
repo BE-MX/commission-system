@@ -1,0 +1,22 @@
+[
+  {
+    "file": "page.png",
+    "state": null,
+    "size": "1920x1080",
+    "zoom": 1,
+    "animationWaitMs": 0,
+    "issues": [],
+    "lint": [
+      {
+        "rule": "nestedCards",
+        "label": "卡片里套卡片",
+        "count": 4,
+        "examples": [
+          "div.kpi「23单 出库单」（外层 div.panel.today）",
+          "div.kpi「4,319件 产品数量」（外层 div.panel.today）",
+          "div.kpi「19家 客户」（外层 div.panel.today）"
+        ]
+      }
+    ]
+  }
+]

@@ -1,21 +1,21 @@
 # 项目文档目录
 
-盘点日期：2026-10-31。覆盖本次可随 Git 交付的 Markdown；其他任务的未跟踪材料只参与本机盘点，不加入发布目录；不包含凭据、运行数据、依赖与外部项目。目录用于查找，不把设计稿、原型、旧计划或验收报告当作当前运行状态。常用入口见[文档导航](README.md)，当前状态见[交接文档](handoff.md)。
+盘点日期：2026-10-31。覆盖 Git 可见且未被忽略的 Markdown，包含未提交文件；不包含凭据、运行数据、依赖与外部项目。目录用于查找，不把设计稿、原型、旧计划或验收报告当作当前运行状态。常用入口见[文档导航](README.md)，当前状态见[交接文档](handoff.md)。
 
-本索引列出 **453 份文档**（不含本索引；连同本页共 454 份）。每份文件只归入一类；Git 列为本次提交时的跟踪状态，不代表业务完成或生产发布。
+本索引列出 **497 份文档**（不含本索引；连同本页共 498 份）。每份文件只归入一类；“未跟踪”仅表示本次本地 Git 状态，不代表业务未完成或可以删除。
 
 | 分类 | 数量 |
 | --- | ---: |
 | [项目约定与入口](#项目约定与入口) | 5 |
-| [平台参考与集成](#平台参考与集成) | 23 |
+| [平台参考与集成](#平台参考与集成) | 24 |
 | [部署与服务](#部署与服务) | 27 |
 | [客户门户专题](#客户门户专题) | 11 |
-| [需求与实施约定](#需求与实施约定) | 104 |
+| [需求与实施约定](#需求与实施约定) | 107 |
 | [原型与专项验收](#原型与专项验收) | 40 |
-| [报告与日期型评估](#报告与日期型评估) | 118 |
+| [报告与日期型评估](#报告与日期型评估) | 156 |
 | [设计规格](#设计规格) | 33 |
-| [实施计划](#实施计划) | 36 |
-| [历史交接与归档](#历史交接与归档) | 2 |
+| [实施计划](#实施计划) | 37 |
+| [历史交接与归档](#历史交接与归档) | 3 |
 | [领域知识材料](#领域知识材料) | 7 |
 | [项目技能与方法](#项目技能与方法) | 17 |
 | [组件说明与内置材料](#组件说明与内置材料) | 30 |
@@ -48,6 +48,7 @@
 | [莱莎方舟平台 API 接入指南](<integration-guide.md>) | `docs/integration-guide.md` | 已跟踪 |
 | [给 Codex 的站点改造任务书：订单生成方舟发票](<integrations/codex-site-prompt.md>) | `docs/integrations/codex-site-prompt.md` | 已跟踪 |
 | [方舟外部订单发票 API](<integrations/invoice-api.md>) | `docs/integrations/invoice-api.md` | 已跟踪 |
+| [顺丰快件路由查询 — 其他应用接入指南](<integrations/sf-express-route-query.md>) | `docs/integrations/sf-express-route-query.md` | 未跟踪 |
 | [方舟与 OKKI 单据生命周期](<invoice-lifecycle.md>) | `docs/invoice-lifecycle.md` | 已跟踪 |
 | [保存并同步关联单据](<invoice-linked-sync.md>) | `docs/invoice-linked-sync.md` | 已跟踪 |
 | [企业知识库 — 外部 Agent 调用说明](<mcp-knowledge-integration.md>) | `docs/mcp-knowledge-integration.md` | 已跟踪 |
@@ -88,7 +89,7 @@
 | [社媒客户查询 MCP 服务约定](<../services/social-customer-mcp/AGENTS.md>) | `services/social-customer-mcp/AGENTS.md` | 已跟踪 |
 | [社媒客户查询 MCP](<../services/social-customer-mcp/README.md>) | `services/social-customer-mcp/README.md` | 已跟踪 |
 | [WhatsApp Connector Service Rules](<../services/whatsapp-connector/AGENTS.md>) | `services/whatsapp-connector/AGENTS.md` | 已跟踪 |
-| [Ark WhatsApp Connector — Baileys candidate](<../services/whatsapp-connector/README.md>) | `services/whatsapp-connector/README.md` | 已跟踪 |
+| [Ark WhatsApp Connector — Baileys](<../services/whatsapp-connector/README.md>) | `services/whatsapp-connector/README.md` | 已跟踪 |
 
 ## 客户门户专题
 
@@ -176,6 +177,7 @@
 | [自动接管发送按钮与完整回复（v1.6.3）](<requirements/2026-09-11-whatsapp-send-coverage.md>) | `docs/requirements/2026-09-11-whatsapp-send-coverage.md` | 已跟踪 |
 | [WhatsApp 自动接管修复 v1.6.1](<requirements/2026-09-11-whatsapp-takeover-fixes.md>) | `docs/requirements/2026-09-11-whatsapp-takeover-fixes.md` | 已跟踪 |
 | [拍摄页「原照片生成 / 美颜生成」完整设计](<requirements/2026-09-12-expo-photo-generation-modes.md>) | `docs/requirements/2026-09-12-expo-photo-generation-modes.md` | 已跟踪 |
+| [方舟 AI 服务接入文档](<requirements/2026-09-14-ai-site-gateway-user-codex-guide.md>) | `docs/requirements/2026-09-14-ai-site-gateway-user-codex-guide.md` | 未跟踪 |
 | [客户拍摄素材 — 目录化上传设计方案（2026-09-14）](<requirements/2026-09-14-customer-media-directories.md>) | `docs/requirements/2026-09-14-customer-media-directories.md` | 已跟踪 |
 | [共用手机发货检验网页开发方案](<requirements/2026-09-15-shipping-shared-phone-web.md>) | `docs/requirements/2026-09-15-shipping-shared-phone-web.md` | 已跟踪 |
 | [公告管理功能设计](<requirements/2026-09-17-announcement-management-design.md>) | `docs/requirements/2026-09-17-announcement-management-design.md` | 已跟踪 |
@@ -183,6 +185,7 @@
 | [库存单自动回款与回款单管理 — 功能设计](<requirements/2026-09-17-receipt-management.md>) | `docs/requirements/2026-09-17-receipt-management.md` | 已跟踪 |
 | [9月新签大屏设计方案](<requirements/2026-09-17-september-new-sign-screen.md>) | `docs/requirements/2026-09-17-september-new-sign-screen.md` | 已跟踪 |
 | [方舟统一云存储：现状调查与迁移方案](<requirements/2026-09-18-cloud-storage-migration-plan.md>) | `docs/requirements/2026-09-18-cloud-storage-migration-plan.md` | 已跟踪 |
+| [社媒工作台（Facebook 投放数据自动化）方案设计](<requirements/2026-09-18-social-media-workbench-design.md>) | `docs/requirements/2026-09-18-social-media-workbench-design.md` | 未跟踪 |
 | [附件全链路切换验收](<requirements/2026-09-19-attachment-cutover-audit.md>) | `docs/requirements/2026-09-19-attachment-cutover-audit.md` | 已跟踪 |
 | [临时战报海报与定时群推送](<requirements/2026-09-22-battle-posters.md>) | `docs/requirements/2026-09-22-battle-posters.md` | 已跟踪 |
 | [临时战报：实现与验收说明](<requirements/2026-09-22-battle-report.md>) | `docs/requirements/2026-09-22-battle-report.md` | 已跟踪 |
@@ -211,8 +214,9 @@
 | [绩效目标管理 — 功能设计方案](<requirements/2026-10-23-performance-goal-management.md>) | `docs/requirements/2026-10-23-performance-goal-management.md` | 已跟踪 |
 | [预售整单修订与已发调价](<requirements/2026-10-23-presale-whole-order-revision.md>) | `docs/requirements/2026-10-23-presale-whole-order-revision.md` | 已跟踪 |
 | [Kindle personal dashboard](<requirements/2026-10-25-kindle-dashboard.md>) | `docs/requirements/2026-10-25-kindle-dashboard.md` | 已跟踪 |
+| [内贸客户跟进记录 · 功能设计](<requirements/2026-10-30-domestic-customer-followup.md>) | `docs/requirements/2026-10-30-domestic-customer-followup.md` | 未跟踪 |
 | [外贸退货单功能设计](<requirements/2026-10-30-sales-return-order-design.md>) | `docs/requirements/2026-10-30-sales-return-order-design.md` | 已跟踪 |
-| [私海助理：客户经营精简重做（设计文档）](<requirements/2026-11-04-private-sea-assistant-design.md>) | `docs/requirements/2026-11-04-private-sea-assistant-design.md` | 已跟踪 |
+| [私海助理：客户经营精简重做（设计文档）](<requirements/2026-11-04-private-sea-assistant-design.md>) | `docs/requirements/2026-11-04-private-sea-assistant-design.md` | 未跟踪 |
 | [色板数据库重构：公库 / 私库 + 色差仪测量](<requirements/swatch-library-redesign/2026-10-27-swatch-library-redesign.md>) | `docs/requirements/swatch-library-redesign/2026-10-27-swatch-library-redesign.md` | 已跟踪 |
 
 ## 原型与专项验收
@@ -269,6 +273,8 @@
 | [莱莎方舟平台全面梳理与治理评估](<2026-08-12-platform-governance-assessment.md>) | `docs/2026-08-12-platform-governance-assessment.md` | 已跟踪 |
 | [发货检验记录 — 功能设计与开发计划](<2026-09-01-shipping-inspection-design.md>) | `docs/2026-09-01-shipping-inspection-design.md` | 已跟踪 |
 | [方舟客户邮件触达闭环：开发邮件自动发送功能设计规划](<2026-09-11-mail-outreach-auto-send-design.md>) | `docs/2026-09-11-mail-outreach-auto-send-design.md` | 已跟踪 |
+| [WhatsApp 回复助手优化方案（话术生成 + 自动接管）](<2026-09-11-whatsapp-reply-optimization.md>) | `docs/2026-09-11-whatsapp-reply-optimization.md` | 未跟踪 |
+| [外贸营销政策（借鉴国内加盟机制，试点版）](<2026-09-20-foreign-trade-marketing-policy.md>) | `docs/2026-09-20-foreign-trade-marketing-policy.md` | 未跟踪 |
 | [WhatsApp 翻译生产 Preset 端到端观察](<reports/2026-09-04-whatsapp-translation-model-benchmark.md>) | `docs/reports/2026-09-04-whatsapp-translation-model-benchmark.md` | 已跟踪 |
 | [公告管理实现与验证](<reports/2026-09-17-announcement-implementation.md>) | `docs/reports/2026-09-17-announcement-implementation.md` | 已跟踪 |
 | [全项目知识整理记录](<reports/2026-09-17-project-knowledge-tidy.md>) | `docs/reports/2026-09-17-project-knowledge-tidy.md` | 已跟踪 |
@@ -288,11 +294,15 @@
 | [预售全流程验证与上线状态](<reports/2026-09-28-presale-full-flow-verification.md>) | `docs/reports/2026-09-28-presale-full-flow-verification.md` | 已跟踪 |
 | [操作列与按钮统一修复验收](<reports/2026-10-02-action-button-consistency.md>) | `docs/reports/2026-10-02-action-button-consistency.md` | 已跟踪 |
 | [操作列与按钮统一修复生产发布](<reports/2026-10-02-action-button-release.md>) | `docs/reports/2026-10-02-action-button-release.md` | 已跟踪 |
+| [全站操作列按钮样式与颜色检查](<reports/2026-10-02-action-column-style-audit.md>) | `docs/reports/2026-10-02-action-column-style-audit.md` | 未跟踪 |
 | [中后台按钮配色调整](<reports/2026-10-02-button-colors.md>) | `docs/reports/2026-10-02-button-colors.md` | 已跟踪 |
+| [客户获客、背调与邮件开发 MVP 评估](<reports/2026-10-02-customer-acquisition-mail-mvp-assessment.md>) | `docs/reports/2026-10-02-customer-acquisition-mail-mvp-assessment.md` | 未跟踪 |
 | [客户工作台看板卡片样式验收（2026-10-02）](<reports/2026-10-02-customer-board-style.md>) | `docs/reports/2026-10-02-customer-board-style.md` | 已跟踪 |
+| [莫兰迪按钮与标签配色发布记录](<reports/2026-10-02-morandi-release.md>) | `docs/reports/2026-10-02-morandi-release.md` | 未跟踪 |
 | [顶栏与标签栏毛玻璃发布记录](<reports/2026-10-02-navigation-glass-release.md>) | `docs/reports/2026-10-02-navigation-glass-release.md` | 已跟踪 |
 | [顶栏与标签栏毛玻璃验收](<reports/2026-10-02-navigation-glass.md>) | `docs/reports/2026-10-02-navigation-glass.md` | 已跟踪 |
 | [状态标签竖排修复](<reports/2026-10-02-status-badge-nowrap.md>) | `docs/reports/2026-10-02-status-badge-nowrap.md` | 已跟踪 |
+| [科技轻快按钮与标签配色发布记录](<reports/2026-10-02-tech-light-release.md>) | `docs/reports/2026-10-02-tech-light-release.md` | 未跟踪 |
 | [设计规范四阶段合并与发布](<reports/2026-10-02-ui-convergence-release.md>) | `docs/reports/2026-10-02-ui-convergence-release.md` | 已跟踪 |
 | [客户邮件 MVP 验收记录](<reports/2026-10-03-customer-mail-mvp-progress.md>) | `docs/reports/2026-10-03-customer-mail-mvp-progress.md` | 已跟踪 |
 | [客户邮件 MVP 合并与正式发布](<reports/2026-10-04-customer-mail-mvp-release.md>) | `docs/reports/2026-10-04-customer-mail-mvp-release.md` | 已跟踪 |
@@ -342,23 +352,48 @@
 | [公告图片上传超时修复（Git 交付，未部署）](<reports/2026-10-14-announcement-large-image.md>) | `docs/reports/2026-10-14-announcement-large-image.md` | 已跟踪 |
 | [内网 HTTP 浏览器兼容修复](<reports/2026-10-14-browser-http-compatibility.md>) | `docs/reports/2026-10-14-browser-http-compatibility.md` | 已跟踪 |
 | [内贸客户提成配置与订单快照](<reports/2026-10-14-domestic-commission-snapshot.md>) | `docs/reports/2026-10-14-domestic-commission-snapshot.md` | 已跟踪 |
+| [2026-10-14 内贸代报工与异常跳过权限完整生产发布](<reports/2026-10-14-domestic-operation-permissions-release.md>) | `docs/reports/2026-10-14-domestic-operation-permissions-release.md` | 未跟踪 |
 | [内贸规格修改后的默认价修复](<reports/2026-10-14-domestic-spec-price.md>) | `docs/reports/2026-10-14-domestic-spec-price.md` | 已跟踪 |
+| [2026-10-14 远端最新 main 完整生产发布](<reports/2026-10-14-full-main-production-release.md>) | `docs/reports/2026-10-14-full-main-production-release.md` | 未跟踪 |
 | [尹德魁261025：更新同步漏入队修复](<reports/2026-10-14-invoice-261025-outbound-recovery.md>) | `docs/reports/2026-10-14-invoice-261025-outbound-recovery.md` | 已跟踪 |
 | [发票明细表 UI 约定修复](<reports/2026-10-14-invoice-ui-conventions.md>) | `docs/reports/2026-10-14-invoice-ui-conventions.md` | 已跟踪 |
 | [出库单库存详情与翟 #261025 只读核对](<reports/2026-10-14-outbound-inventory-details.md>) | `docs/reports/2026-10-14-outbound-inventory-details.md` | 已跟踪 |
 | [出库单打印页查询性能优化](<reports/2026-10-14-outbound-search-performance.md>) | `docs/reports/2026-10-14-outbound-search-performance.md` | 已跟踪 |
+| [全项目知识整理记录（2026-10-13—14）](<reports/2026-10-14-project-knowledge-tidy.md>) | `docs/reports/2026-10-14-project-knowledge-tidy.md` | 未跟踪 |
 | [内贸待审核角标静默刷新](<reports/2026-10-14-quiet-review-badge.md>) | `docs/reports/2026-10-14-quiet-review-badge.md` | 已跟踪 |
 | [单笔回款删除入口](<reports/2026-10-14-receipt-delete-entry.md>) | `docs/reports/2026-10-14-receipt-delete-entry.md` | 已跟踪 |
+| [2026-10-14 全局最新 main 发布：回款删除与内网 HTTP 兼容](<reports/2026-10-14-receipt-http-global-release.md>) | `docs/reports/2026-10-14-receipt-http-global-release.md` | 未跟踪 |
+| [2026-10-14 物流跟踪分页修复发布](<reports/2026-10-14-tracking-pagination-release.md>) | `docs/reports/2026-10-14-tracking-pagination-release.md` | 未跟踪 |
 | [2026-10-14 WhatsApp 业务号关联失败修复](<reports/2026-10-14-whatsapp-bind-error.md>) | `docs/reports/2026-10-14-whatsapp-bind-error.md` | 已跟踪 |
+| [2026-10-15 最新 main 完整生产发布](<reports/2026-10-15-full-main-production-release.md>) | `docs/reports/2026-10-15-full-main-production-release.md` | 未跟踪 |
+| [2026-10-15 预售结算手工取消与最新 main 生产发布](<reports/2026-10-15-presale-cancel-release.md>) | `docs/reports/2026-10-15-presale-cancel-release.md` | 未跟踪 |
+| [2026-10-15 预售出库弹框加宽完整发布](<reports/2026-10-15-shipment-layout-release.md>) | `docs/reports/2026-10-15-shipment-layout-release.md` | 未跟踪 |
 | [WhatsApp 手机扫码失败调查与诊断增强](<reports/2026-10-15-whatsapp-pairing-diagnosis.md>) | `docs/reports/2026-10-15-whatsapp-pairing-diagnosis.md` | 已跟踪 |
 | [2026-10-15 WhatsApp 二维码与关联恢复](<reports/2026-10-15-whatsapp-qr-recovery.md>) | `docs/reports/2026-10-15-whatsapp-qr-recovery.md` | 已跟踪 |
+| [办公室历史部署材料清理（2026-10-16）](<reports/2026-10-16-deployment-history-cleanup.md>) | `docs/reports/2026-10-16-deployment-history-cleanup.md` | 未跟踪 |
+| [办公室服务器 D 盘占用分析（2026-10-16）](<reports/2026-10-16-office-d-storage.md>) | `docs/reports/2026-10-16-office-d-storage.md` | 未跟踪 |
+| [订单经营决策台筛选遮挡完整发布（2026-10-16）](<reports/2026-10-16-order-intelligence-filter-release.md>) | `docs/reports/2026-10-16-order-intelligence-filter-release.md` | 未跟踪 |
+| [预售出库实时库存完整发布（2026-10-16）](<reports/2026-10-16-presale-live-inventory-release.md>) | `docs/reports/2026-10-16-presale-live-inventory-release.md` | 未跟踪 |
 | [部署机制与耗时检查（2026-10-17）](<reports/2026-10-17-deployment-mechanism-audit.md>) | `docs/reports/2026-10-17-deployment-mechanism-audit.md` | 已跟踪 |
+| [部署候选清理与计时：正式发布记录](<reports/2026-10-17-deployment-retention-release.md>) | `docs/reports/2026-10-17-deployment-retention-release.md` | 未跟踪 |
 | [部署提速方案与实施验证](<reports/2026-10-17-deployment-speedup-plan.md>) | `docs/reports/2026-10-17-deployment-speedup-plan.md` | 已跟踪 |
+| [部署提速正式发布与计时确认](<reports/2026-10-17-deployment-speedup-release.md>) | `docs/reports/2026-10-17-deployment-speedup-release.md` | 未跟踪 |
+| [北京内贸订单进度码微信配置修复（2026-10-17）](<reports/2026-10-17-wx-mini-config-repair.md>) | `docs/reports/2026-10-17-wx-mini-config-repair.md` | 未跟踪 |
+| [2026-10-18 奖项战报发布与收尾核验](<reports/2026-10-18-battle-awards-release.md>) | `docs/reports/2026-10-18-battle-awards-release.md` | 未跟踪 |
+| [2026-10-18 最新 main 全量部署](<reports/2026-10-18-full-main-release.md>) | `docs/reports/2026-10-18-full-main-release.md` | 未跟踪 |
+| [2026-10-19 年度新签复购金额发布与启动恢复](<reports/2026-10-19-annual-new-customer-amount-release.md>) | `docs/reports/2026-10-19-annual-new-customer-amount-release.md` | 未跟踪 |
 | [年度新签复购奖：订单人工裁定](<reports/2026-10-19-battle-order-decisions.md>) | `docs/reports/2026-10-19-battle-order-decisions.md` | 已跟踪 |
 | [2026-10-19 部署可用性优化交付记录](<reports/2026-10-19-deployment-availability-optimization.md>) | `docs/reports/2026-10-19-deployment-availability-optimization.md` | 已跟踪 |
+| [2026-10-19 新部署机制全量发布与可用性实测](<reports/2026-10-19-deployment-availability-release.md>) | `docs/reports/2026-10-19-deployment-availability-release.md` | 未跟踪 |
 | [内贸发货批次独立单价](<reports/2026-10-19-domestic-batch-pricing.md>) | `docs/reports/2026-10-19-domestic-batch-pricing.md` | 已跟踪 |
+| [2026-10-19 最新 main 全量部署：订单发票缺货筛选](<reports/2026-10-19-invoice-stock-shortage-release.md>) | `docs/reports/2026-10-19-invoice-stock-shortage-release.md` | 未跟踪 |
+| [办公室内存异常与系统不可用核验（2026-10-19）](<reports/2026-10-19-office-memory-status-query.md>) | `docs/reports/2026-10-19-office-memory-status-query.md` | 未跟踪 |
+| [出库单打印列表路由性能修复（2026-10-19）](<reports/2026-10-19-outbound-list-routing-release.md>) | `docs/reports/2026-10-19-outbound-list-routing-release.md` | 未跟踪 |
+| [2026-10-19 最新 main 全量生产发布](<reports/2026-10-19-portal-latest-main-release.md>) | `docs/reports/2026-10-19-portal-latest-main-release.md` | 未跟踪 |
 | [内贸重复扫码误提示排查与修复](<reports/2026-10-20-domestic-scan-feedback.md>) | `docs/reports/2026-10-20-domestic-scan-feedback.md` | 已跟踪 |
+| [2026-10-22 最新 main 全量生产发布](<reports/2026-10-22-full-main-production-release.md>) | `docs/reports/2026-10-22-full-main-production-release.md` | 未跟踪 |
 | [内贸订单按产品明细终止](<reports/2026-10-23-domestic-item-termination.md>) | `docs/reports/2026-10-23-domestic-item-termination.md` | 已跟踪 |
+| [2026-10-23 最新 main 完整生产发布](<reports/2026-10-23-full-main-production-release-569b1fe5.md>) | `docs/reports/2026-10-23-full-main-production-release-569b1fe5.md` | 未跟踪 |
 | [订单发票与出库页面优化](<reports/2026-10-23-invoice-outbound-ux.md>) | `docs/reports/2026-10-23-invoice-outbound-ux.md` | 已跟踪 |
 | [员工 PI 按指定模板导出](<reports/2026-10-23-pi-template-export.md>) | `docs/reports/2026-10-23-pi-template-export.md` | 已跟踪 |
 | [结算页双栏高度调整](<reports/2026-10-23-portal-checkout-pane-height.md>) | `docs/reports/2026-10-23-portal-checkout-pane-height.md` | 已跟踪 |
@@ -367,21 +402,28 @@
 | [下单请求 PI 详情优化](<reports/2026-10-23-portal-pi-detail-ui.md>) | `docs/reports/2026-10-23-portal-pi-detail-ui.md` | 已跟踪 |
 | [Customer PI PDF font repair](<reports/2026-10-23-portal-pi-font-repair.md>) | `docs/reports/2026-10-23-portal-pi-font-repair.md` | 已跟踪 |
 | [原预售批次资金复核循环修复](<reports/2026-10-23-presale-existing-funding.md>) | `docs/reports/2026-10-23-presale-existing-funding.md` | 已跟踪 |
-| [Veronika 整单金额与剩余出库候选修复](<reports/2026-10-23-presale-whole-order-revision.md>) | `docs/reports/2026-10-23-presale-whole-order-revision.md` | 已跟踪 |
+| [Veronika 整单金额与剩余出库修复记录](<reports/2026-10-23-presale-whole-order-revision.md>) | `docs/reports/2026-10-23-presale-whole-order-revision.md` | 已跟踪 |
 | [预售出库创建中断后的原任务恢复](<reports/2026-10-23-shipment-absence-recovery.md>) | `docs/reports/2026-10-23-shipment-absence-recovery.md` | 已跟踪 |
+| [预售原出库任务恢复流程发布](<reports/2026-10-23-shipment-absence-release.md>) | `docs/reports/2026-10-23-shipment-absence-release.md` | 未跟踪 |
+| [方舟浏览器标签页 LeShine LOGO 发布](<reports/2026-10-23-tab-logo-release.md>) | `docs/reports/2026-10-23-tab-logo-release.md` | 未跟踪 |
+| [方舟平台 UI 文案审查与优化方案](<reports/2026-10-23-ui-copy-audit.md>) | `docs/reports/2026-10-23-ui-copy-audit.md` | 未跟踪 |
 | [田雯261011：超时原单恢复与绑定接口修复](<reports/2026-10-26-invoice-1379-recovery.md>) | `docs/reports/2026-10-26-invoice-1379-recovery.md` | 已跟踪 |
 | [出库调度激活检查点恢复](<reports/2026-10-26-outbound-activation-recovery.md>) | `docs/reports/2026-10-26-outbound-activation-recovery.md` | 已跟踪 |
 | [客户门户访问复制、图片与下单资料](<reports/2026-10-26-portal-customer-experience.md>) | `docs/reports/2026-10-26-portal-customer-experience.md` | 已跟踪 |
 | [删除已核实的预售出库撤销](<reports/2026-10-26-presale-deleted-outbound-cancellation.md>) | `docs/reports/2026-10-26-presale-deleted-outbound-cancellation.md` | 已跟踪 |
+| [Veronika 第三批撤销完成](<reports/2026-10-26-veronika-03-cancellation.md>) | `docs/reports/2026-10-26-veronika-03-cancellation.md` | 未跟踪 |
 | [内贸发货批次取消](<reports/2026-10-27-domestic-shipment-cancel.md>) | `docs/reports/2026-10-27-domestic-shipment-cancel.md` | 已跟踪 |
 | [验货单查看超时修复](<reports/2026-10-27-inspection-view-timeout.md>) | `docs/reports/2026-10-27-inspection-view-timeout.md` | 已跟踪 |
 | [订单检验要求与出库打印标记](<reports/2026-10-27-invoice-inspection-requirement.md>) | `docs/reports/2026-10-27-invoice-inspection-requirement.md` | 已跟踪 |
 | [2026-10-27 订单修改后的出库同步故障](<reports/2026-10-27-invoice-outbound-followup.md>) | `docs/reports/2026-10-27-invoice-outbound-followup.md` | 已跟踪 |
+| [2026-10-28 最新 main 全局生产部署完成](<reports/2026-10-28-full-main-production-release.md>) | `docs/reports/2026-10-28-full-main-production-release.md` | 未跟踪 |
 | [客户门户地址、价格与订单处理体验](<reports/2026-10-28-portal-customer-settings.md>) | `docs/reports/2026-10-28-portal-customer-settings.md` | 已跟踪 |
+| [2026-10-29 最新 main 全量生产部署](<reports/2026-10-29-full-main-production-release-7b5fdd0b.md>) | `docs/reports/2026-10-29-full-main-production-release-7b5fdd0b.md` | 未跟踪 |
 | [客户门户七项功能：实际浏览器验收与修复](<reports/2026-10-29-portal-live-acceptance.md>) | `docs/reports/2026-10-29-portal-live-acceptance.md` | 已跟踪 |
+| [2026-10-30 最新 main 生产发布](<reports/2026-10-30-full-main-production-release-f79af949.md>) | `docs/reports/2026-10-30-full-main-production-release-f79af949.md` | 未跟踪 |
 | [出库单实际订单归属过滤修复与验证](<reports/2026-10-30-outbound-order-scope.md>) | `docs/reports/2026-10-30-outbound-order-scope.md` | 已跟踪 |
 | [外贸退货单本地实施与验收](<reports/2026-10-30-sales-return-implementation.md>) | `docs/reports/2026-10-30-sales-return-implementation.md` | 已跟踪 |
-| [全项目知识整理记录（2026-10-31）](<reports/2026-10-31-project-knowledge-tidy.md>) | `docs/reports/2026-10-31-project-knowledge-tidy.md` | 本次新增 |
+| [全项目知识整理记录（2026-10-31）](<reports/2026-10-31-project-knowledge-tidy.md>) | `docs/reports/2026-10-31-project-knowledge-tidy.md` | 未跟踪 |
 
 ## 设计规格
 
@@ -460,6 +502,7 @@
 | [Login ICP Footer Implementation Plan](<superpowers/plans/2026-09-04-login-icp-footer.md>) | `docs/superpowers/plans/2026-09-04-login-icp-footer.md` | 已跟踪 |
 | [WhatsApp Translation v1.2 Implementation Plan](<superpowers/plans/2026-09-04-whatsapp-translation-v1.2.md>) | `docs/superpowers/plans/2026-09-04-whatsapp-translation-v1.2.md` | 已跟踪 |
 | [任务中心一期 Implementation Plan](<superpowers/plans/2026-09-30-task-center-phase1.md>) | `docs/superpowers/plans/2026-09-30-task-center-phase1.md` | 已跟踪 |
+| [内贸客户跟进 · 一期实施计划](<superpowers/plans/2026-10-30-domestic-customer-followup-phase1.md>) | `docs/superpowers/plans/2026-10-30-domestic-customer-followup-phase1.md` | 未跟踪 |
 | [Sales return implementation](<superpowers/plans/2026-10-30-sales-return-implementation.md>) | `docs/superpowers/plans/2026-10-30-sales-return-implementation.md` | 已跟踪 |
 
 ## 历史交接与归档
@@ -467,7 +510,8 @@
 | 文档 | 路径 | Git |
 | --- | --- | --- |
 | [历史交接快照（归档于2026-09-17）](<archive/handoff-2026-09-17.md>) | `docs/archive/handoff-2026-09-17.md` | 已跟踪 |
-| [主线交接历史快照（2026-10-31）](<archive/handoff-main-2026-10-31.md>) | `docs/archive/handoff-main-2026-10-31.md` | 本次新增 |
+| [历史交接快照（归档于 2026-10-14）](<archive/handoff-2026-10-14.md>) | `docs/archive/handoff-2026-10-14.md` | 未跟踪 |
+| [交接历史快照（2026-10-31）](<archive/handoff-2026-10-31.md>) | `docs/archive/handoff-2026-10-31.md` | 未跟踪 |
 
 ## 领域知识材料
 

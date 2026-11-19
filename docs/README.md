@@ -10,8 +10,9 @@
 2. **日常运维** → 阅读 [runbook.md](runbook.md) 的「常见问题」和「健康检查」章节
 3. **接入方舟 API** → 阅读 [integration-guide.md](integration-guide.md)
 4. **了解架构** → 阅读 [architecture.md](architecture.md)
+5. **统一云存储迁移规划** → 阅读 [2026-09-18 迁移方案](requirements/2026-09-18-cloud-storage-migration-plan.md)（历史调查与迁移/回滚设计；已落地的存储结构见[架构说明](architecture.md)，当前状态见[交接](handoff.md)）
 
-## 近期专题入口
+## 按业务找文档
 
 工厂手写发货单拍照识别入库：[需求与设计 v0.4](requirements/2026-11-18-factory-delivery-inbound/README.md) · [设计开发文档](requirements/2026-11-18-factory-delivery-inbound/design.md) · [高保真原型](requirements/2026-11-18-factory-delivery-inbound/prototype/index.html)（切换前写小满采购入库；对应生产备货订单与订单发票生产单两类，备货单回写、发票只记对应；未开发）。
 
@@ -25,27 +26,36 @@
 
 | 业务 | 操作与约定入口 |
 | --- | --- |
+| 订单、回款与出库 | [保存并同步关联单据](invoice-linked-sync.md) · [生命周期与恢复](invoice-lifecycle.md) · [出库资料同步](outbound-invoice-sync.md) · [预售信用批](requirements/2026-10-13-presale-credit-batches.md) |
+| 内贸订单与经营 | [分批交付和收款对账](domestic-delivery.md) · [经营决策与发型师分析](domestic-decision.md) |
+| 客户经营与销售 Agent | [客户经营使用说明](customer-hub-user-manual.md) · [邮件触达](customer-mail-outreach.md) · [研究 Agent 部署](../deploy/sales-agent-cloud.md) |
+| WhatsApp | [连接与历史同步](requirements/2026-10-13-whatsapp-baileys.md) · [消息助手](requirements/2026-10-13-whatsapp-ai-assistant.md) · [翻译扩展安装](whatsapp-translation-install.md) |
+| 客户下单门户 | [开发与验收入口](requirements/2026-09-30-customer-order-portal/README.md) · [受管发布、启停与经营验收](../deploy/customer-orders.md) |
+| 物流跟踪 | [物流 MCP 接入](mcp-tracking-integration.md) · [其他应用接入顺丰路由查询](integrations/sf-express-route-query.md) |
+| 知识、公告与外部 Agent | [知识 MCP](mcp-knowledge-integration.md) · [公告管理设计](requirements/2026-09-17-announcement-management-design.md) · [API 参考](api-reference.md) |
+| 展会与现场设备 | [平板上机](expo-kiosk-tablet-setup.md) · [PDA 报工](../pda-reporting/README.md) · [Kiosk APK](../tablet-kiosk/README.md) |
 | 绩效目标与薪资 | [目标契约](requirements/2026-10-23-performance-goal-management.md) · [API 入口](api-reference.md) · [表结构](database.md) |
 | 色板与选色工具 | [色板库设计](requirements/swatch-library-redesign/2026-10-27-swatch-library-redesign.md) · [38 色工具部署](../deploy/color-guide.md) |
 | Kindle 个人看板 | [设备与接口契约](requirements/2026-10-25-kindle-dashboard.md) · [客户端说明](../extensions/kindle-inkboard/README.md) |
+| 样式与页面开发 | [设计系统](../DESIGN.md) · [操作列与按钮契约](requirements/2026-10-02-action-button-design.md) |
 
-当前状态统一见[交接文档](handoff.md)。
+以上入口说明使用方法或设计契约；当前发布状态与待验收事项统一见[交接文档](handoff.md)。
 
 ## 文档清单
 
-外贸退货功能：[设计契约](requirements/2026-10-30-sales-return-order-design.md)（客户与实际出库明细、货款冲减/实际退款/未收减免、本地负数回款、GMV、原比例提成扣回及实收/检验；权威库存入库待接入）。[实施验收记录](reports/2026-10-30-sales-return-implementation.md)。
+外贸退货功能：[设计契约](requirements/2026-10-30-sales-return-order-design.md)（客户与实际出库明细、货款冲减/实际退款/未收减免、本地负数回款、GMV、原比例提成扣回及实收/检验；权威库存入库待接入）。[实施验收记录](reports/2026-10-30-sales-return-implementation.md) · [生产发布记录](reports/2026-10-30-full-main-production-release-f79af949.md)。
 
-近期开发：[内贸经营决策台实施与验收](requirements/2026-10-08-domestic-decision-implementation.md)（真实内贸 API、七个专题和客户跟进闭环，本地开发，未部署）；[交互原型](requirements/domestic-decision-prototype/README.md)保留为设计参考，使用演示数据。
+近期开发：[内贸经营决策台实施与验收](requirements/2026-10-08-domestic-decision-implementation.md)（真实内贸 API、七个专题和客户跟进闭环；执行状态见[交接文档](handoff.md)顶部）；[交互原型](requirements/domestic-decision-prototype/README.md)保留为设计参考，使用演示数据。
 
 内贸客户跟进一期：[功能规格](requirements/2026-10-30-domestic-customer-followup.md)（AI 整理草稿、跟进任务、收货回访、异常/意见闭环，末尾附实施偏差表；本地实现，未部署）；[交互原型](requirements/domestic-followup-prototype/index.html)保留为设计参考；[实施计划](superpowers/plans/2026-10-30-domestic-customer-followup-phase1.md)记录任务拆解与执行过程偏差。
 
 私海助理（客户经营精简重做）：[设计文档](requirements/2026-11-04-private-sea-assistant-design.md)（一页「我的私海」+ 钉钉早报，规则选候选、Agent 逐客户分析，一期方舟内单次调用、二期经 agent_runtime 上 DSH；旧经营类功能冻结；设计稿，未开发）。
 
-完整枚举见[文档目录](document-catalog.md)；本页只保留常用入口。最近整理见[2026-10-31 报告](reports/2026-10-31-project-knowledge-tidy.md)。日期型设计、计划和验收报告代表当时范围，不自动代表当前生产状态。当前状态查[交接文档](handoff.md)，历史追溯查[2026-10-31 完整快照](archive/handoff-main-2026-10-31.md)及[早期归档](archive/handoff-2026-09-17.md)。
+完整枚举见[文档目录](document-catalog.md)；本页只保留常用入口。最近全项目盘点见[2026-10-31 整理记录](reports/2026-10-31-project-knowledge-tidy.md)。日期型设计、计划和验收报告代表当时范围，不自动代表当前生产状态。当前状态查[交接文档](handoff.md)，历史追溯查[2026-10-31 完整归档](archive/handoff-2026-10-31.md)、[2026-10-14 归档](archive/handoff-2026-10-14.md)及[2026-09-17 归档](archive/handoff-2026-09-17.md)。
 
 | 文档 | 用途 | 适合谁 |
 |------|------|--------|
-| [客户下单门户开发文档（2026-09-30）](requirements/2026-09-30-customer-order-portal/README.md) | 权限、映射、订单/PI、接口、迁移、64项验收规格及对抗审查；待开发设计 | 产品、前后端、测试 |
+| [客户下单门户开发文档（2026-09-30）](requirements/2026-09-30-customer-order-portal/README.md) | 权限、映射、订单/PI、接口、迁移与验收规范；开发和生产准备记录见专题入口，开放状态见交接文档 | 产品、前后端、测试 |
 | [architecture.md](architecture.md) | 系统架构、数据流、鉴权边界与已核验拓扑 | 技术接手人、新后端开发 |
 | [api-reference.md](api-reference.md) | 全模块 API 端点清单（新端点同步更新） | 前后端开发、AI 协作 |
 | [database.md](database.md) | 数据库表结构清单（新表同步更新） | 后端开发、DBA |
@@ -58,7 +68,7 @@
 | [部署调整实施记录（2026-09-05）](requirements/2026-09-05-deployment-adjustment-implementation.md) | 实际上线、增量发布验证、暂缓 COS 与办公室/DNS 待办 | 技术负责人、运维 |
 | [handoff.md](handoff.md) | 项目状态、已完成功能、待办清单、技术债务 | 项目交接、管理层 |
 | [accio-work-integration-spec.md](accio-work-integration-spec.md) | ACCIO WORK → 方舟 客户机会台集成规范 | ACCIO WORK 开发团队 |
-| [mcp-tracking-integration.md](mcp-tracking-integration.md) | 方舟 MCP 网关接入说明：物流、素材、企业知识、产品目录与标准参考价共 9 个工具（个人 token） | AI 客户端接入者 |
+| [mcp-tracking-integration.md](mcp-tracking-integration.md) | 方舟 MCP 网关接入说明：物流、素材、知识、产品与价格工具（个人 token） | AI 客户端接入者 |
 | [social-customer-mcp.md](social-customer-mcp.md) | 社媒客户查询 MCP：调用、部署、鉴权与运维完整说明 | AI 客户端接入者、运维、DBA |
 | [codex-social-customer-mcp-auto-setup.md](codex-social-customer-mcp-auto-setup.md) | Windows + macOS Codex 自动接入社媒客户 MCP：安全读取 token 文件、备份并更新配置、重启验收 | Codex 用户、服务管理员 |
 | [expo-kiosk-tablet-setup.md](expo-kiosk-tablet-setup.md) | 展会 kiosk 平板现场配置 | 展会执行、现场支持 |
@@ -71,8 +81,10 @@
 
 ## 外部集成
 
+近期开发规格：[预售末批抵扣、发货结算与多订单回款 V2](requirements/2026-09-23-presale-settlement-development.md) · [对抗性审查](reports/2026-09-23-presale-settlement-adversarial-review.md)（原始开发规格）；后续[实现记录](reports/2026-09-23-presale-implementation.md)、[外部契约验收](reports/2026-09-27-presale-live-contract.md)与[按批次信用发货约定](requirements/2026-10-13-presale-credit-batches.md)分别记录实现、实测和当前业务补充。
+
 - **ACCIO WORK（询盘导入）** → [accio-work-integration-spec.md](accio-work-integration-spec.md)
-- **WhatsApp Connector** → [requirements/2026-06-16-whatsapp-connector-contract.md](requirements/2026-06-16-whatsapp-connector-contract.md)
+- **WhatsApp Connector** → [当前服务配置与契约](../services/whatsapp-connector/README.md) · [Baileys 实施范围](requirements/2026-10-13-whatsapp-baileys.md)；[旧版契约](requirements/2026-06-16-whatsapp-connector-contract.md)仅供历史追溯。
 - **微信小程序（生产报工）** → AppID `wx4dea4f10fe1bda19`，见 `miniprogram/` 目录
 
 ## 技术栈速查
@@ -87,4 +99,4 @@
 - **项目负责人**：亮哥（莱莎发制品 AI 技术支持部）
 - **代码仓库**：内部 Git 仓库
 - **生产入口**：[leshine.work](https://leshine.work)走新加坡→办公室，[leshine.cloud](https://leshine.cloud)走北京；专题路由例外以[架构说明](architecture.md)和实际部署配置为准。
-  - ⚠️ 线上代码不等于仓库当前代码：「已合入 main」不等于「已部署」，部署只走办公室服务器的 `deploy\deploy.bat`。最新发布状态与探测结果见 [handoff.md](handoff.md) 顶部提醒
+  - ⚠️ 线上代码不等于仓库当前代码：「已合入 main」不等于「已部署」，部署只走办公室服务器的 `deploy\deploy.bat`。最新发布状态与未结事项见 [handoff.md](handoff.md) 顶部。

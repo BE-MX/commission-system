@@ -34,3 +34,21 @@
 - `git diff --check`、覆盖 `dab19815` 起变更的增量约定检查通过；完整约定门禁仍报生产基点已有 13 项 UI 基线问题，未修改基线规避。
 - `git_sweep.py --no-fetch` 已执行，属于本地快照。用户随后授权合并 main 并推送 origin；集成最新主线后复验，保留主目录验证证据，清理已合并任务工作树。
 - 证据：主目录 `tmp/receipt-enable/` 中的部署、只读扫描、归集、单笔同步和上传日志。当前状态见 `docs/handoff.md`。
+
+## 用户授权开启自动同步及今日补单（后续执行）
+
+在用户明确授权后，办公室与北京 `.env` 的 `RECEIPT_SYNC_ENABLED` 均已设为 True，并按 runbook 重启 NSSM CommissionSystem / systemd ark-backend。办公室 `SCHEDULER_ENABLED=True`，北京仍为 False，保持单活；无代码发布或迁移。两域健康检查均 200、数据库 connected，代码仍为 c9351606。
+
+本轮按北京时间 2026-09-18 创建日期核验 20 张发票：18 张已完整同步小满并附凭证，2 张未同步且无凭证草稿。通过完整小满回款扫描，确认 2 张订单已有回款（含此前测试成功的原单），不重复创建。对其余候选逐笔执行原 deliver 状态机，14 张新建成功，均回读 collect_status=1；2 张订单的方舟/小满总额不一致，被原校验拦截。用户已明确回复这两张先跳过（发票 481、486）。
+
+补单使用一次完整基线加每笔发送前固定起点的更新窗口双读，仅为本次今日清单提供“无任何远端回款”证明；窗口不完整退回原全量读取。订单归属、日期及清单范围逐笔断言，原金额/占额/凭证/发送 fence/POST/回读均保留。一次性脚本经独立审查，修复今日范围约束；12 项隔离用例通过。它不改动应用后台的查询逻辑。
+
+最终方舟 15 张 synced（原先 1 + 新增 14）、3 张 failed、0 pending/uncertain。failed 中包含两张用户要求暂跳过的金额不符单，以及发票 475（Daisy-KC-0904）：小满已有有效回款 18841，方舟总额也与小满不同，未盲目绑定或重发。该本地单保留供后续核对；开启自动同步不会重试 failed 单。另 2 个 draft 意图保留，未伪造凭证或同步未提交订单。
+
+操作证据在 `tmp/receipt-enable/` 的 audit-today、deliver-today、mismatches、enabled-office、public-enabled 日志与 presence_guard 隔离测试；服务器 `.deploy_state/receipt-sync-setting-before.json` 只记录原开关，不含其他配置或密钥。
+
+## 云端订单保存误报凭证缺失修复
+
+用户反馈 www.leshine.cloud 上传成功后 POST /api/invoice/invoices 返回 400。根因是此前入口切换只将 /api/receipts 送到办公室，订单创建仍在北京；北京 RECEIPT_STORAGE_PROXY_URL 留空，attachments.bind 因而错误检查北京本地文件。只读核验最近10份凭证，办公室10/10、北京0/10，9份尚未绑定，证明已上传文件未丢失。
+
+已将北京 `.env` 的 RECEIPT_STORAGE_PROXY_URL 设置为 https://leshine.work 并按 runbook 重启 ark-backend；办公室仍留空且负责实体文件校验，回款自动同步仍 True。此为配置修复，无代码发布、无生产订单写入。独立复核确认无代理回环/鉴权放行，46项相关隔离测试通过，www.leshine.cloud/leshine.cloud/leshine.work 健康接口均200。已有截图可直接重试保存，未要求重复上传；真实用户原表单保存结果尚待用户重试。部署说明中“北京留空”的错误结论已纠正。

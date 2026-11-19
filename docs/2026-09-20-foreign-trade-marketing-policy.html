@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>外贸营销政策 · 借鉴加盟机制的阶梯式打法（2026 Q4 试点版）</title>
+<style>
+:root{
+  --paper:#f5efe4; --paper2:#ece2cf; --card:#fbf8f0;
+  --ink:#221a12; --ink2:#5c5044; --ink3:#8a7d6d;
+  --gold:#b0762e; --gold-soft:#d5b183; --gold-pale:#f1e4c9;
+  --deep:#211910; --line:#ddd0ba;
+  --a:#b0762e; --b:#7c8b6f; --c:#5d6f82; --d:#8a5f6b; --e:#8f7d43; --f:#48707a;
+  --red:#a8493a; --red-bg:#faf1ec; --red-line:#e6c9bf;
+  --serif:"Songti SC","STZhongsong","Noto Serif SC","SimSun",serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --ease:cubic-bezier(.22,.72,.18,1);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--paper);color:var(--ink);font:16px/1.8 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+::selection{background:var(--gold);color:#fff}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.6'/%3E%3C/svg%3E")}
+h1,h2,h3,h4,.serif{font-family:var(--serif)}
+a{color:inherit}
+
+/* ---------- 固定元素 ---------- */
+.progress{position:fixed;top:0;left:0;height:3px;width:0;z-index:99;
+  background:linear-gradient(90deg,var(--gold),var(--gold-soft))}
+.dotnav{position:fixed;right:22px;top:50%;transform:translateY(-50%);z-index:90;display:flex;flex-direction:column;gap:15px}
+.dotnav a{width:9px;height:9px;border-radius:50%;background:var(--ink3);opacity:.4;position:relative;transition:.3s}
+.dotnav a.active{background:var(--gold);opacity:1;transform:scale(1.4)}
+.dotnav a span{position:absolute;right:24px;top:50%;transform:translateY(-50%) translateX(6px);white-space:nowrap;
+  font-size:12px;color:var(--ink2);background:var(--card);border:1px solid var(--line);
+  padding:3px 12px;border-radius:99px;opacity:0;pointer-events:none;transition:.25s}
+.dotnav a:hover span{opacity:1;transform:translateY(-50%) translateX(0)}
+@media(max-width:960px){.dotnav{display:none}}
+
+/* ---------- Hero ---------- */
+.hero{min-height:100vh;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;
+  padding:110px 7vw 90px;color:#f3ead9;
+  background:radial-gradient(1100px 520px at 82% -10%,rgba(213,177,131,.20),transparent 60%),
+             radial-gradient(800px 480px at -10% 110%,rgba(176,118,46,.14),transparent 55%),var(--deep)}
+.hero-strands{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.strand{fill:none;stroke:url(#gGold);stroke-width:1.1;opacity:.5;
+  stroke-dasharray:1600;stroke-dashoffset:1600;animation:draw 2.8s var(--ease) forwards}
+.strand.s2{animation-delay:.35s;opacity:.32}
+.strand.s3{animation-delay:.7s;opacity:.2}
+.strand.s4{animation-delay:1s;opacity:.14}
+@keyframes draw{to{stroke-dashoffset:0}}
+.hero-eyebrow{letter-spacing:.42em;font-size:13px;color:var(--gold-soft);text-transform:uppercase}
+.hero h1{font-size:clamp(46px,7.4vw,104px);line-height:1.12;margin:22px 0 8px;font-weight:700}
+.hero h1 .hl{color:var(--gold-soft)}
+.hero h2{font-size:clamp(19px,2.4vw,30px);font-weight:500;color:#d9cbb0;letter-spacing:.06em;margin-bottom:26px}
+.hero-sub{max-width:660px;color:#b8a88d;font-size:15.5px;line-height:1.9}
+.hero-sub b{color:#e8d9bd;font-weight:600}
+.hero-stats{display:flex;gap:clamp(28px,5vw,64px);margin-top:60px;flex-wrap:wrap}
+.stat b{display:block;font-family:var(--serif);font-size:clamp(36px,4vw,52px);color:var(--gold-soft);line-height:1.1}
+.stat span{font-size:13px;letter-spacing:.18em;color:#a1907a}
+.hero-scroll{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);font-size:12px;letter-spacing:.3em;
+  color:#8d7d66;display:flex;flex-direction:column;align-items:center;gap:8px}
+.hero-scroll::after{content:"";width:1px;height:38px;background:linear-gradient(180deg,var(--gold-soft),transparent);
+  animation:drop 1.8s ease-in-out infinite}
+@keyframes drop{0%{transform:scaleY(0);transform-origin:top}45%{transform:scaleY(1);transform-origin:top}55%{transform:scaleY(1);transform-origin:bottom}100%{transform:scaleY(0);transform-origin:bottom}}
+
+/* ---------- 章节骨架 ---------- */
+.sec{padding:110px 7vw 40px;max-width:1280px;margin:0 auto}
+.sec-head{position:relative;margin-bottom:54px}
+.sec-ghost{position:absolute;right:0;top:-46px;font-family:var(--serif);font-size:clamp(96px,13vw,170px);
+  color:var(--ink);opacity:.05;line-height:1;pointer-events:none;user-select:none}
+.sec-no{font-family:var(--serif);font-size:14px;letter-spacing:.34em;color:var(--gold)}
+.sec-head h2{font-size:clamp(30px,4vw,48px);font-weight:700;margin:12px 0 16px}
+.sec-rule{width:64px;height:3px;background:var(--gold);border-radius:2px}
+.sec-desc{max-width:760px;color:var(--ink2);margin-top:18px;font-size:15.5px}
+.sec-desc b{color:var(--ink)}
+
+/* ---------- 揭示动效 ---------- */
+.rv{opacity:0;transform:translateY(28px);
+  transition:opacity .85s ease var(--rd,0s),transform .85s var(--ease) var(--rd,0s)}
+.rv.in-view{opacity:1;transform:none}
+
+/* ---------- 01 设计逻辑 ---------- */
+.tri{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tri-card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:28px 26px;position:relative;overflow:hidden;transition:.35s var(--ease)}
+.tri-card:hover{transform:translateY(-4px);box-shadow:0 16px 34px rgba(70,52,28,.12);border-color:var(--gold-soft)}
+.tri-card .t-no{font-family:var(--serif);font-size:13px;letter-spacing:.24em;color:var(--gold)}
+.tri-card h3{font-size:21px;margin:12px 0 8px;font-weight:700}
+.tri-card p{font-size:14px;color:var(--ink2)}
+.principle{margin-top:34px;background:var(--deep);color:#f3ead9;border-radius:10px;padding:46px 8vw;text-align:center;
+  position:relative;overflow:hidden}
+.principle::before,.principle::after{content:"";position:absolute;top:0;bottom:0;width:120px;pointer-events:none;
+  background:radial-gradient(closest-side,rgba(213,177,131,.22),transparent)}
+.principle::before{left:0}.principle::after{right:0}
+.principle .p-why{font-size:13px;letter-spacing:.3em;color:var(--gold-soft);margin-bottom:14px}
+.principle h3{font-size:clamp(21px,2.8vw,30px);font-weight:700;line-height:1.6}
+.principle h3 em{font-style:normal;color:var(--gold-soft);border-bottom:2px solid var(--gold)}
+
+/* 政策地图 */
+.map{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:60px}
+.map-group{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:26px}
+.map-group h4{font-size:18px;font-weight:700;display:flex;align-items:baseline;gap:10px}
+.map-group h4 small{font-family:var(--sans);font-size:12px;color:var(--ink3);letter-spacing:.14em;font-weight:400}
+.map-item{display:flex;gap:14px;align-items:center;padding:13px 2px;border-top:1px dashed var(--line)}
+.map-item:first-of-type{margin-top:14px}
+.badge{width:34px;height:34px;flex:none;border-radius:50%;display:grid;place-items:center;color:#fff;
+  font-family:var(--serif);font-size:16px;background:var(--pc,#888)}
+.map-item .mi-t{font-size:14.5px;font-weight:600}
+.map-item .mi-d{font-size:12.5px;color:var(--ink2)}
+.map-base{grid-column:1/-1;background:var(--gold-pale);border:1px dashed var(--gold);border-radius:8px;
+  padding:18px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.map-base .mb-t{font-family:var(--serif);font-weight:700;font-size:16px}
+.map-base .mb-d{font-size:13px;color:var(--ink2)}
+
+/* ---------- 02 速览表 ---------- */
+.matrix{width:100%;border-collapse:separate;border-spacing:0;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.matrix thead th{background:var(--deep);color:#efe3cd;font-weight:500;font-size:13.5px;letter-spacing:.1em;
+  padding:15px 16px;text-align:left}
+.matrix td{padding:16px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:top}
+.matrix tbody tr{transition:background .25s}
+.matrix tbody tr:hover{background:#f6efdf}
+.matrix tbody tr:last-child td{border-bottom:0}
+.m-badge{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;color:#fff;
+  font-family:var(--serif);font-size:14px;background:var(--pc);margin-right:10px;vertical-align:middle}
+.m-name{font-weight:700;font-size:14.5px}
+.m-who{color:var(--ink2);font-size:13px}
+.m-metric{color:var(--gold);font-weight:600;font-size:13px}
+
+/* ---------- 政策卡 ---------- */
+.policy{--pc:#888;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:40px;
+  overflow:hidden;box-shadow:0 6px 22px rgba(70,52,28,.06)}
+.p-head{display:flex;gap:22px;align-items:center;padding:30px 36px;border-bottom:1px solid var(--line);position:relative}
+.p-letter{width:62px;height:62px;flex:none;border-radius:50%;display:grid;place-items:center;color:#fff;
+  font-family:var(--serif);font-size:29px;background:linear-gradient(140deg,var(--pc),color-mix(in srgb,var(--pc) 70%,#000))}
+.p-ghost{position:absolute;right:26px;top:50%;transform:translateY(-50%);font-family:var(--serif);
+  font-size:118px;line-height:1;color:var(--pc);opacity:.08;pointer-events:none;user-select:none}
+.p-head h3{font-size:clamp(21px,2.6vw,29px);font-weight:700}
+.p-tag{color:var(--ink2);font-size:13.5px;margin-top:5px}
+.p-pill{margin-left:auto;flex:none;font-size:12px;letter-spacing:.16em;border:1px solid var(--pc);color:var(--pc);
+  padding:7px 16px;border-radius:99px;white-space:nowrap;position:relative;z-index:2;background:var(--card)}
+.p-body{display:grid;grid-template-columns:1.05fr .95fr}
+.p-visual{padding:32px 36px;border-right:1px dashed var(--line);display:flex;flex-direction:column;justify-content:center;gap:18px}
+.p-visual .v-cap{font-size:12px;letter-spacing:.2em;color:var(--ink3)}
+.p-points{padding:32px 36px}
+.p-points li{list-style:none;position:relative;padding-left:22px;margin-bottom:13px;font-size:14.5px;color:var(--ink2)}
+.p-points li::before{content:"";position:absolute;left:0;top:.62em;width:9px;height:9px;border-radius:2px;
+  background:var(--pc);transform:rotate(45deg)}
+.p-points li b{color:var(--ink)}
+.p-points li .demo{color:var(--gold);font-weight:600}
+@media(max-width:960px){
+  .p-body{grid-template-columns:1fr}
+  .p-visual{border-right:0;border-bottom:1px dashed var(--line)}
+  .p-pill{display:none}
+  .tri{grid-template-columns:1fr}
+  .map{grid-template-columns:1fr}
+}
+
+/* 手风琴 */
+.acc{border-top:1px solid var(--line)}
+.acc-head{width:100%;display:flex;align-items:center;gap:12px;padding:19px 36px;background:none;border:0;cursor:pointer;
+  font-family:var(--serif);font-size:16.5px;font-weight:700;color:var(--ink);text-align:left}
+.acc-head .ah-no{font-size:12px;color:var(--pc);letter-spacing:.2em;font-family:var(--sans);font-weight:400}
+.acc-head .ic{margin-left:auto;width:26px;height:26px;flex:none;border-radius:50%;border:1px solid var(--pc);color:var(--pc);
+  display:grid;place-items:center;font-size:16px;line-height:1;transition:transform .45s var(--ease)}
+.acc.open .acc-head .ic{transform:rotate(45deg);background:var(--pc);color:#fff}
+.acc-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .55s var(--ease)}
+.acc.open .acc-body{grid-template-rows:1fr}
+.acc-inner{overflow:hidden}
+.acc-content{padding:2px 36px 30px}
+.acc-content p.note{font-size:13.5px;color:var(--ink2);margin-bottom:12px}
+.acc-content ol{margin-left:20px;font-size:14px;color:var(--ink2)}
+.acc-content ol li{margin-bottom:8px}
+.acc-content ol li b{color:var(--ink)}
+
+/* 通用表格/碎片 */
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px;background:#fff9}
+.tbl th{background:var(--paper2);text-align:left;padding:10px 13px;font-weight:600;white-space:nowrap}
+.tbl td{padding:10px 13px;border-bottom:1px solid var(--line);color:var(--ink2)}
+.tbl tr:last-child td{border-bottom:0}
+.tbl td:first-child{font-weight:600;color:var(--ink);white-space:nowrap}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font-size:12.5px;background:var(--paper2);border:1px solid var(--line);border-radius:99px;padding:5px 13px;color:var(--ink2)}
+.chip.gold{background:var(--gold-pale);border-color:var(--gold-soft);color:var(--gold);font-weight:600}
+.stop li{list-style:none;position:relative;padding-left:24px;margin-bottom:9px;font-size:14px;color:var(--ink2)}
+.stop li::before{content:"✕";position:absolute;left:0;top:0;color:var(--red);font-weight:700;font-size:13px}
+
+/* A 阶梯奖励图 */
+.stepchart{display:flex;align-items:flex-end;gap:16px;height:210px;padding-top:24px}
+.step{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:7px;height:100%}
+.step .bar{border-radius:6px 6px 0 0;background:linear-gradient(180deg,var(--gold-soft),var(--gold));
+  transform:scaleY(0);transform-origin:bottom;transition:transform 1s var(--ease)}
+.in-view .step:nth-child(1) .bar{transition-delay:.15s}
+.in-view .step:nth-child(2) .bar{transition-delay:.32s}
+.in-view .step:nth-child(3) .bar{transition-delay:.49s}
+.in-view .step .bar{transform:scaleY(1)}
+.step .pct{font-family:var(--serif);font-size:24px;color:var(--gold);font-weight:700}
+.step .rng{font-size:12px;color:var(--ink2)}
+.step .lbl{font-size:11px;color:var(--ink3);letter-spacing:.1em}
+.base-note{font-size:12.5px;color:var(--ink3);border-top:1px dashed var(--line);padding-top:10px}
+
+/* B 流程时间线 */
+.flow{display:flex;align-items:flex-start;flex-wrap:wrap;gap:0}
+.f-node{text-align:center;flex:none;width:82px}
+.f-dot{width:14px;height:14px;border-radius:50%;background:var(--b);margin:0 auto 8px;border:3px solid var(--card);
+  box-shadow:0 0 0 2px var(--b)}
+.f-when{font-family:var(--serif);font-weight:700;font-size:15px}
+.f-what{font-size:11.5px;color:var(--ink2);margin-top:2px;line-height:1.5}
+.f-line{flex:1;height:2px;min-width:18px;background:var(--line);margin-top:7px}
+.funnel{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.funnel .chip{background:#eef0e8;border-color:#cdd4c2;color:#5c6b52}
+.f-arr{color:var(--ink3);font-size:12px}
+
+/* C 双路径 */
+.fork{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.branch{border:1px solid var(--line);border-radius:8px;padding:18px;background:#fff8;position:relative}
+.branch.default{border-color:#c3cdd8;box-shadow:inset 0 3px 0 var(--c)}
+.branch.except{box-shadow:inset 0 3px 0 var(--red)}
+.branch h5{font-family:var(--serif);font-size:16px;font-weight:700;margin-bottom:4px}
+.branch .b-tag{font-size:11px;letter-spacing:.14em;margin-bottom:10px;display:inline-block}
+.branch.default .b-tag{color:var(--c)}
+.branch.except .b-tag{color:var(--red)}
+.kv{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--ink2);
+  padding:7px 0;border-top:1px dashed var(--line)}
+.kv b{color:var(--ink);font-weight:600;text-align:right}
+@media(max-width:640px){.fork{grid-template-columns:1fr}}
+
+/* D/E/付款 阶梯 */
+.ladder{display:flex;flex-direction:column;gap:10px}
+.rung{display:flex;gap:14px;align-items:center;background:#fff8;border:1px solid var(--line);border-radius:8px;
+  padding:13px 16px;margin-left:calc(var(--i)*26px);transition:border-color .3s}
+.rung:hover{border-color:var(--pc,var(--gold))}
+.rung .lv{font-family:var(--serif);font-weight:700;color:var(--pc,var(--gold));width:52px;flex:none;font-size:15px}
+.rung .what{font-weight:700;font-size:14px}
+.rung .how{font-size:12.5px;color:var(--ink2)}
+.rung .r-extra{margin-left:auto;font-size:11.5px;color:var(--ink3);text-align:right;flex:none;max-width:38%}
+@media(max-width:640px){.rung{margin-left:0}.rung .r-extra{display:none}}
+
+/* F 日历 */
+.cal{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.cal-cell{border:1px solid var(--line);border-radius:8px;padding:13px 14px;background:#fff8;font-size:12px;color:var(--ink2);line-height:1.6}
+.cal-cell b{display:block;font-family:var(--serif);font-size:15.5px;color:var(--f);margin-bottom:3px}
+.cal-cell.warn b{color:var(--red)}
+@media(max-width:760px){.cal{grid-template-columns:repeat(2,1fr)}}
+
+/* ---------- 05 通用机制 ---------- */
+.mech-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.mech{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:28px}
+.mech.span{grid-column:1/-1}
+.mech h4{font-size:19px;font-weight:700;display:flex;align-items:baseline;gap:12px;margin-bottom:16px}
+.mech h4 .m-no{font-family:var(--serif);font-size:14px;color:var(--gold);letter-spacing:.2em}
+.mech .def{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13.5px;margin-bottom:9px}
+.mech .def dt{font-weight:700;white-space:nowrap;color:var(--ink)}
+.mech .def dd{color:var(--ink2)}
+.rule-list li{list-style:none;position:relative;padding-left:22px;margin-bottom:11px;font-size:14px;color:var(--ink2)}
+.rule-list li::before{content:"";position:absolute;left:0;top:.6em;width:9px;height:9px;border-radius:2px;background:var(--gold);transform:rotate(45deg)}
+.rule-list li b{color:var(--ink)}
+.tier{width:100%;border-collapse:collapse;font-size:13px;background:#fff9}
+.tier th{background:var(--paper2);padding:9px 11px;text-align:left;font-weight:600}
+.tier td{padding:9px 11px;border-bottom:1px solid var(--line);color:var(--ink2)}
+.tier td:first-child{font-family:var(--serif);font-weight:700;color:var(--gold);white-space:nowrap}
+.red{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.red li{list-style:none;display:flex;gap:11px;font-size:13.5px;color:var(--ink2);background:var(--red-bg);
+  border:1px solid var(--red-line);padding:13px 15px;border-radius:8px;line-height:1.65}
+.red li .rx{flex:none;width:22px;height:22px;border-radius:50%;background:var(--red);color:#fff;display:grid;
+  place-items:center;font-size:12px;font-weight:700;margin-top:2px}
+.red li b{color:var(--ink)}
+@media(max-width:900px){.mech-grid{grid-template-columns:1fr}.red{grid-template-columns:1fr}}
+
+/* ---------- 06 Q4 节奏 ---------- */
+.rhythm{position:relative;padding:34px 0 14px;margin-top:10px}
+.r-line{position:absolute;top:41px;left:3%;right:3%;height:2px;background:var(--line)}
+.r-fill{position:absolute;inset:0;background:linear-gradient(90deg,var(--gold),var(--gold-soft));
+  transform:scaleX(0);transform-origin:left;transition:transform 1.8s var(--ease) .25s}
+.in-view .r-fill{transform:scaleX(1)}
+.r-nodes{display:grid;grid-template-columns:repeat(6,1fr);position:relative;gap:8px}
+.r-node{text-align:center;padding:0 6px}
+.r-dot{width:15px;height:15px;border-radius:50%;background:var(--gold);border:3px solid var(--paper);
+  box-shadow:0 0 0 2px var(--gold);margin:0 auto 16px;opacity:0;transform:scale(0);transition:.5s var(--ease)}
+.in-view .r-node:nth-child(1) .r-dot{transition-delay:.2s}
+.in-view .r-node:nth-child(2) .r-dot{transition-delay:.45s}
+.in-view .r-node:nth-child(3) .r-dot{transition-delay:.7s}
+.in-view .r-node:nth-child(4) .r-dot{transition-delay:.95s}
+.in-view .r-node:nth-child(5) .r-dot{transition-delay:1.2s}
+.in-view .r-node:nth-child(6) .r-dot{transition-delay:1.45s}
+.in-view .r-dot{opacity:1;transform:scale(1)}
+.r-when{font-family:var(--serif);font-weight:700;font-size:15px;color:var(--gold)}
+.r-what{font-size:12px;color:var(--ink2);margin-top:6px;line-height:1.7}
+@media(max-width:900px){
+  .r-line{left:7px;right:auto;top:0;bottom:0;width:2px;height:auto}
+  .r-fill{transform:scaleY(0);transform-origin:top}
+  .in-view .r-fill{transform:scaleY(1)}
+  .r-nodes{grid-template-columns:1fr;gap:26px}
+  .r-node{text-align:left;display:flex;gap:16px}
+  .r-dot{margin:4px 0 0}
+}
+
+/* ---------- 07 十个方向 ---------- */
+.dir-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.dir{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:22px;transition:.35s var(--ease)}
+.dir:hover{transform:translateY(-5px);box-shadow:0 16px 32px rgba(70,52,28,.13);border-color:var(--gold-soft)}
+.dir .d-no{font-family:var(--serif);color:var(--gold);font-size:13px;letter-spacing:.2em}
+.dir h4{font-size:17.5px;font-weight:700;margin:8px 0 8px}
+.dir p{font-size:13px;color:var(--ink2);line-height:1.75}
+.dir .d-bound{margin-top:10px;font-size:12.5px;color:var(--ink3);border-top:1px dashed var(--line);padding-top:10px}
+.dir .d-bound b{color:var(--ink2)}
+.dir .d-metric{margin-top:8px;font-size:12.5px;color:var(--gold);font-weight:600}
+
+/* ---------- 08 试点与来源 ---------- */
+.pilot-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:44px}
+.pilot-step{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:20px}
+.pilot-step b{display:block;font-family:var(--serif);font-size:17px;margin-bottom:6px;color:var(--gold)}
+.pilot-step p{font-size:13px;color:var(--ink2)}
+.block-t{font-family:var(--serif);font-size:19px;font-weight:700;margin:38px 0 16px;display:flex;align-items:baseline;gap:12px}
+.block-t small{font-family:var(--sans);font-size:12px;color:var(--ink3);letter-spacing:.16em;font-weight:400}
+.roles{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.role{display:flex;gap:14px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:15px 17px}
+.role .r-name{flex:none;font-family:var(--serif);font-weight:700;font-size:15px;color:var(--gold);width:74px}
+.role p{font-size:13px;color:var(--ink2)}
+.fields{display:flex;flex-wrap:wrap;gap:8px}
+.sources{display:grid;grid-template-columns:1fr 1fr;gap:9px 26px}
+.src{display:flex;gap:10px;align-items:baseline;font-size:13px;color:var(--ink2);padding:9px 0;border-bottom:1px dashed var(--line)}
+.src .s-arrow{color:var(--gold);flex:none}
+.src a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--gold-soft);transition:.25s;word-break:break-all}
+.src a:hover{color:var(--gold);border-bottom-color:var(--gold)}
+.src span{color:var(--ink3);font-size:12px}
+.closing{margin-top:52px;background:var(--deep);color:#e9dcc4;border-radius:10px;padding:42px 8vw;text-align:center}
+.closing .c-q{font-family:var(--serif);font-size:clamp(19px,2.5vw,27px);font-weight:700;line-height:1.7}
+.closing .c-q em{font-style:normal;color:var(--gold-soft)}
+.closing p{margin-top:14px;font-size:13.5px;color:#a5947c}
+@media(max-width:820px){.pilot-steps{grid-template-columns:1fr}.sources{grid-template-columns:1fr}}
+
+/* ---------- 页脚 ---------- */
+.footer{margin-top:90px;background:var(--deep);color:#8f7f68;padding:38px 7vw;font-size:12.5px;line-height:2}
+.footer b{color:#d9c8a8}
+.footer .f-row{max-width:1280px;margin:0 auto;display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+
+@media(prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  .rv{opacity:1;transform:none}
+  .in-view .step .bar,.step .bar{transform:scaleY(1)}
+  .r-dot{opacity:1;transform:scale(1)}
+  .r-fill{transform:scaleX(1)}
+}
+@media print{
+  .dotnav,.progress,.hero-scroll,body::after{display:none!important}
+  .acc-body{grid-template-rows:1fr!important}
+  .rv{opacity:1!important;transform:none!important}
+  .step .bar{transform:scaleY(1)!important}
+  .r-dot{opacity:1!important;transform:scale(1)!important}
+  .r-fill{transform:scaleX(1)!important}
+  .policy,.mech,.dir,.tri-card{break-inside:avoid}
+  .hero{min-height:auto;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<nav class="dotnav" id="dotnav">
+  <a href="#hero"><span>封面</span></a>
+  <a href="#logic"><span>设计逻辑</span></a>
+  <a href="#overview"><span>一页看懂</span></a>
+  <a href="#abc"><span>政策 A–C</span></a>
+  <a href="#def"><span>政策 D–F</span></a>
+  <a href="#mech"><span>通用机制</span></a>
+  <a href="#rhythm"><span>Q4 节奏</span></a>
+  <a href="#dirs"><span>十个方向</span></a>
+  <a href="#pilot"><span>试点与来源</span></a>
+</nav>
+
+<!-- ============ 封面 ============ -->
+<header class="hero" id="hero">
+  <svg class="hero-strands" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs>
+      <linearGradient id="gGold" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#d5b183"/><stop offset="1" stop-color="#8a5f22"/>
+      </linearGradient>
+    </defs>
+    <path class="strand"   d="M-60,720 C260,640 340,420 640,470 C940,520 1020,260 1500,300"/>
+    <path class="strand s2" d="M-60,800 C300,760 420,560 720,590 C1020,620 1120,380 1500,420"/>
+    <path class="strand s3" d="M-60,640 C220,540 380,340 680,380 C980,420 1100,180 1500,220"/>
+    <path class="strand s4" d="M-60,860 C340,840 480,660 780,680 C1080,700 1180,500 1500,540"/>
+  </svg>
+  <div class="hero-eyebrow">莱莎外贸 · 2026 Q4 试点版 · 内部汇报</div>
+  <h1>外贸营销政策<br><span class="hl">借鉴加盟机制的「阶梯式」打法</span></h1>
+  <h2>六项政策 × 一套通用机制 × 十个补充方向</h2>
+  <p class="hero-sub">核心原则只有一句：<b>所有权益用已验证的履约和回款解锁，不用未验证的承诺换资源。</b>本页为汇报版图解，完整条款见配套 Markdown 文档；页面中所有金额、KG、比例均为<b>演示占位值</b>。</p>
+  <div class="hero-stats">
+    <div class="stat"><b data-count="6">6</b><span>项政策 A–F</span></div>
+    <div class="stat"><b data-count="7">7</b><span>条通用机制</span></div>
+    <div class="stat"><b data-count="10">10</b><span>个补充方向</span></div>
+    <div class="stat"><b data-count="90">90</b><span>天试点节奏</span></div>
+  </div>
+  <div class="hero-scroll">SCROLL</div>
+</header>
+
+<!-- ============ 01 设计逻辑 ============ -->
+<section class="sec" id="logic">
+  <div class="sec-head rv">
+    <div class="sec-ghost">01</div>
+    <div class="sec-no">01 / 设计逻辑</div>
+    <h2>为什么不能照搬国内加盟政策</h2>
+    <div class="sec-rule"></div>
+    <p class="sec-desc">加盟机制值得借鉴，但外贸场景有三个根本差异——它们决定了本方案全部采用<b>「阶梯解锁」</b>而非「一次性授予」。</p>
+  </div>
+  <div class="tri">
+    <div class="tri-card rv" style="--rd:.05s">
+      <div class="t-no">差异 · 壹</div>
+      <h3>没有加盟费对冲</h3>
+      <p>国内加盟靠加盟费覆盖样品、装修、培训等前期投入；外贸的样品、返利、贴牌版费没有这笔对冲资金，投入必须跟着真实销量走。</p>
+    </div>
+    <div class="tri-card rv" style="--rd:.15s">
+      <div class="t-no">差异 · 贰</div>
+      <h3>跨境执行成本高</h3>
+      <p>合同、罚款、区域承诺跨出国门后举证与执行成本陡增，给出去的独家、垫资、退换承诺很难收回，必须小额先试、逐级放大。</p>
+    </div>
+    <div class="tri-card rv" style="--rd:.25s">
+      <div class="t-no">差异 · 叁</div>
+      <h3>目的国硬性合规约束</h3>
+      <p>控价（转售价格维持）、原产国标签、个人数据在欧美市场有明确红线，国内加盟常见的控价、兜底条款不能直接搬。</p>
+    </div>
+  </div>
+  <div class="principle rv">
+    <div class="p-why">因 此</div>
+    <h3>整套政策只做一件事：把「给不给支持」<br>变成<em>「客户用业绩挣权益」</em>的阶梯</h3>
+  </div>
+
+  <div class="map rv" style="--rd:.1s">
+    <div class="map-group">
+      <h4>增长三件套 <small>面向存量与新增客户</small></h4>
+      <div class="map-item"><span class="badge" style="--pc:var(--a)">A</span><div><div class="mi-t">季度库存采购承诺与增长奖励</div><div class="mi-d">把模糊复购意向变成有数量、时间、付款安排的订单计划</div></div></div>
+      <div class="map-item"><span class="badge" style="--pc:var(--b)">B</span><div><div class="mi-t">终端试用与成交支持包</div><div class="mi-d">小额样品预算投给有真实终端触点的客户，凭转化解锁</div></div></div>
+      <div class="map-item"><span class="badge" style="--pc:var(--c)">C</span><div><div class="mi-t">新客验证单与二单成长协议</div><div class="mi-d">付费小单验证品质，有限垫资只给审核通过的个案</div></div></div>
+    </div>
+    <div class="map-group">
+      <h4>加盟机制转化 <small>本次新增，借鉴国内加盟</small></h4>
+      <div class="map-item"><span class="badge" style="--pc:var(--d)">D</span><div><div class="mi-t">分阶段区域权益</div><div class="mi-d">区域保护拆成 L1→L2→L3，用履约记录逐级挣得</div></div></div>
+      <div class="map-item"><span class="badge" style="--pc:var(--e)">E</span><div><div class="mi-t">OEM 贴牌与品牌共建</div><div class="mi-d">包装与品牌投入四阶梯，版费随回款返还</div></div></div>
+      <div class="map-item"><span class="badge" style="--pc:var(--f)">F</span><div><div class="mi-t">旺季物流与交付保障</div><div class="mi-d">发货日历 + 锁舱 + 达标运费支持，交付确定性换提前下单</div></div></div>
+    </div>
+    <div class="map-base">
+      <span class="mb-t">共同地基</span>
+      <span class="mb-d">横向通用机制 ×7：统一口径 · 客户分层 · 价格纪律 · 付款阶梯 · 合规红线 · 激励对齐 · Q4 节奏——缺了它们，单个政策会被钻空子或走样</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 02 一页看懂 ============ -->
+<section class="sec" id="overview">
+  <div class="sec-head rv">
+    <div class="sec-ghost">02</div>
+    <div class="sec-no">02 / 政策速览</div>
+    <h2>一页看懂六项政策</h2>
+    <div class="sec-rule"></div>
+    <p class="sec-desc">先记住三列：<b>给谁</b>、<b>怎么换</b>、<b>拿什么验证</b>。细节条款在下方各政策卡片中展开。</p>
+  </div>
+  <table class="matrix rv" style="--rd:.1s">
+    <thead>
+      <tr><th style="width:24%">政策</th><th style="width:20%">面向谁</th><th>核心机制</th><th style="width:22%">首个验证指标</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="m-badge" style="--pc:var(--a)">A</span><span class="m-name">季度库存采购承诺</span></td>
+        <td class="m-who">活跃老客 · 大体量低频客户</td>
+        <td>锁定自然基线 B，季度承诺 T；<b>只对超基线部分分段返利</b>，批次保供</td>
+        <td class="m-metric">相对基线新增 KG<br>每新增 KG 支持成本</td>
+      </tr>
+      <tr>
+        <td><span class="m-badge" style="--pc:var(--b)">B</span><span class="m-name">终端试用支持包</span></td>
+        <td class="m-who">有沙龙 / 门店 / 客群的客户</td>
+        <td>小额样品预算 + 培训素材，<b>真实试用反馈 → 二轮解锁</b></td>
+        <td class="m-metric">试用 → 已付款采购转化率</td>
+      </tr>
+      <tr>
+        <td><span class="m-badge" style="--pc:var(--c)">C</span><span class="m-name">新客验证单</span></td>
+        <td class="m-who">有顾虑的新客</td>
+        <td>付费小单验证品质，<b>二单达标抵回服务费</b>；垫资仅限审核个案</td>
+        <td class="m-metric">首单 → 二单 30/60/90 天转化</td>
+      </tr>
+      <tr>
+        <td><span class="m-badge" style="--pc:var(--d)">D</span><span class="m-name">分阶段区域权益</span></td>
+        <td class="m-who">履约达标的经销商</td>
+        <td>线索保护 → 区域优先 → 有限独家，<b>业绩逐级解锁、不达标降级</b></td>
+        <td class="m-metric">L3 独家客户达标率</td>
+      </tr>
+      <tr>
+        <td><span class="m-badge" style="--pc:var(--e)">E</span><span class="m-name">OEM 贴牌共建</span></td>
+        <td class="m-who">做自有品牌的客户</td>
+        <td>中性包装 → 定制包装 → 版费返还 → 素材授权，<b>投入跟着销量走</b></td>
+        <td class="m-metric">贴牌首单 → 二单转化</td>
+      </tr>
+      <tr>
+        <td><span class="m-badge" style="--pc:var(--f)">F</span><span class="m-name">旺季交付保障</span></td>
+        <td class="m-who">全体签约客户</td>
+        <td>公布发货日历，承诺批次锁排产锁舱，<b>达标享运费支持</b></td>
+        <td class="m-metric">按时发货率 · 截单兑现率</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<!-- ============ 03 政策 A–C ============ -->
+<section class="sec" id="abc">
+  <div class="sec-head rv">
+    <div class="sec-ghost">03</div>
+    <div class="sec-no">03 / 增长三件套</div>
+    <h2>政策 A · B · C</h2>
+    <div class="sec-rule"></div>
+    <p class="sec-desc">面向存量与新增客户的采购增长：把模糊意向变成订单计划（A）、把预算投向能验证的终端（B）、把新客顾虑拆成可管理的小单（C）。</p>
+  </div>
+
+  <!-- 政策 A -->
+  <article class="policy rv" style="--pc:var(--a)">
+    <div class="p-head">
+      <div class="p-letter">A</div>
+      <div>
+        <h3>季度库存采购承诺与增长奖励</h3>
+        <div class="p-tag">历史采购大、下单频繁、无逾期、有可核实下游需求的老客户</div>
+      </div>
+      <span class="p-pill">存量增长 · 分段返利</span>
+      <div class="p-ghost">A</div>
+    </div>
+    <div class="p-body">
+      <div class="p-visual" data-io>
+        <div class="v-cap">分段奖励 · 只奖超基线部分（演示值）</div>
+        <div class="stepchart">
+          <div class="step"><div class="pct">2%</div><div class="bar" style="height:34%"></div><div class="rng">100–120 KG</div><div class="lbl">净收入返利</div></div>
+          <div class="step"><div class="pct">3%</div><div class="bar" style="height:62%"></div><div class="rng">120–140 KG</div><div class="lbl">仅新增部分</div></div>
+          <div class="step"><div class="pct">4%</div><div class="bar" style="height:92%"></div><div class="rng">&gt; 140 KG</div><div class="lbl">跨槛不追溯</div></div>
+        </div>
+        <div class="base-note">基线 B = 100 KG · 承诺 T = 130 KG；批次安排：10 月 50 / 11 月 40 / 12 月 40 KG，首批约为 T 的 38%</div>
+      </div>
+      <ul class="p-points">
+        <li><b>基线锁定：</b>OKKI 历史数据导出 + 经理校准 + 财务复核后锁定，当季不改；缺克重数据不得定返利门槛</li>
+        <li><b>分段返利：</b>跨门槛只提高新增部分比例，不为最后几 KG 支付整季高返利；按订单明细净收入计算，不用平均单价猜算</li>
+        <li><b>兑现口径：</b>以已履约、已回款、扣退货的净销售为基础；客户逾期即暂停兑现，账期内应收先计提后兑现</li>
+        <li><b>信用单结算：</b>有效期、可抵范围、上限与退货追回规则透明；用信用单的订单不提前计入本季销量</li>
+        <li><b>未达不罚：</b>正常订单价格不追溯上涨，只取消未赚得权益、释放未交定金库存；双方可提前缩减未发货承诺</li>
+      </ul>
+    </div>
+    <div class="acc open">
+      <button class="acc-head"><span class="ah-no">A·1</span>参数与可报价条款<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <table class="tbl">
+          <tr><th>参数</th><th>设定方法</th><th>演示值</th></tr>
+          <tr><td>自然采购基线 B</td><td>已核实历史季度等效基线，校准后锁定</td><td>100 KG</td></tr>
+          <tr><td>季度承诺 T</td><td>高于 B，且不超过下游可消化量与可供 SKU</td><td>130 KG</td></tr>
+          <tr><td>首批订单 Q1</td><td>正常单批水平与 T 的一定比例中取合理值</td><td>50 KG（约 T 的 38%）</td></tr>
+          <tr><td>批次安排</td><td>首批现货 + 明确后续两次最迟发货日</td><td>10月 50 · 11月 40 · 12月 40 KG</td></tr>
+          <tr><td>增长奖励</td><td>仅奖励超过 B 的合格采购，分段计算</td><td>2% / 3% / 4% 三段</td></tr>
+          <tr><td>总支持上限</td><td>客户预算上限与利润底线允许额度取较小者</td><td>财务测算后填写</td></tr>
+        </table>
+        <p class="note" style="margin-top:12px">签的是「Q4 库存采购协议」：不倒签全年框架、不用 1–9 月已完成订单追溯补贴；框架签字只记承诺，SKU 在定金或订单生效后才按期限预留。</p>
+      </div></div></div>
+    </div>
+    <div class="acc">
+      <button class="acc-head"><span class="ah-no">A·2</span>执行与停止规则<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <p class="note">业务员按历史常买 SKU 做建议配货 → 与客户核实门店/电商/分销网络可售数量 → 经理审增长真实性、财务审贡献预算、仓库确认批次。10 月上旬先签首批，此后每两周核对售出与结存。</p>
+        <ul class="stop">
+          <li>出现逾期应收，或客户无法解释终端积压</li>
+          <li>两次约定提货均未达成</li>
+          <li>继续订单将跌破利润底线，或活动 SKU 短缺</li>
+          <li>已确认的客户权益按合同处理，不事后单方取消</li>
+        </ul>
+      </div></div></div>
+    </div>
+    <div class="acc">
+      <button class="acc-head"><span class="ah-no">A·3</span>核心指标<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <div class="chips">
+          <span class="chip gold">承诺 KG</span><span class="chip gold">定金覆盖 KG</span><span class="chip gold">净销售 KG</span><span class="chip gold">实际回款</span>
+          <span class="chip">相对基线新增 KG</span><span class="chip">每新增 KG 支持成本</span><span class="chip">活动后贡献额/率</span>
+          <span class="chip">期末结存</span><span class="chip">框架转首批率</span><span class="chip">批次兑现率</span>
+        </div>
+      </div></div></div>
+    </div>
+  </article>
+
+  <!-- 政策 B -->
+  <article class="policy rv" style="--pc:var(--b)">
+    <div class="p-head">
+      <div class="p-letter">B</div>
+      <div>
+        <h3>终端试用与成交支持包</h3>
+        <div class="p-tag">有沙龙 / 门店 / 发型师 / 稳定线上客群，但库存系列渗透不足的客户</div>
+      </div>
+      <span class="p-pill">终端渗透 · 真实试用</span>
+      <div class="p-ghost">B</div>
+    </div>
+    <div class="p-body">
+      <div class="p-visual" data-io>
+        <div class="v-cap">30 天回传节点（从签收起算）</div>
+        <div class="flow">
+          <div class="f-node"><div class="f-dot"></div><div class="f-when">签收</div><div class="f-what">样品送达<br>单独出库</div></div>
+          <div class="f-line"></div>
+          <div class="f-node"><div class="f-dot"></div><div class="f-when">7 天</div><div class="f-what">培训 /<br>安排试用</div></div>
+          <div class="f-line"></div>
+          <div class="f-node"><div class="f-dot"></div><div class="f-when">21 天</div><div class="f-what">试用反馈<br>回传</div></div>
+          <div class="f-line"></div>
+          <div class="f-node"><div class="f-dot"></div><div class="f-when">30 天</div><div class="f-what">采购复盘<br>生成补货单</div></div>
+          <div class="f-line"></div>
+          <div class="f-node"><div class="f-dot" style="background:var(--gold);box-shadow:0 0 0 2px var(--gold)"></div><div class="f-when" style="color:var(--gold)">二轮</div><div class="f-what">完成率≥80%<br>+真实采购机会</div></div>
+        </div>
+        <div class="funnel">
+          <span class="chip">送达</span><span class="f-arr">→</span><span class="chip">真实启动</span><span class="f-arr">→</span><span class="chip">有效反馈</span><span class="f-arr">→</span><span class="chip">询价</span><span class="f-arr">→</span><span class="chip gold">已付款采购</span>
+        </div>
+      </div>
+      <ul class="p-points">
+        <li><b>支持包内容：</b>样品 + 色卡/规格卡 + 护理说明 + 授权素材 + 一次培训 + 试用记录表；<b>保持正常商品报价</b></li>
+        <li><b>首轮小额：</b><span class="demo">每客户 USD 120（演示）</span>覆盖 5 位终端试用者或 3 家沙龙；二轮随真实转化解锁</li>
+        <li><b>真实验证：</b>发制品必须真实佩戴/安装验证，碎样不替代；色卡只解决选色，不等于试用</li>
+        <li><b>口径纪律：</b>样品单独出库、准确申报，不计销售 KG 或新签成交；一客户不得多联系人重复领取</li>
+        <li><b>话术红线：</b>不编造「汇率导致没利润」；不以赠样换取虚假好评，素材使用须取得许可</li>
+      </ul>
+    </div>
+    <div class="acc open">
+      <button class="acc-head"><span class="ah-no">B·1</span>参数与条款<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <table class="tbl">
+          <tr><th>参数</th><th>设定方式</th><th>演示值</th></tr>
+          <tr><td>首轮样品预算 Cs</td><td>样品成本 + 物流 + 材料 + 服务工时</td><td>每客户 USD 120（非按零售价计）</td></tr>
+          <tr><td>首轮规模</td><td>先覆盖少量符合目标人群的真实终端</td><td>5 位试用者或 3 家沙龙</td></tr>
+          <tr><td>回传节点</td><td>从签收起计算</td><td>7 / 21 / 30 天</td></tr>
+          <tr><td>二轮解锁</td><td>完成反馈且出现真实试用或成交，不只看晒图</td><td>完成率 ≥80% 且有实际采购机会</td></tr>
+          <tr><td>最低回报</td><td>增量订单贡献覆盖支持成本</td><td>增量贡献 ≥2×Cs（待验证假设）</td></tr>
+        </table>
+      </div></div></div>
+    </div>
+    <div class="acc">
+      <button class="acc-head"><span class="ah-no">B·2</span>执行与停止规则<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <p class="note">先与客户选出最可能卖出的 2–3 个合格 SKU → 确认使用场景与试用名单 → 寄样前预约反馈日 → 签收后培训 → 回传产品表现与终端需求 → 生成正常采购补货单。内容团队出素材、业务员管转化、技术售后管产品问题。</p>
+        <ul class="stop">
+          <li>30 天未开始试用、连续两次不反馈</li>
+          <li>样品用途与计划明显不符</li>
+          <li>发现质量问题先处理质量，不要求客户隐瞒投诉换支持</li>
+          <li>合理试用但无转化：复盘适配性后决定，不为凑数字重复寄样</li>
+        </ul>
+      </div></div></div>
+    </div>
+    <div class="acc">
+      <button class="acc-head"><span class="ah-no">B·3</span>核心指标<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <div class="chips">
+          <span class="chip">送达率</span><span class="chip">真实试用启动率</span><span class="chip">有效反馈率</span><span class="chip gold">试用→询价率</span>
+          <span class="chip gold">试用→已付款采购转化率</span><span class="chip">30/60 天增量 KG</span><span class="chip">每新增 KG 样品成本</span><span class="chip">活动后客户贡献</span>
+        </div>
+        <p class="note" style="margin-top:12px">尽可能保留同层级未参加客户作参照组，排除「本来就会下」的订单。</p>
+      </div></div></div>
+    </div>
+  </article>
+
+  <!-- 政策 C -->
+  <article class="policy rv" style="--pc:var(--c)">
+    <div class="p-head">
+      <div class="p-letter">C</div>
+      <div>
+        <h3>新客验证单与二单成长协议</h3>
+        <div class="p-tag">有可核实主体、真实渠道、明确目标 SKU，但对品质或适配性有顾虑的新客</div>
+      </div>
+      <span class="p-pill">新客破冰 · 风险分流</span>
+      <div class="p-ghost">C</div>
+    </div>
+    <div class="p-body">
+      <div class="p-visual">
+        <div class="v-cap">先分风险来源，再选路径</div>
+        <div class="fork">
+          <div class="branch default">
+            <span class="b-tag">默认路径 · 担心质量</span>
+            <h5>小额付费验证</h5>
+            <div class="kv"><span>验证单</span><b>小单价 + 服务费 USD 80（演示）</b></div>
+            <div class="kv"><span>升级条件</span><b>30 天内二单 ≥ USD 1,000 + 最低 KG</b></div>
+            <div class="kv"><span>达标权益</span><b>抵回服务费 USD 50</b></div>
+            <div class="kv"><span>性质</span><b>有条件抵扣，非零让利</b></div>
+          </div>
+          <div class="branch except">
+            <span class="b-tag">例外路径 · 缺少资金（审核个案）</span>
+            <h5>一次性小额垫资</h5>
+            <div class="kv"><span>额度</span><b>净应收 ≤ USD 300（演示）</b></div>
+            <div class="kv"><span>期限</span><b>签收后 14 天结清</b></div>
+            <div class="kv"><span>批次数</span><b>最多 1 个验证批次</b></div>
+            <div class="kv"><span>约束</span><b>未结清不得新增发货</b></div>
+          </div>
+        </div>
+        <div class="base-note">美国商务部 Trade Finance Guide：先交货即承担收款风险，寄售风险更高——垫资不能只靠「客户承诺二单」来控制</div>
+      </div>
+      <ul class="p-points">
+        <li><b>风险分流：</b>担心质量 → 可核验品质承诺 + 小单；缺资金 → 才讨论有限账期。混在一起 = 无控制赊销</li>
+        <li><b>一页验证协议：</b>测试 SKU/克重、数量、检验标准与期限、质量处置、二单 MOQ/金额/KG、可抵服务费</li>
+        <li><b>不虚涨价格：</b>小单价可高于批量价，但必须对应小单处理、拣配、服务或融资成本；不为「先吃亏后补偿」无依据涨价 20%–30%</li>
+        <li><b>二单不是必然：</b>门槛只是获得批量价/抵扣/支持的条件；无合同承诺不得计入确定销售，拒绝二单不追加惩罚</li>
+        <li><b>超期入池：</b>二单超出今年发货截止日 → 放入 2027 机会池，不补记 Q4</li>
+      </ul>
+    </div>
+    <div class="acc open">
+      <button class="acc-head"><span class="ah-no">C·1</span>垫资个案的风控前提<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <ol>
+          <li><b>先核实：</b>经营主体、渠道、历史交易参考、付款能力，全部可核实才进入审核</li>
+          <li><b>客户共担：</b>至少承担约定定金、运费及进口费用</li>
+          <li><b>写入协议：</b>垫资额度 E、到期日 D、未结清不得新增发货</li>
+          <li><b>预算前置：</b>应收最大损失、资金占用、跨境追索成本预先进入活动预算；评估信用保险或第三方托管</li>
+          <li><b>演示限额非默认：</b>「≤USD 300 / 14 天 / 1 批次」须按真实单价与最坏损失重新确定，不向所有新客开放</li>
+        </ol>
+      </div></div></div>
+    </div>
+    <div class="acc">
+      <button class="acc-head"><span class="ah-no">C·2</span>执行与停止规则<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <p class="note">业务员识别真实顾虑并记录潜在二单规格 → 样品/技术团队设定验收方式 → 经理审客户适配、财务审批信用个案 → 签收后及时反馈 → 通过验证 48 小时内给出二单配货方案。</p>
+        <ul class="stop">
+          <li>主体或地址无法核实、疑似重复领取</li>
+          <li>首单逾期、质量争议未解决</li>
+          <li>客户无明确渠道或真实经营计划</li>
+          <li>质量争议按约定处理，不以「未二次采购」拒绝售后</li>
+        </ul>
+      </div></div></div>
+    </div>
+    <div class="acc">
+      <button class="acc-head"><span class="ah-no">C·3</span>核心指标<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <div class="chips">
+          <span class="chip">询盘→验证单转化</span><span class="chip">验证完成率</span><span class="chip">首单回款周期</span>
+          <span class="chip gold">首单→二单 30/60/90 天转化</span><span class="chip gold">二单合格库存 KG</span>
+          <span class="chip">净损失率</span><span class="chip">含获客与信用成本的贡献</span><span class="chip">首次沟通→二单天数</span>
+        </div>
+        <p class="note" style="margin-top:12px">Q4 预测按入组月份与剩余天数截断：12 月首单后的完整 90 天复购不能都算进 12 月。</p>
+      </div></div></div>
+    </div>
+  </article>
+</section>
+<!-- ============ 04 政策 D–F ============ -->
+<section class="sec" id="def">
+  <div class="sec-head rv">
+    <div class="sec-ghost">04</div>
+    <div class="sec-no">04 / 加盟机制转化</div>
+    <h2>政策 D · E · F</h2>
+    <div class="sec-rule"></div>
+    <p class="sec-desc">本次借鉴国内加盟机制的新增设计：区域保护（D）、品牌共建（E）、配货支持（F）——全部改为<b>阶梯解锁</b>，较重承诺待 A/B/C 试点数据出来后逐案开放。</p>
+  </div>
+
+  <!-- 政策 D -->
+  <article class="policy rv" style="--pc:var(--d)">
+    <div class="p-head">
+      <div class="p-letter">D</div>
+      <div>
+        <h3>分阶段区域权益</h3>
+        <div class="p-tag">政策 A 执行良好、有本地分销与服务能力、明确要求区域保护的经销商</div>
+      </div>
+      <span class="p-pill">借鉴加盟 · 区域保护</span>
+      <div class="p-ghost">D</div>
+    </div>
+    <div class="p-body">
+      <div class="p-visual">
+        <div class="v-cap">用业绩逐级挣得的区域权益</div>
+        <div class="ladder">
+          <div class="rung rv" style="--i:0;--rd:.05s"><span class="lv">L1</span><div><div class="what">机会登记保护</div><div class="how">单个已登记销售机会保护 30 天，无进展自动失效</div></div><span class="r-extra">B 级以上默认开放</span></div>
+          <div class="rung rv" style="--i:1;--rd:.15s"><span class="lv">L2</span><div><div class="what">区域优先权</div><div class="how">约定国家/渠道同层级新机会优先知会；莱莎保留平台自营与既有直客</div></div><span class="r-extra">连续两季达 T 且无逾期</span></div>
+          <div class="rung rv" style="--i:2;--rd:.25s"><span class="lv">L3</span><div><div class="what">有限独家 12 个月</div><div class="how">SKU 系列 × 国家 × 渠道三维限定；年度未达 80% 到期转非独家</div></div><span class="r-extra">演示：≥ 4×B×1.2 · 逐案审批</span></div>
+        </div>
+        <div class="base-note">试点期只开放 L1 / L2；L3 不是默认项</div>
+      </div>
+      <ul class="p-points">
+        <li><b>三维限定：</b>独家范围 = SKU 系列 × 国家 × 渠道；平台电商、展会直客、既有大客户是否排除逐条列明，不签无边界的「全国独家」</li>
+        <li><b>权责对等：</b>最低采购、安全库存水位、终端服务与投诉响应时限、季度去标识化动销回传写进同一份协议</li>
+        <li><b>不控价红线：</b>只提供建议零售价 MSRP；固定/最低转售价是欧盟 (EU) 2022/720 核心限制，美国多州同样严处——合同只约束供货价</li>
+        <li><b>防窜货靠流向：</b>批次码 + 流向登记，越区先核实再处理，以取消权益/不续约为限；不约定高额跨境罚款</li>
+        <li><b>降级不溯及：</b>当期已授权益不事后单方取消，降级只影响续期</li>
+      </ul>
+    </div>
+    <div class="acc open">
+      <button class="acc-head"><span class="ah-no">D·1</span>执行与停止规则<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <p class="note">经理先评估区域容量：容量小的市场不预设多家，容量大的市场不轻易给独家；业务员维护机会登记表与流向记录；法务出区域条款模板。</p>
+        <ul class="stop">
+          <li>越区销售、拖欠货款</li>
+          <li>服务投诉不响应</li>
+          <li>动销数据连续两季不回传</li>
+          <li>以上任一 → 降级或终止；任一季度达成率 &lt;80%，L2 降回 L1</li>
+        </ul>
+      </div></div></div>
+    </div>
+    <div class="acc">
+      <button class="acc-head"><span class="ah-no">D·2</span>核心指标<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <div class="chips">
+          <span class="chip">各级别客户数与占比</span><span class="chip">保护期机会成交率</span><span class="chip gold">L3 客户达标率</span>
+          <span class="chip">越区冲突次数与处理天数</span><span class="chip">解除独家后的留存与销量变化</span>
+        </div>
+      </div></div></div>
+    </div>
+  </article>
+
+  <!-- 政策 E -->
+  <article class="policy rv" style="--pc:var(--e)">
+    <div class="p-head">
+      <div class="p-letter">E</div>
+      <div>
+        <h3>OEM 贴牌与品牌共建支持</h3>
+        <div class="p-tag">做自有品牌的经销商——品牌投入跟着真实销量走，不替「首单后失联」垫版费</div>
+      </div>
+      <span class="p-pill">借鉴加盟 · 品牌共建</span>
+      <div class="p-ghost">E</div>
+    </div>
+    <div class="p-body">
+      <div class="p-visual">
+        <div class="v-cap">贴牌支持四阶梯</div>
+        <div class="ladder">
+          <div class="rung rv" style="--i:0;--rd:.05s"><span class="lv">默认</span><div><div class="what">中性包装 + 质检卡</div><div class="how">可贴客户条码，所有客户适用</div></div></div>
+          <div class="rung rv" style="--i:1;--rd:.15s"><span class="lv">定制</span><div><div class="what">客户品牌包装</div><div class="how">卡头/吊牌/包装盒；版费客户承担或订单列支，莱莎出模板</div></div><span class="r-extra">C 验证通过 + 二单达 MOQ</span></div>
+          <div class="rung rv" style="--i:2;--rd:.25s"><span class="lv">返还</span><div><div class="what">版费信用单返还</div><div class="how">按约定比例返还，随净回款兑现</div></div><span class="r-extra">演示：年净回款 USD 20,000</span></div>
+          <div class="rung rv" style="--i:3;--rd:.35s"><span class="lv">授权</span><div><div class="what">素材授权使用</div><div class="how">产品素材、工厂与质检内容用于其品牌宣传</div></div><span class="r-extra">签授权范围与期限</span></div>
+        </div>
+      </div>
+      <ul class="p-points">
+        <li><b>权属先行：</b>客户提供商标权属或授权文件、保证不侵权；莱莎不对客户品牌在目的国的合规性背书</li>
+        <li><b>标签书面确认：</b>成分/材质、原产国标识、语言下单前确认；美国有原产国标注义务（19 U.S.C. §1304），欧盟 REACH 等化学限制以检测机构和法务确认为准</li>
+        <li><b>隔离存档：</b>客户商标与包装文件只用于该客户订单，不交叉使用、不向第三方展示</li>
+        <li><b>口径分离：</b>定制包装订单不适用「有限换规格」；与现货政策 A/B 分开核算，同一 KG 不重复计奖励</li>
+      </ul>
+    </div>
+    <div class="acc open">
+      <button class="acc-head"><span class="ah-no">E·1</span>执行与停止规则<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <p class="note">业务员收集包装需求与商标文件 → 产品/设计确认工艺与起订量 → 财务核算版费与返还上限 → 法务审授权与标签条款。</p>
+        <ul class="stop">
+          <li>商标文件不全、标签确认未完成 → 暂停下单排产</li>
+          <li>客户要求贴牌同时享受现货退换待遇 → 暂停并说明口径</li>
+          <li>发现客户品牌侵权争议 → 停止该品牌文件使用并通知客户</li>
+        </ul>
+      </div></div></div>
+    </div>
+    <div class="acc">
+      <button class="acc-head"><span class="ah-no">E·2</span>核心指标<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <div class="chips">
+          <span class="chip gold">贴牌首单→二单转化</span><span class="chip">版费回收率</span><span class="chip">贴牌复购周期</span>
+          <span class="chip">标签/合规问题批次率</span><span class="chip">贴牌 vs 现货人均贡献</span>
+        </div>
+      </div></div></div>
+    </div>
+  </article>
+
+  <!-- 政策 F -->
+  <article class="policy rv" style="--pc:var(--f)">
+    <div class="p-head">
+      <div class="p-letter">F</div>
+      <div>
+        <h3>旺季物流与交付保障</h3>
+        <div class="p-tag">全体签约客户——用确定的发货日历与锁舱，换客户提前下单</div>
+      </div>
+      <span class="p-pill">借鉴加盟 · 配货支持</span>
+      <div class="p-ghost">F</div>
+    </div>
+    <div class="p-body">
+      <div class="p-visual">
+        <div class="v-cap">Q4 关键交付节点（演示）</div>
+        <div class="cal">
+          <div class="cal-cell"><b>10 月起</b>公布每周截单日与最迟发货日，承诺批次锁定排产</div>
+          <div class="cal-cell warn"><b>11 月中</b>黑五/圣诞批次海运最迟发货；其后转空运/快递，成本重算</div>
+          <div class="cal-cell warn"><b>12 月中</b>年末发货截止；其后新单进 2027 机会池</div>
+          <div class="cal-cell"><b>1 月</b>春节前最后船期提前 60 天通知，扫尾发货</div>
+        </div>
+        <div class="chips">
+          <span class="chip">发货日历</span><span class="chip">锁排产 / 锁舱</span><span class="chip">拼柜分批</span>
+          <span class="chip gold">达 T 运费支持</span><span class="chip">清关文件一次配齐</span>
+        </div>
+      </div>
+      <ul class="p-points">
+        <li><b>日历先行：</b>Q4 每周截单日与最迟发货日全公布；春节停产安排与最后船期提前 60 天通知</li>
+        <li><b>定金换确定：</b>政策 A 承诺批次在约定定金到账后优先排产、预留舱位；小客户拼柜分批写进协议</li>
+        <li><b>运费支持：</b>达季度 T 后对约定批次承担部分运费或免费升级，仅超基线增量适用、与返利分开列示，计入「每新增 KG 支持成本」</li>
+        <li><b>申报红线：</b>如实申报品名、货值、原产地——不低报、不拆单避税、不做双抬头；客户提出即拒绝并记录</li>
+        <li><b>术语清晰：</b>EXW/FOB/CIF/DDP 逐单写清风险费用分界（Incoterms 2020）；DDP 先把关税增值税测算进报价，不用含糊「全包价」</li>
+      </ul>
+    </div>
+    <div class="acc open">
+      <button class="acc-head"><span class="ah-no">F·1</span>执行与停止规则<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <p class="note">仓库/物流每周更新舱位与截单日；业务员在报价阶段即确认术语与文件清单；财务复核 DDP 报价税费。客户原因（文件、资质、付款延迟）造成的延误不改变莱莎已履约部分认定，但提供合理协助与证据。</p>
+        <ul class="stop">
+          <li>截单日兑现率连续两周不达标</li>
+          <li>舱位失控，或客户频繁临时改单</li>
+          <li>以上 → 暂停对该客户承诺锁舱并复盘</li>
+        </ul>
+      </div></div></div>
+    </div>
+    <div class="acc">
+      <button class="acc-head"><span class="ah-no">F·2</span>核心指标<span class="ic">+</span></button>
+      <div class="acc-body"><div class="acc-inner"><div class="acc-content">
+        <div class="chips">
+          <span class="chip gold">截单日兑现率</span><span class="chip gold">按时发货率</span><span class="chip">旺季批次平均延误天数</span>
+          <span class="chip">单 KG 物流支持成本</span><span class="chip">清关问题率</span><span class="chip">文件差错率</span>
+        </div>
+      </div></div></div>
+    </div>
+  </article>
+</section>
+<!-- ============ 05 通用机制 ============ -->
+<section class="sec" id="mech">
+  <div class="sec-head rv">
+    <div class="sec-ghost">05</div>
+    <div class="sec-no">05 / 共同地基</div>
+    <h2>横向通用机制 ×7</h2>
+    <div class="sec-rule"></div>
+    <p class="sec-desc">单个政策被钻空子或走样，通常是因为公共规则缺位。以下机制只定义一次，A–F 直接引用（Q4 节奏单列于下一节）。</p>
+  </div>
+  <div class="mech-grid">
+    <div class="mech rv" style="--rd:.05s">
+      <h4><span class="m-no">01</span>统一口径</h4>
+      <dl class="def"><dt>合格采购</dt><dd>活动 SKU · 已履约发货 · 已过质量异议期</dd></dl>
+      <dl class="def"><dt>净销售</dt><dd>合格采购扣退货、折让后的金额与 KG；赠品、样品不计</dd></dl>
+      <dl class="def"><dt>回款</dt><dd>货款实际到账；账期内应收只计提、不兑现权益</dd></dl>
+      <dl class="def"><dt>基线 B</dt><dd>OKKI 导出 + 经理校准 + 财务复核后锁定，当季不改</dd></dl>
+      <dl class="def"><dt>信用单</dt><dd>所有返利/奖励/补贴的统一结算工具，规则只定义一次</dd></dl>
+    </div>
+    <div class="mech rv" style="--rd:.12s">
+      <h4><span class="m-no">02</span>客户分层与政策准入</h4>
+      <table class="tier">
+        <tr><th>层级</th><th>可用政策</th><th>审批</th></tr>
+        <tr><td>S</td><td>A–F 全部，可谈 L2 区域优先</td><td>总经理</td></tr>
+        <tr><td>A</td><td>A / B / C / E / F</td><td>销售经理 + 财务</td></tr>
+        <tr><td>B</td><td>B / C / F + D 的 L1</td><td>销售经理</td></tr>
+        <tr><td>C·新客</td><td>C 验证单、B 首轮样品</td><td>经理 + 财务（信用个案）</td></tr>
+      </table>
+      <p style="font-size:12.5px;color:var(--ink3);margin-top:10px">跨政策支持总额不超层级预算上限；同一 KG 不被两个政策重复奖励；政策代码是报价、出库与返利结算的共同索引。</p>
+    </div>
+    <div class="mech rv" style="--rd:.05s">
+      <h4><span class="m-no">03</span>价格与报价纪律</h4>
+      <ul class="rule-list">
+        <li><b>美元报价</b>，有效期（演示 15 天）与重议触发条件写进报价单；汇率/原料大幅波动按约定公式调整，不在执行中途单方改价</li>
+        <li>每笔折扣<b>对应政策代码与条款</b>，报价单可追溯；超权限折扣走经理审批留痕，禁止口头承诺</li>
+        <li>同一客户同期只执行<b>一个版本价格表</b>；跨政策优惠不叠加于同一 KG</li>
+      </ul>
+    </div>
+    <div class="mech rv" style="--rd:.12s">
+      <h4><span class="m-no">04</span>内部激励对齐（防压货）</h4>
+      <ul class="rule-list">
+        <li>佣金按<b>回款</b>确认，不按签约或发货；退货、坏账对应佣金冲回</li>
+        <li>A 的框架签约、C 的首单垫资<b>不计入业绩</b>，只按已回款净销售计</li>
+        <li>政策成本（样品/返利/运费/版费）计入<b>客户维度净贡献</b>，业务员看贡献而非只看销售额</li>
+        <li>期末客户结存异常升高且下期停单 → <b>回查业务员当期业绩</b>；明知消化不了仍压货的取消当期政策业绩</li>
+      </ul>
+    </div>
+    <div class="mech span rv" style="--rd:.05s">
+      <h4><span class="m-no">05</span>付款阶梯与信用管理</h4>
+      <div class="ladder" style="--pc:var(--gold)">
+        <div class="rung rv" style="--i:0;--rd:.05s"><span class="lv">新客</span><div><div class="what">30% 定金 + 发货前尾款</div><div class="how">或 100% 前 T/T 换小额优惠（演示）</div></div></div>
+        <div class="rung rv" style="--i:1;--rd:.15s"><span class="lv">稳定</span><div><div class="what">定金 + 见提单副本付尾款</div><div class="how">升级条件：3 笔以上无逾期</div></div></div>
+        <div class="rung rv" style="--i:2;--rd:.25s"><span class="lv">授信</span><div><div class="what">约定额度 OA（如 30 天）</div><div class="how">财务审核 + 历史回款记录，优先评估出口信用险（如中信保短期险）</div></div></div>
+        <div class="rung rv" style="--i:3;--rd:.35s"><span class="lv">例外</span><div><div class="what">政策 C 一次性小额垫资</div><div class="how">仅限 C 条款审核个案，不是默认营销工具</div></div></div>
+      </div>
+      <p style="font-size:12.5px;color:var(--ink3);margin-top:12px">额度、到期日、逾期即停发新货写入合同；逾期自动降回上一阶梯。先货后款仅给通过审核且完成制裁名单筛查（如 OFAC 检索）的客户，筛查不过只做预付款。</p>
+    </div>
+    <div class="mech span rv" style="--rd:.05s">
+      <h4><span class="m-no">06</span>合规红线（对外合同底线）</h4>
+      <ul class="red">
+        <li><span class="rx">✕</span><span><b>不固定终端转售价</b>，只提供建议零售价（政策 D 第 3 条）</span></li>
+        <li><span class="rx">✕</span><span><b>不做不如实申报</b>的「省税」操作：不低报、不拆单、不双抬头（政策 F 第 1 条）</span></li>
+        <li><span class="rx">✕</span><span><b>不以赠样/返利换虚假好评</b>或虚假终端数据</span></li>
+        <li><span class="rx">✕</span><span><b>质量条款前置</b>：异议期、检验标准、补发/退款路径首单前书面确认，不与采购承诺挂钩要挟</span></li>
+        <li><span class="rx">✕</span><span><b>争议解决由法务模板统一</b>（适用法律、仲裁机构如 CIETAC/HKIAC/SIAC），业务员不随口承诺</span></li>
+        <li><span class="rx">✕</span><span><b>数据最小化</b>：不索要终端个人信息，去标识化汇总；涉欧盟客户确认 GDPR 适用性</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 06 Q4 节奏 ============ -->
+<section class="sec" id="rhythm">
+  <div class="sec-head rv">
+    <div class="sec-ghost">06</div>
+    <div class="sec-no">06 / 时间轴</div>
+    <h2>Q4 节奏总表</h2>
+    <div class="sec-rule"></div>
+    <p class="sec-desc">与政策 A 批次表、政策 F 发货日历联动的一条主线：<b>把「催单」变成「按计划表共同执行」</b>。</p>
+  </div>
+  <div class="rhythm" data-io>
+    <div class="r-line"><div class="r-fill"></div></div>
+    <div class="r-nodes">
+      <div class="r-node"><div class="r-dot"></div><div class="r-when">10 月第 1 周</div><div class="r-what">试点客户选定、协议签署、首批订单与定金锁定</div></div>
+      <div class="r-node"><div class="r-dot"></div><div class="r-when">10–11 月</div><div class="r-what">每两周核对动销与结存；样品政策按 21 天反馈节点推进</div></div>
+      <div class="r-node"><div class="r-dot"></div><div class="r-when">11 月中</div><div class="r-what">黑五/圣诞批次海运最迟发货日；其后转空运快递，成本重算</div></div>
+      <div class="r-node"><div class="r-dot"></div><div class="r-when">12 月中</div><div class="r-what">年末发货截止；其后新单进 2027 机会池，不补记 Q4</div></div>
+      <div class="r-node"><div class="r-dot"></div><div class="r-when">12 月末</div><div class="r-what">季度结算：净销售核定、信用单签发、基线校准复盘</div></div>
+      <div class="r-node"><div class="r-dot"></div><div class="r-when">1 月</div><div class="r-what">春节前最后船期扫尾；政策效果复盘，决定续做/调整/停止</div></div>
+    </div>
+  </div>
+</section>
+<!-- ============ 07 十个方向 ============ -->
+<section class="sec" id="dirs">
+  <div class="sec-head rv">
+    <div class="sec-ghost">07</div>
+    <div class="sec-no">07 / 补充弹药库</div>
+    <h2>另外十个可借鉴方向</h2>
+    <div class="sec-rule"></div>
+    <p class="sec-desc">借鉴渠道经营机制的设计方案，<b>并非声称已有公司按相同比例执行或已证明有效</b>；先跑低建设成本动作，联合推广与转介绍用小批试点。</p>
+  </div>
+  <div class="dir-grid">
+    <div class="dir rv" style="--rd:.03s"><div class="d-no">方向 01</div><h4>联合推广资金</h4><p>有自有门店/社媒的客户，以自己的品牌宣传库存适配系列，莱莎出素材或承担限额活动成本。</p><div class="d-bound"><b>界限：</b>先定活动与预算，凭执行与可归因成交解锁；客户也投入，不无条件给现金</div><div class="d-metric">验证：每美元支持对应新增贡献</div></div>
+    <div class="dir rv" style="--rd:.06s"><div class="d-no">方向 02</div><h4>单店畅销组合包</h4><p>用该客户过去成交的颜色/长度/规格组成小组合，解决 SKU 分散、选品困难。</p><div class="d-bound"><b>界限：</b>全部 SKU 有真实需求；可给等值选择权，不用难销货强塞爆款</div><div class="d-metric">验证：组合售出率 · 二次补货率</div></div>
+    <div class="dir rv" style="--rd:.09s"><div class="d-no">方向 03</div><h4>先选品后分批提货</h4><p>稳定高频客户先确认季度配货，按约定定金短期预留，分次发货。</p><div class="d-bound"><b>界限：</b>预留到期日与释放规则写清；签约和寄仓不当成交；限定 Q4 履约</div><div class="d-metric">验证：预留→出库转化 · 库存占用天数</div></div>
+    <div class="dir rv" style="--rd:.12s"><div class="d-no">方向 04</div><h4>培训换增长权益</h4><p>有发型师/门店团队的客户，购买目标库存后获得产品应用、护理、终端成交培训。</p><div class="d-bound"><b>界限：</b>奖励真实学习与经营改进，不承诺终端收入；按客户目标选课程</div><div class="d-metric">验证：培训后试用转订单 · 客诉率</div></div>
+    <div class="dir rv" style="--rd:.15s"><div class="d-no">方向 05</div><h4>有效转介绍支持</h4><p>满意老客引荐经营主体真实、此前不在机会池的新客。</p><div class="d-bound"><b>界限：</b>只按被介绍客户真实已回款订单发一次支持；排除自买、多账户、多层招募</div><div class="d-metric">验证：新增有效客户 · 首单/二单贡献</div></div>
+    <div class="dir rv" style="--rd:.18s"><div class="d-no">方向 06</div><h4>短期线索保护</h4><p>能服务本地客户的成长经销商，登记具体销售机会后保护 30 天。</p><div class="d-bound"><b>界限：</b>保护指定已登记机会，不立即许诺整国独家；明确时限与失效规则</div><div class="d-metric">验证：线索首响 · 机会成交率</div></div>
+    <div class="dir rv" style="--rd:.21s"><div class="d-no">方向 07</div><h4>有限换规格</h4><p>担心选色/长度错误的新合作客户，对未拆封、可再售的约定 SKU 提供一次限额换规格。</p><div class="d-bound"><b>界限：</b>物流税费与时限说清；跨境往返成本过高则只在下一单优化，不做无限退换</div><div class="d-metric">验证：退换总成本 · 换后成交与复购</div></div>
+    <div class="dir rv" style="--rd:.24s"><div class="d-no">方向 08</div><h4>补货提醒与库存协同</h4><p>稳定复购客户每两周提供简化剩余库存/销售速度，业务员推荐适配补货。</p><div class="d-bound"><b>界限：</b>自愿共享汇总信息即可，不索要终端敏感名单；建议受客户周转能力约束</div><div class="d-metric">验证：缺货减少 · 补货兑现 · 渠道结存</div></div>
+    <div class="dir rv" style="--rd:.27s"><div class="d-no">方向 09</div><h4>联合参展 / 市场考察</h4><p>客户参加目的国行业展或本地市场活动，莱莎提供展品、素材或限额成本分担。</p><div class="d-bound"><b>界限：</b>凭参展执行证据与可归因线索结算；费用上限事先约定，不无条件报销</div><div class="d-metric">验证：展会线索数 · 线索→验证单转化</div></div>
+    <div class="dir rv" style="--rd:.3s"><div class="d-no">方向 10</div><h4>到货质量快速响应</h4><p>签收后约定天数（演示 7 天）内报告的质量问题，先行补发或退款。</p><div class="d-bound"><b>界限：</b>止损与责任认定并行，不以「先查清」拖延客户；补发上限与质量预算挂钩</div><div class="d-metric">验证：质量响应时长 · 补发成本 · 争议率</div></div>
+  </div>
+</section>
+
+<!-- ============ 08 试点与来源 ============ -->
+<section class="sec" id="pilot">
+  <div class="sec-head rv">
+    <div class="sec-ghost">08</div>
+    <div class="sec-no">08 / 落地方式</div>
+    <h2>试点、分工与证据</h2>
+    <div class="sec-rule"></div>
+    <p class="sec-desc">每种政策 5–10 个客户只是<b>执行容量示例，不是统计显著样本</b>；按规模、活跃度、SKU 适配度、国家/渠道尽量匹配参照组。</p>
+  </div>
+  <div class="pilot-steps">
+    <div class="pilot-step rv" style="--rd:.05s"><b>10 月第 1 周 · 选客</b><p>同层级少量客户入组，协议签署、首批锁定；政策设计不授权对外发送或授信</p></div>
+    <div class="pilot-step rv" style="--rd:.15s"><b>2 周 · 看启动</b><p>只验证执行是否跑起来：签收、培训、首单、批次是否按节点发生</p></div>
+    <div class="pilot-step rv" style="--rd:.25s"><b>4 周 · 看转化</b><p>看转化与实际贡献；客户周期较长的政策避免过早把未复购判为失败</p></div>
+  </div>
+
+  <div class="block-t rv">六方分工 <small>RACI 简版</small></div>
+  <div class="roles rv" style="--rd:.08s">
+    <div class="role"><span class="r-name">销售经理</span><p>客户资格、增量目标与分配；区域容量评估</p></div>
+    <div class="role"><span class="r-name">业务员</span><p>真实性验证、方案谈判、机会登记与复盘</p></div>
+    <div class="role"><span class="r-name">产品/仓库</span><p>SKU、克重、可供量、批次与舱位确认</p></div>
+    <div class="role"><span class="r-name">市场</span><p>素材、培训与执行证据留存</p></div>
+    <div class="role"><span class="r-name">财务</span><p>成本、预算、回款、信用与返利结算；信保评估</p></div>
+    <div class="role"><span class="r-name">法务</span><p>合同模板、区域与独家条款、合规红线审核</p></div>
+  </div>
+
+  <div class="block-t rv">每条客户计划的审阅字段</div>
+  <div class="fields rv" style="--rd:.08s">
+    <span class="chip">客户/业务员</span><span class="chip">层级</span><span class="chip">历史 KG</span><span class="chip">下单频率</span><span class="chip">最近下单日</span>
+    <span class="chip">常买 SKU</span><span class="chip">Q4 自然基线</span><span class="chip">目标 SKU 与 KG</span><span class="chip">政策代码</span><span class="chip">首单/首批日期</span>
+    <span class="chip">后续批次</span><span class="chip">支持预算</span><span class="chip">贡献底线</span><span class="chip">支付条件</span><span class="chip">库存供应核实</span>
+    <span class="chip">区域/渠道</span><span class="chip">贸易术语与文件清单</span><span class="chip">合规筛查状态</span><span class="chip">概率及原因</span><span class="chip">下一动作与截止日</span>
+  </div>
+
+  <div class="block-t rv">来源与证据适用范围 <small>只核实机制存在，不构成效果预测或法律意见</small></div>
+  <div class="sources rv" style="--rd:.08s">
+    <div class="src"><span class="s-arrow">↗</span><div><a href="https://www.oppeinhome.com/start-OPPEIN-franchise/t" target="_blank" rel="noopener">欧派海外渠道合作页</a><br><span>样品陈列、联合营销、里程碑返利、培训、区域支持机制存在；金额与条款不直接复制</span></div></div>
+    <div class="src"><span class="s-arrow">↗</span><div><a href="https://www.levelloyaltyrewards.com/en-us/faq" target="_blank" rel="noopener">L’Oréal LEVEL 官方 FAQ</a><br><span>专业美发渠道按采购提供教育、样品、工具奖励及退货冲回机制</span></div></div>
+    <div class="src"><span class="s-arrow">↗</span><div><a href="https://www.trade.gov/report/trade-finance-guide" target="_blank" rel="noopener">美国商务部 Trade Finance Guide</a><br><span>预付款、赊账、寄售的收款风险差异，用于付款结构判断</span></div></div>
+    <div class="src"><span class="s-arrow">↗</span><div><a href="https://www.ftc.gov/tips-advice/competition-guidance/guide-antitrust-laws/dealings-supply-chain" target="_blank" rel="noopener">FTC《供应链交易》反垄断指南</a><br><span>固定转售价的反垄断规制；州法差异需法务确认</span></div></div>
+    <div class="src"><span class="s-arrow">↗</span><div><a href="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32022R0720" target="_blank" rel="noopener">欧盟 (EU) 2022/720 纵向协议豁免条例</a><br><span>固定/最低转售价属核心限制（第 4 条）；只用于「不控价」红线</span></div></div>
+    <div class="src"><span class="s-arrow">↗</span><div><a href="https://www.cbp.gov/trade/rulings/informed-compliance-publications/marking-country-origin-us-imports" target="_blank" rel="noopener">CBP 原产国标注合规指引</a><br><span>美国进口商品原产国标注义务；具体方式以报关行与法务确认为准</span></div></div>
+    <div class="src"><span class="s-arrow">↗</span><div><a href="https://iccwbo.org/business-solutions/incoterms-rules/" target="_blank" rel="noopener">ICC Incoterms 2020</a><br><span>贸易术语体系与风险费用分界；以合同引用版本为准</span></div></div>
+    <div class="src"><span class="s-arrow">↗</span><div><a href="https://sanctionssearch.ofac.treas.gov/" target="_blank" rel="noopener">OFAC 制裁名单检索</a><br><span>客户与收款方筛查入口；范围与频率由法务规定</span></div></div>
+    <div class="src"><span class="s-arrow">↗</span><div><a href="https://www.sinosure.com.cn/" target="_blank" rel="noopener">中国出口信用保险公司</a><br><span>出口信用保险工具存在；是否投保由财务逐案评估</span></div></div>
+    <div class="src"><span class="s-arrow">↗</span><div><a href="https://commission.europa.eu/law/law-topic/data-protection_en" target="_blank" rel="noopener">欧盟委员会数据保护（GDPR）</a><br><span>涉欧盟个人数据的合规义务存在；去标识化不等于已满足</span></div></div>
+  </div>
+
+  <div class="closing rv">
+    <div class="c-q">没有证据证明「加盟政策用于外贸就是<em>降维打击</em>」——<br>用 OKKI 分层、真实试点和贡献核算来验证。</div>
+    <p>政策 D–F 与横向通用机制同属待验证设计，不构成对外承诺；正式版本以负责人签发为准。</p>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="f-row">
+    <div><b>外贸营销政策 · 2026 Q4 试点版</b><br>页面中所有金额、KG、比例均为演示占位值，正式对外前以财务测算、库存核实、法务复核后的签发版本为准。</div>
+    <div style="text-align:right">配套文档<br><b>docs/2026-09-20-foreign-trade-marketing-policy.md</b></div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  /* 滚动揭示 */
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){ e.target.classList.add('in-view'); io.unobserve(e.target); }
+    });
+  }, {threshold:.16});
+  document.querySelectorAll('.rv,[data-io]').forEach(function(el){ io.observe(el); });
+
+  /* 顶部进度条 */
+  var bar = document.getElementById('progress');
+  function onScroll(){
+    var h = document.documentElement;
+    var p = h.scrollTop / (h.scrollHeight - h.clientHeight || 1);
+    bar.style.width = (p*100).toFixed(2) + '%';
+  }
+  document.addEventListener('scroll', onScroll, {passive:true}); onScroll();
+
+  /* 右侧点导航高亮 */
+  var links = Array.prototype.slice.call(document.querySelectorAll('.dotnav a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  var navIO = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        var i = secs.indexOf(e.target);
+        links.forEach(function(a,j){ a.classList.toggle('active', i===j); });
+      }
+    });
+  }, {rootMargin:'-40% 0px -55% 0px'});
+  secs.forEach(function(s){ if(s) navIO.observe(s); });
+
+  /* Hero 数字滚动 */
+  function count(el){
+    var target = +el.getAttribute('data-count'), t0 = null, dur = 1400;
+    function tick(t){
+      if(!t0) t0 = t;
+      var p = Math.min((t-t0)/dur, 1), e = 1-Math.pow(1-p,3);
+      el.textContent = Math.round(target*e);
+      if(p<1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+  window.addEventListener('load', function(){
+    setTimeout(function(){ document.querySelectorAll('[data-count]').forEach(count); }, 500);
+    setTimeout(function(){
+      document.querySelectorAll('[data-count]').forEach(function(el){ el.textContent = el.getAttribute('data-count'); });
+    }, 2800);
+  });
+
+  /* 手风琴 */
+  document.querySelectorAll('.acc-head').forEach(function(h){
+    h.addEventListener('click', function(){
+      h.parentElement.classList.toggle('open');
+    });
+  });
+})();
+</script>
+</body>
+</html>

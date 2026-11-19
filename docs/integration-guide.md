@@ -1,13 +1,13 @@
 # 莱莎方舟平台 API 接入指南
 
 > **版本**：v1.0  
-> **最后更新**：2026-07-01  
+> **接入地址校正**：2026-10-13；接口细节按[API 参考](api-reference.md)与实际环境 OpenAPI 核对<br>
 > **目标读者**：下游系统开发者、外部集成方
 
 ## 接入流程
 
 1. 联系管理员申请 API 凭证（用户名/密码或 API Key）
-2. 获取生产环境地址：`https://leshine.work`（外网）或 `http://192.168.x.x:8002`（局域网）
+2. 获取生产环境地址：`https://leshine.work`（外网）或 `https://lan.leshine.cloud`（办公室局域网；须正确解析到办公室地址）
 3. 测试健康检查：`GET /health`
 4. 登录获取 token：`POST /api/auth/login`
 5. 调用业务 API（请求头携带 `Authorization: Bearer <token>`）
@@ -361,7 +361,7 @@ GET /api/insight/customer-opportunities/my?sort_field=due_at&sort_order=asc
 | 环境 | 地址 | 说明 |
 |------|------|------|
 | 生产（外网） | `https://leshine.work` | 需 SSL 证书 |
-| 生产（局域网） | `http://192.168.x.x:8002` | 内网直连，无 SSL |
+| 生产（局域网） | `https://lan.leshine.cloud` | 受管 HTTPS → 办公室后端 8001；DNS 与证书条件见[换址说明](../deploy/office-lan-address-change.md) |
 | 开发 | `http://localhost:8001` | 本地后端 |
 
 ## Webhook 推送（可选）

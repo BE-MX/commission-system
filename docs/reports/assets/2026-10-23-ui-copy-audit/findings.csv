@@ -1,0 +1,51 @@
+﻿id,priority,file,line,before,after,why,kind
+C01,P2,frontend/src/views/announcement/AnnouncementList.vue,13,发布通知、沉淀知识，重要信息及时送达。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C02,P2,frontend/src/views/invoice/InvoiceManage.vue,13,客户发票、产品明细、价格管控、导出与小满同步集中处理。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C03,P2,frontend/src/views/invoice/InvoicePriceConfig.vue,13,标准参考价矩阵、色型映射、客户价格规则与生产单沉淀产品管理。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C04,P2,frontend/src/views/receipt/ReceiptManage.vue,13,每笔回款关联订单，凭证与同步结果集中查看。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C05,P2,frontend/src/views/battle-report/BattleReports.vue,3,目标有方向，业绩有依据，复盘到每一笔订单。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C06,P2,frontend/src/views/aftersales/AfterSalesAnalytics.vue,9,从问题、状态和赔偿成本识别需要优先复盘的产品与流程。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C07,P2,frontend/src/views/agent-runtime/AgentTaskCenter.vue,12,统一查看 DSH 等受控运行时的任务、过程、成本、证据与人工决策。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C08,P2,frontend/src/views/customer-image/admin/CustomerImageAdmin.vue,7,维护客户可选产品、发放专属邀请，并追踪生成额度与结果状态。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C09,P2,frontend/src/views/customer_hub/CustomerWorkbench.vue,1,围绕客户目标推进事项、核验准备结果，再登记真实行动与业务结果。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C10,P2,frontend/src/views/domestic_decision/DomesticDecision.vue,4,从真实订单与客户记录出发，找到值得核对的变化，把判断落到行动。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C11,P2,frontend/src/views/order_intelligence/OrderIntelligence.vue,13,从订单事实识别市场机会、团队能力与客户下一步行动，所有建议均附证据与口径。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C12,P2,frontend/src/views/insight/IntelligenceLibrary.vue,13,RSS / XPOZ / 竞品监控 / 手工上传的情报条目，支持精选与归档。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C13,P2,frontend/src/views/insight/IntelligenceOverview.vue,13,按日期范围汇总行业情报条目，支持定时生成与置顶查看。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C14,P2,frontend/src/views/portal/PortalSettings.vue,86,统一维护客户站入口状态、报价期限与可选付款条件。,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C15,P2,frontend/src/views/design/image-studio/ImageStudio.vue,39,用自然语言生成，并从任意结果继续修改,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C16,P2,frontend-pm/src/views/DashboardView.vue,6,打开 3 秒看懂「项目推进到哪了、材料备齐了多少」,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C17,P2,frontend-pm/src/views/ActivityView.vue,6,谁、何时、做了什么——出了问题能追，平时当项目日报看,删除该段副标题；保留页面标题、筛选、操作、状态及数据口径。,重复介绍当前页面功能，未提供操作决策所需信息。,删除
+C18,P1,frontend/src/views/invoice/OkkiSyncSettings.vue,13,推单接口尚未接通，配置先行生效于同步前校验。,核实当前环境的推单可用状态后移除这句历史阶段说明；若功能不可用，显示实际原因及处理入口。,源码已有推单与 linked-sync 路由，静态“尚未接通”可能误导管理员；不能仅凭源码断言线上可用。,校准状态
+C19,P1,frontend/src/views/color/TrendView.vue,18,预计 P2 阶段实现（1-2 周后）,删除阶段编号与相对工期；保留“色彩趋势暂未开放”及可用入口。,开发计划不是面向使用者的状态保证。,删除承诺
+C20,P1,frontend/src/views/task/components/TaskDetailDrawer.vue,81,分支和 commit 自动关联在二期上线，现在可以手工挂文档或原型,尚无关联资料。可添加文档或原型链接。,移除未经当前进度验证的上线承诺，保留恢复动作。,改写
+C21,P1,frontend/src/views/task/components/TaskDetailDrawer.vue,52,每行一条。二期起 AI 提议完成时会逐条对照,每行填写一条验收标准,占位符只解释输入格式。,改写
+C22,P2,frontend/src/views/dashboard/cards.js,80,"name: '用户管理', desc: '管理系统用户'",工作台入口默认只显示名称；“用户管理”等重复说明删除。少数含不同业务含义的入口单独保留说明。,ActionsGrid.vue:32 统一渲染 card.desc；应逐条审定配置，不能整块隐藏全部说明。,共用入口
+C23,P2,frontend/src/views/layout/FavoriteNavigation.vue,41,勾选即可添加，取消勾选即可移除。返回导航栏拖拽调整顺序。,选择后自动保存。排序提示保留在导航拖拽手柄的可访问名称和提示中。,勾选行为已由控件表达；自动保存与调整位置仍需可发现。,改写
+C24,P2,frontend/src/views/asset/AssetLibrary.vue,166,在左侧选择标签即可查看对应素材。标签集会随你的选择自动收窄，越选越精准。,保留空态标题“选择标签，开始检索”；删除介绍段和重复搜索指引。标签逐层收窄机制放首次帮助。,标题、标签区和搜索控件已说明下一步；“左上角”在窄屏不可靠。,合并
+C25,P2,frontend/src/views/invoice/components/InvoiceSummaryCard.vue,2,随明细实时联动,删除；实时金额更新由数据变化表达。,与汇总组件行为重复，不提供新的金额口径。,删除
+C26,P2,frontend/src/views/invoice/components/InvoiceHairTable.vue,7,四个关键词选择完整后自动匹配唯一 Product_name。,选齐规格后自动匹配产品,移除内部字段名，保留自动匹配的触发条件。,改写
+C27,P2,frontend/src/views/invoice/components/InvoiceReceiptFields.vue,7,小满回款方式默认按 Other 提交（小满侧非必填），无需选择。,常规收款界面删除；若业务需要核对映射，在同步详情显示“小满回款方式：Other”。,用户无需选择的实现默认值不应占据表单说明区。,移位
+C28,P2,frontend/src/views/portal/PortalOrders.vue,133,核对客户需求，跟进确认与正式 PI。当前列表仅包含服务端授权的请求。,删除该副标题；状态列与操作名称继续表达审核流程。,功能复述及服务端授权实现说明不会帮助当前列表操作。,删除
+C29,P2,frontend/src/views/portal/PortalCustomers.vue,158,管理客户查价、下单和登录资格，变更按方舟当前客户归属生效。,页头删除；权限变更弹窗保留“按当前客户归属生效”。,功能介绍与生效边界应拆开，把后者放在发生变更的位置。,移位
+C30,P2,frontend/src/views/customer_hub/CustomerHubWorkspace.vue,34,按最近更新时间排序 · 权限范围由方舟统一控制,保留排序控件或“最近更新”排序标识，移除权限机制说明；两个出现位置一并处理。,排序需可识别，泛化权限说明无须反复展示。,合并
+C31,P2,frontend/src/views/design/SubmitRequest.vue,16,填写拍摄需求信息，日期无冲突时直接进入排期，有冲突时进入审批流程,删除“填写拍摄需求信息”；排期分流说明移至日期检查结果：“无冲突，将直接排期”/“存在冲突，提交后进入审批”。,把通用介绍替换成与当前输入相关的结果反馈。,条件展示
+C32,P2,frontend/src/views/design/CustomerMediaWorkspace.vue,83,文件还未上传。每行显示的是加入清单时选中的客户标签。,保留“文件尚未上传”；标签绑定说明放在列表标题或标签修改入口。,上传状态必须保留；重复解释每行布局的文字可移位。,拆分
+C33,P2,frontend/src/views/order_intelligence/OrderIntelligence.vue,73,复购订单数按订单计数，复购金额使用订单 amount_usd,复购订单数按订单统计；金额为订单美元金额。完整口径放指标帮助。,保留统计含义，删除程序字段名。,改写
+C34,P2,frontend/src/views/salary/SalaryWorkbench.vue,333,还有必须处理的异常。带着它们往下走，算出来的工资是错的—— 而少扣的钱不会有人来投诉。,请先处理阻断异常，再计算工资。,保留阻断原因与下一步，删除训诫式、情绪化解释。,改写
+C35,P2,frontend/src/views/system/OperationsCenter.vue,73,当前实例与跨服务器运行单元的集中清单,删除该区块副标题；保留实例名称、运行状态、探测时间和故障信息。,表格本身表达清单用途。,删除
+C36,P2,frontend/src/views/shipping/components/InspectionEvents.vue,4,暂无操作记录，历史记录不补造。,暂无操作记录,“历史记录不补造”是实现约束；如确有历史覆盖缺口，用可核实起始日期说明。,改写
+C37,P2,frontend/src/views/shipping/components/StationQuickNav.vue,15,点击序号，直达对应产品明细,控件名称足够明确时删除；为序号按钮提供“跳至第 N 项产品”的可访问名称。,去掉点击教学，同时确保图形控件仍有名称。,条件删除
+C38,P2,frontend-portal/src/components/CollectionView.vue,64,"Explore your collection, in the names and shades you know.",删除；保留客户名称、商品名称、规格与筛选。,交易工作区的装饰性介绍与主任务无关。,删除
+C39,P2,frontend-portal/src/components/OrdersView.vue,89,"Every request, every detail, in one place.",删除；保留 Requests 标题、状态和查询入口。,重复概括列表功能。,删除
+C40,P2,frontend-portal/src/components/CheckoutView.vue,56,YOUR NEXT CHAPTER,移除交易页装饰性眉题；保留 Checkout / Request received 等实际步骤与状态名称。,装饰文字与操作状态争夺注意力。,删除
+C41,P2,frontend-portal/src/components/SelectionPanel.vue,22,Products you add appear here. Adjust quantities before you finish.,仅空选择时显示“Your selection is empty.”并提供返回目录入口；非空时删除说明。,已有商品与数量控件足以表达操作。,条件展示
+C42,P2,frontend-portal/src/components/CheckoutView.vue,88,"Current product names, pricing and delivery details returned by the server. Review any changes before submitting.","Review current products, prices and delivery details before submitting.",保留提交前核对，去掉 server 实现细节。,改写
+C43,P2,frontend/src/views/customer-image/i18n.js,38,Upload your brand logo to quickly preview it on this product.,缺少商品真实描述时不渲染 fallback 段落；上传操作指引只在上传区保留，中英文同步。,每张商品卡重复同一段操作说明，挤占真实商品信息。,删除默认重复
+C44,P2,frontend/public/customer-media/index.html,70,Browse and download your product photos and videos by tag and delivery batch.,删除列表功能介绍；保留批次、标签、文件名与下载控件。,筛选和下载动作已经由布局与控件说明。,删除
+C45,P2,frontend/public/m/login.html,104,请输入您的账号信息,删除；保留账号和密码标签、登录按钮、验证错误。,与登录表单重复。,删除
+C46,P3,miniprogram/pages/scan/scan.wxml,47,点击扫描工艺流转卡,与空态“扫描工艺流转卡开始报工”合并为一处；保留扫描按钮和卡片类型。内贸扫描页同样处理。,高频扫描页无须重复教同一个动作，且不能丢掉卡片类型区别。,合并
+C47,P3,pda-reporting/app/src/main/java/com/leshine/pdareporting/LoginScreen.kt,53,使用方舟账号登录，报工记录仍归入本人,使用方舟账号登录；报工人身份在登录后页头持续显示。输入项补持久标签。,登录说明可缩短；字段当前依赖 hint，不能继续删减身份与控件辨识信息。,改写并补标签
+C48,P3,frontend/public/6010/index.html,432,这里汇集顾客常见问题、价格信息、洗护售后和店员讲解话术。,删除页面目录式说明，保留产品特点；语音按钮命名“听产品介绍”。,产品正文是内容，页面布局复述才是冗余；不得一起删掉产品事实。,局部删除
+C49,P2,frontend/src/views/task/TaskCenter.vue,12,方舟开发需求与个人事项 · 仅本人可见 · 导航栏悬停 + 可随手记,保留“仅本人可见”；功能介绍删除，快捷入口说明放到入口自身。,隐私范围有用，页面功能和布局说明可拆除。,拆分
+C50,P2,frontend/src/views/training/TrainingEditor.vue,59,把手头材料全丢进来——现场拍的 PPT 照片、PDF 讲义、钉钉闪记转写的文字、自己的零散笔记。AI 按模板起草，你只负责下一步校对。,上传照片、PDF 或笔记，生成培训初稿。保留后续人工校对要求和格式限制。,长段鼓励性教学可缩为操作目的，不能删除 AI 草稿需核对的责任边界。,压缩

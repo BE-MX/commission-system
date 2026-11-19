@@ -1,12 +1,14 @@
 # 莱莎方舟平台 架构说明
 
-## WhatsApp AI 消息助手（本地候选）
+本文维护结构与数据流；运行版本、迁移完成情况和业务开放范围统一见[交接文档](handoff.md)，不以源码存在推定生产已启用。
+
+## WhatsApp AI 消息助手
 
 聊天页提交北京时间范围 → 服务端当前正文/外发许可检查、完整范围容量检查与幂等入库 → FastAPI同步BackgroundTask在线程内自建Session → 按对象检索本人可读发布知识 → 完整消息分段分析并合并 → 当前消息hash/授权版本/知识ACL及修订复验 → 发布请求人私有报告。消息引用在模型传输中使用短ID，最终映射回稳定方舟UID，避免长历史引用膨胀。
 
 模型统一走AI facade、独立 `whatsapp_message_assistant` 可配置预设，日志metadata-only；不执行聊天内指令，模型引用必须在输入集合。运行进度持久化，原始聊天/模型中间结果不入运行manifest；最终结果、清单在助手内保存。读取和勾选也重验来源。运行是进程内后台任务，进程退出不自动恢复或再次调用模型；900秒默认截止后释放活动槽，由员工明确新建分析。
 
-## WhatsApp Baileys 接入候选（2026-10-13，未部署）
+## WhatsApp Baileys 接入（2026-10-13）
 
 独立 Connector 以每号 Baileys Socket 接收事件，认证和规范当前投影保存在单主机加密 SQLite；engine 时钟、单调 fencing token 和 CAS 保护凭据与事件提交。变更记录只存对象指针，编辑/撤回不在队列复制旧正文。方舟按持久 sequence 每 5 秒消费，标准消息、来源映射、既有客户投影与 checkpoint 原子提交。
 
@@ -25,7 +27,7 @@
 北京现已启用 21 个 COS 领域；内贸凭证的历史 COS 引用已现场验证。COS 对象归属与业务 API 执行归属分别核验，启用 COS 不代表旧 Nginx 转发已撤除。生产状态、迁移进度和阻塞维护在 `docs/handoff.md`；逐域路由证据见[附件审计](reports/2026-10-10-attachment-routing-audit.md)。
 
 > **版本**：v1.0  
-> **最后更新**：2026-09-06
+> **整理日期**：2026-10-13；各专题的核验日期与范围以正文为准
 > **目标读者**：技术接手人、新后端开发
 
 ## 系统概览
@@ -38,15 +40,16 @@
 
 ### 部署架构
 
-2026-11-13 办公室公网主入口已切到北京；原新加坡 FRP 通道保留供旧客户端与人工回退。PM/hair/video/outreach 的独立站点归属不随本次主站入口迁移改变。
+2026-11-13 办公室公网主入口已切到北京；原新加坡 FRP 通道保留供旧客户端与人工回退。PM/hair/video/outreach 的独立站点归属不随本次主站入口迁移改变。办公室内网地址与 DNS 条件见[换址说明](../deploy/office-lan-address-change.md)，各服务实时状态仍需在发布前核验。
 
 ```text
-公司内网 / lan.leshine.cloud → 办公室 Windows / CommissionSystem :8001
+公司内网 → lan.leshine.cloud / Caddy :443 → 办公室 CommissionSystem :8001
 leshine.cloud / www → 北京 Nginx → 普通 API / 平台 MCP：北京 ark-backend :8001
                                → 回款 / 验货 / WhatsApp / 设计图片：127.0.0.1:8002 → SSH 反向隧道 → 办公室 :8001
 leshine.work / pm.leshine.work → 新加坡 Nginx + frps :8002 → 办公室 :8001（保留）
 media.leshine.cloud / hair.leshine.cloud → 北京既有站点
 hair.leshine.work / video.leshine.work / outreach.leshine.work → 新加坡既有独立站点
+所有方舟后端 → 同一北京 RDS commission_db / lsordertest
 ```
 
 办公室 `ArkOfficeBeijingTunnel` 由 NSSM 管理、自动重连；独立密钥只保存在办公室。北京专用 SSH 账号只允许上述回环远端转发，禁止 shell/PTY/本地转发/agent 转发。路由保留原鉴权、上传大小、禁缓存和禁止自动重试写请求；验货出库列表/打印资料继续交北京8001。数据库和业务文件不搬迁，Scheduler 单活位置不变。配置与回退见[办公室公网入口](../deploy/office-beijing-ingress.md)。
@@ -55,7 +58,7 @@ hair.leshine.work / video.leshine.work / outreach.leshine.work → 新加坡既�
 - 代码发布入口为 `deploy/deploy.bat`，先在候选 worktree 构建，再按 SHA-256 只传变化文件。共享数据库每轮核对一次目标版本，云节点不单独重复迁移。运行细节见 [部署说明](../deploy/README.md)。
 - Windows 桌面更新中心通过现有 SSH 连接办公室，辅助 worker 在 `.deploy_state/desktop/` 持久化逐次任务，并调用同一 `deploy.bat`。桌面仅承担自检、候选确认、进度和诊断，不持有生产数据库凭据、不创建远程 HTTP 管理服务。组件成功由运行中的部署器关联 run id 事件与退出码证明；客户端断线后重新读取原任务。构建及接入条件见 [桌面程序说明](../deploy/desktop/README.md)，实际接入状态以 handoff 为准。
 - COS 文件已按领域纳管；本机原件目录和缓存目录不能代表最终存储归属。在历史对象、登录/签名、后台处理及出货异步转存依赖验证前，不能把全部业务 API 无差别切到北京。
-- 办公室 NSSM 管理 `CommissionSystem`、`WhatsAppConnector`、`ArkOfficeBeijingTunnel`；新加坡保留 frps 和独立站点，已迁北京的 Agent/MCP/同步器不在新加坡重启。完整登记与未纳管项见 [platforms.json](../deploy/platforms.json)。
+- 办公室 NSSM 管理 `CommissionSystem`、`WhatsAppConnector`、`ArkOfficeBeijingTunnel`；新加坡保留 frps 和独立站点，Agent、中继、MCP 和配套同步按[北京迁移约定](../deploy/agent-cloud-migration.md)登记，已迁北京的服务不在新加坡重启。完整登记与未纳管项见 [platforms.json](../deploy/platforms.json)。
 - 已有主域、发型 `.cloud`、素材 `.cloud`、中继 `.work` 的证书已修复并接入自动续期；新加坡 PM/hair/video 沿用既有自动续期。
 - hair 的历史源码位置是亮哥 Downloads 下「莱莎16款明星发型静态网页」，本机两个历史路径均未找到。两机已上线副本仍保留，内容变更前需找回并确认权威源码。video 同样尚未纳入本仓库源码发布；不以任一临时副本冒充权威源。
 
@@ -264,7 +267,7 @@ frontend/src/
 | `whatsapp_event_sync` | interval | 配置项（默认 5 秒） | Baileys 变更事件消费（同受自动同步开关控制） |
 | `aftersales_notification_retry` | interval | 每 1 分钟 | 售后通知重试与卡住分析恢复 |
 | `festival_event_monitor` | interval | 每 1 分钟 | 采购节事件监控与日报 claim 恢复 |
-| `festival_daily_report` | cron | 每天 17:30 | 采购节日报 |
+| `festival_daily_report` | cron | 每天 17:00 | 采购节日报 |
 | `design_image_queue` | interval | 配置项（默认 10 秒） | 设计生图队列 |
 | `customer_image_queue` | interval | 配置项（默认 10 秒） | 客户生图队列 |
 | `customer_image_cleanup` | cron | 每天 03:30 | 客户生图保留期清理 |
@@ -363,9 +366,9 @@ Agent 生产：claim + lease + input_hash → 仅向所属任务/customer_id 追
 ### WhatsApp Connector（WhatsApp 同步）
 
 - **集成方式**：方舟调用 Connector 内网 HTTP API
-- **Connector 地址**：`WHATSAPP_CONNECTOR_BASE_URL`（如 `http://localhost:3100`）
+- **Connector 地址**：`WHATSAPP_CONNECTOR_BASE_URL`（服务默认监听 `http://127.0.0.1:8787`，实际值按部署配置）
 - **认证**：`WHATSAPP_CONNECTOR_API_KEY`
-- **详细契约**：[requirements/2026-06-16-whatsapp-connector-contract.md](requirements/2026-06-16-whatsapp-connector-contract.md)
+- **详细契约**：[Connector 当前配置与接口](../services/whatsapp-connector/README.md)、[Baileys 实施范围](requirements/2026-10-13-whatsapp-baileys.md)；旧 6 月契约仅用于历史追溯。
 
 ### OKKI 开放平台（订单推送，2026-07-13 推单已落地）
 

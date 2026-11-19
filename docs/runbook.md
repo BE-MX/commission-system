@@ -1,6 +1,8 @@
 # 莱莎方舟平台 运维手册
 
-## WhatsApp AI消息助手启用与排查（本地候选）
+本文维护运维方法与历史故障依据；发布、迁移和恢复操作统一从[部署说明](../deploy/README.md)进入，运行版本及尚未完成的业务验收见[交接文档](handoff.md)。旧日期段落中的现场状态仅代表当时核验。
+
+## WhatsApp AI消息助手启用与排查
 
 1. 集成并核对迁移链后，由正式部署入口升级到包含193的唯一head；不要开发机升级共享库。
 2. 启动种子创建独立 `whatsapp_message_assistant`（已有同名预设不覆盖），复用已启用Direct OpenAI供应商/模型；没有供应商则不创建。管理员可在AI设置配置独立预设，Direct Anthropic也受分析器支持。可配置 `WHATSAPP_ASSISTANT_PRESET_NAME`；参数需是标准文本参数，默认max_tokens4096。`WHATSAPP_ASSISTANT_TIMEOUT_SECONDS=900`。
@@ -11,7 +13,7 @@
 
 开发已使用隔离库与合成模型/API验证；实际供应商输出质量、费用和真实公司账号仍需授权后的验收。不得把合成测试通过当作真实模型效果验证。
 
-## WhatsApp Baileys 候选运行与回退（2026-10-13，未部署）
+## WhatsApp Baileys 运行与回退（2026-10-13）
 
 先核对 [Connector 配置与恢复](../services/whatsapp-connector/README.md) 和 [实施范围](requirements/2026-10-13-whatsapp-baileys.md)。目标 Node ≥22.13、rc14 原生依赖、单主机本地持久磁盘、外部密钥和 Ark 回调身份须现场核验。生产仅走 deploy/deploy.bat；本次没有改变服务位置或真实配置。
 
@@ -21,7 +23,7 @@
 
 解绑先撤销业务读写，再发送注销请求并清除本地认证；返回仍是 remote_unconfirmed。持有人手机核对设备移除后使用单独确认，记录 owner_confirmed。业务历史与客户不可变审计资料的保留/销毁另有范围授权，不级联删除。
 
-回退保留新消息、来源映射和 checkpoint，不倒退水位、不删除重复候选、不 downgrade/drop 新结构。恢复旧发布需用旧代码、旧锁文件与原独立认证；若旧设备已注销或认证失效，需重扫码。尚未执行真实切换、备份恢复、生产迁移或部署演练。
+回退保留新消息、来源映射和 checkpoint，不倒退水位、不删除重复候选、不 downgrade/drop 新结构。恢复旧发布需用旧代码、旧锁文件与原独立认证；若旧设备已注销或认证失效，需重扫码。代码和迁移已有[生产发布记录](reports/2026-10-13-full-main-production-release.md)；真实账号重新绑定、历史覆盖及备份恢复仍需对应验收，不能用服务健康检查代替。
 
 ## 回款自动恢复与索引（175）
 
@@ -1078,7 +1080,9 @@ grep "job completed" logs\service.log | tail -20
 - **技术支持**：内部技术支持群
 - **紧急联系**：<电话>
 
-## 云端展会实例（http://154.8.205.162，2026-07-22 搭建；leshine.cloud 当天被未备案拦截已弃用）
+## 云端展会实例（北京 154.8.205.162 / leshine.cloud；2026-07-22 为展会搭建，现为生产后端 + Agent 宿主）
+
+> 节名沿用历史叫法（代码注释按此名引用，勿改名）。2026-07-22 当天 `leshine.cloud` 因未备案被拦的记录已过时：2026-09-05 起备案通过、正式启用。**发布只走 `deploy\deploy.bat`**，它同时切办公室与北京后端及北京静态站；早期「开发机 `git push cloud` → 服务器 git pull」的手工链路已作废，见本节末尾「布局与发布」。
 
 北京轻量服务器（文档规格 4C8G/12M，Ubuntu 24.04）运行方舟后端及静态站。2026-09-05 用户确认 `leshine.cloud` 备案通过，已验证 `leshine.cloud`、`www.leshine.cloud`、`hair.leshine.cloud`、`media.leshine.cloud` 标准 HTTPS 正常。主域、发型站及素材站已改为 Let's Encrypt 自动续期，当前证书到期日 2026-12-04；证书位于 `/etc/letsencrypt/live/<域名>/`，续期后执行 Nginx 配置检查与 reload。旧 IP 入口仍服务已有终端，但新入口优先使用正式域名。新加坡 `.work` 保留既有二维码与海外入口。数据库继续共享北京 RDS，业务原件尚未迁移：办公室文件仍归办公室，北京客户素材仍在 `/data/customer-media`。北京 `.env` 中 `SCHEDULER_ENABLED=false`、`WHATSAPP_AUTO_SYNC_ENABLED=false`、`TFT_SERVICE_ENABLED=false`；不得随此发布把后台任务迁成双活。具体已上线与待办见 [本次实施记录](requirements/2026-09-05-deployment-adjustment-implementation.md)。
 
@@ -1127,7 +1131,7 @@ grep "job completed" logs\service.log | tail -20
   - **为什么敢长缓存**：发型/发色图文件名是 uuid，内容变即文件名变（内容寻址）；场景图是固定名，靠后端 `scene_image_url()` 拼的 `?v=<mtime>` 破缓存。
   - **为什么排除 results/**：效果图一客一张、跨客户零复用，长缓存拿不到收益，却会把客户照片留在共享平板的 WebView 磁盘缓存里——收益为零、隐私成本非零。
   - 改前备份在 `~/nginx-backup-20260801/`。注意响应里会出现**两行 `Cache-Control`**（`expires` 指令与 `add_header` 各发一行，按 RFC 等价于逗号拼接，浏览器正常处理）——这是本文件 `/assets/` 既有写法的同款行为，不是故障。
-  - ⚠️ 只改了 IP 入口这份配置。`ark-cloud.conf`（域名入口）的 `/uploads/` 仍无缓存；域名当前无流量，等 leshine.work 备案启用前需同步。
+  - ⚠️ 当时只改了 IP 入口这份配置，`ark-cloud.conf`（域名入口）的 `/uploads/` 无缓存。2026-09-05 起 `leshine.cloud` 已承载正式流量，域名入口是否已同步缓存规则未核实，改该配置前先在服务器上查看。
 
 - **展位平板专用 HTTPS 入口（2026-07-24 加）**：`https://154.8.205.162/expo/kiosk`。IP 申请不到 CA 证书，
   用 10 年自签证书 `/etc/nginx/ssl/expo-ip.{crt,key}`（CN=154.8.205.162，含 IP SAN，2036-07-21 到期），
@@ -1257,9 +1261,11 @@ grep "job completed" logs\service.log | tail -20
   - 待取照片目录（`uploads/expo/pending/`）**没有挂调度器清理**——发码（`POST /kiosk/upload-ticket`）与确认
     （`POST /sessions`）两条路径各机会式扫一次、删超过 2 小时的文件，这是本机 `SCHEDULER_ENABLED=false`
     （防与办公室实例定时任务双跑）下刻意的设计，不是遗漏
-- 布局：代码 `/home/ubuntu/commission-system`（clone 自本机 bare 仓库 `/home/ubuntu/repo.git`）；前端 `/var/www/ark-dist`；日志 `logs/service.log`
-- 服务：`sudo systemctl status|restart ark-backend`（uvicorn 单 worker，127.0.0.1:8001，nginx 80 反代）
-- **部署更新（不走 GitHub）**：开发机 `git push cloud main`（remote `cloud` = ssh bare 仓库）→ `ssh ubuntu@154.8.205.162 "cd ~/commission-system && git pull && sudo systemctl restart ark-backend"`；前端变更时开发机 `npm run build` 后 `tar czf - dist | ssh ubuntu@154.8.205.162 "cd /tmp && tar xzf - && sudo rsync -a --delete dist/ /var/www/ark-dist/ && rm -rf dist"`
+- **布局与发布（2026-11-09 按 deploy/README.md、deploy/platforms.json 更正）**：
+  - 服务 `ark-backend`（systemd，uvicorn 单 worker，127.0.0.1:8001，Nginx 反代）；`sudo systemctl status ark-backend` 可只读查看。主站静态目标 `/var/www/ark-dist`（`leshine.cloud`），素材门户、客户下单门户等其他北京目标以 `deploy/platforms.json` 为准。
+  - **发布只走办公室安装目录的 `deploy\deploy.bat`**（只动云端用 `--cloud-only --no-pull`，先 `--prepare-only` 预检）。它把缺失的 Git 对象传到北京 `repo.git` 的独立 `deploy/<SHA>` 引用，在候选目录准备依赖与制品，统一做一次 schema 检查，再切换北京后端和静态站并核验健康；失败按 `deploy/README.md` 的恢复规则处理。
+  - ⛔ 已作废、不要再用：开发机 `git push cloud main` → 服务器 `git pull && systemctl restart ark-backend`，以及手工 `tar | rsync --delete` 覆盖 `/var/www/ark-dist`。这条旧链路绕过 schema 检查、制品校验和回滚，也会破坏受管的静态目录符号链接与版本保留。
+  - 早期手工阶段代码在 `/home/ubuntu/commission-system`，日志 `logs/service.log`；现行运行目录与日志位置以部署回执和 `deploy/README.md` 为准。
 - 素材：`uploads/expo/`（wigs/hair_colors/scenes/results）2026-07-22 从开发机同步；**切流量前需与办公室生产核对增量**
 - **生图已切 TeamRouter 直连，隧道当晚即停用（2026-07-31 晚；2026-08-25 更新域名）**：云雾（wlai）的 gpt-image 模型 2026-07-31 24:00 起停止服务，生图 preset `expo_wig_composite` 当晚切到 **TeamRouter**（provider id=10）。当前官方 Base URL 为 `https://api.teamorouter.cn`；开发机直连 `/v1/models` 实测 0.6s，旧 `.com` 域名已出现直连超时。`backend/.env` 的 `AI_IMAGE_PROXY` 保持留空，隧道不参与生图链路（原值备份在 `backend/.env.bak-20260731`）。
   - **域名切换必须同窗完成**：代码白名单、共享 Provider `api_base`、办公室后端重启三者不可分步跨窗口；切换后立即从办公室与北京云实例分别验证 `/v1/models`，并各跑一条 generation/edit 探针。共享 Provider 先改而旧代码未重启时，设计工作台会暂时显示“未配置”；代码先发而 Provider 未改时同样会返回 503。
@@ -1280,7 +1286,7 @@ grep "job completed" logs\service.log | tail -20
 
 ## PM 项目资料协作站（pm.leshine.work）部署
 
-后端复用现有 frp 链路（本地 8002），**零新增进程/NSSM 服务**；前端独立静态站点。上线 checklist：
+后端复用现有 frp 链路（新加坡 frps 8002 → 办公室后端 8001），**零新增进程/NSSM 服务**；前端独立静态站点。上线 checklist：
 
 1. **DNS**：`pm.leshine.work` A 记录 → 腾讯云服务器 IP（DNSPod，权威 NS 为 source/daffodil.dnspod.net）
 2. **证书**：主站用的是腾讯云证书（`/etc/nginx/ssl/leshine.work_bundle.crt`），**不覆盖子域名**；PM 站用 Let's Encrypt（certbot 2.9.0 已装，2026-07-18），webroot 模式签发：
@@ -1386,8 +1392,8 @@ location 收归同一受管片段；每次执行都先生成
 - **摘要屏 AI 提示**：需在「AI 接入」后台创建预设 `festival_screen_tip`（system prompt 可空，模型任选），否则右下角走规则兜底文案（标"·规则播报"）；AI 生成每 10 分钟一次。
 - **事件留档与状态**：`ark_festival_events` 永久留档弹窗并记录钉钉投递结果，`ark_festival_states` 保存排名/里程碑/连击基线；首次上线只建当前基线，不补发历史弹框。事件发送用 15 分钟租约防并发，失败按 1/2/4/8/16/30 分钟退避重试。`?source=` 对账调试只读不改正式基线，正式切轨后新轨首次只建基线。不要只清事件表重跑，测试环境需要同时清空两表。
 - **采购节钉钉群**：在 `backend/.env` 配置群机器人 `FESTIVAL_DINGTALK_WEBHOOK_URL` 和加签密钥 `FESTIVAL_DINGTALK_WEBHOOK_SECRET`，刻意不复用 `DINGTALK_WEBHOOK_*` 告警群。图片通过 `SHORT_LINK_BASE_URL/uploads/festival/dingtalk/` 回源，必须保证主域名可从钉钉访问；若群机器人启用了关键词安全校验，关键词应包含“采购节”。
-- **17:30 战报与四榜截图**：`FESTIVAL_SCREENSHOT_BASE_URL` 必须是运行后端的服务器可访问、且同时托管 `/festival/` 与 `/api/` 的入口（办公室生产后端实际监听 `http://127.0.0.1:8001`；`8002` 是云端 frps 反代端口，不能写成本机截图入口）；需安装 Edge 或 Chrome，自动发现失败时配置 `FESTIVAL_BROWSER_EXECUTABLE`。任务先预检四个页面及对应 API，403/500/无数据不会误当成功；截图失败会释放日报 claim，分钟恢复任务持续重试；硬崩溃遗留的 sending claim 15 分钟后自动接管。
-- **任务核对**：服务启动日志应含 `festival_event_monitor`（每分钟）与 `festival_daily_report`（17:30）。测试机器人时先使用独立测试群，不要把生产 Webhook 写入代码或提交 `.env`。
+- **17:00 战报与四榜截图**：`FESTIVAL_SCREENSHOT_BASE_URL` 必须是运行后端的服务器可访问、且同时托管 `/festival/` 与 `/api/` 的入口（办公室生产后端实际监听 `http://127.0.0.1:8001`；`8002` 是云端 frps 反代端口，不能写成本机截图入口）；需安装 Edge 或 Chrome，自动发现失败时配置 `FESTIVAL_BROWSER_EXECUTABLE`。任务先预检四个页面及对应 API，403/500/无数据不会误当成功；截图失败会释放日报 claim，分钟恢复任务持续重试；硬崩溃遗留的 sending claim 15 分钟后自动接管。
+- **任务核对**：服务启动日志应含 `festival_event_monitor`（每分钟）与 `festival_daily_report`（17:00）。测试机器人时先使用独立测试群，不要把生产 Webhook 写入代码或提交 `.env`。
 - **大屏双轨切换**：`.env` 的 `FESTIVAL_DATA_SOURCE`（okki=小满同步保底轨 / ark=方舟发票主轨，主轨仅统计已推单发票、金额扣手续费、**不过滤订单类型**）。切轨前看 `GET /api/public/festival/reconcile?key=` 对账；注意保底轨过滤小满"定制品"而主轨全量计入，**推成"规格品"的发票产生的差异属正常预期**（2026-07-30 裁决保持现状），判据 = 连续 3 天无此类之外的差异再切；改配置需重启后端；建议自然日 0 点切。主轨前提=全员从方舟录单并推单。
 
 ## 设计部 AI 生图工作台上线与恢复
@@ -1623,6 +1629,8 @@ Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作�
 
 **历史上传 relay 与存储根（2026-08-14 修复「门户图片无法显示」；后续已演进为 COS）**：素材原件的唯一存放点是北京云 `/data/customer-media`（云端 `backend/.env` 已配 `CUSTOMER_MEDIA_STORAGE_ROOT=/data/customer-media`——修复前缺省值是 Windows 路径 `D:\WORKSOURCE\customer-media`，在 Linux 上被解析成后端工作目录下的相对目录，文件根本读不到）。为保证「上传落云、门户同机读取」，办公室入口（119.28.107.92 `leshine.conf`）把 `location ^~ /api/customer-media/` 整体反代到 `https://154.8.205.162`（自签证书故 `proxy_ssl_verify off`；501m body、`proxy_request_buffering off`、3600s 超时），北京侧 `ark-ip-ssl.conf` 为同前缀单独开 501m；内部上传/审核/预览与门户读取由此全部落到北京云 8001 一个后端。两台机的 nginx 备份在各自 home 目录 `*.bak-20260814`。排障口诀：门户图裂先看北京云 `storage_for('local').root` 是否为 `/data/customer-media`，再看 `location` 是否命中 relay（北京 access.log 里来源 IP 应是 119.28.107.92）。
 
+**视频播放版依赖 ffmpeg（2026-10-19）**：接收 `/api/customer-media/batches/{id}/assets` 的实例必须安装 ffmpeg/ffprobe（Ubuntu `apt-get install -y ffmpeg`，需含 libx264）。上传视频时同步转 H.264（已 H.264 只重封装）并抽首帧海报；转码失败该视频上传直接返回 400，不会出现“上传成功但客户黑屏”。图片不受影响。ffmpeg 缺失时先装再重启不是必须的（每次调用现查 PATH），但正在上传的请求会失败。历史视频用 `cd /home/ubuntu/commission-system/backend && .venv/bin/python -m scripts.backfill_customer_media_playback --apply` 回填，脚本默认 dry-run 且可重复执行；确认回填结果用 `--asset-id` 定点点检。原 COS 对象键以 `.../playback/`、`.../thumbnails/` 区分，原件仍在 `.../originals/`。
+
 ### 上线门禁
 
 1. 核对 `media.leshine.cloud` 的 DNS、80/443、有效证书及当前应用路由。2026-10-30 发布报告已记录素材域 HTTPS 200；这不是本轮实时检查，也不能替代登录态素材权限验收。2026-08 的 TLS 阻断只作历史故障依据。
@@ -1735,6 +1743,8 @@ journalctl -u leshine-ark-dsh-worker -n 200 --no-pager
 ## 关联单据同步待处理
 
 在订单发票编辑器顶部查看“关联单据同步结果”。pending继续同步，failed重试未完成步骤或保留结果结束；uncertain不重发，管理员先核对小满原单与半成品pending，原租约结束后填写依据人工结束。任务未结束时不要再次保存，也不要直接清数据库锁或删除任务。订单成功后若出库仍有差异，在出库单列表预览并同步，详见[invoice-linked-sync.md](invoice-linked-sync.md)与[outbound-invoice-sync.md](outbound-invoice-sync.md)。
+
+订单列表的 `sync_uncertain` 行另有「处理待核对」（`invoice:admin`）；行内订单状态区的「核对关联单据」仅在存在取消流程时出现。`failed` 任务仍占用关联锁，须通过编辑器顶部重试或保留结果结束后才能重新保存。
 
 ## 云存储初始复制与切换约束
 

@@ -1,5 +1,7 @@
 # WhatsApp Connector Contract
 
+> 历史契约（2026-06-16）。当前 Connector 已改用 Baileys，接口与配置以[当前服务说明](../../services/whatsapp-connector/README.md)和[2026-10-13 实施约定](2026-10-13-whatsapp-baileys.md)为准。本文保留旧协议背景，不作为新增实现或恢复旧接口的依据。
+
 ## 业务目标
 
 方舟平台只负责展示绑定状态、触发同步、存储可检索的 WhatsApp 会话与消息投影。WhatsApp Web 登录态、扫码二维码生成、历史消息同步协议由独立 `whatsapp-connector` 服务负责，避免私有协议和长连接状态进入方舟主进程。
