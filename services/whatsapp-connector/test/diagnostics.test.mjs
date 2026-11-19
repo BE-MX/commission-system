@@ -26,6 +26,22 @@ test('diagnostics allow only fixed fields and use Beijing time across midnight',
   assert.equal(invalid.classification, 'other')
 })
 
+test('ingestion capacity diagnostics retain numeric measurements and omit provider payloads', () => {
+  const lines = []
+  const diagnostic = createDiagnostics(line => lines.push(line))
+  diagnostic('ingest_capacity', 'PRIVATE_ACCOUNT', { threshold: 'history_batch_bytes', bytes: 1025, limit: 1024,
+    payload: { body: 'PRIVATE_BODY', token: 'PRIVATE_KEY' } })
+  diagnostic('ingest_capacity', 'PRIVATE_ACCOUNT', { threshold: 'PRIVATE_VALUE', bytes: 'PRIVATE_BYTES', limit: -1 })
+  const [valid, invalid] = lines.map(line => JSON.parse(line))
+  assert.equal(valid.threshold, 'history_batch_bytes')
+  assert.equal(valid.bytes, 1025)
+  assert.equal(valid.limit, 1024)
+  assert.equal(invalid.threshold, 'other')
+  assert.equal(invalid.bytes, null)
+  assert.equal(invalid.limit, null)
+  assert.equal(lines.join('').includes('PRIVATE_'), false)
+})
+
 test('authorization failures distinguish timeout, transport, HTTP, malformed JSON and denial without logging errors', async () => {
   const cases = [
     [async () => { throw Object.assign(new Error('PRIVATE_BODY'), { name: 'TimeoutError' }) }, 'timeout', 'request', null],

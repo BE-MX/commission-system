@@ -17,7 +17,7 @@ npm start
 
 缺失 Bearer key、加密 key、Ark 地址或配置其他 provider 会阻断启动。默认仅监听 `127.0.0.1:8787`，`/health` 也要 Bearer；跨主机内网访问须显式配置 host 并使用受控网络/TLS。所有接口返回 `Cache-Control: no-store`。
 
-测试只生成临时目录中的合成账户、凭据与事件；注入假 socket，不连接 WhatsApp。包含真实双进程争抢、进程崩溃/租约到期/接管、BufferJSON 与 protobuf 还原、SQLite 事务回滚、CAS、防旧写入、分页回放、编辑/撤回/延迟历史、授权失效、队列/磁盘保护和实际 Rust/WASM bridge 执行。通过本地测试不代表已经验证真实账号登录、网络故障恢复或生产吞吐量。
+测试只生成临时目录中的合成账户、凭据与事件；注入假 socket，不连接 WhatsApp。包含真实双进程争抢、进程崩溃/租约到期/接管、BufferJSON 与 protobuf 还原、SQLite 事务回滚、CAS、防旧写入、分页回放、编辑/撤回/延迟历史、授权失效、事件容量与磁盘保护和实际 Rust/WASM bridge 执行。通过本地测试不代表已经验证真实账号登录、网络故障恢复或生产吞吐量。
 
 ## 状态与单活边界
 
@@ -52,7 +52,7 @@ Ark **先提交稳定 account UID、原 owner、provider、consent 与 generatio
 |---|---|
 | `GET /internal/v2/accounts/:uid` | 安全元数据，可检查 paused/revoked 状态，无凭据/二维码/正文 |
 | `POST /internal/v2/accounts/:uid/pause` | 停止采集、定时器、监听器与 socket，保留合法凭据 |
-| `POST /internal/v2/accounts/:uid/reauthorize` | 根据最新 Ark 回调更新同意并恢复正常连接；保留有效已注册凭据。缺凭据返回 `rebind_required`，由用户显式重新绑定 |
+| `POST /internal/v2/accounts/:uid/reauthorize` | 根据最新 Ark 回调更新同意并尝试恢复连接，保留现有配对凭据（含 QR 登录时 `registered=false` 但已保存的设备身份）。缺凭据返回 `rebind_required`，由用户显式重新绑定 |
 | `POST /internal/v1/accounts/:uid/revoke` | 先停止业务事件和授权轮询，再使用受控 socket 尝试 logout，之后清除本地凭据 |
 | `GET /internal/v2/changes?account_uid=&cursor=&limit=` | `{items:[{sequence,kind,payload,session_generation,consent_version}],next_cursor,has_more,account}` |
 | `GET /internal/v1/conversations?account_uid=&cursor=&limit=` | 持久化会话变更页，items 是规范化会话对象 |
@@ -78,7 +78,9 @@ rc14 的 `logout()` 只等待 socket 写入，没有远端 ACK，且没有 `cred
 
 account 包含 provider、session_generation、consent_version、status、connection_state、sync_state、history_state、last_error_code、needs_user_action、revoke_state；`coverage` 包含 earliest_message_at/latest_message_at/last_ingest_at/gap_reason。`isLatest`、progress=100 或 `messaging-history.status=complete` 只表示某个批次/阶段结束，**不证明取到了账号全部历史**，history_state 保持 partial。
 
-队列上限 64 个事件、合计 16 MiB、单事件 8 MiB；超过限额、磁盘/记录上限、存储失败都会关闭 socket，记录 protected pause 和明确 gap，不能静默丢弃后继续声称同步完整。磁盘上限默认 1 GiB；提交前读取事务内 page_count/page_size，保守预留 WAL frame 与 checkpoint 扩展空间，不只检查尚未提交的文件大小；关闭 cache_spill 防止失败批次先溢写到 WAL。可用正文容量会小于磁盘上限，需预留维护空间。记录上限覆盖 change/inbox/entity/auth，达到上限不自动删除旧业务数据。需要操作员按批准的保留政策维护或扩容；当前版本没有自动 retention 工具。
+事件按发出顺序同步投影，每个事件在一个 SQLite 事务中提交。普通事件上限 8 MiB；`messaging-history.set` 逐条计算序列化大小，单条上限 8 MiB、整批累计上限 64 MiB。超过事件、磁盘或记录上限，以及存储失败时，连接器关闭 socket、记录保护性暂停和同步缺口。容量日志 `ingest_capacity` 只记录触发的阈值、已测字节数和上限。
+
+磁盘上限默认 1 GiB。提交前读取事务内 page_count/page_size，为 WAL frame 与 checkpoint 扩展预留空间，并关闭 cache_spill 防止失败批次先溢写到 WAL。可用正文容量小于磁盘上限，需预留维护空间。记录上限覆盖 change/inbox/entity/auth，由操作员按批准的保留政策维护或扩容。
 
 临时断线和 restartRequired 采用有抖动的有界重连；loggedOut 清除无效凭据并要求 rebind；connectionReplaced 进入 blocked；未知原因、auth/CAS 失败保护暂停。正常重启加载已有注册凭据，不强迫重新扫码。暂停/撤销/关闭会取消重连和授权 timers，移除旧 socket listeners。
 

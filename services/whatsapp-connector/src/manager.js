@@ -9,7 +9,31 @@ import { diagnostic as defaultDiagnostic } from './diagnostics.js'
 
 const INGEST_EVENTS = ['messages.upsert', 'messages.update', 'messages.delete', 'messaging-history.set',
   'messaging-history.status', 'chats.upsert', 'chats.update', 'chats.delete', 'contacts.upsert', 'contacts.update', 'lid-mapping.update']
+const HISTORY_COLLECTIONS = ['lidPnMappings', 'contacts', 'chats', 'messages']
 const logger = pino({ level: 'silent' }) // Upstream debug records can contain keys/bodies/QR; never enable them here.
+
+const serializedBytes = value => Buffer.byteLength(JSON.stringify(value, BufferJSON.replacer))
+// Baileys consolidates history records into one event. Measure records individually
+// to avoid materializing a second copy of the entire batch as a JSON string.
+function measureEvent(kind, value, maxEventBytes, maxHistoryBatchBytes) {
+  if (kind !== 'messaging-history.set') {
+    const bytes = serializedBytes(value)
+    return { bytes, limit: maxEventBytes, threshold: 'event_bytes' }
+  }
+  let bytes = 0
+  for (const field of HISTORY_COLLECTIONS) {
+    for (const record of value[field] || []) {
+      const recordBytes = serializedBytes(record)
+      if (recordBytes > maxEventBytes) return { bytes: recordBytes, limit: maxEventBytes, threshold: 'history_record_bytes' }
+      bytes += recordBytes
+      if (bytes > maxHistoryBatchBytes) return { bytes, limit: maxHistoryBatchBytes, threshold: 'history_batch_bytes' }
+    }
+  }
+  return { bytes, limit: maxHistoryBatchBytes, threshold: 'history_batch_bytes' }
+}
+
+// Successful QR pairing in Baileys rc14 stores me.id without setting registered.
+const hasLinkedCredentials = credentials => credentials?.registered === true || Boolean(credentials?.me?.id)
 
 export function classifyDisconnect(code) {
   if (code === DisconnectReason.loggedOut) return 'reauth_required'
@@ -50,13 +74,13 @@ export function backendAuthorizer(baseUrl, apiKey, fetcher = fetch, diagnostic =
 
 export class Manager {
   constructor(store, { authorize, socketFactory = makeWASocket, encodeQR = qrcode.toDataURL,
-    authInterval = 10000, leaseTTL = 30000, maxQueueEvents = 64, maxQueueBytes = 16 * 1024 ** 2,
-    maxEventBytes = 8 * 1024 ** 2, maxRetries = 5, retryBase = 1000, random = Math.random, agent, dispatcher,
+    authInterval = 10000, leaseTTL = 30000, maxEventBytes = 8 * 1024 ** 2, maxHistoryBatchBytes = 64 * 1024 ** 2,
+    maxRetries = 5, retryBase = 1000, random = Math.random, agent, dispatcher,
     resumeBase = 5000, resumeMax = 300000, diagnostic = defaultDiagnostic } = {}) {
     if (!authorize) throw error('authorizer_required', 500)
     if (authInterval > 15000 || authInterval < 20 || leaseTTL <= authInterval * 2) throw error('invalid_lease_interval', 500)
     Object.assign(this, { store, authorize, socketFactory, encodeQR, authInterval, leaseTTL,
-      maxQueueEvents, maxQueueBytes, maxEventBytes, maxRetries, retryBase, random, agent, dispatcher,
+      maxEventBytes, maxHistoryBatchBytes, maxRetries, retryBase, random, agent, dispatcher,
       resumeBase, resumeMax, diagnostic })
     // Consecutive unavailable checks tolerated while the lease is still valid; renewal stops meanwhile,
     // so the fence expires (and collection stops) no later than one lease TTL after the last success.
@@ -169,8 +193,8 @@ export class Manager {
     const lease = this.store.acquire(uid, this.holder, this.leaseTTL)
     session ||= [...this.sessions.values()].filter(value => value.account_uid === uid && value.session_generation === account.session_generation
       && value.consent_version === account.consent_version).sort((a, b) => a.created_at.localeCompare(b.created_at)).at(-1) || null
-    const entry = { uid, lease, session, freshBind, stopped: false, collecting: true, queue: Promise.resolve(),
-      queueCount: 0, queueBytes: 0, retries: 0, authFailures: 0, listeners: [], socket: null, qr: null, validating: false, epoch: 0 }
+    const entry = { uid, lease, session, freshBind, stopped: false, collecting: true,
+      retries: 0, authFailures: 0, listeners: [], socket: null, qr: null, validating: false, epoch: 0 }
     this.entries.set(uid, entry)
     try {
       this.store.patchAccount(lease, { status: freshBind ? 'binding' : account.status,
@@ -192,7 +216,7 @@ export class Manager {
     if (entry.stopped) return
     this.store.renew(entry.lease)
     const credentials = this.store.authGet(entry.lease, 'creds', ['current']).current?.value
-    if (!entry.freshBind && (credentials?.registered || credentials?.me?.id)) {
+    if (!entry.freshBind && hasLinkedCredentials(credentials)) {
       await this.projector.refreshMetadata(entry.lease, () => this.authorized(entry.uid, this.store.account(entry.uid)))
     }
     if (entry.stopped) return
@@ -238,21 +262,22 @@ export class Manager {
       } catch (err) { this.protect(entry, err.code || 'auth_store_failed') }
     })
     on('connection.update', update => { void this.connection(entry, update, epoch).catch(err => this.protect(entry, err.code || 'connection_update_failed')) })
-    for (const name of INGEST_EVENTS) on(name, value => this.enqueue(entry, name, value))
+    for (const name of INGEST_EVENTS) on(name, value => this.ingest(entry, name, value))
     } finally { entry.opening = false }
   }
-  enqueue(entry, kind, value) {
+  ingest(entry, kind, value) {
     if (entry.stopped || !entry.collecting) return
-    let bytes
-    try { bytes = Buffer.byteLength(JSON.stringify(value, BufferJSON.replacer)) }
+    let size
+    try { size = measureEvent(kind, value, this.maxEventBytes, this.maxHistoryBatchBytes) }
     catch { this.protect(entry, 'invalid_event'); return }
-    if (bytes > this.maxEventBytes || entry.queueCount >= this.maxQueueEvents || entry.queueBytes + bytes > this.maxQueueBytes) {
+    if (size.bytes > size.limit) {
+      this.diagnostic('ingest_capacity', entry.uid, size)
       this.protect(entry, 'backpressure_gap'); return
     }
-    entry.queueCount++; entry.queueBytes += bytes
-    entry.queue = entry.queue.then(() => {
-      if (!entry.stopped && entry.collecting) this.projector.ingest(entry.lease, kind, value, randomUUID(), bytes)
-    }).catch(err => this.protect(entry, err.code || 'event_store_failed')).finally(() => { entry.queueCount--; entry.queueBytes -= bytes })
+    // SQLite projection is synchronous. Commit in emission order before Baileys can
+    // deliver another event, without building a second, deferred in-memory queue.
+    try { this.projector.ingest(entry.lease, kind, value, randomUUID(), size.bytes) }
+    catch (err) { this.protect(entry, err.code || 'event_store_failed') }
   }
   async checkAuthorization(entry) {
     if (entry.stopped || entry.validating) return
@@ -463,7 +488,7 @@ export class Manager {
       const lease = this.store.acquire(uid, this.holder, this.leaseTTL)
       try {
         const credentials = this.store.authGet(lease, 'creds', ['current']).current?.value
-        if (!credentials?.registered) {
+        if (!hasLinkedCredentials(credentials)) {
           this.store.patchAccount(lease, { status: 'reconnect_required', connection_state: 'reauth_required',
             sync_state: 'paused', needs_user_action: true, last_error_code: 'rebind_required' })
           return this.metadata(this.store.account(uid))

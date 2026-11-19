@@ -88,24 +88,70 @@ test('explicit pause cancels a scheduled automatic resume', async t => {
   assert.equal(store.account('account_a').status, 'paused')
 })
 
-test('bounded memory queue and disk failure cause visible protected pause, no bodies logged', async t => {
-  const { manager, store, sockets } = fakeManager(t, { maxQueueEvents: 1 })
-  const entry = await manager.start('account_a')
-  sockets[0].ev.emit('messages.upsert', { messages: [message('queued')] })
-  sockets[0].ev.emit('messages.upsert', { messages: [message('excess')] })
-  await entry.queue
+test('a burst of 65 events is persisted in source order without a pending memory queue', async t => {
+  const { manager, store, sockets } = fakeManager(t)
+  await manager.start('account_a')
+  for (let i = 0; i < 65; i++) {
+    sockets[0].ev.emit('messages.upsert', { messages: [message(`burst-${i}`)] })
+  }
+  assert.equal(sockets[0].closed, false)
+  assert.deepEqual(store.feed('account_a', 0, 100, 'message').items.map(item => item.payload.external_message_id),
+    Array.from({ length: 65 }, (_, i) => `burst-${i}`))
+})
+
+test('the initial history batch can contain more than 8 MiB of provider metadata', async t => {
+  const { manager, store, sockets } = fakeManager(t)
+  await manager.start('account_a')
+  sockets[0].ev.emit('connection.update', { connection: 'open' })
+  const jpegThumbnail = Buffer.alloc(128 * 1024, 7)
+  const messages = Array.from({ length: 70 }, (_, i) => ({
+    ...message(`history-${i}`),
+    message: { imageMessage: { caption: `Synthetic caption ${i}`, jpegThumbnail } },
+  }))
+  sockets[0].ev.emit('messaging-history.set', { messages, isLatest: true, progress: 100 })
+  assert.equal(store.account('account_a').connection_state, 'connected')
+  assert.equal(store.account('account_a').history_state, 'partial')
+  assert.equal(store.account('account_a').history_batch_complete, true)
+  assert.equal(store.feed('account_a', 0, 100, 'message').items.length, messages.length)
+})
+
+test('an oversized synchronization record still pauses and preserves previously committed messages', async t => {
+  const events = []
+  const { manager, store, sockets } = fakeManager(t, { maxEventBytes: 4096, diagnostic: (...event) => events.push(event) })
+  await manager.start('account_a')
+  sockets[0].ev.emit('messages.upsert', { messages: [message('accepted')] })
+  sockets[0].ev.emit('messaging-history.set', { messages: [message('excess', 'synthetic oversized text '.repeat(300))] })
   assert.equal(store.account('account_a').last_error_code, 'backpressure_gap')
   assert.equal(store.account('account_a').sync_state, 'paused')
-  assert.equal(store.entities('account_a', 'message').length, 0)
+  assert.deepEqual(store.entities('account_a', 'message').map(m => m.external_message_id), ['accepted'])
   assert.equal(sockets[0].closed, true)
+  assert.equal(events.find(([name]) => name === 'ingest_capacity')?.[2].threshold, 'history_record_bytes')
+  assert.equal(JSON.stringify(events).includes('synthetic oversized text'), false)
+})
+
+test('oversized live events and oversized history batches stop before projecting any record', async t => {
+  for (const [kind, threshold] of [['messages.upsert', 'event_bytes'], ['messaging-history.set', 'history_batch_bytes']]) {
+    const events = []
+    const { manager, store, sockets } = fakeManager(t, { maxEventBytes: 4096, maxHistoryBatchBytes: 4096,
+      diagnostic: (...event) => events.push(event) })
+    await manager.start('account_a')
+    const messages = [message('one', 'a'.repeat(2500)), message('two', 'b'.repeat(2500))]
+    sockets[0].ev.emit(kind, { messages, isLatest: true })
+    assert.equal(store.account('account_a').last_error_code, 'backpressure_gap')
+    assert.equal(store.account('account_a').history_state, 'not_started')
+    assert.equal(store.entities('account_a', 'message').length, 0)
+    const [, , size] = events.find(([name]) => name === 'ingest_capacity') || []
+    assert.equal(size?.threshold, threshold)
+    assert.equal(size?.limit, 4096)
+    assert.ok(size.bytes > size.limit)
+  }
 })
 
 test('disk quota persists a safe gap marker while rolling back all projected event content', async t => {
   const { manager, store, sockets } = fakeManager(t)
-  const entry = await manager.start('account_a')
+  await manager.start('account_a')
   store.maxBytes = 1024
   sockets[0].ev.emit('messages.upsert', { messages: [message('quota')] })
-  await entry.queue
   assert.equal(store.account('account_a').last_error_code, 'disk_capacity')
   assert.equal(store.entities('account_a', 'message').length, 0)
 })
@@ -256,10 +302,9 @@ test('offline or failed logout retains remote_unconfirmed and requires phone-sid
 
 test('reauthorization changes consent while preserving registered auth and republishes only current consent', async t => {
   const { manager, store, sockets, setAuthorization } = fakeManager(t)
-  const entry = await manager.start('account_a')
+  await manager.start('account_a')
   sockets[0].ev.emit('creds.update', { registered: true })
   sockets[0].ev.emit('messages.upsert', { messages: [message('consented')] })
-  await entry.queue
   const privateKey = sockets[0].config.auth.creds.noiseKey.private
   await manager.pause('account_a')
   assert.throws(() => store.feed('account_a'), /account_paused/)
@@ -315,10 +360,9 @@ test('an async QR callback from an old socket cannot mutate the reconnecting soc
 
 test('failed republishing leaves consent-changing account protected and cache inaccessible', async t => {
   const { manager, store, sockets, setAuthorization } = fakeManager(t)
-  const entry = await manager.start('account_a')
+  await manager.start('account_a')
   sockets[0].ev.emit('creds.update', { registered: true })
   sockets[0].ev.emit('messages.upsert', { messages: [message('cache')] })
-  await entry.queue
   await manager.pause('account_a')
   setAuthorization({ ...authorization, consent_version: '2' })
   store.maxRows = 1

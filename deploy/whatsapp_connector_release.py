@@ -13,9 +13,13 @@ import urllib.request
 
 
 ALLOWED = {
+    'services/whatsapp-connector/src/diagnostics.js',
     'services/whatsapp-connector/src/manager.js',
     'services/whatsapp-connector/src/projection.js',
     'services/whatsapp-connector/test/contact-metadata.test.mjs',
+    'services/whatsapp-connector/test/diagnostics.test.mjs',
+    'services/whatsapp-connector/test/http.test.mjs',
+    'services/whatsapp-connector/test/manager.test.mjs',
     'services/whatsapp-connector/README.md',
     'docs/handoff.md',
     'docs/reports/2026-11-14-whatsapp-contact-metadata.md',
@@ -36,7 +40,7 @@ def validate_args(args):
 
 def validate_changes(changes):
     if not changes or set(changes) - ALLOWED:
-        raise RuntimeError('Connector-only candidate contains changes outside the reviewed metadata repair')
+        raise RuntimeError('Connector-only candidate contains changes outside the reviewed connector release scope')
     if not any(name.startswith('services/whatsapp-connector/src/') for name in changes):
         raise RuntimeError('Connector-only candidate has no connector runtime change')
 
