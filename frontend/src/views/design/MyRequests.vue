@@ -93,6 +93,9 @@
           <GlassButton variant="link" @click="toggleDetail(row)">{{ row.request_no }}</GlassButton>
         </template>
       </el-table-column>
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('assigned-designer')" prop="assigned_designer_name" label="分配设计师" min-width="128" max-width="180" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.assigned_designer_name || '—' }}</template>
+      </el-table-column>
       <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="100" max-width="140" show-overflow-tooltip />
       <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="140" max-width="210" show-overflow-tooltip />
       <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-level')" prop="customer_level" label="客户等级" min-width="100" max-width="140">
@@ -243,6 +246,7 @@ const orderSort = useTableSort()
 // 列配置数组：TableTools 列显隐的数据源（操作列不进配置）
 const columnDefs = [
   { key: 'request-no', label: '预约编号' },
+  { key: 'assigned-designer', label: '分配设计师' },
   { key: 'salesperson', label: '业务员' },
   { key: 'customer-name', label: '客户名称' },
   { key: 'customer-level', label: '客户等级' },

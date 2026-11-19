@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from sqlalchemy import func
+from sqlalchemy import func, select
 from datetime import date, datetime
 from app.core.time import beijing_now
 from pathlib import Path
@@ -184,8 +184,23 @@ def list_requests(
         from datetime import date as _date
         query = query.filter(DesignScheduleRequest.expect_start_date <= _date.fromisoformat(expect_end_date))
 
+    total = query.count()
+    # Rescheduling updates the task's designer, while legacy requests may only have an assignment on the request.
+    task_designer_id = (
+        select(DesignScheduleTask.designer_id)
+        .where(DesignScheduleTask.request_id == DesignScheduleRequest.id)
+        .order_by(DesignScheduleTask.id.desc())
+        .limit(1)
+        .correlate(DesignScheduleRequest)
+        .scalar_subquery()
+    )
+    query = query.outerjoin(
+        DesignDesigner,
+        DesignDesigner.id == func.coalesce(task_designer_id, DesignScheduleRequest.assigned_designer_id),
+    )
     SORT_MAP = {
         "request_no": DesignScheduleRequest.request_no,
+        "assigned_designer_name": DesignDesigner.name,
         "customer_name": DesignScheduleRequest.customer_name,
         "salesperson_name": DesignScheduleRequest.salesperson_name,
         "expect_start_date": DesignScheduleRequest.expect_start_date,
@@ -201,8 +216,7 @@ def list_requests(
     query = apply_list_sort(query, sort_field, sort_order, SORT_MAP,
         default=(DesignScheduleRequest.created_at.desc(),), tie_breakers=(DesignScheduleRequest.id.asc(),))
 
-    total = query.count()
-    items = query.offset(
+    items = query.add_columns(DesignDesigner.name).offset(
         (page - 1) * page_size
     ).limit(page_size).all()
 
@@ -230,12 +244,13 @@ def list_requests(
                     "status": r.status,
                     "conflict_detail": r.conflict_detail,
                     "assigned_designer_id": r.assigned_designer_id,
+                    "assigned_designer_name": assigned_designer_name,
                     "props_requirement": r.props_requirement,
                     "preferred_designer_id": r.preferred_designer_id,
                     "created_at": r.created_at.isoformat() if r.created_at else None,
                     "updated_at": r.updated_at.isoformat() if r.updated_at else None,
                 }
-                for r in items
+                for r, assigned_designer_name in items
             ],
         },
     }

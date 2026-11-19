@@ -10,6 +10,7 @@ from app.ai import log_service
 from app.auth import admin_router
 from app.color import blend_service, swatch_service
 from app.design import router as design_router
+from app.design.models import DesignDesigner, DesignScheduleRequest, DesignScheduleTask
 from app.governance import concept_service
 from app.tracking import shipment_service
 from app.training import service as training_service
@@ -45,6 +46,46 @@ def test_endpoint_sort_fields_compile_and_execute_on_empty_sqlite(db, fn, fields
     for field in fields.split():
         for direction in ("asc", "desc"):
             call_endpoint(fn, db, sort_field=field, sort_order=direction, **args)
+
+
+def test_design_requests_sort_by_current_assigned_designer_before_pagination(db):
+    original = DesignDesigner(name="Zoe")
+    current = DesignDesigner(name="Ada", is_active=False)
+    db.add_all([original, current])
+    db.flush()
+
+    def add_request(number, **values):
+        request = DesignScheduleRequest(
+            request_no=number, customer_name="Customer", salesperson_id=1,
+            salesperson_name="Sales", shoot_type="photo",
+            expect_start_date=date(2026, 11, 19), expect_end_date=date(2026, 11, 19),
+            **values,
+        )
+        db.add(request)
+        return request
+
+    add_request("unassigned", preferred_designer_id=original.id)
+    add_request("legacy", assigned_designer_id=original.id)
+    reassigned = add_request("reassigned", assigned_designer_id=original.id)
+    db.flush()
+    db.add_all([
+        DesignScheduleTask(request_id=reassigned.id, task_no="earlier-task", designer_id=original.id),
+        DesignScheduleTask(request_id=reassigned.id, task_no="latest-task", designer_id=current.id),
+    ])
+    db.flush()
+
+    for direction, ordered in (
+        ("asc", [("reassigned", "Ada"), ("legacy", "Zoe"), ("unassigned", None)]),
+        ("desc", [("legacy", "Zoe"), ("reassigned", "Ada"), ("unassigned", None)]),
+    ):
+        for page, expected in enumerate(ordered, start=1):
+            response = call_endpoint(
+                design_router.list_requests, db, _user={}, page=page, page_size=1,
+                sort_field="assigned_designer_name", sort_order=direction,
+            )["data"]
+            assert response["total"] == 3
+            item, = response["items"]
+            assert (item["request_no"], item["assigned_designer_name"]) == expected
 
 
 def test_training_full_result_sort_numeric_nulls_ties_and_tag_filter(db):

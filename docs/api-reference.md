@@ -2031,7 +2031,9 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 新版和旧版发票表单共用客户选择器，按 `company_id` 归组展示客户名称、国家和客户编号；联系人缩进显示，同名客户不合并，分页跨页追加后同一客户归为一组。底部按当前已加载的独立客户/联系人分别计数，不再把4个入口称为4个客户。明确失效时，在本次选择器会话中直接隐藏该客户及其全部联系人，底部仅统计可见项；重新搜索或加载同ID不会回流；网络错误保留原选择并允许重新选择重试。只在用户明确选择时核对单个客户，不在每次输入时逐条调用小满；编辑旧发票不自动更改其客户，关闭/重置/切换上下文后丢弃迟到结果。
 
-### 设计排期备注编辑
+### 设计预约列表和排期备注
+
+`GET /api/design/requests` 的列表项含 `assigned_designer_name`。姓名取自该预约最近创建的排期任务，改派后返回任务当前设计师的姓名。无排期任务时使用预约单的已指派设计师，查不到姓名时返回 `null`。可传入 `sort_field=assigned_designer_name` 按姓名排序，空姓名排在末尾。
 
 `PUT /api/design/tasks/{task_id}/remark`：权限 `design:write` 或 `design:manage`，请求 `{ "remark": "备注内容" }`，空字符串清空备注。仅更新该任务备注，不覆盖预约备注或状态；任务不存在或关联预约已删除返回 HTTP 404。返回统一信封。预约备注继续使用 `PUT /api/design/requests/{request_id}/remark`。
 
