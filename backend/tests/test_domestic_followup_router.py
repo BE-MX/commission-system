@@ -1,6 +1,16 @@
+import base64
+import io
+import json
 from datetime import date
 
 import pytest
+from PIL import Image, ImageDraw
+from sqlalchemy.orm import sessionmaker
+
+from app.ai import call_service
+from app.ai.models import AiPreset, AiProvider
+from app.bootstrap import seed_ai
+from app.domestic import file_service
 
 from app.domestic_followup import ai_parse_service, attachment_service, followup_service, jobs
 from app.domestic_followup.models import DomesticFollowup, DomesticFollowupAttachment, DomesticFollowupItem
@@ -82,6 +92,110 @@ def test_draft_starts_background_parse_and_conflict_maps_409(db, monkeypatch):
         good = client.post(f"/api/domestic-followup/drafts/{draft['id']}/confirm",
                            json={"result_code": "有效沟通", "version": draft["version"], "customer_id": customer.id})
         assert good.status_code == 200 and good.json()["data"]["status"] == "confirmed"
+
+
+@pytest.mark.parametrize("failed_ocr", [None, 5], ids=["all_readable", "last_ocr_failed"])
+def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, failed_ocr):
+    seed_dicts(db)
+    user = make_user(db, "fu_rt_six")
+    customer = make_customer(db, user, "测试客户")
+    provider = AiProvider(name="Test provider", api_base="https://example.invalid/v1")
+    db.add(provider)
+    db.flush()
+    for name, prompt in [
+        ("domestic_followup_parse", seed_ai._DOMESTIC_FOLLOWUP_PARSE_SYSTEM_PROMPT),
+        ("domestic_followup_ocr", seed_ai._DOMESTIC_FOLLOWUP_OCR_SYSTEM_PROMPT),
+    ]:
+        db.add(AiPreset(preset_name=name, provider_id=provider.id, model=name,
+                        parameters={"max_tokens": 4096}, system_prompt=prompt))
+    db.commit()
+    monkeypatch.setattr(file_service, "storage_root", lambda: tmp_path)
+    monkeypatch.setattr(file_service.cloud_files, "put_bytes", lambda *args: False)
+    monkeypatch.setattr(file_service.cloud_files, "read_path", lambda _ns, rel, root: root / rel)
+    jobs_to_run = _record_jobs(monkeypatch)
+
+    screenshots = []
+    transcripts = [
+        f"客户：第 {index} 张聊天记录\n" + "客户：关于样品发片颜色和长度，我们内部还要再核对一次。\n" * 40
+        for index in range(1, 7)
+    ]
+    resolved_quote = "最短规格是20厘米，报价已经按20厘米解释清楚"
+    transcripts[-1] += f"我：{resolved_quote}"
+    requests = []
+    deadlines = []
+
+    def model_response(_url, *, body, timeout_sec, enforce_total_timeout=False, **_kwargs):
+        pictures = [
+            base64.b64decode(part["image_url"]["url"].split(",", 1)[1])
+            for message in body["messages"] if isinstance(message["content"], list)
+            for part in message["content"] if part["type"] == "image_url"
+        ]
+        requests.append((body["model"], pictures))
+        deadlines.append((timeout_sec, enforce_total_timeout))
+        assert body["max_tokens"] == 4096
+        if body["model"] == "domestic_followup_ocr":
+            [picture] = pictures
+            index = screenshots.index(picture)
+            if index == failed_ocr:
+                return {"choices": [{"message": {"content": '{"text": "截断'}, "finish_reason": "length"}]}
+            output = json.dumps({"text": transcripts[index], "unreadable": []})
+        else:
+            instructions = " ".join(msg["content"] for msg in body["messages"] if msg["role"] == "system")
+            if "ocr 必须是空数组" not in instructions:
+                return {"choices": [{"message": {"content": '{"ocr": [{"attachment_index": 0, "text": "截断'},
+                                     "finish_reason": "length"}], "usage": {"completion_tokens": 4096}}
+            output = json.dumps({
+                "summary": "已解释规格报价",
+                "customer_hint": {"chat_title": "测试客户", "matched_customer_id": customer.id, "confidence": 0.96},
+                "suggestions": [{
+                    "text": "客户认为报价偏高",
+                    "handled_source": {"kind": "attachment", "attachment_index": 5, "excerpt": resolved_quote},
+                }],
+                # Even if the model ignores the prompt and repeats a quote in ocr, only the independent OCR is evidence.
+                "ocr": [{"attachment_index": 5, "text": resolved_quote}],
+            }, ensure_ascii=False)
+        return {"choices": [{"message": {"content": output}, "finish_reason": "stop"}]}
+
+    monkeypatch.setattr(call_service, "post_json", model_response)
+    with followup_client(db, user) as client:
+        attachment_ids = []
+        for index in range(1, 7):
+            image = Image.new("RGB", (360, 210), "white")
+            draw = ImageDraw.Draw(image)
+            draw.text((10, 10), f"Test customer - chat page {index}", fill="black")
+            draw.text((10, 55), "Customer: Can you explain the quote?", fill="black")
+            draw.text((10, 85), "Sales: The shortest option is 20 cm.", fill="black")
+            encoded = io.BytesIO()
+            image.save(encoded, format="PNG")
+            screenshots.append(encoded.getvalue())
+            response = client.post("/api/domestic-followup/attachments",
+                                   files={"file": (f"chat-{index}.png", screenshots[-1], "image/png")})
+            assert response.status_code == 200
+            attachment_ids.append(response.json()["data"]["id"])
+        response = client.post("/api/domestic-followup/drafts", json={
+            "request_id": "rt-six-screenshots", "attachment_ids": attachment_ids,
+        })
+        assert response.status_code == 200
+        draft = response.json()["data"]
+        assert draft["ai_status"] == "running"
+        [(job, args)] = jobs_to_run
+        job(*args, session_factory=sessionmaker(bind=db.get_bind()))
+        draft = client.get(f"/api/domestic-followup/drafts/{draft['id']}").json()["data"]
+
+    assert draft["ai_status"] == "done", draft["ai_error"]
+    assert draft["ai_result"]["summary"] == "已解释规格报价"
+    assert draft["ai_result"]["customer_id"] == customer.id
+    assert draft["ai_result"]["items"][0]["record_only"] is (failed_ocr is None)
+    assert [row["ocr_text"] for row in draft["attachments"]] == [
+        text if index != failed_ocr else None for index, text in enumerate(transcripts)
+    ]
+    assert [row["ocr_status"] for row in draft["attachments"]] == [
+        "done" if index != failed_ocr else "failed" for index in range(6)
+    ]
+    assert bool(draft["ai_result"]["unreadable"]) is (failed_ocr is not None)
+    assert requests[0] == ("domestic_followup_parse", screenshots)
+    assert requests[1:] == [("domestic_followup_ocr", [shot]) for shot in screenshots]
+    assert deadlines == [(120, True), *([(45, True)] * 6)]
 
 
 def test_writing_other_owners_customer_is_403(db):

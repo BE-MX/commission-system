@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.service import chat
 from app.core.database import SessionLocal
-from app.core.time import beijing_today
+from app.core.time import beijing_now, beijing_today
 from app.domestic.models import DomesticCustomer
 from app.domestic.shipment_models import DomesticShipment
 from app.domestic_followup import attachment_service, config_service, dict_service, prep_access, template_service, visibility
@@ -29,6 +29,7 @@ logger = logging.getLogger("commission")
 
 PARSE_PRESET = "domestic_followup_parse"
 CANDIDATE_LIMIT = 200
+MULTI_SCREENSHOT_OCR_TIMEOUT_SEC = 45  # 120 + 9 * 45 秒小于草稿的 10 分钟超时。
 
 ITEM_HANDLING_INSTRUCTIONS = (
     "在预设的 JSON 结构上补充异常意见的处理证据。逐条判断 issues 和 suggestions 是否还需处理。"
@@ -40,6 +41,12 @@ ITEM_HANDLING_INSTRUCTIONS = (
     "截图须填写对应的 attachment_index。客户没有继续回复时，只记录已给出解释，不推断客户接受。\n"
     "客户仍有异议、我方仅表示收到或承诺稍后处理、或缺少本轮处理证据时，handled_source 填 null。"
     "下一步只写尚未完成的动作，已给出的解释无需再次建议。\n"
+)
+
+MULTI_SCREENSHOT_INSTRUCTIONS = (
+    "本次有多张截图，请按顺序阅读全部截图并整理业务字段。覆盖预设的逐行转写要求："
+    "ocr 必须是空数组，截图全文会单独转写。保留核对所需的短句出处与原始 attachment_index，"
+    "相同事实只记录一次，省略无内容的可选字段。"
 )
 
 
@@ -144,8 +151,11 @@ def build_messages(db: Session, followup: DomesticFollowup, current_user: dict, 
     content = [{"type": "text", "text": text}]
     for att in attachments:
         content.append({"type": "image_url", "image_url": {"url": attachment_service.data_url(att)}})
+    instructions = ITEM_HANDLING_INSTRUCTIONS
+    if len(attachments) > 1:
+        instructions += MULTI_SCREENSHOT_INSTRUCTIONS
     return [
-        {"role": "system", "content": ITEM_HANDLING_INSTRUCTIONS},
+        {"role": "system", "content": instructions},
         {"role": "user", "content": content},
     ], candidates
 
@@ -404,19 +414,35 @@ def _mark_failed(db: Session, followup_id: int, exc: Exception) -> None:
             pass
 
 
-def _ocr_pending(attachment_ids: list[int], session_factory) -> None:
+def _ocr_pending(attachment_ids: list[int], session_factory, *, timeout_sec: int) -> None:
     if not attachment_ids:
         return
     try:
-        attachment_service.run_ocr(attachment_ids, session_factory=session_factory)
+        attachment_service.run_ocr(attachment_ids, session_factory=session_factory, timeout_sec=timeout_sec)
     except Exception as exc:  # noqa: BLE001 — run_ocr 自己逐张兜底；这里防的是开 session 本身失败
         logger.warning("followup fallback OCR failed ids=%s: %s", attachment_ids, type(exc).__name__)
         print(f"[domestic_followup] fallback OCR failed ids={attachment_ids}: {type(exc).__name__}", flush=True)
 
 
+def _lock_followup(db: Session, followup_id: int) -> DomesticFollowup | None:
+    return (db.query(DomesticFollowup).filter(DomesticFollowup.id == followup_id)
+            .populate_existing().with_for_update().first())
+
+
+def _transcribe_for_review(db: Session, followup_id: int, attachment_ids: list[int], session_factory) -> None:
+    followup = _lock_followup(db, followup_id)
+    if followup is None or followup.status == "discarded":
+        db.rollback()
+        return
+    db.commit()  # OCR 自建 session，等待模型前释放父记录锁。
+    _ocr_pending(attachment_ids, session_factory, timeout_sec=MULTI_SCREENSHOT_OCR_TIMEOUT_SEC)
+    db.expire_all()  # 用已落库的截图转写核对模型引用。
+
+
 def run_parse(followup_id: int, current_user: dict, session_factory=SessionLocal) -> None:
     """后台线程入口。任何一步失败都标 failed 并降级为单张 OCR；OCR 列表在 rollback 前就算成纯 int。"""
     ocr_ids: list[int] = []
+    ocr_timeout_sec = attachment_service.OCR_TIMEOUT_SEC
     with session_factory() as db:
         try:
             followup = db.get(DomesticFollowup, followup_id)
@@ -425,17 +451,30 @@ def run_parse(followup_id: int, current_user: dict, session_factory=SessionLocal
             attachments = (db.query(DomesticFollowupAttachment)
                            .filter(DomesticFollowupAttachment.followup_id == followup_id)
                            .order_by(DomesticFollowupAttachment.seq).all())
+            separate_ocr = len(attachments) > 1
             ocr_ids = [int(a.id) for a in attachments if a.ocr_status != "done"]
+            if separate_ocr:
+                ocr_timeout_sec = MULTI_SCREENSHOT_OCR_TIMEOUT_SEC
+                # 此刻才出队。给整理和逐张 OCR 完整执行时间，勿沿用等待队列的时间戳。
+                (db.query(DomesticFollowup)
+                 .filter_by(id=followup_id, status="draft", ai_status="running")
+                 .update({DomesticFollowup.updated_at: beijing_now()}, synchronize_session=False))
+                db.commit()
             today = beijing_today()
             values = dict_service.load_values(db)
             messages, candidates = build_messages(db, followup, current_user, values, today, attachments)
             result = chat(db=db, preset_name=PARSE_PRESET, messages=messages,
                           caller_module="domestic_followup_parse", caller_user_id=followup.author_user_id,
-                          snapshot_mode="metadata", timeout_sec=120)
-            parsed = AiParseOut.model_validate(attachment_service.parse_json(result.get("content", "")))
+                          snapshot_mode="metadata", timeout_sec=120, enforce_total_timeout=True)
+            output = attachment_service.parse_json(result.get("content", ""))
+            if separate_ocr:
+                output.pop("ocr", None)
+            parsed = AiParseOut.model_validate(output)
+            if separate_ocr and ocr_ids:
+                _transcribe_for_review(db, followup_id, ocr_ids, session_factory)
+                ocr_ids = []  # 每张已尝试过一次，保留失败状态供核对。
             draft = normalize(db, current_user, parsed, values, today, followup, candidates)
-            locked = (db.query(DomesticFollowup).filter(DomesticFollowup.id == followup_id)
-                      .populate_existing().with_for_update().first())
+            locked = _lock_followup(db, followup_id)
             if locked is None:
                 db.rollback()
                 ocr_ids = []
@@ -449,14 +488,19 @@ def run_parse(followup_id: int, current_user: dict, session_factory=SessionLocal
                 if not confirmed:  # 作废的记录不再花钱 OCR
                     ocr_ids = []
                 return
-            _write_ocr(attachments, parsed, draft["unreadable"])
-            still_pending = [int(a.id) for a in attachments if a.ocr_status != "done"]
+            if separate_ocr:
+                for index, attachment in enumerate(attachments, start=1):
+                    if attachment.ocr_status != "done" or not attachment.ocr_text:
+                        draft["unreadable"].append(f"第 {index} 张截图未取得转写文字，请核对原图")
+            else:
+                _write_ocr(attachments, parsed, draft["unreadable"])
+            still_pending = [] if separate_ocr else [int(a.id) for a in attachments if a.ocr_status != "done"]
             locked.ai_result = draft
             locked.ai_status = "done"
             locked.ai_error = None
             locked.ai_log_id = result.get("log_id")
             db.commit()
-            ocr_ids = still_pending  # 模型漏转写或之前 OCR 失败的截图，成功路径也补一次（与失败路径同口径）
+            ocr_ids = still_pending
         except Exception as exc:  # noqa: BLE001 — 任何失败都降级，草稿与原文不丢
             logger.warning("followup AI parse failed id=%s: %s", followup_id, type(exc).__name__)
             print(f"[domestic_followup] AI parse failed id={followup_id}: {type(exc).__name__}", flush=True)
@@ -467,4 +511,4 @@ def run_parse(followup_id: int, current_user: dict, session_factory=SessionLocal
                 print(f"[domestic_followup] AI rollback failed id={followup_id}: {type(rb_exc).__name__}", flush=True)
             _mark_failed(db, followup_id, exc)
         finally:
-            _ocr_pending(ocr_ids, session_factory)
+            _ocr_pending(ocr_ids, session_factory, timeout_sec=ocr_timeout_sec)

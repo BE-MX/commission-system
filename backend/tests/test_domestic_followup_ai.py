@@ -45,7 +45,7 @@ def _attachment(db, followup, user, monkeypatch):
 def _record_ocr(monkeypatch):
     calls = []
     monkeypatch.setattr(ai_parse_service.attachment_service, "run_ocr",
-                        lambda ids, session_factory=None: calls.append(list(ids)))
+                        lambda ids, **_kwargs: calls.append(list(ids)))
     return calls
 
 
@@ -185,7 +185,7 @@ def test_failure_marks_failed_and_falls_back_to_ocr(db, monkeypatch):
     ocr_calls = []
     monkeypatch.setattr(ai_parse_service, "chat", lambda **k: {"content": "not json at all"})
     monkeypatch.setattr(ai_parse_service.attachment_service, "run_ocr",
-                        lambda ids, session_factory=None: ocr_calls.append(ids))
+                        lambda ids, **_kwargs: ocr_calls.append(ids))
     _run(db, followup, user)
     assert followup.ai_status == "failed" and "JSONDecodeError" in followup.ai_error
     assert ocr_calls == []  # 没有截图就不开降级 OCR
