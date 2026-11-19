@@ -64,10 +64,14 @@ class OkkiTransport:
                 continue
             code, data = envelope.get("code"), envelope.get("data")
             if response.status_code == 200 and type(code) is int and not envelope.get("error"):
-                if code == 404 and envelope.get("message") in (
-                    "Not Found Resource", "Not Found Resource.",
-                ) and data in (None, {}, []):
-                    return None
+                if code == 404 and data in (None, {}, []):
+                    message = envelope.get("message")
+                    if message in ("Not Found Resource", "Not Found Resource."):
+                        return None
+                    # OKKI's inbound serial lookup uses this exact message for an unused number.
+                    if (path == f"{INBOUND_PATH}/info" and set(params) == {"serial_id"}
+                            and message == "Object  not found"):
+                        return None
                 if code in (0, 200) and isinstance(data, dict):
                     return data
             raise okki_client.OkkiApiError("小满工厂到货详情响应异常")

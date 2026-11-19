@@ -50,6 +50,9 @@ def test_exact_read_returns_authoritative_id_detail(monkeypatch, mock_boundary, 
 @pytest.mark.parametrize(("status", "body", "absent"), [
     (200, {"code": 404, "message": "Not Found Resource", "data": None}, True),
     (200, {"code": 404, "message": "Not Found Resource.", "data": {}}, True),
+    (200, {"code": 404, "message": "Object  not found", "data": None}, True),
+    (200, {"code": 404, "message": "Object  not found", "data": {"inbound_invoice_id": 7}}, False),
+    (200, {"code": 404, "message": "当前对象已被删除", "data": None}, False),
     (404, {"code": 404, "message": "Not Found Resource"}, False),
     (200, {"code": 404, "message": "No Privilege"}, False),
     (200, {"code": 404, "message": "Not Found Resource", "data": False}, False),
@@ -65,14 +68,26 @@ def test_only_exact_not_found_is_absence(monkeypatch, status, body, absent):
             module.OkkiTransport().find_inbound("FI-001")
 
 
-def test_number_found_id_not_found_is_not_absence(monkeypatch):
+@pytest.mark.parametrize(("message", "expected"), [
+    ("Not Found Resource", "身份不一致"),
+    ("Object  not found", "响应异常"),
+])
+def test_number_found_id_not_found_is_not_absence(monkeypatch, message, expected):
     responses = iter([
         {"code": 0, "data": {"serial_id": "FI-001", "inbound_invoice_id": 123}},
-        {"code": 404, "message": "Not Found Resource"},
+        {"code": 404, "message": message},
     ])
     monkeypatch.setattr(module.httpx, "get", lambda *a, **kw: httpx.Response(200, json=next(responses)))
-    with pytest.raises(OkkiApiError, match="身份不一致"):
+    with pytest.raises(OkkiApiError, match=expected):
         module.OkkiTransport().find_inbound("FI-001")
+
+
+def test_inbound_number_absence_message_does_not_apply_to_purchase(monkeypatch):
+    monkeypatch.setattr(module.httpx, "get", lambda *a, **kw: httpx.Response(
+        200, json={"code": 404, "message": "Object  not found", "data": None},
+    ))
+    with pytest.raises(OkkiApiError, match="响应异常"):
+        module.OkkiTransport().find_purchase("FI-001")
 
 
 def test_purchase_create_requires_gate_and_accepts_documented_code_zero(monkeypatch, mock_boundary):
