@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from app.auth.models import ArkUser
 from app.auth.utils import create_access_token
@@ -246,3 +247,57 @@ def test_summary_receipts_follow_list_amounts_and_receipt_authorization(db):
     snapshot(db, rows, age=121)
     db.commit()
     assert totals(7) == (None, False)
+
+
+
+def test_numeric_receipt_mirror_ids_restore_list_and_summary_without_relaxing_checks(db):
+    from tests.test_invoice_list_projection import receipt, remote_row, snapshot
+
+    seed_authority(db, 5, "invoice:read", "receipt:read")
+    # The production mirror returns integers for all three IDs, even though
+    # the invoice and the ORM's mirror declaration use string identities.
+    db.execute(text("DROP TABLE lsordertest.okki_receipts"))
+    db.execute(text("""CREATE TABLE lsordertest.okki_receipts (
+        cash_collection_id INTEGER PRIMARY KEY, order_id INTEGER, company_id INTEGER
+    )"""))
+
+    cases = [
+        ("USD-VERIFIED", 901, 901, 100, "USD", "USD", "42.15", 1, 42.15),
+        ("USD-PENDING", 902, 902, 100, "USD", "USD", "9.95", 0, 0),
+        ("WRONG-CUSTOMER", 903, 903, 200, "USD", "USD", "20.00", 1, None),
+        ("WRONG-ORDER", 904, 999, 100, "USD", "USD", "30.00", 1, None),
+        ("MISSING-CUSTOMER", 905, 905, None, "USD", "USD", "40.00", 1, None),
+        ("WRONG-CURRENCY", 906, 906, 100, "USD", "EUR", "50.00", 1, None),
+        ("NEGATIVE", 907, 907, 100, "USD", "USD", "-6.80", 1, None),
+        ("EUR-VERIFIED", 908, 908, 100, "EUR", "EUR", "59.30", 1, 59.30),
+        ("MISSING-ORDER", 909, None, 100, "USD", "USD", "10.00", 1, None),
+        ("COMPETING-BINDING", 910, 910, 100, "USD", "USD", "60.00", 1, None),
+    ]
+    remote_rows = []
+    for name, order_id, mirror_order, mirror_customer, currency, receipt_currency, amount, effective, _ in cases:
+        _invoice(db, name, customer="100", xiaoman_order_id=str(order_id), currency=currency)
+        receipt_id = 9007199254740000 + order_id
+        db.execute(text("""INSERT INTO lsordertest.okki_receipts (cash_collection_id, order_id, company_id)
+            VALUES (:receipt, :order, :customer)"""),
+            {"receipt": receipt_id, "order": mirror_order, "customer": mirror_customer})
+        remote_rows.append(remote_row(str(receipt_id), str(order_id), amount, effective, currency=receipt_currency))
+    other = _invoice(db, "OTHER-ORDER", day=date(2026, 8, 31), xiaoman_order_id="899", salesperson=6)
+    db.flush()
+    receipt(db, other, xiaoman_receipt_id=remote_rows[-1]["cash_collection_id"], sync_status="synced")
+    snapshot(db, remote_rows)
+    db.commit()
+
+    dates = {"date_from": "2026-09-01", "date_to": "2026-09-30"}
+    with _client(db) as client:
+        listing = client.get("/api/invoice/invoices", params=dates)
+        assert listing.status_code == 200
+        assert {row["invoice_no"]: row["received_amount"] for row in listing.json()["data"]["items"]} == {
+            case[0]: case[-1] for case in cases
+        }
+        overview = client.get("/api/invoice/invoices/summary", params=dates)
+        assert overview.status_code == 200
+        summary = overview.json()["data"]
+        assert summary["received_amount"] == 42.15
+        assert summary["received_amount_partial"] is True
+        assert summary["order_count"] == len(cases)
+        assert summary["non_usd_count"] == 1

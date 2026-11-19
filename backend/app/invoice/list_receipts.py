@@ -147,9 +147,14 @@ def _external_identities(db, unmapped):
     if not external:
         return {}
     try:
-        return {identity: (order_id, company_id) for identity, order_id, company_id in
-                db.query(OkkiReceipt.cash_collection_id, OkkiReceipt.order_id, OkkiReceipt.company_id)
-                  .filter(OkkiReceipt.cash_collection_id.in_(external))}
+        # The mirror can return BIGINTs, while the snapshot and invoice use strings.
+        return {
+            str(identity): (str(order_id), str(company_id))
+            for identity, order_id, company_id in
+            db.query(OkkiReceipt.cash_collection_id, OkkiReceipt.order_id, OkkiReceipt.company_id)
+              .filter(OkkiReceipt.cash_collection_id.in_(external))
+            if order_id is not None and company_id is not None
+        }
     except SQLAlchemyError as exc:
         logger.warning("Invoice list receipt mirror unavailable: %s", type(exc).__name__)
         print(f"[invoice_list] receipt mirror unavailable: {type(exc).__name__}", flush=True)
