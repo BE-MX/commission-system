@@ -401,8 +401,10 @@ class Settings(BaseSettings):
     DINGTALK_AGENT_ID: str = ""
 
     # ── 钉钉回调 ─────────────────────────────────────────
-    DINGTALK_CALLBACK_AES_KEY: str = ""
-    DINGTALK_CALLBACK_TOKEN: str = ""
+    DINGTALK_CALLBACK_AES_KEY: str = Field(default="", repr=False)
+    DINGTALK_CALLBACK_TOKEN: str = Field(default="", repr=False)
+    # 明文里的接收方 ID：事件订阅用应用 AppKey/ClientID，旧版企业回调用 corpId；不做回退，留空即拒绝
+    DINGTALK_CALLBACK_RECEIVER_ID: str = ""
 
     # ── 生产报工 ──────────────────────────────────────────
     QR_SIGN_SECRET: str = "change-this-to-a-random-32-char-secret"  # 二维码 HMAC 签名密钥
