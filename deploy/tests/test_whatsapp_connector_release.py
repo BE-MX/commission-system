@@ -46,6 +46,20 @@ def test_only_reviewed_connector_and_release_support_are_allowed():
         validate_changes(['docs/handoff.md'])
 
 
+def test_reviewed_sync_recovery_and_its_regression_tests_fit_the_connector_only_scope():
+    validate_changes([
+        'services/whatsapp-connector/README.md',
+        'services/whatsapp-connector/src/diagnostics.js',
+        'services/whatsapp-connector/src/manager.js',
+        'services/whatsapp-connector/test/diagnostics.test.mjs',
+        'services/whatsapp-connector/test/http.test.mjs',
+        'services/whatsapp-connector/test/manager.test.mjs',
+        'deploy/whatsapp_connector_release.py',
+        'deploy/tests/test_whatsapp_connector_release.py',
+        'deploy/README.md',
+    ])
+
+
 @pytest.mark.parametrize('broken', [False, 'health', 'backup'])
 def test_activation_and_rollback_touch_only_connector(tmp_path, monkeypatch, broken):
     import office_release as office

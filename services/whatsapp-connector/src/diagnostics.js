@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 const time = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit',
   day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
 const events = new Set(['authorization_failed', 'socket_start', 'companion_reg_refresh', 'qr_ready',
-  'pairing_credentials', 'connection_open', 'connection_closed', 'protected_pause', 'collection_wait'])
+  'pairing_credentials', 'connection_open', 'connection_closed', 'protected_pause', 'collection_wait', 'ingest_capacity'])
 const classifications = new Set(['reauth_required', 'blocked', 'restart', 'transient', 'protected_pause'])
 const reasons = new Set(['authorization_unavailable', 'authorization_denied', 'authorization_changed',
   'reauth_required', 'blocked', 'protected_pause', 'reconnect_exhausted', 'auth_store_failed', 'auth_cas_conflict',
@@ -11,8 +11,10 @@ const reasons = new Set(['authorization_unavailable', 'authorization_denied', 'a
   'collection_paused', 'invalid_event', 'stale_lease', 'stale_generation', 'stale_consent'])
 const transports = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN',
   'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET'])
+const sizeThresholds = new Set(['event_bytes', 'history_record_bytes', 'history_batch_bytes'])
 const choice = (value, allowed) => allowed.has(value) ? value : 'other'
 const status = value => Number.isInteger(value) && value >= 100 && value <= 599 ? value : null
+const byteCount = value => Number.isSafeInteger(value) && value >= 0 ? value : null
 
 // Never serialize the caller's object, error, protocol stanza, URL or credentials.
 export function createDiagnostics(write = line => console.info(line), now = Date.now) {
@@ -33,6 +35,9 @@ export function createDiagnostics(write = line => console.info(line), now = Date
       }
       if (event === 'connection_closed') Object.assign(value, {
         status_code: status(detail.status_code), classification: choice(detail.classification, classifications),
+      })
+      if (event === 'ingest_capacity') Object.assign(value, {
+        threshold: choice(detail.threshold, sizeThresholds), bytes: byteCount(detail.bytes), limit: byteCount(detail.limit),
       })
       if (['protected_pause', 'collection_wait'].includes(event)) value.reason = choice(detail.reason, reasons)
       write(JSON.stringify(value))

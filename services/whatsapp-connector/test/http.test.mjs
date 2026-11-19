@@ -76,6 +76,37 @@ test('HTTP bad cursor/limits stay explicit, paused bodies are denied and metadat
   assert.equal(meta.value.data.sync_state, 'paused')
 })
 
+test('HTTP recovery reuses the QR device identity and makes the message feed available', async t => {
+  const { manager, sockets, request } = await httpFixture(t, { maxEventBytes: 4096 })
+  await manager.start('account_a')
+  const identity = { id: '15550001111:9@s.whatsapp.net', name: 'Synthetic' }
+  sockets[0].ev.emit('creds.update', { me: identity, registered: false })
+  sockets[0].ev.emit('connection.update', { connection: 'open' })
+  const previousKey = sockets[0].config.auth.creds.noiseKey.private
+  sockets[0].ev.emit('messages.upsert', { messages: [message('too-large', 'x'.repeat(5000))] })
+
+  const path = '/internal/v2/changes?account_uid=account_a'
+  const paused = await request(path)
+  assert.equal(paused.status, 403)
+  assert.equal(paused.value.message, 'account_paused')
+
+  const resumed = await request('/internal/v2/accounts/account_a/reauthorize', { method: 'POST' })
+  assert.equal(resumed.status, 200)
+  assert.equal(resumed.value.data.needs_user_action, false)
+  assert.equal(resumed.value.data.session_generation, authorization.session_generation)
+  assert.equal(resumed.value.data.consent_version, authorization.consent_version)
+  assert.deepEqual(sockets[1].config.auth.creds.me, identity)
+  assert.deepEqual(sockets[1].config.auth.creds.noiseKey.private, previousKey)
+  sockets[1].ev.emit('connection.update', { connection: 'open' })
+  sockets[1].ev.emit('messages.upsert', { messages: [message('after-recovery')] })
+
+  const feed = await request(path)
+  assert.equal(feed.status, 200)
+  assert.equal(feed.value.data.account.connection_state, 'connected')
+  assert.deepEqual(feed.value.data.items.filter(item => item.kind === 'message').map(item => item.payload.external_message_id),
+    ['after-recovery'])
+})
+
 test('HTTP bind operation UID readback is idempotent and QR response stays transient', async t => {
   const { request, sockets, setAuthorization } = await httpFixture(t)
   const body = { account_uid: 'account_a', ark_user_id: 7, consent_version: '1', provider: 'baileys', bind_session_uid: 'bind_readback' }
