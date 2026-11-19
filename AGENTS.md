@@ -36,6 +36,20 @@
 
 - 涉及仓库修改时，收工前跑 `python scripts/git_sweep.py --no-fetch`（`--open` 可查看 HTML 看板）。巡检结果用于报告，不授权自动 push、合并、删分支或通知他人；缺少远端最新状态时标明本地快照。现有每日 18:00 定时巡检独立运行。
 
+## 调度流水线（agent-dispatch，2026-11-02 起试行）
+
+Claude Code 作为调度者，按「Claude 规划 → Codex 实现 → Kimi 只读审查（≤3 轮）→ 检查 → 亮哥批合并」分工推进任务。入口是用户级 skill `agent-dispatch`（`~/.claude/skills/agent-dispatch/`），脚本细节与参数在其 SKILL.md，本节只定规则：
+
+- **任务目录** `tmp/agent-tasks/<task-id>/`（已被 `/tmp/` 忽略）只放过程材料：brief、plan、每轮实现说明、diff、审查意见、检查日志、`state.json`。agent 之间只传这些结构化产物，不传聊天记录。
+- **结论回写**：任务关闭前，进度写 `docs/handoff.md`，可复用的设计决策/踩坑按「跨 Agent 共享记忆」规则进 Mem0；然后任务目录可删，指标留在用户级账本 `~/.agent-hub/ledger.jsonl`。
+- **实现 worktree**：`<repo>-codex-<topic>`，分支 `codex/<topic>`，从 main 切出；不得复制 `.env`。Codex 以隔离配置（不加载用户级 config 与放行规则）在 `workspace-write` 沙箱运行：实测不能写 worktree 以外、不能直连外网，但沙箱读权限近乎全盘，且可经本机代理（127.0.0.1:7078）出网，**不等于碰不到凭据**；剩余缺口见 skill 的「已知缺口」。
+- **提交**：Codex 不自行 commit；审查与检查通过后由调度脚本以 `ARK_AGENT=codex` 在该 worktree 提交，提交内容即审查过的那份代码（「禁止在别的代理的目录里 commit」的唯一例外）。
+- **审查**：Kimi 在设置 `ARK_AGENT_READONLY=1` 的会话里运行，其 PreToolUse 钩子只放行 Read/Grep/Glob 且只能读本任务 worktree 与任务目录；审查前后脚本核对 worktree 与任务输入，有变动即判定本轮作废。
+- **驾驶舱**：在 herdr 会话 `cockpit` 里可让 Codex 在可见窗格交互实现（独立 CODEX_HOME，不继承用户级放行规则，审批 never）。完成后由 `record-impl` 读本 worktree 的驾驶舱会话记录登记，找不到会话或发现越界即作废；其余步骤与门禁不变。
+- **检查**：check 以亮哥身份在沙箱外执行 Codex 写的代码，数据库变量指向哨兵地址；调度者先看 diff 再跑。
+- **永远等亮哥**：push、合并回 main、部署、生产迁移、删分支不进流水线（`close` 只删 worktree）；调度者只汇报并请示，合并仍按「推送与合并」在主 worktree 进行。
+- **同一模块单写者**：同一时间一个模块只派一个实现任务；派单前用 `git worktree list` 与 `git_sweep` 确认没有别的代理在改同一处。
+
 ## 跨 Agent 共享记忆
 
 - `claude-mem` 只负责单机本地会话捕获；禁止复制、提交或同步 `~/.claude-mem/claude-mem.db`。

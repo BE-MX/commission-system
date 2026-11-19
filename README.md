@@ -14,7 +14,7 @@
 
 - **后端**: Python 3.12 + FastAPI + SQLAlchemy 2.0 + Alembic
 - **前端**: Vue 3 + Element Plus + Vite 5
-- **数据库**: 腾讯云 RDS MySQL（提成库读写 + 业务库跨库只读）
+- **数据库**: 腾讯云 RDS MySQL（业务主库读写 + 镜像默认只读；受审计列级例外见 CLAUDE.md）
 - **部署**: Windows Server + NSSM 服务管理 + 腾讯云 Nginx 反代（静态文件云端直出）
 - **微信小程序**: 原生小程序（扫码报工/报工历史/报工总览，AppID `wx4dea4f10fe1bda19`）
 
@@ -76,14 +76,14 @@ commission-system/
 │   │   ├── expo/         # 展会 AI 试戴 (router/models/schemas/service + matching 匹配引擎 + ai_pipeline 三管线 + script_service 话术)
 │   │   ├── training/     # 培训速递 (router/models/schemas/service + draft_service AI 提炼 + file_service + push_service 钉钉)
 │   │   ├── pm/           # PM 资料协作站 (独立 HMAC 门牌鉴权，不接平台 RBAC；前端在 frontend-pm/)
-│   │   ├── mcp/          # MCP 网关 (mount /mcp — tools.py 物流 3 工具 + asset_tools.py 素材 2 工具，个人 token 鉴权)
+│   │   ├── mcp/          # MCP 网关（mount /mcp，个人 token 鉴权；工具由各 *_tools.py 与 tools.py 注册）
 │   │   └── mini/         # 微信小程序端 (router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定)
 │   ├── alembic/          # 数据库迁移
 │   ├── config/           # 业务规则配置
 │   ├── scripts/          # 运维脚本 (tag_taxonomy/ 标签体系迁移与目录骨架生成等)
 │   └── sql/              # DDL 脚本
 ├── services/
-│   └── whatsapp-connector/  # WhatsApp Web Node.js 独立服务（whatsapp-web.js）
+│   └── whatsapp-connector/  # WhatsApp 独立服务（Baileys + 加密 SQLite，单机持久化增量回放）
 ├── frontend/
 │   ├── public/          # 公共静态资源
 │   ├── src/
@@ -107,7 +107,9 @@ commission-system/
 | 后端 API | 8001 |
 | 前端 dev | 3000 (代理 /api → 8001) |
 | PM 站前端 dev | 3100 (代理 /api → 8001；start.bat 不含它) |
-| 本地生产后端 | 8002 (frp 隧道反代目标，服务器上只能用 deploy.bat 启动) |
+| 办公室生产后端 | 8001（NSSM 管理；生产只走 deploy.bat） |
+| 新加坡 frps 转发入口 | 8002（云端 loopback → 办公室 8001，不作为本机后端端口） |
+| 办公室内网 HTTPS | 443（lan.leshine.cloud → 办公室 8001） |
 | 前端生产 | 443 (腾讯云 Nginx, 静态直出 + API 反代隧道) |
 
 ## 文档导航
@@ -120,5 +122,6 @@ commission-system/
 | [docs/README.md](./docs/README.md) | 文档总导航 | 所有人 |
 | [docs/architecture.md](./docs/architecture.md) | 系统架构、数据流及已核验拓扑 | 技术接手人 |
 | [docs/integration-guide.md](./docs/integration-guide.md) | API 接入指南、示例代码 | 下游系统开发者 |
-| [docs/runbook.md](./docs/runbook.md) | 部署步骤、运维命令、故障排查 | 运维人员 |
+| [deploy/README.md](./deploy/README.md) | 发布、迁移与恢复的统一执行入口 | 发布执行者 |
+| [docs/runbook.md](./docs/runbook.md) | 运维命令、故障排查与验证边界 | 运维人员 |
 | [docs/handoff.md](./docs/handoff.md) | 项目状态、已完成功能、待办清单 | 项目交接 |

@@ -4,35 +4,52 @@
 
 **本文件是宪法：只写改变行为的规则。清单类内容（模块、端点、表）只放指针区对应文档，不要凭记忆写 API/表结构。**
 
+规则分工（各有唯一来源，本文件只引用，最多留一份最易错的摘要，有出入以来源为准）：跨代理 Git、调度流水线、共享记忆 → [AGENTS.md](AGENTS.md)；完工标准 → `completion-checklist` skill；UI 决策 → [DESIGN.md](DESIGN.md)。本项目的数据安全、Git、发布规则不因用户级规则更宽而放宽。
+
+## 生产安全（先读：这里的错不可逆）
+
+开发机 ≠ 生产机，但开发机连得到生产库和生产主机。以下动作**永远等亮哥明确授权**：任何远端写入（push，含 feature 分支备份；删远端分支）、合并回 main、部署。生产迁移不是可以单独授权的动作：它只随部署由部署入口执行，任何情况下都不在开发机上跑（见下）。
+
+### 数据库（腾讯云 RDS MySQL 双库）
+
+- `commission_db` 读写；`lsordertest` 是业务镜像，**默认只读跨查**。
+- `lsordertest` 的写例外只有下面三条。禁止借此修改其他镜像表，或扩大为通用业务库写权限：
+  1. **回款日期修复**：管理员对 `okki_receipts.collection_date` 的受审计单列 UPDATE。
+  2. **销量备货行级库存同步**：仅通过 `stock.inventory_sync_service`，按当前用户 `stock:read` + `stock:write` 权限，将已完整校验的小满单产品库存写入 `okki_inventory` 并同事务保存审计。禁止人工调整库存或删除缺失记录。
+  3. **发票客户手动同步**：仅 `invoice:write` 的同步入口可经 `invoice.customer_mirror_service`，按已核验身份和负责人列表的 OKKI 详情更新 `customer_info.owner_user_ids`（数字 JSON 数组）；缺行时只插入 `company_id/company_name/country_name/owner_user_ids`。镜像、overlay、审计必须同事务；不得改现有行其他字段，不得接受客户端自填归属。
+- **生产迁移只由部署入口统一检查并执行一次，禁止开发机升级共享生产库**（2026-09-05 起；此前「开发机直接 upgrade head」的做法已作废）。
+- 数据库未知 revision、领先于发布代码或多 head 必须阻断，不能 stamp/downgrade 掩盖差异；破坏性 schema 迁移先冻结全部相关写实例；普通发布不复制或覆盖数据库。
+- 开发验证只用隔离库；现存开发配置尚未隔离前，不执行迁移或写入型测试。
+
+### 发布
+
+- 只用 `deploy/deploy.bat` 候选发布入口（目标、增量传输、迁移与恢复见 `deploy/README.md`，拓扑见 `docs/architecture.md`）。历史 `git push cloud` 不是发布入口（`cloud` remote 还在，别用）。
+- 服务器上**只能用 deploy.bat**，手动 uvicorn 会抢端口；Scheduler 保持单活。
+- **「已合入 main」≠「已部署」**。生产状态以 `docs/handoff.md` 里日期最新的一条**全局**发布记录（含已部署 commit）为准。找的时候注意三点：条目不严格按时间排，顶部常是待发布的本地候选，不能只看第一条；状态用词不统一（已发布 / 已全局发布 / 已部署 / 生产已完成），不要按某个固定词搜；只发一台或一个组件的专项发布（如「办公室已发布」、仅连接器）不代表全局版本。
+- Agent 服务归属：OpenClaw 及后续新增 Agent、MCP、Agent 中继统一部署在北京 `leshine.cloud`（`154.8.205.162`），在 `deploy/platforms.json` 登记服务管理器、健康入口和数据库 writer，按 `deploy/agent-cloud-migration.md` 的单活与回滚规则切换；不能在新加坡重新启用已迁服务。
+
 ## 技术栈与环境
 
 - 后端：Python 3.12 + FastAPI + SQLAlchemy 2.0 + Alembic + APScheduler
 - 前端：Vue 3 + Element Plus + Vite 5；微信小程序（生产报工）
-- 数据库：腾讯云 RDS MySQL 双库
-  - `commission_db` 读写；`lsordertest` 业务镜像默认只读跨查。写例外：管理员回款日期修复对 `okki_receipts.collection_date` 的受审计单列 UPDATE；销量备货行级库存同步仅通过 `stock.inventory_sync_service`，按当前用户 `stock:read` + `stock:write` 权限，将已完整校验的小满单产品库存写入 `okki_inventory` 并同事务保存审计。禁止借此修改其他镜像表、人工调整库存或删除缺失记录。
-  - 发票客户手动同步例外：仅 `invoice:write` 的同步入口可经 `invoice.customer_mirror_service`，按已核验身份和负责人列表的 OKKI 详情更新 `customer_info.owner_user_ids`（数字 JSON 数组）；缺行时只插入 `company_id/company_name/country_name/owner_user_ids`。镜像、overlay、审计必须同事务；不得改现有行其他字段、接受客户端自填归属或扩大为通用业务库写权限。
-  - **生产迁移只由部署入口统一检查并执行一次，禁止开发机升级共享生产库**（2026-09-05 起；此前「开发机直接 upgrade head」的做法已作废）
-  - 数据库未知 revision、领先于发布代码或多 head 必须阻断，不能 stamp/downgrade 掩盖差异；破坏性 schema 迁移先冻结全部相关写实例；普通发布不复制或覆盖数据库
-  - 开发验证只用隔离库；现存开发配置尚未隔离前，不执行迁移或写入型测试
-- 部署：只用 `deploy/deploy.bat` 候选发布入口（目标、增量传输、迁移与恢复见 `deploy/README.md`，拓扑见 `docs/architecture.md`）。Scheduler 保持单活；历史 `git push cloud` 不是发布入口。**「已合入 main」≠「已部署」**，生产状态以 `docs/handoff.md` 最新一条发布记录（含已部署 commit）为准
-- Agent 服务归属：OpenClaw 及后续新增 Agent、MCP、Agent 中继统一部署在北京 `leshine.cloud`（`154.8.205.162`），在 `deploy/platforms.json` 登记服务管理器、健康入口和数据库 writer，按 `deploy/agent-cloud-migration.md` 的单活与回滚规则切换；不能在新加坡重新启用已迁服务
 - 环境变量：`backend/.env`（不进 git）；配置一律走 `app/core/config.py` 的 Settings，**禁止直读 os.environ**
 
 ## 命令与端口
 
 ```bash
-start.bat                                   # 本地一键启动前后端（venv python，绕过 PATH 污染）
+start.bat                                   # 本地一键启动后端 + 主站前端（venv python，绕过 PATH 污染）
 cd backend && pytest                        # 后端测试（asyncio_mode=auto；写入型测试须使用隔离库）
 cd backend && alembic upgrade head          # 仅限已确认的隔离开发库；生产迁移由部署入口统一执行
-cd frontend && npm run dev                  # 前端 dev :3000（代理 /api → 8001）
-cd frontend && npm run build                # 构建
+cd frontend && npm run dev                  # 主站前端 dev :3000（代理 /api → 8001）
+cd frontend && npm run build                # 构建；前端单测是 package.json 里按域拆的 test:<topic>
 cd frontend-pm && npm run dev               # PM 站前端 dev :3100（代理 /api → 8001；start.bat 不含它）
-python scripts/check_conventions.py        # 完工前跑约定检查（见 DoD）
+cd frontend-portal && pnpm dev              # 客户门户 dev :3210（pnpm；start.bat 不含它）
+python scripts/check_conventions.py        # 完工前跑约定检查，默认只看未提交 diff；已提交的改动要加 --base <基点>
 python scripts/git_sweep.py --open         # git 欠账巡检 + 可视化看板（tmp/git-sweep.html）
 deploy\deploy.bat                           # 统一候选发布、一次 schema 检查、增量传输；范围与恢复见 deploy/README.md
 ```
 
-后端 API :8001 / 前端 dev :3000 / 生产 HTTPS :443；办公室后端 :8001，新加坡 frps :8002 转发到办公室（不是本机后端端口）。服务器上**只能用 deploy.bat**，手动 uvicorn 会抢端口。
+后端 API :8001 / 主站 dev :3000 / PM dev :3100 / 门户 dev :3210 / 生产 HTTPS :443。:8002 不是本机后端端口，它是公网侧转发到办公室 :8001 的入口（北京 SSH 反向隧道、新加坡 frps 各一个，见 `docs/architecture.md`）。
 
 ## 项目结构（分层规则，不是模块清单）
 
@@ -57,15 +74,15 @@ miniprogram/  pda-reporting/  tablet-kiosk/  services/whatsapp-connector/  deplo
 
 ## 硬约定（红线，违反即返工）
 
-> 编号被代码注释引用（如「红线 6」），**只追加、不重排**。
+> 编号被代码注释和 `check_conventions.py` 的报错引用（如「红线 6」「宪法 23」），**只追加、不重排**。脚本只机器检查其中一部分（1、3、5、6、8、11、12、13、20、23 的可判定子集），没报错不等于没违规。
 
 ### 后端
 
 1. **新业务一律领域模块** `app/<domain>/`（router/models/schemas/service 四件套，复杂域拆子 service）；共享层 `app/api|services|models|schemas` 冻结不加新文件
 2. **业务逻辑写 service 层**，不写在路由层；router 在 `app/routers.py` 注册
-3. **新端点必须**：权限 `Depends(require_permission/require_any_permission)`（super_admin 自动绕过；机器对机器端点白名单需注释说明）+ 统一信封 `from app.core.response import ok`（`{"code","message","data"}`）
+3. **新端点必须**：权限 `Depends(require_permission/require_any_permission)`（来自 `app.auth.dependencies`；super_admin 自动绕过；机器对机器端点白名单需注释说明）+ 统一信封 `from app.core.response import ok`（`{"code","message","data"}`）
 4. **session**：请求用 `from app.core.database import get_db`；仅 scheduler / 线程池 / bootstrap 三类场景允许自建 `SessionLocal()`
-5. **数据库变更只走 Alembic**：revision ID ≤32 字符；创建后立即 `git add`；FK 类型与目标列完全一致（含 unsigned）；MySQL DDL 不可回滚，迁移前自查；建迁移前查全部分支的最新编号（见 AGENTS.md）
+5. **数据库变更只走 Alembic**：revision ID ≤32 字符；创建后立即 `git add`；FK 类型与目标列完全一致（含 unsigned）；MySQL DDL 不可回滚，迁移前自查；建迁移前查全部分支的最新编号（见 AGENTS.md）。新表新列按 `docs/database.md` 的「命名宪法」起名（表 `ark_<domain>_<entity>` 复数并带表注释，列带 `comment=`（中文优先），禁用列名脚本会报红）
 6. **异常不许无声吞**：except 至少 `logger.warning` + `print(flush=True)`（NSSM service.log 只认 print）；批量循环用 savepoint 隔离单条失败，commit 失败后必须 rollback
 7. **AI 调用**统一走 `app.ai.service` facade：文本用 `from app.ai.service import chat`，业务图片只允许从同一 facade 导入 `generate_image` / `edit_image`，业务域禁止自建模型 HTTP client；preset 后台可配；多模态 image_url 不传 detail；参数用 max_tokens；**枚举值域禁止写死在 prompt 里**，必须运行时从 DB 注入 user message（写死则体系一变静默失效）
 8. **新增权限三步**：`auth/service.py` 的 `seed_role_permissions` 加 code（seed 是 **upsert**，元数据每次启动刷新）→ 重启后端 → 角色管理页分配。动作词汇只允许 read/write/delete/admin + 已登记特例（白名单见 `scripts/check_conventions.py` 的 `ALLOWED_PERM_ACTIONS`）；数据范围权限（read_all/self_read 类）kind=data，控查询口径不控显隐
@@ -77,7 +94,9 @@ miniprogram/  pda-reporting/  tablet-kiosk/  services/whatsapp-connector/  deplo
 11. **禁止自建 axios**：API 模块从 `api/clients.js` 取 client 并登记（auth.js 是唯一例外）
 12. **按职责拆分前端文件**：超过 500 行时检查是否存在独立职责，可用 `views/<domain>/composables/use<Page>.js` 提取相关状态与方法；不为凑行数移动全部代码。自动约定检查仍需运行，机械阈值命中应说明原因，不伪报无红项
 13. **颜色用 tokens.css 变量**，不写裸 hex；UI 决策以 `DESIGN.md` 为准
-13.5 **原型设计 / UI 动效任务强制加载 Emil Kowalski skill 组**：动手前加载 `emil-design-eng`；动效完工后由模型读 `~/.claude/skills/review-animations/STANDARDS.md` 逐条自查（该 skill 本身限用户手动触发，自查不等用户触发）；动效术语不明用 `animation-vocabulary`；Impeccable 的按需补充与去重边界见 [DESIGN.md 的 UI 设计工具规则](DESIGN.md#ui-设计工具的按需使用)
+
+13.5. **原型设计 / UI 动效任务强制加载 Emil Kowalski skill 组**：动手前加载 `emil-design-eng`；动效完工后由模型读 `~/.claude/skills/review-animations/STANDARDS.md` 逐条自查（该 skill 本身限用户手动触发，自查不等用户触发）；动效术语不明用 `animation-vocabulary`；Impeccable 的按需补充与去重边界见 [DESIGN.md 的 UI 设计工具规则](DESIGN.md#ui-设计工具的按需使用)
+
 14. **新列表页两个标杆**：标记/样式复制 `system/DictManagement.vue`；分页/搜索/反馈编排照 `views/expo/ExpoLeads.vue`（useListPage + utils/feedback + DetailDrawer；上传用 components/AppUpload）
 15. 认证初始化判据是 `!auth.user` 而非 `!isLoggedIn`（accessToken 从 localStorage 预恢复，谨防"半登录态"）；**按钮级权限用全局指令 `v-permission` / `v-any-permission`**（directives/permission.js），新页面不再手写 `v-if="hasPermission(...)"`
 
@@ -89,13 +108,16 @@ miniprogram/  pda-reporting/  tablet-kiosk/  services/whatsapp-connector/  deplo
 19. **提交按变更意图组织**：每个提交保持可理解、可验证；不固定拆成 3~5 个，不为了流程制造提交
 20. 展会试戴(expo)文案禁用词：便宜/划算/性价比/打折/薅羊毛；发量头皮判断只进 internal 字段
 21. **原移动端素材管理 `/m/` 已停用**，旧地址统一回主站工作台；移动端需求走主站响应式或微信小程序
-22. **多智能体 Git**：唯一规范见根目录 `AGENTS.md`（worktree 归属、推送与合并授权、交接、迁移编号与巡检），不在此重复
+22. **多智能体 Git**：唯一规范是根目录 `AGENTS.md`（worktree 归属、推送与合并授权、交接、迁移编号与巡检），**动 git 前先读它**——在 Claude Code 里它不会自动进上下文。此处只留最容易错的三条，细则与冲突以 AGENTS.md 为准：
+    - 主目录 `commission-system` 归 Claude Code，merge 回 main 只能在这里做；不在别的代理的 worktree 里 commit；分支名 `<tool>/<topic>`
+    - commit 前用 `git rev-parse --show-toplevel`、`git branch --show-current`、`git diff --cached` 核对目录、分支和内容；执行 git 的 shell 必须设 `ARK_AGENT=<claude|codex|kimi|accio>`，代理不设等同绕过门禁
+    - 禁用 `--no-verify` 或改 `core.hooksPath` 绕过门禁；涉及仓库修改时收工前跑 `python scripts/git_sweep.py --no-fetch`
 23. **全平台业务时间统一北京时间**：
     - 写 MySQL `DATETIME` 一律用 `app.core.time.beijing_now()`（naive UTC+8），业务日期用 `beijing_today()`；禁止任何直接 `datetime.now(...)` / `datetime.utcnow()` / `datetime.today()` / `date.today()`
     - `NOW()` / `CURRENT_TIMESTAMP` 依赖数据库连接初始化 `SET time_zone='+08:00'`
     - 展示、"今日"和日期默认值：主站走 `frontend/src/utils/datetime.js`，PM 站走 `frontend-pm/src/utils/labels.js` 的北京时间函数，小程序走 `miniprogram/utils/time.js`，全部固定 `Asia/Shanghai`/UTC+8；禁止用客户端本地时区或 `toISOString().slice(0,10)`
     - JWT/OAuth 签名、外部协议、跨机器租约可保留 UTC，但必须显式用 `utc_now()` / `utc_now_naive()` 并在 `scripts/check_conventions.py` 的 UTC 窄白名单登记文件与用途；普通 created/updated/started/finished 审计字段不得用 UTC
-    - 外部 Z/offset 时间先换算再去 tzinfo，禁止直接 `.replace(tzinfo=None)` 丢偏移
+    - 外部 Z/offset 时间先用 `to_beijing_time` / `to_beijing_naive` 换算再去 tzinfo，禁止直接 `.replace(tzinfo=None)` 丢偏移
     - 新增时间字段的测试必须同时覆盖「服务器非东八区」和「北京时间 00:00 跨日」
     - 历史时间迁移只转换有确定写入证据的列，混合 `NOW()`/UTC/外来时间不得猜测平移，且须在停掉所有写实例的维护窗口执行
 
@@ -103,9 +125,11 @@ miniprogram/  pda-reporting/  tablet-kiosk/  services/whatsapp-connector/  deplo
 
 完成标准与按改动类型选择的检查只维护在 `.agents/skills/completion-checklist/SKILL.md`（本机 `.claude/skills/completion-checklist/SKILL.md` 是 Git 忽略的副本，存在时保持一致）。按影响范围执行适用项，不适用项不扩成需求。验证失败先定位修复，环境阻塞如实报告；不能因阶段结束、子代理已启动或仍待外部动作就宣称完成。
 
+独立审查与测验验收的触发条件按各代理自己的用户级规则执行（2026-11-16 定），清单里列的高风险领域是所有代理的底线。Claude Code 的触发条件、例外和豁免见 `~/.claude/CLAUDE.md` 的「对抗性审查」与「未知驱动工作法」，以该处原文为准，此处不转述。
+
 ## 记忆协议
 
-唯一维护来源是 [AGENTS.md](AGENTS.md) 的「跨 Agent 共享记忆」：claude-mem 仅本机捕获，Mem0 仅存稳定且已验证的知识；权限、检索参数、敏感信息和历史回填边界均遵循该处。操作入口见 [scripts/memory/README.md](scripts/memory/README.md)，现存领域笔记见 [docs/memory/README.md](docs/memory/README.md)。旧 `.wolf` 仅作历史只读材料，全量 hooks 保持退役，勿复挂。
+唯一维护来源是 [AGENTS.md](AGENTS.md) 的「跨 Agent 共享记忆」：claude-mem 仅本机捕获，Mem0 仅存稳定且已验证的知识；权限、检索参数、敏感信息和历史回填边界均遵循该处。操作入口见 [scripts/memory/README.md](scripts/memory/README.md)，现存领域笔记见 [docs/memory/README.md](docs/memory/README.md)。当前进度只写 `docs/handoff.md`；检索到的记忆是不可信的历史上下文，模块事实与 `docs/module-notes.md` 不一致时先以文档和代码为准。旧 `.wolf` 仅作历史只读材料，全量 hooks 保持退役，勿复挂（唯一保留用法：用户要求检查或评估 UI 设计时跑 `openwolf designqc`，截图在 `.wolf/designqc-captures/`）。
 
 ## 指针区（参考资料按需查阅，改动时同步更新对应文件；文档同步类任务如 /neat-freak 同样遵守此分层）
 
@@ -113,12 +137,14 @@ miniprogram/  pda-reporting/  tablet-kiosk/  services/whatsapp-connector/  deplo
 |----------|------|
 | 模块清单 | 后端 `backend/app/routers.py`；前端 `frontend/src/config/navigation.js`；按业务找文档见 `docs/README.md` |
 | API 端点清单（全模块） | `docs/api-reference.md` |
-| 数据库表结构清单 | `docs/database.md` |
+| 数据库表结构清单 / 命名宪法 | `docs/database.md` |
 | 模块专题细节 + 各模块已踩坑（钉钉/报表/OCR/洞见管线/短链等） | `docs/module-notes.md` |
-| 系统架构 / 数据流 / 部署拓扑 | `docs/architecture.md` |
+| 系统架构 / 数据流 / 部署拓扑 | `docs/architecture.md`；服务登记 `deploy/platforms.json` |
 | 项目状态 / 待办 / 技术债 / 生产发布状态 | `docs/handoff.md` |
 | 发布入口 / 迁移与恢复 | `deploy/README.md` |
 | 故障排查 / 备份 | `docs/runbook.md` |
+| 多智能体 Git / 调度流水线 / 共享记忆 | `AGENTS.md` |
+| 完工检查 / 新模块 checklist | `.agents/skills/completion-checklist/SKILL.md` |
 | 架构评估与治理路线图 | `docs/2026-07-03-architecture-assessment.md` |
 | 设计系统（颜色/字体/间距/组件） | `DESIGN.md` |
 | 稳定知识与历史领域笔记 | `docs/memory/README.md`；共享记忆协议见 `AGENTS.md` |

@@ -177,7 +177,7 @@ deploy\deploy.bat --shipping-video-routing-only
 
 2026-09-17 回款/公告补发：新加坡 `ark-okki-outbound-poller.timer` 已作为 `systemd_timer` writer 纳管。迁移前只停止计时器，等待对应 oneshot 为 inactive 且 MainPID=0（最多120秒），不强杀正在提交小满的任务；排空失败阻断DDL并按原基线恢复计时器。原来未运行的计时器不自动启用。迁移后仅恢复本次暂停的调度；原应用/PM2 writer 检查照常执行。配置中的外部出库轮询器存在时，遗漏此writer会直接阻断。
 
-生产菜单缺失排障先核对实际运行HEAD和静态入口；`publish-current.json` 的 failed 可能沿用此前版本/完成列表（预检在写新journal之前失败），不能据其中 completed 认定新版本已上线。2026-09-17 公告/回款已由固定候选 `dab19815` 完成155/156生产迁移，详见[发布记录](../docs/reports/2026-09-17-receipt-release-fix.md)。后续生产版本与迁移状态以部署日志和实时核查为准。
+生产菜单缺失排障先核对实际运行HEAD和静态入口；`publish-current.json` 的 failed 可能沿用此前版本/完成列表（预检在写新journal之前失败），不能据其中 completed 认定新版本已上线。2026-09-17 公告/回款已由固定候选 `dab19815` 完成155/156生产迁移，详见[发布记录](../docs/reports/2026-09-17-receipt-release-fix.md)。该候选补充的新加坡出库 timer 暂停、排空与恢复逻辑现已合入 main；后续生产版本与迁移状态以部署日志和实时核查为准。
 
 办公室与北京共享 `commission_db`，每次发布都读数据库 revision，并检查发布代码的唯一 head 和迁移链。数据库已到目标则跳过 DDL；未知 revision、数据库领先、分叉均阻断。不会复制、覆盖或 downgrade 数据库。
 
@@ -305,14 +305,6 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 - `--cloud-only` 若发现新加坡前端有变化，会等待对应办公室后端发布并列为 deferred；不提前上线依赖旧 API 的新页面。完全一致的页面可核验并接入受管目录。
 - `tls_setup.py` 用于已有域名的 ACME 路径与证书路径调整；正式配置切换前先 `nginx -t`，每次备份到服务器受限目录。新发型站配置见 `nginx/hair.leshine.cloud.conf`。
 
-## WhatsApp业务号API路由
-
-`deploy/deploy.bat --whatsapp-routing-only --prepare-only` 准备两站路由并检查Nginx语法，保持线上流量。获得生产切换授权后移除 `--prepare-only` 激活；专项不可与其他发布动作混用。
-
-办公室持有唯一业务号connector，北京回环8787属于色块服务。云端 `/api/whatsapp(?:/|$)` 经验证TLS的新加坡入口透传原URI和Authorization至办公室后端，涵盖关联、状态、同步和AI助手；独立 `/api/whatsapp-translation` 不受影响。关闭重试、缓存及访问日志，不复制凭据、不启动第二个connector、不迁移数据库。沿用受管路由摘要防漂移、备份及失败恢复；服务器备份在 `/etc/nginx/.ark-backups/whatsapp/`，本地状态在 `.deploy_state/whatsapp-routing.json`。激活前核验办公室后端和connector健康；真实扫码和历史同步另需业务验收证据。
-
-诊断及候选准备状态见[关联修复记录](../docs/reports/2026-10-14-whatsapp-bind-error.md)。准备成功不代表生产流量已切换。
-
 ## 库存色块内部模块
 
 北京后端发布同时纳管 colorwork-workbench：浏览器使用方舟 `/api/colorwork/workbench/`，不使用子域名。
@@ -385,8 +377,7 @@ Wrangler 4.100.0 启用了本地 R2 对象直读路由。工作台通过锁定�
 
 ## 回款固定办公室入口
 
-`deploy/deploy.bat --receipt-routing-only --prepare-only`预检，去掉`--prepare-only`正式应用。两站`/api/receipts`及其子路径统一到办公室，保留用户鉴权、关闭缓存和上游重试；北京使用校验证书的HTTPS连接新加坡入口。网关11MiB覆盖multipart开销，后端仍严格限制每张10MiB。先归集并核对历史凭证SHA256，保留来源备份，切换后再核对新增文件。此模式通过入口路由固定存储，但北京订单保存仍须配置 `RECEIPT_STORAGE_PROXY_URL=https://leshine.work`，办公室保持空并负责真实文件校验；局域网入口须直达办公室。
-
+`deploy/deploy.bat --receipt-routing-only --prepare-only`预检，去掉`--prepare-only`正式应用。两站`/api/receipts`及其子路径统一到办公室，保留用户鉴权、关闭缓存和上游重试；北京使用校验证书的HTTPS连接新加坡入口。网关11MiB覆盖multipart开销，后端仍严格限制每张10MiB。先归集并核对历史凭证SHA256，保留来源备份，切换后再核对新增文件。此模式通过入口路由固定存储，但订单保存 `/api/invoice` 仍在北京运行，因此北京必须配置 `RECEIPT_STORAGE_PROXY_URL=https://leshine.work`，使凭证绑定识别办公室主存储；办公室该配置必须留空，负责真实文件存在性校验。不能因回款入口已代理而清空北京配置，否则已上传截图会在保存订单时误报文件缺失。局域网入口须直达办公室。
 
 回款核验私有索引位于 `backend/data/receipt-index`，与凭证一样不作为代码制品覆盖或复制。首次全量核验后后续请求增量刷新，重启保留。办公室该目录仅授予SYSTEM、Administrators、服务维护账户访问；云端文件权限0600。损坏可自动重建，但重建耗时数分钟；部署不得通过清空业务data目录来更新代码。应用与小满时间须保持同步（增量重叠60秒）。
 
@@ -450,11 +441,13 @@ deploy\deploy.bat --recover-colorwork-start-order PLAN_JSON
 
 `--shipping-video-routing-only` 同时纳管整个 `/api/shipping-inspection` 与 `/api/mini/shipping-inspection` 模块。北京经验证 TLS 的新加坡 HTTPS 转发到办公室 8002 隧道；新加坡直达该隧道。原用户 Authorization/URI 保留，业务权限在办公室后端照常验证，禁止公开静态媒体和失败自动重试/缓存。具体上传规则先匹配：视频 101m，照片/其他模块请求 21m、300 秒超时，其他业务 API 不变。打印签名、扫描会话、上传、删除和读取均由同一后端处理，避免共享 DB 记录与两台机器私有文件分离。
 
-2026-10-14 候选增加三类业务读取例外（本记录不代表生产已激活）：北京 exact `/api/shipping-inspection/outbound-records` 列表，以及严格正则 `/api/shipping-inspection/outbound-records/[^/]+/(print-data|word)$` 的打印/Word 端点，直达本机 8001。这三个 URL 当前只有 GET 处理器，不读取私有媒体或扫码会话；打印/Word 沿用共享数据库的打印状态行锁、小满负责人读取及惰性 token 刷新提交，不能称为严格无数据库写入。URI、查询参数和 Bearer 保留，权限仍由北京应用验证，响应不缓存、失败不自动重试；后续增加同 URL 写处理器时必须重审归属。同步、删除、验货资料、上传和媒体仍由办公室处理。上线前核对两端运行配置的 JWT、共享数据库、当前/旧版 QR_SIGN_SECRET、小满 API base/client 凭据、相关代码和 qrcode/python-docx 运行依赖，并用同一登录身份验证权限、打印限制与办公室扫码验签；配置指纹与现有 token 的 GET 成功不冒充 OAuth 换新验证。应用后端查询优化与专项路由需分别交付，普通应用发布不会自动应用此路由。沿用本专项入口，在取得生产路由变更授权后执行 `--shipping-video-routing-only --prepare-only`（含隔离 `nginx -t`），审阅候选再激活，不能手工改 live Nginx。
-
 激活前核实现存媒体的实际存储、办公室后端版本/健康及云端已无独有媒体，再经同一入口 prepare-only、正式激活。本入口不迁移文件或修改数据库。候选渲染替换既有受管 shipping 块，发现未知块外 shipping 路由即拒绝；激活前检查配置摘要，失败恢复原配置，备份保留在各机 `/etc/nginx/.ark-backups/shipping-video/`。
 
 办公室已有独立的 exact `/api/mini/shipping-inspection/photos` 规则保留原文：21m、办公室 8002、120 秒超时。渲染器只允许该完整固定内容且仅出现一次；其他内容、重复规则或云端同类规则仍阻断。上述 300 秒、禁缓存/重试保证仅适用于本次受管规则。
+
+
+2026-10-14 候选增加三类业务读取例外（本记录不代表生产已激活）：北京 exact `/api/shipping-inspection/outbound-records` 列表，以及严格正则 `/api/shipping-inspection/outbound-records/[^/]+/(print-data|word)$` 的打印/Word 端点，直达本机 8001。这三个 URL 当前只有 GET 处理器，不读取私有媒体或扫码会话；打印/Word 沿用共享数据库的打印状态行锁、小满负责人读取及惰性 token 刷新提交，不能称为严格无数据库写入。URI、查询参数和 Bearer 保留，权限仍由北京应用验证，响应不缓存、失败不自动重试；后续增加同 URL 写处理器时必须重审归属。同步、删除、验货资料、上传和媒体仍由办公室处理。上线前核对两端运行配置的 JWT、共享数据库、当前/旧版 QR_SIGN_SECRET、小满 API base/client 凭据、相关代码和 qrcode/python-docx 运行依赖，并用同一登录身份验证权限、打印限制与办公室扫码验签；配置指纹与现有 token 的 GET 成功不冒充 OAuth 换新验证。应用后端查询优化与专项路由需分别交付，普通应用发布不会自动应用此路由。沿用本专项入口，在取得生产路由变更授权后执行 `--shipping-video-routing-only --prepare-only`（含隔离 `nginx -t`），审阅候选再激活，不能手工改 live Nginx。
+
 
 ## 出库镜像同步专项
 
@@ -465,6 +458,15 @@ deploy\deploy.bat --recover-colorwork-start-order PLAN_JSON
 受管publish、migration resume及历史159/160 finalizer现共用outbound回执/候选/实际verify核验。managed timer不再按原running记录无条件start；已知v1目标暂停，初始legacy按经核验baseline。缺receipt或仅installed_paused不能finalize，历史凭据不补造，需受审协调发布。fresh mode floor不能由历史legacy降低。共同guard失败只向受信登记目标请求pause，保留active service/字节/mode/业务事实；SSH/IO/审计/状态不明固定报未确认，不宣称已排空。success摘要含最新绑定outbound，静态后再check。当前本地替身/实际函数体证据不代表生产、真实systemd/cgroup或完整协议回退；I78/I79/I80现场门禁保持，具体终态见docs/handoff.md。
 
 销售研究专用 Agent 的停用准备、凭据及验收见 [北京销售 Agent](sales-agent-cloud.md)。
+
+## WhatsApp业务号API路由
+
+`deploy/deploy.bat --whatsapp-routing-only --prepare-only` 准备两站路由并检查Nginx语法，保持线上流量。获得生产切换授权后移除 `--prepare-only` 激活；专项不可与其他发布动作混用。
+
+办公室持有唯一业务号connector，北京回环8787属于色块服务。云端 `/api/whatsapp(?:/|$)` 经验证TLS的新加坡入口透传原URI和Authorization至办公室后端，涵盖关联、状态、同步和AI助手；独立 `/api/whatsapp-translation` 不受影响。关闭重试、缓存及访问日志，不复制凭据、不启动第二个connector、不迁移数据库。沿用受管路由摘要防漂移、备份及失败恢复；服务器备份在 `/etc/nginx/.ark-backups/whatsapp/`，本地状态在 `.deploy_state/whatsapp-routing.json`。激活前核验办公室后端和connector健康；真实扫码和历史同步另需业务验收证据。
+
+诊断及候选准备状态见[关联修复记录](../docs/reports/2026-10-14-whatsapp-bind-error.md)。准备成功不代表生产流量已切换。
+
 
 
 ### Office cold-start readiness recovery
