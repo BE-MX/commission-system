@@ -1,94 +1,159 @@
 <template>
-  <main class="factory-scan">
-    <header class="scan-head">
-      <GlassButton v-if="noteId || scanning" variant="link" :disabled="uploading" @click="goDrafts">返回草稿</GlassButton>
-      <GlassButton v-else variant="link" @click="router.push('/dashboard')">工作台</GlassButton>
-      <h1>工厂到货拍照</h1>
-      <span aria-hidden="true"></span>
+  <main class="inbound-station">
+    <header class="station-header">
+      <div class="station-brand"><img src="/shipping-app/icon-180.png" alt="" width="32" height="32" /><span>莱莎到货入库</span></div>
+      <button v-if="noteId || scanning" class="station-link" type="button" :disabled="uploading" @click="goDrafts"><ArrowLeft />返回草稿</button>
+      <button v-else class="station-link" type="button" @click="router.push('/dashboard')"><HomeFilled />工作台</button>
     </header>
 
-    <div v-if="initError" class="work-card" role="alert">
-      <p>{{ initError }}</p><GlassButton @click="initialize">重试</GlassButton>
-    </div>
-    <div v-else-if="!settings" class="work-card"><el-skeleton :rows="2" /></div>
+    <section v-if="initError" class="station-error" role="alert">
+      <Warning />
+      <div class="notice-body"><strong>{{ initError }}</strong><div class="notice-actions"><button class="station-secondary" type="button" @click="initialize">重试</button></div></div>
+    </section>
+    <div v-else-if="!settings" class="station-card skeleton-card"><el-skeleton :rows="2" animated /></div>
+
     <template v-else-if="scanning">
       <DocumentScanner v-if="!uploading" finish="emit" finish-label="识别这张" default-effect="enhanced"
         :max-upload-bytes="settings.max_upload_bytes" @captured="submitCapture" @cancel="goDrafts" />
-      <div v-else class="work-card" role="status"><el-skeleton :rows="3" /><p>正在上传照片…</p></div>
+      <section v-else class="station-card uploading-card" role="status">
+        <div class="sweep compact" aria-hidden="true"><span /></div>
+        <h2>正在上传照片</h2>
+        <p>请保持网络连接，上传完成后自动开始识别</p>
+      </section>
     </template>
 
-    <section v-else-if="!noteId" class="drafts">
-      <div class="work-card new-note">
-        <GlassButton class="capture-entry" variant="primary" :icon="Camera" full-width :disabled="uploading" @click="scanning = true">拍新单</GlassButton>
-        <div v-if="savedCapture" class="resume">
-          <GlassButton variant="link" :disabled="uploading" @click="submitCapture(savedCapture)">继续上传上次的照片</GlassButton>
-          <GlassButton variant="link" :disabled="uploading" @click="discardCapture">清除暂存照片</GlassButton>
-        </div>
-        <p v-if="uploadError" role="alert">{{ uploadError }}</p>
-      </div>
-      <h2>我的草稿</h2>
-      <div v-if="draftError" class="work-card" role="alert">
-        <p>无法读取草稿</p><GlassButton @click="loadDrafts">重试</GlassButton>
-      </div>
-      <el-skeleton v-else-if="loadingDrafts" :rows="3" />
-      <p v-else-if="!drafts.length" class="muted">暂无草稿</p>
-      <button v-for="draft in drafts" :key="draft.id" class="draft-card" type="button" :disabled="uploading" @click="goNote(draft.id)">
-        <span><strong>{{ draft.inbound_no }}</strong><small>{{ draft.delivery_no || draft.recognized_delivery_no || '单据编号待确认' }}</small></span>
-        <el-tag effect="plain">{{ noteStatus(draft) }}</el-tag>
-      </button>
-      <GlassButton v-if="drafts.length < draftTotal" :disabled="loadingDrafts" @click="loadDrafts(true)">加载更多</GlassButton>
-    </section>
+    <section v-else-if="!noteId">
+      <button class="scan-button" type="button" :disabled="uploading" @click="scanning = true"><Camera /><span>拍工厂送货单</span><ArrowRight /></button>
+      <p class="scan-hint">整张送货单放平拍摄，识别约 20–60 秒，期间可以先离开</p>
 
-    <section v-else-if="readError" class="work-card" role="alert">
-      <p>{{ readError }}</p><GlassButton @click="open(noteId)">重新读取</GlassButton>
-    </section>
-    <div v-else-if="!note" class="work-card"><el-skeleton :rows="4" /></div>
-    <template v-else>
-      <section class="work-card note-head">
-        <div>
-          <h2>{{ note.inbound_no }}</h2>
-          <p>{{ deliveryDate(note) }} · {{ noteStatus(note) }}</p>
-          <p v-if="note.delivery_no">工厂单据 {{ note.delivery_no }}</p>
-          <p v-else-if="note.recognized_delivery_no">识别编号 {{ note.recognized_delivery_no }}</p>
-        </div>
-        <InboundPhoto :note="note" />
-      </section>
-      <InboundBatchStatus :note-id="note.id" :refresh="batchRefresh" @batch-checked="open(note.id, { clear: false })" />
-      <section v-if="pendingRecognition(note)" class="work-card" role="status">
-        <el-skeleton :rows="4" />
-        <p>{{ delayed ? '识别仍在进行，可稍后从我的草稿继续。' : '识别约需 20–60 秒，可以先离开。' }}</p>
-        <GlassButton v-if="delayed" @click="open(noteId, { clear: false })">刷新识别状态</GlassButton>
-      </section>
-      <section v-else-if="note.status === 'draft'" class="review">
-        <div v-if="note.duplicate" class="work-card duplicate">
-          <h2>疑似重拍</h2>
-          <p>{{ note.duplicate.inbound_no }} · {{ note.duplicate.creator || '操作人未登记' }}</p>
-          <div class="review-actions">
-            <InboundPhoto v-if="note.duplicate.id" :note="note.duplicate" />
-            <GlassButton v-if="note.duplicate.id" variant="link" @click="goNote(note.duplicate.id)">打开原草稿</GlassButton>
-            <span v-else class="muted">请联系创建人或管理员核对原单</span>
-            <GlassButton v-if="note.editable" variant="link" link-tone="danger" :disabled="busy" @click="voidCurrent(true)">同一张，作废本草稿</GlassButton>
+      <section v-if="savedCapture" class="station-warning" role="status">
+        <Picture />
+        <div class="notice-body">
+          <strong>上次的照片还没上传</strong>
+          <p>照片暂存在这台手机上，可以继续上传或清除。</p>
+          <div class="notice-actions">
+            <button class="station-secondary" type="button" :disabled="uploading" @click="submitCapture(savedCapture)">继续上传</button>
+            <button class="station-secondary danger" type="button" :disabled="uploading" @click="discardCapture">清除照片</button>
           </div>
         </div>
-        <div v-if="note.recognition_error" class="work-card" role="alert">{{ note.recognition_error }}</div>
-        <div v-if="note.editable" class="work-card review-actions">
-          <GlassButton v-if="!hasSubmittedLines && note.recognition_status === 'done'" :disabled="busy" @click="confirmNumber">
-            {{ note.delivery_no || note.duplicate ? '更正单据编号' : '确认单据编号' }}
-          </GlassButton>
-          <GlassButton v-if="!hasSubmittedLines" variant="link" :disabled="busy" @click="retry(false)">重新识别</GlassButton>
-          <GlassButton v-if="!hasSubmittedLines && note.has_original" variant="link" :disabled="busy" @click="retry(true)">用原图识别</GlassButton>
-          <GlassButton v-if="note.recognition_status === 'failed'" variant="link" :disabled="busy" @click="scanning = true">重拍</GlassButton>
-          <GlassButton variant="link" :disabled="busy" @click="editLine(null)">手工录入</GlassButton>
-          <GlassButton v-if="!hasSubmittedLines" variant="link" link-tone="danger" :disabled="busy" @click="voidCurrent(false)">作废</GlassButton>
+      </section>
+      <section v-if="uploadError" class="station-error" role="alert"><Warning /><div class="notice-body">{{ uploadError }}</div></section>
+
+      <div class="section-title"><h2>我的草稿</h2><span v-if="draftTotal">共 {{ draftTotal }} 张</span></div>
+      <section v-if="draftError" class="station-error" role="alert">
+        <Warning />
+        <div class="notice-body"><strong>无法读取草稿</strong><div class="notice-actions"><button class="station-secondary" type="button" @click="loadDrafts()">重试</button></div></div>
+      </section>
+      <div v-else-if="loadingDrafts && !drafts.length" class="station-card skeleton-card"><el-skeleton :rows="3" animated /></div>
+      <div v-else-if="!drafts.length" class="empty-card"><strong>暂无草稿</strong>拍下送货单后，识别结果会保存在这里</div>
+      <ul v-else class="draft-list">
+        <li v-for="draft in drafts" :key="draft.id">
+          <button class="draft-card" type="button" :disabled="uploading" @click="goNote(draft.id)">
+            <span class="draft-main">
+              <span class="draft-eyebrow">工厂单据{{ draft.delivery_no ? '' : draft.recognized_delivery_no ? ' · 待确认' : '' }}</span>
+              <strong class="draft-no" :class="{ pending: !draftNumber(draft) }">{{ draftNumber(draft) || '编号待确认' }}</strong>
+              <small>{{ draft.inbound_no }} · {{ deliveryDate(draft) }}</small>
+            </span>
+            <span class="pill" :class="'tone-' + noteTone(draft)">{{ noteStatus(draft) }}</span>
+            <ArrowRight class="chevron" />
+          </button>
+        </li>
+      </ul>
+      <button v-if="drafts.length < draftTotal" class="station-secondary more-button" type="button" :disabled="loadingDrafts" @click="loadDrafts(true)">
+        {{ loadingDrafts ? '正在加载…' : '加载更多草稿' }}
+      </button>
+    </section>
+
+    <section v-else-if="readError" class="station-error" role="alert">
+      <Warning />
+      <div class="notice-body"><strong>{{ readError }}</strong><div class="notice-actions"><button class="station-secondary" type="button" @click="open(noteId)">重新读取</button></div></div>
+    </section>
+    <div v-else-if="!note" class="station-card skeleton-card"><el-skeleton :rows="4" animated /></div>
+
+    <template v-else>
+      <section class="station-card record-card">
+        <div class="record-top">
+          <div class="record-main">
+            <span class="eyebrow">工厂单据编号</span>
+            <h1 class="record-no" :class="{ pending: !draftNumber(note) }">{{ draftNumber(note) || '编号待确认' }}</h1>
+            <span v-if="note.delivery_no" class="pill tone-success">已确认</span>
+            <span v-else-if="note.recognized_delivery_no" class="pill tone-warning">识别结果，待确认</span>
+          </div>
+          <InboundPhoto class="record-photo" :note="note" />
         </div>
+        <dl class="record-meta">
+          <div><dt>入库草稿</dt><dd>{{ note.inbound_no }}</dd></div>
+          <div><dt>送货日期</dt><dd>{{ deliveryDate(note) }}</dd></div>
+          <div><dt>状态</dt><dd>{{ noteStatus(note) }}</dd></div>
+        </dl>
+        <button v-if="canConfirmNumber" :class="note.delivery_no || note.duplicate ? 'station-secondary' : 'submit-button'" type="button" :disabled="busy" @click="confirmNumber">
+          {{ note.delivery_no || note.duplicate ? '更正单据编号' : '对照原单，确认单据编号' }}
+        </button>
+      </section>
+
+      <section v-if="pendingRecognition(note)" class="station-card recognizing" role="status">
+        <div class="sweep" aria-hidden="true"><span /></div>
+        <h2>正在识别送货单</h2>
+        <p>{{ delayed ? '识别仍在进行，可以稍后从「我的草稿」继续。' : '约需 20–60 秒，可以先离开，结果会保存在草稿里。' }}</p>
+        <button v-if="delayed" class="station-secondary" type="button" @click="open(noteId, { clear: false })"><Refresh />刷新识别状态</button>
+      </section>
+
+      <section v-if="reviewing && note.duplicate" class="station-warning">
+        <Warning />
+        <div class="notice-body">
+          <strong>疑似重拍：可能是同一张单</strong>
+          <p>已有草稿 {{ note.duplicate.inbound_no }} · {{ note.duplicate.creator || '操作人未登记' }}</p>
+          <div class="notice-actions">
+            <InboundPhoto v-if="note.duplicate.id" :note="note.duplicate" />
+            <button v-if="note.duplicate.id" class="station-secondary" type="button" @click="goNote(note.duplicate.id)">打开原草稿</button>
+            <p v-else>请联系创建人或管理员核对原单</p>
+            <button v-if="note.editable" class="station-secondary danger" type="button" :disabled="busy" @click="voidCurrent(true)">是同一张，作废本草稿</button>
+          </div>
+        </div>
+      </section>
+
+      <section v-if="reviewing && note.recognition_error" class="station-error" role="alert">
+        <Warning />
+        <div class="notice-body">
+          <strong>{{ note.recognition_error }}</strong>
+          <div v-if="note.editable && note.recognition_status === 'failed'" class="notice-actions">
+            <button class="submit-button" type="button" :disabled="busy" @click="scanning = true"><Camera />重拍送货单</button>
+          </div>
+        </div>
+      </section>
+
+      <section v-if="reviewing && note.lines.length" class="station-card">
+        <div class="section-heading"><h2>核对进度</h2><span>{{ handledCount }} / {{ note.lines.length }} 行已核对</span></div>
+        <div class="progress-track" role="progressbar" aria-label="已核对行数" :aria-valuetext="handledCount + ' / ' + note.lines.length + ' 行已核对'" :aria-valuenow="handledCount" aria-valuemin="0" :aria-valuemax="note.lines.length">
+          <span :style="{ transform: 'scaleX(' + handledCount / note.lines.length + ')' }" />
+        </div>
+        <ul class="tally">
+          <li v-for="item in tallies" :key="item.label"><span class="pill" :class="'tone-' + item.tone"><b>{{ item.count }}</b>{{ item.label }}</span></li>
+        </ul>
+      </section>
+
+      <InboundBatchStatus :note-id="note.id" :refresh="batchRefresh" @batch-checked="open(note.id, { clear: false })" />
+
+      <template v-if="reviewing">
         <section v-for="group in groups" :key="group.ref" class="review-group">
-          <h2>{{ /^\d/.test(group.ref) ? '单号 ' + group.ref : group.ref }}</h2>
+          <div class="group-heading"><h2>{{ /^\d/.test(group.ref) ? '单号 ' + group.ref : group.ref }}</h2><span>{{ group.items.length }} 行</span></div>
           <InboundReviewLine v-for="line in group.items" :key="line.id" :line="line" :editable="note.editable" :busy="busy"
             @change="changeLine(line.id, $event)" @edit="editLine(line)" @choose="candidateId = line.id" />
         </section>
+
+        <section v-if="note.editable" class="station-card">
+          <div class="section-heading"><h2>其他操作</h2></div>
+          <div class="tool-grid">
+            <button class="tool" type="button" :disabled="busy" @click="editLine(null)"><Plus />手工录入一行</button>
+            <button v-if="!hasSubmittedLines" class="tool" type="button" :disabled="busy" @click="retry(false)"><Refresh />重新识别</button>
+            <button v-if="!hasSubmittedLines && note.has_original" class="tool" type="button" :disabled="busy" @click="retry(true)"><Picture />用原图识别</button>
+            <button v-if="!hasSubmittedLines" class="tool danger" type="button" :disabled="busy" @click="voidCurrent(false)"><Delete />作废草稿</button>
+          </div>
+        </section>
+
         <footer v-if="note.lines.length" class="scan-foot">
-          <span>已勾选 <strong>{{ selected.length }}</strong> 行 · 合计 {{ selectedQuantity }} 件</span>
-          <GlassButton variant="primary" :disabled="!selected.length" @click="summary = true">核对汇总</GlassButton>
+          <div class="foot-summary"><span>已勾选</span><strong>{{ selected.length }} 行 · {{ selectedQuantity }} 件</strong></div>
+          <button class="submit-button" type="button" :disabled="!selected.length" @click="summary = true">核对汇总<ArrowRight /></button>
         </footer>
         <CandidateSheet :line="candidate" :busy="busy" @close="candidateId = null" @edit="editCandidate"
           @select="choose" />
@@ -96,16 +161,16 @@
           @close="editor = false" @save="saveLine" />
         <InboundSummarySheet :note="note" :open="summary" :sync-enabled="settings.sync_enabled"
           @close="summary = false" @batch-checked="refreshBatch" />
-      </section>
+      </template>
     </template>
+    <div class="station-footnote">莱莎方舟 · 工厂到货入库</div>
   </main>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Camera } from '@element-plus/icons-vue'
-import GlassButton from '@/components/GlassButton.vue'
+import { ArrowLeft, ArrowRight, Camera, Delete, HomeFilled, Picture, Plus, Refresh, Warning } from '@element-plus/icons-vue'
 import DocumentScanner from '@/components/document-scanner/DocumentScanner.vue'
 import { factoryInboundApi } from '@/api/factoryInbound'
 import { useAuthStore } from '@/stores/auth'
@@ -118,7 +183,7 @@ import InboundSummarySheet from './components/InboundSummarySheet.vue'
 import LineEditDialog from './components/LineEditDialog.vue'
 import { clearCapture, loadCapture, storeCapture } from './composables/pendingCapture'
 import { useInboundRecognition } from './composables/useInboundRecognition'
-import { deliveryDate, groupLines, noteStatus, pendingRecognition } from './inboundLabels'
+import { deliveryDate, groupLines, lineTally, noteStatus, noteTone, pendingRecognition } from './inboundLabels'
 
 const route = useRoute()
 const router = useRouter()
@@ -147,6 +212,12 @@ const groups = computed(() => groupLines(note.value?.lines || []))
 const selected = computed(() => note.value?.lines.filter(line => !line.batch_id && line.selected && line.match_status === 'matched') || [])
 const hasSubmittedLines = computed(() => note.value?.lines.some(line => line.batch_id))
 const selectedQuantity = computed(() => selected.value.reduce((sum, line) => sum + line.values.quantity, 0))
+const reviewing = computed(() => note.value?.status === 'draft' && !pendingRecognition(note.value))
+const canConfirmNumber = computed(() => reviewing.value && note.value.editable && !hasSubmittedLines.value
+  && note.value.recognition_status === 'done')
+const tallies = computed(() => lineTally(note.value?.lines || []))
+const handledCount = computed(() => tallies.value.filter(item => item.handled).reduce((sum, item) => sum + item.count, 0))
+const draftNumber = item => item.delivery_no || item.recognized_delivery_no || ''
 let uploadRequest
 let draftRequest
 let draftPage = 1
@@ -168,6 +239,7 @@ async function loadDrafts(more = false) {
   draftRequest = controller
   loadingDrafts.value = true
   draftError.value = false
+  if (!more) drafts.value = []
   try {
     const page = more ? draftPage + 1 : 1
     const { data } = await factoryInboundApi.list({ mine: true, status: 'draft', page }, { signal: controller.signal, suppressToast: true })
@@ -320,59 +392,5 @@ onBeforeUnmount(() => {
   draftRequest?.abort()
 })
 </script>
-
-<style scoped>
-.factory-scan {
-  max-width: 680px;
-  min-height: 100dvh;
-  margin: auto;
-  padding: 0 16px 16px;
-  color: var(--el-text-color-primary);
-}
-.scan-head {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  padding: max(8px, env(safe-area-inset-top)) 0 8px;
-  background: var(--el-bg-color-page);
-}
-.scan-head :deep(.glass-button) { justify-self: start; }
-h1 { font-size: 18px; margin: 0; }
-h2 { font-size: 16px; margin: 0; }
-.work-card, .draft-card, .scan-foot {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
-  border-radius: 14px;
-  padding: 14px;
-}
-.work-card { margin-bottom: 10px; }
-.note-head, .draft-card, .scan-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.note-head p { margin: 4px 0; }
-.draft-card {
-  width: 100%;
-  cursor: pointer;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-}
-.draft-card small { display: block; margin-top: 4px; }
-.new-note .capture-entry { min-height: 48px; }
-.drafts, .review-group { display: grid; gap: 10px; }
-.review-group { margin-bottom: 16px; }
-.muted, small { color: var(--el-text-color-secondary); }
-.review-actions, .resume { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.duplicate { border-color: var(--el-color-warning); }
-.scan-foot {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  padding-bottom: max(14px, env(safe-area-inset-bottom));
-}
-@media (max-width: 450px) {
-  .factory-scan { padding-inline: 10px; }
-  .factory-scan :deep(.glass-button) { min-height: 44px; }
-}
-</style>
+<style src="./pills.css" scoped></style>
+<style src="./scan.css" scoped></style>
