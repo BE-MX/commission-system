@@ -26,6 +26,14 @@ def _init_adapters():
             if isinstance(settings.FEDEX_SANDBOX, str)
             else bool(settings.FEDEX_SANDBOX),
         )
+    if settings.SF_PARTNER_ID and settings.SF_CHECKWORD:
+        from app.tracking.carriers.sf import SFAdapter
+
+        CARRIER_ADAPTERS["SF"] = SFAdapter(
+            partner_id=settings.SF_PARTNER_ID,
+            checkword=settings.SF_CHECKWORD,
+            sandbox=str(settings.SF_SANDBOX).strip().lower() != "false",
+        )
 
 
 def get_adapter(carrier: str) -> CarrierAdapter | None:

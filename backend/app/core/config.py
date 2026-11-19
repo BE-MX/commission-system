@@ -145,6 +145,11 @@ class Settings(BaseSettings):
     FEDEX_CLIENT_SECRET: str = ""
     FEDEX_SANDBOX: str = "false"
 
+    # ── 顺丰丰桥 API（路由查询，OAuth2）─────────────────
+    SF_PARTNER_ID: str = ""   # 顾客编码
+    SF_CHECKWORD: str = ""    # 校验码（沙箱与生产不同）
+    SF_SANDBOX: str = "true"  # 接口上线前只能调沙箱
+
     # ── 轮询配置 ─────────────────────────────────────────
     TRACKING_POLL_BATCH_SIZE: int = 50
     STAGING_SCAN_BATCH_SIZE: int = 100
