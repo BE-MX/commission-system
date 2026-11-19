@@ -218,6 +218,38 @@ h2 { margin:0; font:500 clamp(32px,4vw,54px)/1.15 "Songti SC",STSong,serif; lett
 .variant-editor{padding:18px;border:1px solid #c5dccc;border-radius:12px;background:#f7fbf8}.variant-editor h3{margin:0;font-size:20px}.variant-editor p{font-size:15px;line-height:1.8;color:#446952}.variant-editor button{min-height:44px;padding:8px 12px;border:1px solid #b5cfbf;border-radius:9px;background:#fff;color:#17573c;font-size:15px;cursor:pointer}.variant-add{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.variant-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid #dce8df;flex-wrap:wrap}.variant-row>strong{min-width:170px;font-size:17px}.variant-row label{display:flex!important;align-items:center;gap:8px;margin:0!important;font-size:15px!important}.variant-row input[type=checkbox]{width:22px!important;height:22px!important}.variant-row input[type=number]{width:130px;min-height:44px;font-size:18px}.order-item-options p{font-size:16px;line-height:1.8;color:#315d47;margin:8px 0}
 @media(max-width:600px){.product-options{padding:18px 14px}.product-options button{min-height:52px;font-size:18px;padding:11px 14px}.variant-row>strong{width:calc(100% - 100px);min-width:0}.variant-row label input[type=number]{width:120px}}
 
+/* Product details use large, high-contrast type at every viewport width. */
+.detail-copy { min-width:0; overflow-wrap:anywhere; }
+.detail-series { font-size:1.125rem; letter-spacing:.04em; }
+.detail-copy h2 { font-size:2.25rem; line-height:1.35; }
+.detail-summary { color:#3f6253; font-size:1.25rem; line-height:1.85; }
+.detail-specs { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.detail-specs span { min-height:100px; padding:16px; gap:8px; font-size:1.25rem; line-height:1.6; }
+.detail-specs small { color:#4d6e5f; font-size:1.0625rem; }
+.detail-block { padding-top:28px; }
+.detail-block h3 { margin-bottom:14px; font-size:1.625rem; line-height:1.5; }
+.detail-block ul { padding-left:26px; color:#3f6253; font-size:1.25rem; line-height:1.9; }
+.detail-block li + li { margin-top:8px; }
+.detail-block p,.detail-copy details p { color:#3f6253; font-size:1.25rem; line-height:1.9; }
+.scenario-chips { gap:10px; margin-top:22px; }
+.scenario-chips span { padding:10px 16px; font-size:1.125rem; line-height:1.5; }
+.detail-copy details { margin-top:24px; padding:18px 0; }
+.detail-copy summary { min-height:48px; align-content:center; font-size:1.25rem; font-weight:600; line-height:1.6; }
+.detail-copy details p { margin-top:14px; }
+.download-row { gap:12px; margin-top:22px; }
+.download-row a { min-height:48px; padding:10px 16px; display:flex; align-items:center; color:#315d47; font-size:1.125rem; line-height:1.5; }
+.detail-buy { flex-wrap:wrap; gap:14px; }
+.detail-buy small { color:#4d6e5f; font-size:1.0625rem; }
+.detail-buy strong { font-size:2rem; font-variant-numeric:lining-nums tabular-nums; }
+.detail-buy button { min-height:56px; padding:12px 22px; font-size:1.25rem; font-weight:600; }
+.detail-close { width:48px; height:48px; font-size:30px; }
+.product-options legend { font-size:1.375rem; }
+.product-options button { min-height:54px; font-size:1.25rem; }
+.product-options p { color:#315d47; font-size:1.125rem; line-height:1.8; }
+.download-row a:focus-visible,.detail-close:focus-visible,.detail-buy button:focus-visible,.detail-copy summary:focus-visible { outline:3px solid #1b714f; outline-offset:3px; }
+@media(max-width:760px) { .detail-copy { padding:30px 20px 26px; }.detail-buy { padding:16px 20px max(16px,env(safe-area-inset-bottom)); } }
+@media(max-width:360px) { .detail-specs span { padding:12px; }.detail-buy button { flex:1; } }
+
 /* One-time retail bridge: full-height embedded experience. */
 .retail-tryon-shell{position:fixed;inset:0;z-index:1000;background:#f8f4ed}.retail-tryon-shell iframe{display:block;width:100%;height:100%;border:0;background:#f8f4ed}
 .retail-tryon-gate{min-height:100dvh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 15%,#e6f6ee,#f7f4ed 62%)}.retail-tryon-gate>section{width:min(520px,100%);padding:48px 38px;text-align:center;border:1px solid #cde2d7;border-radius:24px;background:#fff;box-shadow:0 22px 70px rgba(20,82,57,.14)}.tryon-gate-mark{width:70px;height:70px;margin:0 auto 22px;display:grid;place-items:center;border-radius:22px;color:#fff;background:#078b5c;font:800 22px Arial,sans-serif}.retail-tryon-gate h1{margin:0 0 13px;color:#123f30;font-size:29px}.retail-tryon-gate p{margin:0;color:#648075;font-size:15px;line-height:1.8}.tryon-spinner{width:34px;height:34px;margin:27px auto 0;display:block;border:3px solid #cfe4da;border-top-color:#078b5c;border-radius:50%;animation:tryon-spin .8s linear infinite}.tryon-gate-actions{margin-top:28px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px}.tryon-gate-actions a,.tryon-gate-actions button{min-height:46px;padding:0 22px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;color:#fff;background:#078b5c;font:700 14px inherit;cursor:pointer}.tryon-gate-actions .secondary{color:#386554;background:#edf5f1}@keyframes tryon-spin{to{transform:rotate(360deg)}}

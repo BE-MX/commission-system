@@ -159,8 +159,8 @@ function ProductDetail({ product, onClose, onAdd }: { product: Product; onClose:
       </div>
       <div className="detail-copy">
         <span className="detail-series">{product.category}</span><h2>{product.name}</h2><p className="detail-summary">{product.description}</p>
-        <div className="detail-specs"><span><small>材质</small>{product.material}</span><span><small>长度</small>{selected ? `${selected.length}厘米` : product.length}</span><span><small>颜色</small>{product.color}</span><span><small>发网</small>{selected?.cap ?? product.construction ?? "—"}</span><span><small>发量</small>{product.hairVolume || "—"}</span><span><small>分缝</small>{product.parting || "—"}</span></div>
         <ProductOptions variants={variants} value={variantKey} onChange={setVariantKey} />
+        <div className="detail-specs"><span><small>材质</small>{product.material}</span><span><small>所选长度</small>{selected ? `${selected.length}厘米` : product.length}</span><span><small>颜色</small>{product.color}</span><span><small>所选网底</small>{selected?.cap ?? product.construction ?? "—"}</span><span><small>发量</small>{product.hairVolume || "—"}</span><span><small>分缝</small>{product.parting || "—"}</span></div>
         {product.highlights.length > 0 && <div className="detail-block"><h3>核心卖点</h3><ul>{product.highlights.map((item) => <li key={item}>{item}</li>)}</ul></div>}
         {product.audience.length > 0 && <div className="detail-block"><h3>适合人群</h3><p>{product.audience.join("；")}</p></div>}
         {product.scenarios.length > 0 && <div className="scenario-chips">{product.scenarios.map((item) => <span key={item}>{item}</span>)}</div>}
