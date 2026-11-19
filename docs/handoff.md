@@ -2,7 +2,8 @@
 
 - 办公室和北京后端已发布 `0746da2daa0363ed2afed65941a896a114af0c98`，回执 `ca3921eb3d544ed191067fb5acf2650c` 为 `succeeded`。数据库版本仍为 `275_factory_inbound_batch`。修复仅识别小满采购入库按未使用单号查询的精确空响应。未知或已发请求仍按原规则暂停。135 项工厂到货测试及独立审查通过。
 - 办公室已开启拍照及小满入库同步。小满供应商为鄄城工厂 `SU0001`，目标为默认仓 `WH002`，采用已核实的采购中状态。北京和新加坡公网的工厂到货接口均转办公室。两公网和内网 HTTPS 验证页面、健康检查和受保护的入库预览。照片保存在办公室的私有目录，OCR 预设已创建。
-- 现有管理员权限沿用；验收时有 1 个账号同时具备入库权限和有效小满绑定。方舟到货单、入库批次均为 0，本次验收没有上传业务照片、调用 OCR 或创建真实小满单据。修复候选保留在 `codex/factory-inbound-activation-release`，尚未合并到 `origin/main`。下次按 main 发版须包含该修复。证据位于 `.deploy_state/factory-inbound-enable-20261119/` 与 `.deploy_state/factory-inbound-routing.json`。
+- 现有管理员权限沿用；验收时有 1 个账号同时具备入库权限和有效小满绑定。开关验收时方舟到货单、入库批次均为 0，验收未创建真实小满单据。已部署的入库查回修复以 `e76bf9c4` 移植到 main。证据位于 `.deploy_state/factory-inbound-enable-20261119/` 与 `.deploy_state/factory-inbound-routing.json`。
+- 生产 `factory_delivery_ocr` 预设切到 `deepseek-flash` 后关闭思考模式。两次获批调用同一失败样本：首次有 16 行 `quantity` 类型校验错误；补充数量整数、单位分列和不确定填 `null` 的规则后，16 行均返回整数数量并通过校验，随即保存生产预设。诊断只读单据，未写入库存。仓库默认 OCR 提示词同步了同一数量规则。
 
 ## 2026-11-18 最新 main 20d86027 全局部署（Codex，已部署）
 
