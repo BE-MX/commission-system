@@ -2,6 +2,7 @@
 
 from datetime import date, datetime
 from io import BytesIO
+from itertools import zip_longest
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, Side
@@ -10,7 +11,7 @@ from openpyxl.worksheet.page import PageMargins
 
 from app.domestic.constants import PRODUCT_TYPES
 from app.domestic.balance_service import money
-from app.domestic.export_image_service import add_cell_images, needs_image_appendix, wrapped_text_lines
+from app.domestic.export_image_service import add_cell_images, text_column_width, wrapped_text_lines
 
 
 # Business rows group the repeated product attributes into one readable cell,
@@ -35,24 +36,18 @@ _MONEY_FIELDS = {"original_price", "discount_amount", "discount_price", "labor_f
 _FONT_NAME = "宋体"
 _THIN = Side(style="thin", color="000000")
 _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
-_LONG_TEXT_THRESHOLD = 80
-_TEXT_FIELDS = (
-    ("hairstyle", "发型"),
-    ("color", "颜色"),
-    ("style_requirement", "发型要求"),
-    ("remark", "备注"),
-)
+_MIN_TEXT_WIDTHS = {
+    "specification": 17, "product_name": 16, "craft": 11, "length": 10, "net_color": 11,
+    "size": 10, "density": 9, "hairstyle": 11, "color": 10, "style_requirement": 13, "remark": 16,
+}
+_MAX_TEXT_WIDTH = 52
+# Keep rows below Excel's 409pt limit and allow those with images to reserve space for thumbnails.
+_MAX_ROW_TEXT_LINES = 20
+_MAX_TEXT_LINES_WITH_IMAGES = 14
 
 
 def _safe_text(value) -> str:
     text = "" if value is None else str(value).strip()
-    if text.startswith(("=", "+", "-", "@")):
-        return f"'{text}"
-    return text
-
-
-def _safe_raw_text(value) -> str:
-    text = "" if value is None else str(value)
     if text.startswith(("=", "+", "-", "@")):
         return f"'{text}"
     return text
@@ -81,73 +76,39 @@ def _wrapped_lines(value, width: int) -> int:
     return len(wrapped_text_lines(value, width))
 
 
-def _print_chunks(
-    text: str, width: int = 100, max_lines: int = 18, max_chars: int = 600,
-) -> list[str]:
-    chars_per_line = max(6, int(width * 1.4))
-    pieces = []
-    for line in text.splitlines(keepends=True) or [text]:
-        pieces.extend(
-            line[index:index + chars_per_line]
-            for index in range(0, len(line), chars_per_line)
-        )
-    chunks = []
-    current = ""
-    for piece in pieces:
-        candidate = current + piece
-        if current and (
-            len(candidate) > max_chars or _wrapped_lines(candidate, width) > max_lines
-        ):
-            chunks.append(current)
-            current = piece
-        else:
-            current = candidate
-    if current or not chunks:
-        chunks.append(current)
-    return chunks
+def _text_chunks(text: str, width: float) -> list[str]:
+    lines = wrapped_text_lines(text, width)
+    if len(lines) > 1 and not lines[-1]:
+        lines.pop()
+    # Join the estimated lines without adding breaks. Excel wraps the original text.
+    return [
+        "".join(lines[start:start + _MAX_ROW_TEXT_LINES])
+        for start in range(0, len(lines), _MAX_ROW_TEXT_LINES)
+    ]
 
 
-def _append_full_requirements(ws, detail: dict, columns: tuple, start_row: int) -> int:
-    rows = []
-    for item in detail.get("items") or []:
-        for key, label in _TEXT_FIELDS:
-            if detail.get("order_kind") == "production" and key in ("hairstyle", "style_requirement"):
-                continue
-            text = str(item.get(key) or "").strip()
-            width = next((width for field, _, width in columns if field == key), 22)
-            image_overflow = item.get(_IMAGE_FIELDS[key]) and needs_image_appendix(text, width)
-            if len(text) > _LONG_TEXT_THRESHOLD or image_overflow:
-                for index, chunk in enumerate(_print_chunks(text)):
-                    chunk_label = label if index == 0 else f"{label}（续）"
-                    rows.append((_display(item.get("line_code")), chunk_label, _safe_raw_text(chunk)))
-    order_remark = str(detail.get("remark") or "").strip()
-    if len(order_remark) > _LONG_TEXT_THRESHOLD:
-        for index, chunk in enumerate(_print_chunks(order_remark)):
-            label = "订单备注" if index == 0 else "订单备注（续）"
-            rows.append(("订单", label, _safe_raw_text(chunk)))
-    if not rows:
-        return ws.max_row
-
-    last_col = len(columns)
-    ws.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=last_col)
-    ws.cell(start_row, 1, "完整要求").font = Font(name=_FONT_NAME, size=12, bold=True)
-    ws.row_dimensions[start_row].height = 28
-    header_row = start_row + 1
-    content_width = sum(width for _, _, width in columns[2:])
-    for row_idx, values in enumerate([("明细号", "字段", "完整内容"), *rows], start=header_row):
-        ws.merge_cells(start_row=row_idx, start_column=3, end_row=row_idx, end_column=last_col)
-        for col, value in enumerate(values, start=1):
-            cell = ws.cell(row_idx, col, value)
-            cell.font = Font(name=_FONT_NAME, size=11, bold=row_idx == header_row)
-            cell.alignment = Alignment(horizontal="left" if col == 3 else "center", vertical="top", wrap_text=True)
-            cell.border = _BORDER
-        widths = (columns[0][2], columns[1][2], min(100, content_width))
-        lines = max(_wrapped_lines(value, width) for value, width in zip(values, widths))
-        ws.row_dimensions[row_idx].height = max(30, lines * 15 + 15)
-    return ws.max_row
+def _fit_columns(columns: tuple, item_values: list[dict]) -> tuple:
+    """Reallocate spare text column width within the sheet's existing print width."""
+    adjustments = []
+    for key, label, width in columns:
+        if key not in _MIN_TEXT_WIDTHS:
+            adjustments.append(0)
+            continue
+        content_width = max((text_column_width(values.get(key)) for values in item_values), default=0)
+        preferred = min(_MAX_TEXT_WIDTH, max(_MIN_TEXT_WIDTHS[key], text_column_width(label), content_width))
+        adjustments.append(preferred - width)
+    spare = -sum(change for change in adjustments if change < 0)
+    needed = sum(change for change in adjustments if change > 0)
+    if not spare or not needed:
+        return columns
+    transfer = min(spare, needed)
+    return tuple(
+        (key, label, width + change * transfer / (needed if change > 0 else spare))
+        for (key, label, width), change in zip(columns, adjustments)
+    )
 
 
-def _item_values(item: dict) -> dict:
+def _item_values(item: dict, *, production: bool) -> dict:
     attrs = item.get("attrs") or {}
     piece = attrs.get("product_type") == "piece"
     specification = [f"工艺/尺寸：{attrs.get('craft') or '—'}", f"发长：{attrs.get('length') or '—'}"]
@@ -165,7 +126,44 @@ def _item_values(item: dict) -> dict:
     for key in _MONEY_FIELDS - {"discount_price"}:
         values[key] = float(money(item[key])) if item.get(key) is not None else None
     values["discount_price"] = float(money(item["unit_price"]) - money(item.get("labor_fee"))) if item.get("unit_price") is not None else None
+    if item.get("status") == 3:
+        values["line_code"] = f"{values['line_code']}（已终止）"
+        values["line_amount"] = 0
+        values["issued_qty"] = "已终止"
+    if not production and item.get("guest_name"):
+        values["specification"] = f"顾客：{_safe_text(item['guest_name'])}\n{values['specification']}"
     return values
+
+
+def _write_item_rows(ws, first_row: int, columns: tuple, item: dict, values: dict) -> int:
+    chunks = []
+    for key, _, width in columns:
+        value = values.get(key)
+        parts = _text_chunks(value, width) if isinstance(value, str) and key != "line_code" else [value]
+        if key in _IMAGE_FIELDS and item.get(_IMAGE_FIELDS[key]) and _wrapped_lines(parts[-1], width) > _MAX_TEXT_LINES_WITH_IMAGES:
+            parts.append(None)
+        chunks.append(parts)
+
+    for offset, row_values in enumerate(zip_longest(*chunks)):
+        row = first_row + offset
+        if offset:
+            row_values = (f"{_display(item.get('line_code'))}（续）", *row_values[1:])
+        lines = max(_wrapped_lines(value, width) for value, (_, _, width) in zip(row_values, columns))
+        ws.row_dimensions[row].height = max(75 if not offset else 30, lines * 15 + 15)
+        for col, ((key, _, width), value, parts) in enumerate(zip(columns, row_values, chunks), start=1):
+            cell = ws.cell(row, col, value)
+            cell.font = Font(name=_FONT_NAME, size=11)
+            horizontal = "right" if key in _MONEY_FIELDS else "left" if key in _IMAGE_FIELDS else "center"
+            cell.alignment = Alignment(horizontal=horizontal, vertical="center", wrap_text=True)
+            cell.border = _BORDER
+            if isinstance(value, str):
+                # A continuation may start with "=" even when the original value did not.
+                cell.data_type = "s"
+            if key in _MONEY_FIELDS:
+                cell.number_format = '#,##0.00;[Red]-#,##0.00;0.00'
+            if key in _IMAGE_FIELDS and offset == len(parts) - 1:
+                add_cell_images(ws, row, col, item.get(_IMAGE_FIELDS[key]) or [], width)
+    return first_row + max(map(len, chunks))
 
 
 def _finance_text(detail: dict) -> str:
@@ -192,6 +190,10 @@ def _add_order_sheet(wb: Workbook, detail: dict, applicant_name: str, *, show_pr
     include_finance = show_prices and not production
     if not show_prices:
         columns = tuple(column for column in columns if column[0] not in _MONEY_FIELDS)
+    items = detail.get("items") or []
+    item_values = [_item_values(item, production=production) for item in items]
+    columns = _fit_columns(columns, item_values)
+    sheet_width = sum(width for _, _, width in columns)
     last_column = get_column_letter(len(columns))
     header_row = 5 if include_finance else 4
     first_item_row = header_row + 1
@@ -233,7 +235,7 @@ def _add_order_sheet(wb: Workbook, detail: dict, applicant_name: str, *, show_pr
         cell.font = Font(name=_FONT_NAME, size=12, bold=True)
         cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
         cell.border = _BORDER
-        ws.row_dimensions[row].height = max(38, _wrapped_lines(cell.value, sum(c[2] for c in columns)) * 15 + 15)
+        ws.row_dimensions[row].height = max(38, _wrapped_lines(cell.value, sheet_width) * 15 + 15)
     for col, (_, label, width) in enumerate(columns, start=1):
         cell = ws.cell(header_row, col, label)
         cell.font = Font(name=_FONT_NAME, size=11, bold=True)
@@ -241,42 +243,25 @@ def _add_order_sheet(wb: Workbook, detail: dict, applicant_name: str, *, show_pr
         cell.border = _BORDER
         ws.column_dimensions[get_column_letter(col)].width = width
 
-    items = detail.get("items") or []
-    for row_idx, item in enumerate(items, start=first_item_row):
-        values = _item_values(item)
-        if item.get("status") == 3:
-            values["line_code"] = f"{values['line_code']}（已终止）"
-            values["line_amount"] = 0
-            values["issued_qty"] = "已终止"
-        if not production and item.get("guest_name"):
-            values["specification"] = f"顾客：{_safe_text(item['guest_name'])}\n{values['specification']}"
-        lines = max(_wrapped_lines(values.get(key), width) for key, _, width in columns)
-        ws.row_dimensions[row_idx].height = min(300, max(75, lines * 15 + 15))
-        for col, (key, _, width) in enumerate(columns, start=1):
-            cell = ws.cell(row_idx, col, values.get(key))
-            cell.font = Font(name=_FONT_NAME, size=11)
-            cell.alignment = Alignment(horizontal="right" if key in _MONEY_FIELDS else "center",
-                                       vertical="center", wrap_text=True)
-            cell.border = _BORDER
-            if key in _MONEY_FIELDS:
-                cell.number_format = '#,##0.00;[Red]-#,##0.00;0.00'
-            if key in _IMAGE_FIELDS:
-                add_cell_images(ws, row_idx, col, item.get(_IMAGE_FIELDS[key]) or [], width)
+    next_item_row = first_item_row
+    for item, values in zip(items, item_values):
+        next_item_row = _write_item_rows(ws, next_item_row, columns, item, values)
 
-    notes_row = first_item_row + len(items) + 1
-    ws.merge_cells(start_row=notes_row, start_column=1, end_row=notes_row, end_column=len(columns))
     notes = "注意事项：\n！出库数量留空，由出库人员填写。\n！领货与签字流程按内贸部门现行规定执行。"
     if include_finance:
         notes += "\n！金额单位为人民币元；小计 =（优惠后单价 + 手工费）× 数量。余额取本订单扣款/调整记录，不随后续充值变化。"
     if detail.get("remark"):
         notes += f"\n订单备注：{_safe_text(detail['remark'])}"
-    ws.cell(notes_row, 1, notes)
-    ws.cell(notes_row, 1).font = Font(name=_FONT_NAME, size=11, bold=True)
-    ws.cell(notes_row, 1).alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
-    ws.cell(notes_row, 1).border = _BORDER
+    for row, text in enumerate(_text_chunks(notes, sheet_width), start=next_item_row + 1):
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=len(columns))
+        cell = ws.cell(row, 1, text)
+        cell.data_type = "s"
+        cell.font = Font(name=_FONT_NAME, size=11, bold=True)
+        cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+        cell.border = _BORDER
+        ws.row_dimensions[row].height = max(75, _wrapped_lines(text, sheet_width) * 15 + 15)
     ws.row_dimensions[1].height = 32
     ws.row_dimensions[header_row].height = 42
-    ws.row_dimensions[notes_row].height = min(240, max(75, _wrapped_lines(notes, sum(c[2] for c in columns)) * 15 + 15))
     ws.freeze_panes = f"A{first_item_row}"
     ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
@@ -285,8 +270,7 @@ def _add_order_sheet(wb: Workbook, detail: dict, applicant_name: str, *, show_pr
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_margins = PageMargins(left=0.24, right=0.24, top=0.35, bottom=0.35)
     ws.print_title_rows = f"1:{header_row}"
-    last_row = _append_full_requirements(ws, detail, columns, notes_row + 2)
-    ws.print_area = f"A1:{last_column}{last_row}"
+    ws.print_area = f"A1:{last_column}{ws.max_row}"
 
 
 def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:

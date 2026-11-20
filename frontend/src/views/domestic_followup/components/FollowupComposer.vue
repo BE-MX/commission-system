@@ -102,18 +102,19 @@
 
     <!-- AI 整理中 -->
     <section v-else-if="c.step.value === 'parsing'" class="composer-body">
-      <p class="parsing-tip">AI 正在读截图、拆要点，通常 10~30 秒。可以先关掉，草稿会保留在「我的草稿」里。</p>
+      <p class="parsing-tip">AI 正在整理。可以先关闭，稍后在「我的草稿」里继续。</p>
       <el-skeleton :rows="8" animated />
     </section>
 
     <!-- 第二步：核对 -->
     <section v-else class="composer-body">
       <el-alert v-if="c.aiFailed.value" type="warning" :closable="false" show-icon
-                title="AI 没整理成功，请对照下方截图文字手动填写，原文已保留" />
+                :title="c.attachments.value.length ? 'AI 未能完成整理。请参考下方保留的内容，手动填写。' : 'AI 未能完成整理。请参考下方保留的原文，手动填写。'" />
       <details v-if="c.form.value.raw_text" class="ocr-box" open>
         <summary>原文</summary>
         <pre>{{ c.form.value.raw_text }}</pre>
       </details>
+      <FollowupAttachmentPreview v-if="c.visible.value && c.attachments.value.length" :attachments="c.attachments.value" />
       <el-form label-position="top">
         <div v-if="c.form.value.prep_id && c.form.value.prep" class="prep-context-bar">
           <el-tag effect="plain">{{ c.form.value.prep.template_code }}</el-tag><strong>本次目标：{{ c.form.value.prep.goal }}</strong>
@@ -244,6 +245,7 @@ import { currentBeijingDate, formatCalendarDate } from '@/utils/datetime'
 import { confirmAction, isFeedbackCancelled } from '@/utils/feedback'
 import { nextBasisHint, taskDueLabel, weekdayLabel } from '../followupDraft'
 import FollowupItemList from './FollowupItemList.vue'
+import FollowupAttachmentPreview from './FollowupAttachmentPreview.vue'
 import FollowupOutcomeFields from './FollowupOutcomeFields.vue'
 import FollowupNextSteps from './FollowupNextSteps.vue'
 import FollowupGuideFields from './FollowupGuideFields.vue'

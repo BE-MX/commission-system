@@ -2,6 +2,7 @@ from io import BytesIO
 from urllib.parse import unquote
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
 from app.domestic import router as domestic_router
 from app.domestic.export_service import build_order_workbook
@@ -157,12 +158,43 @@ def test_export_order_returns_named_xlsx(monkeypatch):
     assert "内贸订单-DO20260819-001.xlsx" in unquote(response.headers["content-disposition"])
 
 
-def test_build_order_workbook_preserves_long_requirements_for_printing():
+def test_long_remark_wraps_in_the_detail_cell_and_uses_available_column_width():
+    detail = _order_detail()
+    baseline = load_workbook(build_order_workbook(detail))
+    remark = (
+        "发际线、刘海和后面发量按确认要求加密，递针顶位置请注意衔接。\n"
+        "头围 56.5，左右 32.5，前后 34.5。\n"
+        "工艺：递针顶。\n毛胚长度：35 厘米。\n"
+        "头发颜色：自然色。\n发型要求：毛胚。\n"
+        "请保留原有发色，制作完成后核对尺寸和密度。"
+    )
+    detail["items"][0]["remark"] = remark
+
+    for sheet, original in zip(load_workbook(build_order_workbook(detail)), baseline):
+        first_row = original.max_row - 3
+        remark_letter = get_column_letter(sheet.max_column)
+        remark_cell = sheet[f"{remark_letter}{first_row}"]
+        assert sheet.cell(first_row, 1).value == "A1"
+        assert sheet.cell(first_row + 1, 1).value == "A2"
+        assert remark_cell.value == remark
+        assert remark_cell.alignment.wrap_text
+        assert sheet.row_dimensions[first_row].height > original.row_dimensions[first_row].height
+        assert sheet.column_dimensions[remark_letter].width > original.column_dimensions[remark_letter].width
+        assert sheet.column_dimensions["D"].width == original.column_dimensions["D"].width
+        assert any(sheet.column_dimensions[key].width < original.column_dimensions[key].width
+                   for key in original.column_dimensions if key != remark_letter)
+        assert sum(c.width for c in sheet.column_dimensions.values()) <= sum(
+            c.width for c in original.column_dimensions.values()
+        ) + 0.01
+        assert sheet.max_row == original.max_row
+
+
+def test_build_order_workbook_preserves_extreme_requirements_next_to_each_detail():
     detail = _order_detail()
     detail["items"] = []
-    long_requirement = "要求\n" * 666 + "要求"
+    long_requirement = "=要求\n" * 399 + "=要求"
+    long_remark = "出货前确认，有问题联系负责人。" * 120
     continuous_requirement = "要求" * 1000
-    assert len(long_requirement) == 2000
     assert len(continuous_requirement) == 2000
     for index in range(1, 51):
         item = _order_detail()["items"][0] | {
@@ -172,24 +204,38 @@ def test_build_order_workbook_preserves_long_requirements_for_printing():
                 else continuous_requirement if index == 2
                 else f"要求{index}"
             ),
+            "remark": long_remark if index == 1 else None,
         }
         detail["items"].append(item)
 
     workbook = load_workbook(build_order_workbook(detail, "下单员"), data_only=False)
     order_sheet = workbook["内贸订单领货单"]
     assert len(workbook.worksheets) == 2
-    assert order_sheet.row_dimensions[6].height > 75
     assert order_sheet.page_setup.paperSize == 9
     assert order_sheet.print_title_rows == "$1:$5"
     for sheet in workbook:
-        section_row = next(row for row in range(1, sheet.max_row + 1) if sheet.cell(row, 1).value == "完整要求")
-        assert section_row > 55
+        detail_rows = {
+            cell.value: cell.row
+            for cell in sheet["A"]
+            if cell.value in {"A1", "A2", "A3", "A50"}
+        }
+        assert list(detail_rows) == ["A1", "A2", "A3", "A50"]
+        assert detail_rows["A50"] + 2 == sheet.max_row
         assert sheet.print_area.endswith(f"${sheet.max_row}")
-        for code, original in (("A1", long_requirement), ("A2", continuous_requirement)):
-            rows = [row for row in range(section_row + 2, sheet.max_row + 1) if sheet.cell(row, 1).value == code]
-            assert len(rows) > 1
-            assert "".join(sheet.cell(row, 3).value for row in rows) == original
-            assert max(sheet.row_dimensions[row].height for row in rows) <= 300
+        for code, following, column, original in (
+            ("A1", "A2", sheet.max_column - 1, "'" + long_requirement),
+            ("A1", "A2", sheet.max_column, long_remark),
+            ("A2", "A3", sheet.max_column - 1, continuous_requirement),
+        ):
+            first, following_row = detail_rows[code], detail_rows[following]
+            cells = [sheet.cell(row, column) for row in range(first, following_row) if sheet.cell(row, column).value]
+            assert len(cells) > 1
+            assert "".join(cell.value for cell in cells) == original
+            assert all(cell.alignment.wrap_text and cell.data_type == "s" for cell in cells)
+            assert max(sheet.row_dimensions[row].height for row in range(first, following_row)) <= 409
+            assert sheet.cell(first, 4).value == 2
+            assert all(sheet.cell(row, 4).value is None for row in range(first + 1, following_row))
+            assert all(sheet.cell(row, 1).value == f"{code}（续）" for row in range(first + 1, following_row))
 
 
 def test_reference_images_are_embedded_in_their_product_cells(tmp_path, monkeypatch):
@@ -231,7 +277,7 @@ def test_export_reports_unavailable_or_outside_images_without_losing_order(tmp_p
     assert len(sheet._images) == 0
 
 
-def test_short_multiline_image_text_is_preserved_without_overlapping_images(tmp_path, monkeypatch):
+def test_multiline_remark_is_preserved_above_reference_images(tmp_path, monkeypatch):
     from PIL import Image
     from app.domestic import file_service
     from app.domestic.export_image_service import wrapped_text_lines
@@ -241,15 +287,40 @@ def test_short_multiline_image_text_is_preserved_without_overlapping_images(tmp_
     detail = _order_detail()
     text = "\n".join(["短发要求"] * 12)
     assert len(text) < 80
-    detail["items"][0].update(hairstyle=text, hairstyle_images=["reference.png"])
+    detail["items"][0].update(remark=text, remark_images=["reference.png"])
     workbook = load_workbook(build_order_workbook(detail))
-    sheet = workbook.active
-    assert "全文见完整要求" in sheet["K6"].value
     for view in workbook:
-        assert any(view.cell(row, 3).value == text for row in range(1, view.max_row + 1))
-    image = sheet._images[0]
-    assert image.anchor._from.rowOff >= len(wrapped_text_lines(sheet["K6"].value, 21)) * 19 * 9525
-    assert image.anchor._from.rowOff + image.anchor.ext.cy <= sheet.row_dimensions[6].height * 12700
+        image = view._images[0]
+        row, col = image.anchor._from.row + 1, image.anchor._from.col + 1
+        cell = view.cell(row, col)
+        assert view.cell(row, 1).value == "A1"
+        assert col == view.max_column
+        assert cell.value == text
+        assert image.anchor._from.rowOff >= len(
+            wrapped_text_lines(cell.value, view.column_dimensions[cell.column_letter].width)
+        ) * 19 * 9525
+        assert image.anchor._from.rowOff + image.anchor.ext.cy <= view.row_dimensions[row].height * 12700
+
+
+def test_image_continues_on_the_same_detail_when_the_remark_fills_its_row(tmp_path, monkeypatch):
+    from PIL import Image
+    from app.domestic import file_service
+
+    monkeypatch.setattr(file_service, "storage_root", lambda: tmp_path)
+    Image.new("RGB", (240, 320), "red").save(tmp_path / "reference.png")
+    detail = _order_detail()
+    remark = "\n".join(f"确认要求{i}" for i in range(20))
+    detail["items"][0].update(remark=remark, remark_images=["reference.png"])
+
+    for sheet in load_workbook(build_order_workbook(detail)):
+        image = sheet._images[0]
+        row, col = image.anchor._from.row + 1, image.anchor._from.col + 1
+        assert col == sheet.max_column
+        assert sheet.cell(row - 1, 1).value == "A1"
+        assert sheet.cell(row - 1, col).value == remark
+        assert sheet.cell(row, 1).value == "A1（续）"
+        assert sheet.cell(row + 1, 1).value == "A2"
+        assert image.anchor._from.rowOff + image.anchor.ext.cy <= sheet.row_dimensions[row].height * 12700
 
 
 def test_export_money_includes_labor_and_never_uses_customer_name_fallback():
@@ -304,14 +375,17 @@ def test_production_two_sheets_show_customer_without_inventing_prices():
         assert not any(word in text for word in ('原价', '优惠', '手工费', '小计', '余额', '¥'))
 
 
-def test_requirement_appendix_rows_fit_wrapped_labels_and_short_tail():
-    from app.domestic.export_image_service import wrapped_text_lines
-    detail = _order_detail()
-    detail['items'][0]['style_requirement'] = '字' * 601
+def test_production_remarks_and_order_notes_preserve_all_text_in_their_sections():
+    detail = _order_detail() | {"order_kind": "production"}
+    detail["items"][0]["remark"] = "确认备货尺寸与发长，完工后核对数量。" * 10
+    detail["remark"] = "\n".join(f"整单要求{i}" for i in range(120))
     workbook = load_workbook(build_order_workbook(detail))
     for sheet in workbook:
-        rows = [row for row in range(1, sheet.max_row + 1) if sheet.cell(row, 2).value == '发型要求（续）']
-        assert rows
-        for row in rows:
-            required = len(wrapped_text_lines(sheet.cell(row, 2).value, sheet.column_dimensions['B'].width)) * 15 + 15
-            assert sheet.row_dimensions[row].height >= required
+        assert sheet["L5"].value == detail["items"][0]["remark"]
+        assert sheet["L5"].alignment.wrap_text
+        assert sheet["A8"].value.startswith("注意事项")
+        notes = "".join(sheet.cell(row, 1).value for row in range(8, sheet.max_row + 1))
+        assert notes.split("订单备注：", 1)[1] == detail["remark"]
+        assert sheet.print_area.endswith(f"${sheet.max_row}")
+        assert all(sheet.cell(row, 1).alignment.wrap_text and sheet.row_dimensions[row].height <= 409
+                   for row in range(8, sheet.max_row + 1))

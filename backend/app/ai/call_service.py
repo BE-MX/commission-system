@@ -11,6 +11,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import urlsplit
 
 logger = logging.getLogger("commission.ai")
 
@@ -76,6 +77,8 @@ def chat(
     timeout_sec: Optional[int] = None,
     enforce_total_timeout: bool = False,
     trusted_text_snapshot: Optional[TextChatSnapshot] = None,
+    *,
+    prefer_json_output: bool = False,
 ) -> dict:
     """同步调用直连大模型。"""
     preset = trusted_text_snapshot.preset if trusted_text_snapshot else (
@@ -143,6 +146,11 @@ def chat(
             params = {"model": preset.model, "messages": full_messages, "stream": False}
             if preset.parameters:
                 params.update(text_request_parameters(preset.parameters))
+            if (prefer_json_output and preset.model == "deepseek-flash"
+                    and urlsplit(provider.api_base).hostname == "api.deepseek.com"):
+                # DeepSeek's default thinking shares the output budget with the JSON.
+                params.setdefault("thinking", {"type": "disabled"})
+                params.setdefault("response_format", {"type": "json_object"})
 
         apply_token_parameter(params, provider)
         url = build_chat_url(provider.api_base, api_type, provider=provider)

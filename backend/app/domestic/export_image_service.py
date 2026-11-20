@@ -3,6 +3,7 @@
 from io import BytesIO
 import logging
 from math import ceil
+import re
 from unicodedata import east_asian_width
 
 from openpyxl.drawing.image import Image as SheetImage
@@ -16,27 +17,45 @@ from app.domestic import file_service
 
 
 logger = logging.getLogger(__name__)
+_TEXT_WIDTH_RATIO = 0.85
+_WRAP_TOKENS = re.compile(r"[!-~]+|.")
+
+
+def _character_width(char: str) -> int:
+    return 2 if east_asian_width(char) in ("W", "F") else 1
+
+
+def text_column_width(value) -> int:
+    """Estimate the column width needed for the longest explicit line."""
+    lines = str(value if value is not None else "").splitlines()
+    units = max((sum(map(_character_width, line)) for line in lines), default=0)
+    return ceil(units / _TEXT_WIDTH_RATIO)
 
 
 def wrapped_text_lines(text, width: float) -> list[str]:
-    """Conservative wrapping for 11pt Songti; CJK occupies two column units."""
-    capacity = max(4, int(width * 0.85))
+    """Estimate Excel wrapping while preserving the original line separators."""
+    capacity = max(4, int(width * _TEXT_WIDTH_RATIO))
+    text = str(text if text is not None else "")
     lines = []
-    for paragraph in str(text or "").splitlines() or [""]:
+    for raw in text.splitlines(keepends=True) or [""]:
+        paragraph = raw.rstrip("\r\n")
         line, units = "", 0
-        for char in paragraph:
-            size = 2 if east_asian_width(char) in ("W", "F") else 1
-            if line and units + size > capacity:
+        for token in _WRAP_TOKENS.findall(paragraph):
+            sizes = list(map(_character_width, token))
+            token_width = sum(sizes)
+            if line and token_width <= capacity < units + token_width:
                 lines.append(line)
                 line, units = "", 0
-            line += char
-            units += size
-        lines.append(line)
+            for char, size in zip(token, sizes):
+                if units + size > capacity:
+                    lines.append(line)
+                    line, units = "", 0
+                line += char
+                units += size
+        lines.append(line + raw[len(paragraph):])
+    if text.endswith(("\n", "\r")):
+        lines.append("")
     return lines
-
-
-def needs_image_appendix(text, width: float) -> bool:
-    return len(str(text or "")) > 80 or len(wrapped_text_lines(text, width)) > 4
 
 
 def add_cell_images(ws, row: int, col: int, paths: list[str], width: float) -> None:
@@ -67,20 +86,23 @@ def add_cell_images(ws, row: int, col: int, paths: list[str], width: float) -> N
 
     cell = ws.cell(row, col)
     text = str(cell.value or "")
-    if needs_image_appendix(text, width):
-        text = "\n".join(wrapped_text_lines(text, width)[:2]) + "\n全文见完整要求"
     if missing:
-        text += f"\n{missing} 张参考图不可用，请核对原订单"
-    cell.value = text or None
+        warning = f"{missing} 张参考图不可用，请核对原订单"
+        text = f"{text}\n{warning}" if text else warning
+        cell.value = text
+        cell.data_type = "s"
     cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+    row_dimension = ws.row_dimensions[row]
+    gap = 5
+    text_height = len(wrapped_text_lines(text, width)) * 19 + gap if text else gap
     if not images:
+        row_dimension.height = max(row_dimension.height, (text_height + gap) * 0.75)
         return
 
-    gap = 5
     cell_width = width * 7 + 5
     columns = 1 if len(images) == 1 else 2
     rows = ceil(len(images) / columns)
-    text_height = len(wrapped_text_lines(text, width)) * 19 + gap if text else gap
+    gap = min(gap, (530 - text_height) / (2 * (rows + 1)))
     box_width = (cell_width - gap * (columns + 1)) / columns
     box_height = min(155, (530 - text_height - gap * (rows + 1)) / rows)
     for index, image in enumerate(images):
@@ -94,4 +116,4 @@ def add_cell_images(ws, row: int, col: int, paths: list[str], width: float) -> N
         )
         ws.add_image(image)
     needed_points = (text_height + rows * (box_height + gap) + gap) * 0.75
-    ws.row_dimensions[row].height = min(409, max(ws.row_dimensions[row].height or 75, needed_points))
+    row_dimension.height = max(row_dimension.height, needed_points)
