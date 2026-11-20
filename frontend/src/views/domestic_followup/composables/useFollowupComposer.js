@@ -328,7 +328,6 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
     if (manualPrimary) form.value.nextSteps = normalizeNextSteps([manualPrimary, ...form.value.nextSteps])
     attachments.value = attachments.value.map(a => ({ ...a, ...(draft.attachments.find(d => d.id === a.id) || {}) }))
     aiFailed.value = draft.ai_status !== 'done'
-    if (aiFailed.value) msgWarning(draft.ai_error || 'AI 整理未完成，请参考截图文字手动填写')
     step.value = 'review'
     if (form.value.prep_id && !form.value.prep) {
       try { form.value.prep = await followupApi.prep(form.value.prep_id) }

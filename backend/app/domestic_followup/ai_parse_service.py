@@ -49,6 +49,11 @@ MULTI_SCREENSHOT_INSTRUCTIONS = (
     "相同事实只记录一次，省略无内容的可选字段。"
 )
 
+PARSE_RETRY_INSTRUCTION = (
+    "只整理跟进有关的要点、异常、建议、未完成动作及必要的逐字出处。"
+    "同一事实只记一次，省略没有内容的可选字段，遵守本次截图转写规则。"
+)
+
 
 def _candidates(db: Session, current_user: dict) -> list[dict]:
     query = db.query(DomesticCustomer.id, DomesticCustomer.shop_name).filter(DomesticCustomer.status == 1)
@@ -154,6 +159,8 @@ def build_messages(db: Session, followup: DomesticFollowup, current_user: dict, 
     instructions = ITEM_HANDLING_INSTRUCTIONS
     if len(attachments) > 1:
         instructions += MULTI_SCREENSHOT_INSTRUCTIONS
+    elif not attachments:
+        instructions += "本次只有业务员原文。按原文整理，ocr 返回空数组，出处只能引用原文。"
     return [
         {"role": "system", "content": instructions},
         {"role": "user", "content": content},
@@ -402,7 +409,7 @@ def _mark_failed(db: Session, followup_id: int, exc: Exception) -> None:
         followup = db.get(DomesticFollowup, followup_id)
         if followup is not None and followup.status == "draft":
             followup.ai_status = "failed"
-            followup.ai_error = f"AI 整理失败（{type(exc).__name__}），已改为仅识别截图文字"[:255]
+            followup.ai_error = f"AI 整理失败（{type(exc).__name__}），提交的内容已保留"[:255]
             db.commit()
     except Exception as mark_exc:  # noqa: BLE001 — 兜底标记失败只记录；草稿会被 _recover_stale_ai 超时收口
         logger.warning("followup AI mark-failed also failed id=%s: %s", followup_id, type(mark_exc).__name__)
@@ -463,10 +470,11 @@ def run_parse(followup_id: int, current_user: dict, session_factory=SessionLocal
             today = beijing_today()
             values = dict_service.load_values(db)
             messages, candidates = build_messages(db, followup, current_user, values, today, attachments)
-            result = chat(db=db, preset_name=PARSE_PRESET, messages=messages,
-                          caller_module="domestic_followup_parse", caller_user_id=followup.author_user_id,
-                          snapshot_mode="metadata", timeout_sec=120, enforce_total_timeout=True)
-            output = attachment_service.parse_json(result.get("content", ""))
+            output, result = attachment_service.request_json(
+                chat, db=db, preset_name=PARSE_PRESET, messages=messages,
+                caller_module="domestic_followup_parse", caller_user_id=followup.author_user_id,
+                timeout_sec=120, retry_instruction=PARSE_RETRY_INSTRUCTION,
+            )
             if separate_ocr:
                 output.pop("ocr", None)
             parsed = AiParseOut.model_validate(output)

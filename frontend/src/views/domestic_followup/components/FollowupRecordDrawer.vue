@@ -32,7 +32,7 @@
       </section>
       <section v-if="record.attachments?.length">
         <h3>截图</h3>
-        <GlassButton v-for="attachment in record.attachments" :key="attachment.id" variant="link" @click="preview(attachment)">截图 {{ attachment.seq }}</GlassButton>
+        <FollowupAttachmentPreview :attachments="record.attachments" />
       </section>
       <div class="record-actions">
         <GlassButton v-if="mayEditFollowup(auth.user, record)" v-permission="'domestic_followup:write'" variant="primary" left-icon="EditPen" @click="$emit('edit', record.id)">修改记录</GlassButton>
@@ -40,48 +40,25 @@
         <GlassButton variant="outline" left-icon="View" @click="$emit('timeline', record.customer_id)">查看客户时间线</GlassButton>
       </div>
     </template>
-    <el-image-viewer v-if="previewUrl" :url-list="[previewUrl]" teleported @close="closePreview" />
   </DetailDrawer>
 </template>
 
 <script setup>
-import { onUnmounted, ref, watch } from 'vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
-import { apiError, followupApi } from '@/api/domesticFollowup'
-import { msgError } from '@/utils/feedback'
 import { ITEM_KIND_STATUS } from '../followupStatus'
 import { useAuthStore } from '@/stores/auth'
 import { mayEditFollowup } from '../followupEdit'
 import FollowupGuideFields from './FollowupGuideFields.vue'
 import FollowupFactGroups from './FollowupFactGroups.vue'
+import FollowupAttachmentPreview from './FollowupAttachmentPreview.vue'
 
-const props = defineProps({ record: { type: Object, default: null } })
+defineProps({ record: { type: Object, default: null } })
 defineEmits(['close', 'timeline', 'edit', 'history'])
 const auth = useAuthStore()
 const ITEM_STATUS = { open: '未处理', handling: '处理中', resolved: '已解决', closed_no_action: '无需处理' }
 const evidenceLabels = { customer: '客户明确说', assessment: '我的判断' }
 const dispositionLabels = { waiting_customer: '等待客户', paused: '暂停', closed: '关闭' }
-const previewUrl = ref('')
-let previewRequest = 0
-function closePreview() {
-  previewRequest += 1
-  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
-  previewUrl.value = ''
-}
-async function preview(attachment) {
-  closePreview()
-  const request = previewRequest
-  try {
-    const url = await followupApi.attachmentUrl(attachment.id)
-    if (request !== previewRequest) { URL.revokeObjectURL(url); return }
-    previewUrl.value = url
-  } catch (error) {
-    if (request === previewRequest) msgError(apiError(error, '截图加载失败'), error)
-  }
-}
-watch(() => props.record, closePreview)
-onUnmounted(closePreview)
 </script>
 
 <style scoped>

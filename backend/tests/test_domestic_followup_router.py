@@ -94,8 +94,10 @@ def test_draft_starts_background_parse_and_conflict_maps_409(db, monkeypatch):
         assert good.status_code == 200 and good.json()["data"]["status"] == "confirmed"
 
 
-@pytest.mark.parametrize("failed_ocr", [None, 5], ids=["all_readable", "last_ocr_failed"])
-def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, failed_ocr):
+@pytest.mark.parametrize(("failed_ocr", "truncated_parse"), [
+    (None, False), (5, False), (None, True),
+], ids=["all_readable", "last_ocr_failed", "truncated_parse_then_recovered"])
+def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, failed_ocr, truncated_parse):
     seed_dicts(db)
     user = make_user(db, "fu_rt_six")
     customer = make_customer(db, user, "测试客户")
@@ -133,6 +135,7 @@ def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, f
         requests.append((body["model"], pictures))
         deadlines.append((timeout_sec, enforce_total_timeout))
         assert body["max_tokens"] == 4096
+        assert "thinking" not in body and "response_format" not in body
         if body["model"] == "domestic_followup_ocr":
             [picture] = pictures
             index = screenshots.index(picture)
@@ -141,6 +144,9 @@ def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, f
             output = json.dumps({"text": transcripts[index], "unreadable": []})
         else:
             instructions = " ".join(msg["content"] for msg in body["messages"] if msg["role"] == "system")
+            if truncated_parse and len(requests) == 1:
+                return {"choices": [{"message": {"content": '{"summary": "未结束'},
+                                     "finish_reason": "length"}], "usage": {"completion_tokens": 4096}}
             if "ocr 必须是空数组" not in instructions:
                 return {"choices": [{"message": {"content": '{"ocr": [{"attachment_index": 0, "text": "截断'},
                                      "finish_reason": "length"}], "usage": {"completion_tokens": 4096}}
@@ -175,7 +181,7 @@ def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, f
         response = client.post("/api/domestic-followup/drafts", json={
             "request_id": "rt-six-screenshots", "attachment_ids": attachment_ids,
         })
-        assert response.status_code == 200
+        assert response.status_code == 200, response.text
         draft = response.json()["data"]
         assert draft["ai_status"] == "running"
         [(job, args)] = jobs_to_run
@@ -193,9 +199,68 @@ def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, f
         "done" if index != failed_ocr else "failed" for index in range(6)
     ]
     assert bool(draft["ai_result"]["unreadable"]) is (failed_ocr is not None)
-    assert requests[0] == ("domestic_followup_parse", screenshots)
-    assert requests[1:] == [("domestic_followup_ocr", [shot]) for shot in screenshots]
-    assert deadlines == [(120, True), *([(45, True)] * 6)]
+    parse_count = 2 if truncated_parse else 1
+    assert requests[:parse_count] == [("domestic_followup_parse", screenshots)] * parse_count
+    ocr_requests = [("domestic_followup_ocr", [shot]) for shot in screenshots]
+    if failed_ocr is not None:
+        ocr_requests.insert(failed_ocr, ocr_requests[failed_ocr])
+    assert requests[parse_count:] == ocr_requests
+    assert deadlines[0] == (120, True)
+    assert all(0 < seconds <= 120 and total for seconds, total in deadlines[:parse_count])
+    assert all(0 < seconds <= 45 and total for seconds, total in deadlines[parse_count:])
+
+
+@pytest.mark.parametrize("thinking", [None, {"type": "enabled"}], ids=["default", "explicit"])
+def test_text_only_draft_recovers_from_truncated_json(db, monkeypatch, thinking):
+    seed_dicts(db)
+    user = make_user(db, "fu_rt_text")
+    customer = make_customer(db, user, "测试客户")
+    provider = AiProvider(name="DeepSeek test", api_base="https://api.deepseek.com", timeout_sec=120)
+    db.add(provider)
+    db.flush()
+    parameters = {"max_tokens": 4096}
+    if thinking is not None:
+        parameters["request_parameters"] = {"thinking": thinking}
+    db.add(AiPreset(preset_name="domestic_followup_parse", provider_id=provider.id, model="deepseek-flash",
+                    parameters=parameters, system_prompt=seed_ai._DOMESTIC_FOLLOWUP_PARSE_SYSTEM_PROMPT))
+    db.commit()
+    jobs_to_run = _record_jobs(monkeypatch)
+    raw_text = "客户确认试用效果正常，下周三反馈是否补货。"
+    requests = []
+    clock_ticks = iter((100.0, 122.0))
+    monkeypatch.setattr(attachment_service, "monotonic", lambda: next(clock_ticks))
+
+    def model_response(_url, *, body, timeout_sec, **_kwargs):
+        requests.append((body, timeout_sec))
+        instructions = " ".join(msg["content"] for msg in body["messages"] if msg["role"] == "system")
+        assert "本次只有业务员原文" in instructions
+        assert body["messages"][-1]["content"][0]["text"].endswith(raw_text)
+        assert all(part["type"] == "text" for part in body["messages"][-1]["content"])
+        if len(requests) == 1:
+            return {"choices": [{"message": {"content": '{"summary": "未结束'}, "finish_reason": "length"}],
+                    "usage": {"completion_tokens": 4096}}
+        output = {"summary": "试用正常，待确认是否补货"}
+        return {"choices": [{"message": {"content": json.dumps(output)}, "finish_reason": "stop"}]}
+
+    monkeypatch.setattr(call_service, "post_json", model_response)
+    with followup_client(db, user) as client:
+        response = client.post("/api/domestic-followup/drafts", json={
+            "request_id": "rt-text-only", "customer_id": customer.id, "raw_text": raw_text,
+        })
+        assert response.status_code == 200
+        draft = response.json()["data"]
+        [(job, args)] = jobs_to_run
+        job(*args, session_factory=sessionmaker(bind=db.get_bind()))
+        draft = client.get(f"/api/domestic-followup/drafts/{draft['id']}").json()["data"]
+
+    assert draft["ai_status"] == "done", draft["ai_error"]
+    assert draft["ai_result"]["summary"] == "试用正常，待确认是否补货"
+    assert draft["raw_text"] == raw_text and draft["attachments"] == []
+    assert len(requests) == 2
+    for body, _ in requests:
+        assert body["thinking"] == (thinking or {"type": "disabled"})
+        assert body["response_format"] == {"type": "json_object"}
+    assert [timeout for _, timeout in requests] == [120, 98]
 
 
 def test_writing_other_owners_customer_is_403(db):
