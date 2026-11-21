@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { minimumPrice } from "../lib/product-options";
+import { productChecks } from "../lib/operating-checks";
 import { VariantEditor } from "../components/product-options";
 import { ShipmentDialog } from "../components/order-logistics";
 import type { AccessLog, CustomerProfile, LevelCode, Order, Product, SalesPerson, WholesaleAccount, WholesaleLevel } from "../lib/types";
@@ -18,6 +19,8 @@ type Tab = "dashboard" | "products" | "levels" | "customers" | "orders" | "sales
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("dashboard");
+  const [productSearch, setProductSearch] = useState("");
+  const [onlyNeedsReview, setOnlyNeedsReview] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [levels, setLevels] = useState<WholesaleLevel[]>([]);
   const [accessLogs, setAccessLogs] = useState<AccessLog[]>([]);
@@ -65,6 +68,10 @@ export default function AdminPage() {
     setAdminPassword(""); setAdminAccess("allowed"); await load(); setSaving(false);
   };
 
+  const needsReview = products.filter((product) => productChecks(product).length > 0);
+  const visibleProducts = products.filter((product) => (!onlyNeedsReview || productChecks(product).length > 0)
+    && `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(productSearch.trim().toLowerCase()));
+  const finance = dashboard.summary?.orders;
   const activeCount = products.filter((item) => item.status === "active").length;
   const stockCount = products.reduce((sum, item) => sum + item.stock, 0);
   const lowStock = products.filter((item) => item.stock < 25).length;
@@ -174,14 +181,14 @@ export default function AdminPage() {
         {tab === "dashboard" && <>
           <div className="admin-title"><div><p>经营总览</p><h1>零售、批发与分销一体化后台</h1><span>价格、客户、订单、物流、销售归属和财务数据集中管理</span></div><button className="admin-primary" onClick={load}>刷新数据</button></div>
           <section className="stat-grid dashboard-stats">
-            <article><span>累计销售额</span><strong>¥{Number(dashboard.summary?.orders?.revenue ?? 0).toLocaleString()}</strong><small>{dashboard.summary?.orders?.count ?? 0} 笔订单</small></article>
+            <article><span>已付款订单金额</span><strong>¥{Number(dashboard.summary?.orders?.revenue ?? 0).toLocaleString()}</strong><small>{dashboard.summary?.orders?.paidCount ?? 0} 笔已付款订单</small></article>
             <article><span>有效客户</span><strong>{dashboard.summary?.customers?.count ?? customers.length}</strong><small>批发客户 {dashboard.summary?.customers?.wholesale ?? 0}</small></article>
             <article><span>待发货订单</span><strong>{orders.filter((item) => item.status === "待发货").length}</strong><small>请及时录入物流</small></article>
             <article><span>库存预警</span><strong>{dashboard.summary?.products?.lowStock ?? lowStock}</strong><small>总库存 {dashboard.summary?.products?.stock ?? stockCount} 件</small></article>
           </section>
           <div className="dashboard-layout">
             <section className="admin-panel dashboard-orders"><div className="panel-head"><div><strong>最新订单</strong><span>零售与批发订单统一显示</span></div><button className="text-action" onClick={() => setTab("orders")}>查看全部</button></div>{orders.slice(0, 5).map((order) => <article key={order.id}><div><b>{order.customerName}</b><span>{order.orderNo} · {order.itemCount}件</span></div><strong>¥{order.amount.toLocaleString()}</strong><i className={order.status === "待发货" ? "pending" : ""}>{order.status}</i></article>)}</section>
-            <section className="admin-panel operations-card"><div className="panel-head"><div><strong>今日运营重点</strong><span>按当前经营数据自动汇总</span></div></div><ul><li><b>{orders.filter((item) => item.status === "待发货").length}</b><span>笔订单等待仓库发货</span></li><li><b>{lowStock}</b><span>款商品库存低于25件</span></li><li><b>{referrals.filter((item) => item.status === "待结算").length}</b><span>笔推广佣金等待结算</span></li><li><b>{accessLogs.filter((item) => item.result === "success").length}</b><span>个账户最近成功进入商城</span></li></ul></section>
+            <section className="admin-panel operations-card"><div className="panel-head"><div><strong>今日运营重点</strong><span>按当前经营数据自动汇总</span></div></div><ul><li><b>{orders.filter((item) => item.status === "待发货").length}</b><span>笔订单等待仓库发货</span></li><li><b>{lowStock}</b><span>款商品库存低于25件</span></li><li><b>{dashboard.summary?.referrals?.count ?? 0}</b><span>笔已付款推广待核对佣金</span></li><li><b>{accessLogs.filter((item) => item.result === "success").length}</b><span>个账户最近成功进入商城</span></li></ul></section>
           </div>
         </>}
 
@@ -189,33 +196,39 @@ export default function AdminPage() {
           <div className="admin-title"><div><p>商品中心</p><h1>假发款式与价格</h1><span>管理款式、网底长度价格和查看权限</span></div><button className="admin-primary" onClick={openCreate}>＋ 添加假发款式</button></div>
           <section className="stat-grid">
             <article><span>商品款式</span><strong>{products.length}</strong><small>已上架 {activeCount} 款</small></article>
-            <article><span>总库存</span><strong>{stockCount}</strong><small>山东仓现有件数</small></article>
+            <article><span>总库存</span><strong>{stockCount}</strong><small>系统登记数量，需与仓库盘点核对</small></article>
             <article><span>低库存</span><strong>{lowStock}</strong><small>库存少于 25 件</small></article>
             <article><span>批发专属</span><strong>{products.filter((p) => p.minLevel !== "retail").length}</strong><small>限制等级查看</small></article>
           </section>
+          <section className="product-review-panel" aria-label="商品资料核对">
+            <h2>商品资料核对：{needsReview.length} 款有待处理项</h2>
+            <p>检查网底长度、价格、库存、图片和上架状态。无缺项仅代表资料齐全，实际可售规格和仓库数量仍需逐款核实。</p>
+            <label><input type="checkbox" checked={onlyNeedsReview} onChange={(event) => setOnlyNeedsReview(event.target.checked)} />只看有待处理项的款式</label>
+          </section>
           <section className="admin-panel">
-            <div className="panel-head"><div><strong>全部商品</strong><span>价格修改后只影响新订单</span></div><label className="admin-search">⌕ <input aria-label="搜索商品" placeholder="搜索款式（演示）" /></label></div>
-            <div className="product-table-wrap"><table className="product-table"><thead><tr><th>款式</th><th>分类</th><th>规格起价</th><th>开放规格</th><th>待定价</th><th>查看权限</th><th>库存</th><th>状态</th><th>操作</th></tr></thead><tbody>
-              {products.map((product) => <tr key={product.id}>
+            <div className="panel-head"><div><strong>商品列表 · {visibleProducts.length} 款</strong><span>价格修改后只影响新订单</span></div><label className="admin-search">⌕ <input aria-label="搜索商品" placeholder="搜索名称、货号或系列" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} /></label></div>
+            <div className="product-table-wrap"><table className="product-table"><thead><tr><th>款式</th><th>分类</th><th>规格起价</th><th>开放规格</th><th>待定价</th><th>查看权限</th><th>库存</th><th>状态</th><th>资料检查</th><th>操作</th></tr></thead><tbody>
+              {visibleProducts.map((product) => <tr key={product.id}>
                 <td><div className={`table-art ${product.tone}`}>{product.images[0] ? <img src={product.images[0]} alt="" /> : <div className="tiny-hair" />}</div><div><strong>{product.name}</strong><small>{product.sku || "未设置货号"} · {product.material} · {product.length} · {product.color}</small></div></td>
                 <td>{product.category}</td><td>{minimumPrice(product.variants) != null ? `¥${minimumPrice(product.variants)}` : "待定价"}</td><td>{product.variants?.filter((item) => item.enabled).length ?? 0}</td><td>{product.variants?.filter((item) => item.enabled && item.price === null).length ?? 0}</td>
                 <td><span className={`access-pill ${product.minLevel}`}>{levelName[product.minLevel]}</span></td><td className={product.stock < 25 ? "stock-low" : ""}>{product.stock} 件</td>
                 <td><button className={`status-toggle ${product.status}`} onClick={() => toggleStatus(product)}><i />{product.status === "active" ? "已上架" : "已下架"}</button></td>
+                <td className="product-check-notes">{productChecks(product).length ? productChecks(product).map((issue) => <span key={issue}>{issue}</span>) : <span className="complete">检查无缺项</span>}</td>
                 <td><button className="text-action" onClick={() => openEdit(product)}>编辑</button></td>
               </tr>)}</tbody></table></div>
           </section>
         </>}
 
         {tab === "levels" && <>
-          <div className="admin-title"><div><p>会员体系</p><h1>批发等级要求</h1><span>客户累计净采购额达到门槛后自动升级</span></div></div>
+          <div className="admin-title"><div><p>会员体系</p><h1>批发等级要求</h1><span>客户等级由后台指定，采购金额不会自动改变等级</span></div></div>
           <form className="admin-panel level-editor" onSubmit={saveLevels}>
-            <div className="level-rule"><strong>升级计算规则</strong><p>只统计已完成订单，取消订单不计入；退款金额自动从累计采购额中扣除；升级后的价格从下一笔订单生效。</p></div>
+            <div className="level-rule"><strong>人工指定等级</strong><p>在客户管理中为每位批发商指定A或B等级。这里的金额为内部参考，不触发自动升级；商品价格按网底和长度设置。</p></div>
             <div className="editable-level-grid">{levels.map((level, index) => <article key={level.code}>
               <span className="level-index">等级 0{index + 1}</span><label>等级名称<input name={`${level.code}-name`} defaultValue={level.name} /></label>
-              <label>累计净采购门槛<div className="money-input"><span>¥</span><input name={`${level.code}-threshold`} type="number" min="0" defaultValue={level.threshold} disabled={level.code === "retail"} /></div></label>
-              <small>{level.code === "retail" ? "新注册客户默认等级" : `达到门槛后解锁${level.name}价格和限定商品`}</small>
+              <label>内部参考金额<div className="money-input"><span>¥</span><input name={`${level.code}-threshold`} type="number" min="0" defaultValue={level.threshold} disabled={level.code === "retail"} /></div></label>
+              <small>{level.code === "retail" ? "新注册客户默认等级" : `由管理员指定${level.name}，可购范围按商品权限设置`}</small>
             </article>)}</div>
-            <div className="form-footer"><span>门槛金额后续可以随时调整</span><button className="admin-primary" type="submit">保存等级设置</button></div>
+            <div className="form-footer"><span>修改参考金额不会自动调整客户等级</span><button className="admin-primary" type="submit">保存等级设置</button></div>
           </form>
         </>}
 
@@ -247,8 +260,8 @@ export default function AdminPage() {
 
         {tab === "finance" && <>
           <div className="admin-title"><div><p>财务中心</p><h1>收入、佣金与结算</h1><span>按订单和销售推广归属核对经营账目</span></div></div>
-          <section className="stat-grid finance-stats"><article><span>订单收入</span><strong>¥{orders.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}</strong><small>已支付订单</small></article><article><span>待结算佣金</span><strong>¥{referrals.filter((item) => item.status === "待结算").reduce((sum, item) => sum + item.commission, 0).toLocaleString()}</strong><small>{referrals.filter((item) => item.status === "待结算").length} 笔推广</small></article><article><span>销售绩效佣金</span><strong>¥{orders.reduce((sum, item) => sum + item.commissionAmount, 0).toLocaleString()}</strong><small>按3%演示计算</small></article><article><span>客单价</span><strong>¥{orders.length ? Math.round(orders.reduce((sum, item) => sum + item.amount, 0) / orders.length).toLocaleString() : 0}</strong><small>零售批发综合</small></article></section>
-          <section className="admin-panel"><div className="panel-head"><div><strong>订单财务明细</strong><span>每笔订单保留成交价格，不受后续改价影响</span></div></div><div className="product-table-wrap"><table className="product-table"><thead><tr><th>订单号</th><th>客户</th><th>付款状态</th><th>订单金额</th><th>来源销售</th><th>销售绩效</th><th>订单状态</th></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td><strong>{order.orderNo}</strong></td><td>{order.customerName}</td><td>{order.paymentStatus}</td><td>¥{order.amount.toLocaleString()}</td><td>{order.salesPerson}</td><td>¥{order.commissionAmount}</td><td>{order.status}</td></tr>)}</tbody></table></div></section>
+          <section className="stat-grid finance-stats"><article><span>已付款订单金额</span><strong>¥{Number(finance?.revenue ?? 0).toLocaleString()}</strong><small>全库 {finance?.paidCount ?? 0} 笔，排除取消、关闭和退款状态</small></article><article><span>待确认付款金额</span><strong>¥{Number(finance?.pendingAmount ?? 0).toLocaleString()}</strong><small>尚未计入已付款金额</small></article><article><span>预计销售佣金</span><strong>¥{Number(finance?.commission ?? 0).toLocaleString()}</strong><small>仅已付款有效订单；不代表实际结算</small></article><article><span>已付款客单价</span><strong>¥{finance?.paidCount ? (Number(finance.revenue) / finance.paidCount).toLocaleString("zh-CN", { maximumFractionDigits: 2 }) : 0}</strong><small>按全库已付款有效订单计算</small></article></section>
+          <section className="admin-panel"><div className="panel-head"><div><strong>订单财务明细</strong><span>最近200笔订单；每笔保留成交价格，不受后续改价影响。汇总不受此条数限制。</span></div></div><div className="product-table-wrap"><table className="product-table"><thead><tr><th>订单号</th><th>客户</th><th>付款状态</th><th>订单金额</th><th>来源销售</th><th>预计销售佣金</th><th>订单状态</th></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td><strong>{order.orderNo}</strong></td><td>{order.customerName}</td><td>{order.paymentStatus}</td><td>¥{order.amount.toLocaleString()}</td><td>{order.salesPerson}</td><td>¥{order.commissionAmount}</td><td>{order.status}</td></tr>)}</tbody></table></div></section>
         </>}
 
         {tab === "analytics" && <>

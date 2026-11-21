@@ -1,6 +1,7 @@
 import { ensureDatabase, getD1 } from "../../../db/runtime";
 import { requireAdminApi } from "../../lib/admin-auth";
 import { initialVariants, validateVariants, readVariants } from "../../lib/product-options";
+import { validateProductAvailability } from "../../lib/operating-checks";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,8 @@ export async function POST(request: Request) {
   if ([values.retailPrice, values.priceA, values.priceB, values.stock].some((value) => !Number.isFinite(value) || value < 0)) {
     return Response.json({ error: "价格和库存不能为负数" }, { status: 400 });
   }
+  try { validateProductAvailability(values.stock, values.status, values.minLevel); }
+  catch (error) { return Response.json({ error: (error as Error).message }, { status: 400 }); }
   const result = await getD1().prepare(`INSERT INTO products
     (name, material, length, color, retail_price, price_a, price_b, min_level, stock, status,
      tone, category, sku, construction, hair_volume, parting, craft, description, highlights,

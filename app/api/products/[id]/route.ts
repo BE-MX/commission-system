@@ -1,6 +1,7 @@
 import { ensureDatabase, getD1 } from "../../../../db/runtime";
 import { requireAdminApi } from "../../../lib/admin-auth";
 import { validateVariants } from "../../../lib/product-options";
+import { validateProductAvailability } from "../../../lib/operating-checks";
 
 const serializeList = (value: unknown) => JSON.stringify(Array.isArray(value)
   ? value.map(String).filter(Boolean)
@@ -12,6 +13,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   await ensureDatabase();
   const { id } = await context.params;
   const body = await request.json() as Record<string, unknown>;
+  try { validateProductAvailability(Number(body.stock ?? 0), body.status ?? "active", body.minLevel ?? "retail"); }
+  catch (error) { return Response.json({ error: (error as Error).message }, { status: 400 }); }
   const current = await getD1().prepare("SELECT variants FROM products WHERE id=?").bind(Number(id)).first<{ variants: string }>();
   if (!current) return Response.json({ error: "商品不存在" }, { status: 404 });
   let variants;

@@ -1,5 +1,6 @@
 import { ensureDatabase, getD1 } from "../../../db/runtime";
 import { requireAdminApi } from "../../lib/admin-auth";
+import { paidOrderSql } from "../../lib/operating-checks";
 
 export const dynamic = "force-dynamic";
 
@@ -9,12 +10,11 @@ export async function GET() {
   await ensureDatabase();
   const rows = await getD1().prepare(`SELECT s.id, s.name, s.phone, s.role, s.promo_code AS promoCode,
     s.store_code AS storeCode, s.customer_service AS customerService, s.status,
-    COUNT(DISTINCT c.id) AS customerCount, COALESCE(SUM(o.amount),0) AS orderAmount,
-    COALESCE(SUM(o.commission_amount),0) AS commission
+    (SELECT COUNT(*) FROM customer_profiles c WHERE c.sales_person=s.name) AS customerCount,
+    (SELECT COALESCE(SUM(o.amount),0) FROM orders o WHERE o.sales_person=s.name AND ${paidOrderSql("o")}) AS orderAmount,
+    (SELECT COALESCE(SUM(o.commission_amount),0) FROM orders o WHERE o.sales_person=s.name AND ${paidOrderSql("o")}) AS commission
     FROM sales_people s
-    LEFT JOIN customer_profiles c ON c.sales_person=s.name
-    LEFT JOIN orders o ON o.sales_person=s.name
-    GROUP BY s.id ORDER BY orderAmount DESC`).all();
+    ORDER BY orderAmount DESC`).all();
   const referrals = await getD1().prepare(`SELECT id, code, owner_name AS ownerName, visitor_phone AS visitorPhone,
     order_no AS orderNo, amount, commission, status, created_at AS createdAt FROM referrals ORDER BY created_at DESC LIMIT 100`).all();
   return Response.json({ sales: rows.results, referrals: referrals.results });
