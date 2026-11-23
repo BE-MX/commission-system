@@ -1,5 +1,21 @@
 # 莱莎方舟 API 参考
 
+## 9610 跨境申报核对
+
+主站入口为 `/cross-border`。下表路径以 `/api/cross-border` 为前缀，read、write 分别指 `cross_border:read`、`cross_border:write`。
+
+| 方法和路径 | 权限 | 输入与结果 |
+| --- | --- | --- |
+| POST `/imports` | write | multipart 字段 `files`，1–2 个 DHL 的 xls/xlsx。每个文件独立返回 imported、duplicate 或 error，以及新增、重复、疑似修改数或错误位置 |
+| GET `/imports` | read | 各文件批次、时间与处理条数 |
+| GET `/declarations` | read | 支持 view、q、shop、logistics、issue、import_id、salesperson、bound_date_from/to 与分页。返回 items、total、summary、跨页可报关及需确认的内容哈希 |
+| GET `/declarations/{content_hash}` | read | 原始条目、收款、票、候选发票与人工复核记录 |
+| POST `/declarations/{content_hash}/reviews` | write | `action` 支持 confirm_shipped、assign_ticket、exclude、void。须填 reason，指定配对须传运单 tracking ID 到 target |
+| POST `/exports` | write | content_hashes 为所选申报。服务端复核当前配对。重复导出须 confirm_reexport，同号有疑似修改须 confirm_suspected 和 reason。成功返回 id |
+| GET `/exports/{id}/files/{order或receipt}` | read | 带 JWT 下载不可变的 Excel 文件 |
+
+开票现有接口增加文本字段 `alibaba_order_no`。验货单 `shipment-prefill` 增加 `cross_border.is_9610` 和所关联发票的只读数组。
+
 ## 工厂到货拍照核对
 
 所有路径以 `/api/factory-inbound` 开头。JSON 响应使用统一信封。办公室启用 `FACTORY_INBOUND_ENABLED` 后开放。

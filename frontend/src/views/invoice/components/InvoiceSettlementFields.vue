@@ -7,6 +7,10 @@
           <el-option v-for="option in paymentMethods" :key="option" :label="option" :value="option" />
         </el-select>
       </el-form-item>
+      <el-form-item v-if="alibabaOrderRequired(form)" label="阿里信保订单号" class="c2" required
+        data-invoice-field="alibaba_order_no" :error="validationErrors.alibaba_order_no">
+        <el-input v-model="form.alibaba_order_no" inputmode="numeric" placeholder="15~20位数字" />
+      </el-form-item>
       <el-form-item v-if="form.order_type !== 'presale'" label="预付款" :error="settlementError">
         <el-input-number v-model="form.internal_received" :min="0" :max="total" :precision="2" controls-position="right" />
         <div class="field-hint">订单约定金额；实际到账请在回款区登记</div>
@@ -57,10 +61,11 @@
 import { formatMoney } from '../../../utils/money.js'
 
 import { computed, watch } from 'vue'
-import { computeHandlingFee, handlingFeeRate } from '../composables/invoiceSettlement'
+import { computeHandlingFee, handlingFeeRate, alibabaOrderRequired } from '../composables/invoiceSettlement'
 
 const props = defineProps({
   form: { type: Object, required: true },
+  validationErrors: { type: Object, default: () => ({}) },
   total: { type: Number, required: true },
   settlementError: { type: String, default: '' },
   paymentMethods: { type: Array, required: true },

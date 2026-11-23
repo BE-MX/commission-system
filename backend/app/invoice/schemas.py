@@ -2,9 +2,11 @@
 
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BeforeValidator, BaseModel, Field, field_validator, model_validator
+
+from app.invoice.shipping_policy import normalize_alibaba_order_no
 
 
 class CustomerSearchItem(BaseModel):
@@ -285,6 +287,7 @@ class _InvoiceHeaderPayload(BaseModel):
     )
     payment_term: Optional[str] = Field(None, max_length=256)
     internal_payment_method: Optional[str] = Field(None, max_length=64)
+    alibaba_order_no: Annotated[str | None, BeforeValidator(normalize_alibaba_order_no)] = None
     internal_discount: Optional[Decimal] = Field(None, le=0)
     packaging_quantity: int = Field(default=0, ge=0)
     internal_accessory: Optional[Decimal] = Field(

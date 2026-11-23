@@ -6,7 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { downloadBlob } from '@/utils/download'
 import { getInspectionRecord, listInspectionRecords, recallInspectionRecord, downloadInspectionPdf } from '@/api/shipping'
 import { useListPage } from '@/composables/useListPage'
-import { confirmDanger, msgSuccess } from '@/utils/feedback'
+import { confirmDanger, msgError, msgSuccess } from '@/utils/feedback'
 export function useInspectionRecords() {
   const route = useRoute()
   const router = useRouter()
@@ -67,17 +67,25 @@ export function useInspectionRecords() {
   const detailLoading = ref(false)
   const detail = ref(null)
 
+  let detailRequest = 0
   async function openDetail(row) {
+    const request = ++detailRequest
     detailVisible.value = true
     detail.value = null
     detailLoading.value = true
     try {
       const res = await getInspectionRecord(row.id)
-      detail.value = res.data
+      if (request === detailRequest) detail.value = res.data
     } finally {
-      detailLoading.value = false
+      if (request === detailRequest) detailLoading.value = false
     }
   }
+
+  // Read-only deep links use the normal detail API and its existing permission checks.
+  watch(() => [route.path, route.query.inspection_id], ([path, id]) => {
+    if (path !== '/shipping/inspections' || !/^[1-9]\d*$/.test(String(id || ''))) return
+    openDetail({ id: Number(id) }).catch(error => msgError('验货单详情读取失败，请检查权限或重试', error))
+  }, { immediate: true })
 
   // 打印弹框：内容渲染在 iframe 里的独立文档中，打印只出那份文档
   const printDialog = reactive({ visible: false, recordId: null })

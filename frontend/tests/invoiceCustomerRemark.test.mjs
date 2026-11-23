@@ -139,13 +139,13 @@ for (const entry of ['create', 'edit', 'saveAndSync']) {
       t.after(h.stop)
       if (entry === 'edit') await h.editor.openEdit(12)
       else await h.editor.onCustomerChange(customer('C1'))
-      Object.assign(h.editor.form, { internal_payment_method: method, express_channel: channel })
+      Object.assign(h.editor.form, { internal_payment_method: method, express_channel: channel, alibaba_order_no: '00123456789012345' })
       const save = () => entry === 'saveAndSync' ? h.editor.saveAndSync() : h.editor.saveDraft()
       await save()
       assert.equal(h.saved.length, 0)
       assert.equal(h.synced.length, 0)
       assert.match(h.warnings.at(-1), message)
-      Object.assign(h.editor.form, { internal_payment_method: '小莱莎信保（便捷发货）', express_channel: 'FEDEX9610' })
+      Object.assign(h.editor.form, { internal_payment_method: '小莱莎信保（便捷发货）', express_channel: 'FEDEX9610', alibaba_order_no: '00123456789012345' })
       await save()
       assert.equal(h.saved.length, 1)
       assert.equal(h.saved[0].express_channel, 'FEDEX9610')
@@ -153,6 +153,32 @@ for (const entry of ['create', 'edit', 'saveAndSync']) {
     })
   }
 }
+
+test('save and sync validates an unchanged historical convenient-shipping invoice', async t => {
+  const h = await harness(undefined, undefined, {
+    invoice_no: 'ALIBABA-SYNC', internal_payment_method: '大莱莎信保（便捷发货）', express_channel: 'DHL9610',
+  })
+  t.after(h.stop)
+  await h.editor.openEdit(12)
+  await h.editor.saveAndSync()
+  assert.equal(h.synced.length, 0)
+  assert.match(h.editor.validationErrors.alibaba_order_no, /便捷发货必须填写阿里信保订单号/)
+})
+
+test('saving an existing convenient-shipping invoice requires its Alibaba number before sending', async t => {
+  const h = await harness(undefined, undefined, {
+    invoice_no: 'ALIBABA-SAVE', internal_payment_method: '大莱莎信保（便捷发货）', express_channel: 'DHL9610',
+  })
+  t.after(h.stop)
+  await h.editor.openEdit(12)
+  h.editor.form.alibaba_order_no = '   '
+  await h.editor.saveDraft()
+  assert.equal(h.saved.length, 0)
+  assert.match(h.warnings.at(-1), /便捷发货必须填写阿里信保订单号/)
+  h.editor.form.alibaba_order_no = ' 00123456789012345 '
+  await h.editor.saveDraft()
+  assert.equal(h.saved[0].alibaba_order_no, '00123456789012345')
+})
 
 for (const [stored, selected] of [['DHL', 'DHL普货'], ['FEDEX', 'FEDEX普货']]) {
   test(`opening legacy ${stored} selects ordinary cargo and keeps the editor clean`, async t => {
@@ -945,6 +971,20 @@ test('local grouped order save keeps group identity and ignores an empty entry r
   assert.equal(h.saved[0].inspection_requirement, 'detail')
 })
 
+
+test('group-only save of a historical convenient-shipping invoice requires its Alibaba number', async t => {
+  const patches = []
+  const h = await harness(undefined, undefined, {
+    ...concurrentInvoice(), internal_payment_method: '小莱莎信保（便捷发货）', express_channel: 'FEDEX9610',
+  }, undefined, { functionalGroups: true, groupRequest: async (_id, body) => patches.push(body) })
+  t.after(h.stop)
+  await h.editor.openEdit(7)
+  h.editor.form.item_groups[0].name = '改名'
+  assert.equal(h.editor.hasOnlyGroupChanges(), true)
+  await h.editor.saveDraft()
+  assert.equal(patches.length, 0)
+  assert.match(h.editor.validationErrors.alibaba_order_no, /便捷发货必须填写阿里信保订单号/)
+})
 
 test('local group-only save sends the loaded authority epoch without a legacy sync', async t => {
   const patches = []

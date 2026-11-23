@@ -1,5 +1,6 @@
 """环境变量配置（Pydantic Settings）"""
 
+from datetime import date
 import json
 import re
 from pathlib import Path
@@ -281,6 +282,11 @@ class Settings(BaseSettings):
     CUSTOMER_IMAGE_RETENTION_DAYS: _PositiveInt = 30
     CUSTOMER_IMAGE_PUBLIC_RATE_PER_MINUTE: _PositiveInt = 30
     CUSTOMER_IMAGE_MAX_REQUIREMENT_CHARS: _PositiveInt = 500
+
+    # 跨境申报核对
+    CROSS_BORDER_GO_LIVE_DATE: date | None = None
+    CROSS_BORDER_DXP_MODE: str = "DXP"
+    CROSS_BORDER_DXP_ID: str = ""
 
     # ── 工厂到货 ───────────────────────────────────────────
     FACTORY_INBOUND_ENABLED: bool = False

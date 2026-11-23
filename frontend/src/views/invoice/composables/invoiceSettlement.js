@@ -158,3 +158,15 @@ export function settlementMatchesTotal(total, prepayment, balance) {
   if (toMoneyCents(prepayment) < 0 || toMoneyCents(balance) < 0) return false
   return toMoneyCents(prepayment) + toMoneyCents(balance) === toMoneyCents(total)
 }
+
+
+export function alibabaOrderRequired(form) {
+  return String(form.internal_payment_method || '').includes('便捷发货')
+}
+
+export function alibabaOrderError(form) {
+  const value = String(form.alibaba_order_no || '').replace(/\s+/g, '')
+  if (value && !/^[0-9]{15,20}$/.test(value)) return '阿里信保订单号须为15~20位数字'
+  if (!value && alibabaOrderRequired(form)) return '便捷发货必须填写阿里信保订单号'
+  return ''
+}

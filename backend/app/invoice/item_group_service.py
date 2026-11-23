@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from app.core.time import beijing_today
 from app.invoice.models import InvoiceItemGroup
+from app.invoice.shipping_policy import validate_alibaba_order
 
 
 def load_groups(db, invoice):
@@ -169,6 +170,7 @@ def update_local(db, identity, body, user):
     if version(invoice) != body.expected_groups_version:
         raise HTTPException(409, "明细分组已被他人修改，请刷新后再调整")
 
+    validate_alibaba_order(invoice.internal_payment_method, invoice.alibaba_order_no)
     current = {
         item.id: item for item in invoice.items
         if item.product_kind != "accessory" and not item.presale_archived

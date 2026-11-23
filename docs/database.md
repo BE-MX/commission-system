@@ -1,5 +1,19 @@
 # 莱莎方舟 数据库表参考
 
+## 跨境申报核对（276、277）
+
+`276_invoice_alibaba_order` 为 `ark_invoices` 增加可空的 `alibaba_order_no VARCHAR(20)` 和普通索引。一个信保订单可对应多张发票。
+
+| 277 新表 | 数据与约束 |
+| --- | --- |
+| `ark_cross_border_imports` | 文件 SHA-256 唯一。保存导入人、北京时间、条目数、首次新增数、疑似修改数和本批全部条目哈希 |
+| `ark_cross_border_declarations` | 以稳定内容哈希去重，保存原始头、逐行明细、传输企业、首次行号、最近批次、有效状态与疑似修改标记 |
+| `ark_cross_border_receipts` | 独立累积的收款原行及传输企业，以内容哈希和出现序号区分同额多票 |
+| `ark_cross_border_reviews` | 绑定申报哈希的操作、原因、操作人和时间。指定配对或确认交运同时记录运单跟踪 ID |
+| `ark_cross_border_exports` | 所选哈希、导出人、北京时间及两份私有 XLSX 的原始字节。同一事务保存，读取清单时延迟加载文件 |
+
+迁移 B 依赖 A。发票、验货单、现有物流事件和 OKKI 出库镜像用于实时只读核对。
+
 ## 工厂到货核对（274_factory_inbound_review）
 
 迁移接 `273_product_sales_insights`。所有业务时间按北京时间保存。

@@ -55,6 +55,8 @@ def _claim(db, action, body, user, invoice_id=None):
     # Keep pre-field command hashes stable when payment was not supplied.
     if body_payload.get("internal_payment_method") is None:
         body_payload.pop("internal_payment_method", None)
+    if body_payload.get("alibaba_order_no") is None:
+        body_payload.pop("alibaba_order_no", None)
     payload = {"action": action, "invoice_id": invoice_id, "actor_id": _actor(user),
                "body": body_payload}
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
@@ -117,8 +119,9 @@ def _version(invoice, body):
 
 
 def _apply_draft(db, invoice, body, user):
-    from app.invoice.shipping_policy import validate_payment_channel
+    from app.invoice.shipping_policy import validate_payment_channel, validate_alibaba_order
     validate_payment_channel(body.internal_payment_method, body.express_channel)
+    validate_alibaba_order(body.internal_payment_method, body.alibaba_order_no)
     from app.invoice import item_group_service
     if body.expected_groups_version is not None and body.item_groups is not None:
         item_group_service.load_groups(db, invoice)
@@ -148,7 +151,7 @@ def _apply_draft(db, invoice, body, user):
     _apply_merchandiser(db, invoice, body.merchandiser_id)
     for field in ("order_type", "invoice_date", "currency", "contact_name", "contact_phone", "contact_email",
                   "delivery_address", "express_channel", "shipping_fee", "surcharge_name", "surcharge_amount",
-                  "packaging_quantity", "internal_accessory", "payment_term", "internal_payment_method", "remark", "local_deposit_amount", "local_deposit_charge"):
+                  "packaging_quantity", "internal_accessory", "payment_term", "internal_payment_method", "alibaba_order_no", "remark", "local_deposit_amount", "local_deposit_charge"):
         setattr(invoice, field, getattr(body, field))
     if body.invoice_no:
         invoice.invoice_no = body.invoice_no.strip()

@@ -2,9 +2,11 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BeforeValidator, BaseModel, ConfigDict, Field, model_validator
+
+from app.invoice.shipping_policy import normalize_alibaba_order_no
 from app.trade.schemas import DepartmentShares
 from app.invoice.schemas import InvoiceItemGroupPayload
 
@@ -40,6 +42,7 @@ class LocalInvoiceDraft(DepartmentShares):
     delivery_address: str | None = Field(None, max_length=4000)
     express_channel: str | None = Field(None, max_length=64)
     internal_payment_method: str | None = Field(None, max_length=64)
+    alibaba_order_no: Annotated[str | None, BeforeValidator(normalize_alibaba_order_no)] = None
     shipping_fee: Decimal = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)
     surcharge_name: str | None = Field(None, max_length=128)
     surcharge_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)

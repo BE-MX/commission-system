@@ -1,6 +1,5 @@
 from datetime import date, datetime
 from decimal import Decimal
-from types import SimpleNamespace as NS
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -11,7 +10,7 @@ from app.core.database import get_db
 from app.invoice import edit_authority, item_group_service, linked_sync_service, service
 from app.invoice.linked_sync_service import edit_version
 from app.invoice.models import InvoiceLinkedSync
-from app.invoice.router import router
+from app.invoice.router import LinkedSavePayload, router
 from app.invoice.schemas import InvoiceCreate, InvoiceItemGroupsUpdate, InvoiceUpdate
 from tests.authority_helpers import seed_authority
 
@@ -213,14 +212,13 @@ def test_linked_sync_rejects_group_only_changes(db, product_boundaries, monkeypa
     db.commit()
     db.expire_all()
     invoice = service.get_invoice(db, invoice.id)
-    body = NS(
+    body = LinkedSavePayload(
         request_key="group-only-request",
         expected_version=edit_version(invoice),
         invoice=InvoiceUpdate(**payload(
             [{"key": "group-a", "name": "只改分组名", "sort_order": 1}],
             [hair("group-a", identity=invoice.items[0].id)],
         )),
-        model_dump_json=lambda: "{}",
     )
 
     with pytest.raises(ValueError, match="业务数据未变化"):
@@ -236,6 +234,26 @@ def group_api(db, permissions):
     user = {"sub": "1", "roles": [], "permissions": permissions}
     app.dependency_overrides[get_current_user] = lambda: user
     return TestClient(app)
+
+
+def test_group_save_rejects_existing_convenient_invoice_without_order_number(db, product_boundaries):
+    seed_authority(db, 1, "invoice:write", "invoice:read")
+    invoice = service.create_invoice(db, InvoiceCreate(**payload(
+        [{"key": "group-a", "name": "首批", "sort_order": 1}], [hair("group-a")],
+    )), user_id=1)
+    invoice.internal_payment_method = "小莱莎信保（便捷发货）"
+    invoice.express_channel = "DHL9610"
+    db.commit()
+    invoice = service.get_invoice(db, invoice.id)
+    request = {
+        "item_groups": [{"key": "group-a", "name": "改名", "sort_order": 1}],
+        "items": [{"id": invoice.items[0].id, "group_key": "group-a"}],
+        "expected_version": edit_version(invoice), "expected_groups_version": item_group_service.version(invoice),
+    }
+    with group_api(db, ["invoice:write", "invoice:read"]) as client:
+        response = client.patch(f"/api/invoice/invoices/{invoice.id}/item-groups", json=request)
+        assert response.status_code == 409 and "阿里信保订单号" in response.json()["detail"]
+        assert service.get_invoice(db, invoice.id).item_groups[0].name == "首批"
 
 
 def test_group_http_create_patch_reopen_and_stale_version(db, product_boundaries):

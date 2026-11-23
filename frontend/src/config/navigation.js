@@ -68,7 +68,7 @@ export const MENU_GROUPS = {
       'perf_goal:read', 'perf_goal:write',
       ORDER_INTELLIGENCE_PERMISSION,
       'fx_settlement:read', 'shipment:read', 'commerce_shadow:read',
-      'sales_return:read',
+      'sales_return:read', 'cross_border:read',
     ],
   },
   aftersales: {
@@ -234,6 +234,7 @@ export const MENU_GROUPS = {
 const NATIVE_PHASES = ['transition', 'local_only']
 
 export const NAV_ENTRIES = [
+  { path: '/cross-border', name: 'CrossBorderReview', component: () => import('@/views/cross_border/CrossBorderReview.vue'), title: '跨境申报核对', permission: 'cross_border:read', menu: { group: 'invoice', icon: Tickets, order: 18 } },
   {
     path: '/system/navigation', name: 'NavigationManagement',
     component: () => import('@/views/system/navigation-management/NavigationManagement.vue'),

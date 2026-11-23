@@ -25,7 +25,7 @@ from app.system.models import SysDict
 HEADER_FIELDS = ('invoice_no', 'order_type', 'customer_name', 'customer_grade', 'contact_name', 'contact_phone',
     'contact_email', 'delivery_address', 'sales_user_id', 'sales_user_name', 'merchandiser_id', 'merchandiser_name',
     'invoice_date', 'currency', 'express_channel', 'shipping_fee', 'surcharge_name', 'surcharge_amount',
-    'packaging_quantity', 'internal_accessory', 'internal_discount', 'internal_payment_method',
+    'packaging_quantity', 'internal_accessory', 'internal_discount', 'internal_payment_method', 'alibaba_order_no',
     'internal_shipping_type', 'product_amount', 'total_amount', 'payment_term', 'remark')
 ITEM_FIELDS = ('product_kind', 'item_type', 'custom_product_id', 'product_name', 'product_display',
     'net_weight_grams', 'model', 'color', 'length', 'curl', 'quantity', 'price_per_piece', 'standard_price',

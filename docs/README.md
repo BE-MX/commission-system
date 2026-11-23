@@ -14,7 +14,7 @@
 
 ## 按业务找文档
 
-9610 跨境申报核对：[需求与设计 v0.6](requirements/2026-11-23-cross-border-declaration/README.md) · [实现笔记](requirements/2026-11-23-cross-border-declaration/implementation.md) · [核对页原型](requirements/2026-11-23-cross-border-declaration/prototype/index.html)（运单与申报仍在 DHL 网站做；方舟累积导入 DHL 申报订单与收款单，按阿里订单号和票金额配对发票、验货单与物流状态，导出报关订单与收款单，取代业务员 Excel；一期只做 DHL9610，需求已定稿，未开发）。
+9610 跨境申报核对：[需求与设计 v0.6](requirements/2026-11-23-cross-border-declaration/README.md) · [实现笔记](requirements/2026-11-23-cross-border-declaration/implementation.md) · [核对页原型](requirements/2026-11-23-cross-border-declaration/prototype/index.html)（运单与申报仍在 DHL 网站做；方舟累积导入 DHL 申报订单与收款单，按阿里订单号和票金额配对发票、验货单与物流状态，导出报关订单与收款单，取代业务员 Excel；一期只核对 DHL9610，已在独立开发分支实现）。
 
 工厂手写发货单拍照识别入库：[需求与设计 v0.4](requirements/2026-11-18-factory-delivery-inbound/README.md) · [设计开发文档](requirements/2026-11-18-factory-delivery-inbound/design.md) · [高保真原型](requirements/2026-11-18-factory-delivery-inbound/prototype/index.html)（切换前写小满采购入库；对应生产备货订单与订单发票生产单两类，备货单回写、发票只记对应；未开发）。
 

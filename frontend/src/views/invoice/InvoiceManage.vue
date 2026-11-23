@@ -382,6 +382,7 @@
               />
 
               <InvoiceSettlementFields
+                :validation-errors="editor.validationErrors"
                 class="form-card"
                 :form="form"
                 :total="formTotal"

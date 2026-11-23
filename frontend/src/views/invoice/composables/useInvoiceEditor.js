@@ -80,16 +80,18 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const form = reactive(emptyInvoiceForm())
   const validationErrors = reactive({})
   watch(() => [form.local_customer_id, form.customer_id, form.customer_grade,
-    form.contact_name, form.contact_phone, form.contact_email, form.delivery_address, form.express_channel], () => {
+    form.contact_name, form.contact_phone, form.contact_email, form.delivery_address, form.express_channel,
+    form.internal_payment_method, form.alibaba_order_no], () => {
     const remaining = new Set(invoiceRequiredIssues(form).map(issue => issue.field))
     for (const field of Object.keys(validationErrors)) if (!remaining.has(field)) delete validationErrors[field]
   }, { flush: 'sync' })
-  function validateRequiredFields() {
-    const issues = invoiceRequiredIssues(form)
+  function validateRequiredFields(onlyField) {
+    const issues = invoiceRequiredIssues(form).filter(issue => !onlyField || issue.field === onlyField)
     for (const field of Object.keys(validationErrors)) delete validationErrors[field]
     for (const issue of issues) validationErrors[issue.field] = issue.message
     if (!issues.length) return true
-    msgWarning(`请完善 ${issues.length} 项必填内容：${issues.map(issue => issue.label).join('、')}`)
+    msgWarning(issues.length === 1 && issues[0].field === 'alibaba_order_no'
+      ? issues[0].message : `请完善 ${issues.length} 项必填内容：${issues.map(issue => issue.label).join('、')}`)
     nextTick(() => {
       if (typeof document === 'undefined') return
       const field = issues[0].field
@@ -821,6 +823,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     const groupOnly = hasOnlyGroupChanges()
     lastSaveType.value = groupOnly ? 'groups' : 'business'
     if (groupOnly) {
+      if (!validateRequiredFields('alibaba_order_no')) return null
       const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
       const submittedSignature = currentSignature()
       const submittedReceiptStatus = form.receipt_draft?.status
@@ -963,6 +966,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     try {
       const groupOnly = hasOnlyGroupChanges()
       const needsSave = !form.id || hasUnsavedChanges.value
+      if (!needsSave && !validateRequiredFields('alibaba_order_no')) return
       if (!needsSave && form.sync_status === 'synced') {
         msgSuccessText('订单已同步且没有未保存修改，可直接补登记回款')
         return

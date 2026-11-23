@@ -111,3 +111,5 @@ export const commerceShadowClient = createApiClient({ baseURL: '/api/commerce-sh
 export const clientDeskClient = createApiClient({ baseURL: '/api/client-desk' })
 export const alibabaFeedClient = createApiClient({ baseURL: '/api/alibaba-feed' })
 export const clientDeskPublicClient = createApiClient({ baseURL: '/api/client-desk', redirectOnUnauthorized: false })
+
+export const crossBorderClient = createApiClient({ baseURL: '/api/cross-border', timeout: 120000 })

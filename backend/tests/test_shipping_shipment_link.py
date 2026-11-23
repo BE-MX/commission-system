@@ -28,6 +28,7 @@ def _patch_prefill_sources(monkeypatch, *, contact='', country='', company_id='C
     monkeypatch.setattr(link.outbound_service, 'order_ids_for_records', lambda db, ids: {'out-1': list(order_ids)})
     monkeypatch.setattr(link.outbound_service, 'get_outbound_record',
                         lambda db, rid, **kw: {'company_id': company_id} if company_id else None)
+    monkeypatch.setattr(link, '_cross_border_prefill', lambda *args: {'is_9610': False, 'invoices': []})
     contact_lookup = Mock(return_value=contact)
     monkeypatch.setattr(link, '_invoice_contact', contact_lookup)
     monkeypatch.setattr(link, '_customer_country', Mock(return_value=country))

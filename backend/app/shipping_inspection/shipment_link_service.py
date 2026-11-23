@@ -9,7 +9,7 @@
 import logging
 from types import SimpleNamespace
 
-from sqlalchemy import func, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -60,6 +60,29 @@ def _customer_country(db: Session, customer_id: str) -> str:
     return str(country).strip() if country else ""
 
 
+def _cross_border_prefill(db, inspection, order_ids):
+    """List DHL declaration reminders, including historical rows with no recorded carrier."""
+    from app.invoice.models import Invoice
+    query = db.query(Invoice)
+    if getattr(inspection, "local_outbound_id", None) is not None:
+        from app.invoice.settlement_models import ShipmentOutbound
+        query = query.join(ShipmentOutbound, ShipmentOutbound.invoice_id == Invoice.id).filter(
+            ShipmentOutbound.id == inspection.local_outbound_id)
+    elif order_ids:
+        query = query.filter(Invoice.xiaoman_order_id.in_(order_ids))
+    else:
+        return {"is_9610": False, "invoices": []}
+    invoices = query.filter(
+        Invoice.internal_payment_method.contains("便捷发货"),
+        or_(Invoice.express_channel.is_(None), Invoice.express_channel != "FEDEX9610"),
+    ).order_by(Invoice.id).all()
+    rows = [{"invoice_id": row.id, "invoice_no": row.invoice_no,
+             "alibaba_order_no": row.alibaba_order_no,
+             "shop": (row.internal_payment_method or "").split("信保", 1)[0]}
+            for row in invoices]
+    return {"is_9610": bool(rows), "invoices": rows}
+
+
 def shipment_prefill(db: Session, inspection: ShippingInspection) -> dict:
     """运单弹框预填。业务库不可用时只降级为空字段，不阻断上传（用户可手填）。"""
     # 降级分支会 rollback，ORM 对象随之过期；先取出要用的字段，避免连接已坏时在 except 里再查库
@@ -76,11 +99,13 @@ def shipment_prefill(db: Session, inspection: ShippingInspection) -> dict:
         "recipient_name": "",
         "recipient_country": "",
         "ship_date": beijing_today().isoformat(),
+        "cross_border": {"is_9610": False, "invoices": []},
     }
     record_id = str(inspection.outbound_record_id)
     try:
         order_ids = outbound_service.order_ids_for_records(db, [record_id]).get(record_id, [])
         result["order_id"] = "、".join(order_ids) or None
+        result["cross_border"] = _cross_border_prefill(db, inspection, order_ids)
         record = outbound_service.get_outbound_record(db, record_id, include_deleted=True)
         customer_id = str((record or {}).get("company_id") or "").strip()
         if customer_id:

@@ -18,7 +18,7 @@ from app.invoice import accessory_price_service, delegation_service, item_group_
 from app.invoice.customer_profile_service import get_customer_grade, save_customer_grade
 from app.invoice.models import CustomerProfile, Invoice, InvoiceDelegateGrant, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
-from app.invoice.shipping_policy import validate_payment_channel
+from app.invoice.shipping_policy import validate_payment_channel, validate_alibaba_order, alibaba_order_required
 from app.invoice.screenshot_token import verify_preview_token
 from app.invoice.screenshot_source import external_source_key, is_external_source_key, matched_order_id
 from app.invoice.time_utils import beijing_now, to_beijing_time
@@ -27,7 +27,7 @@ _HEADER_FIELDS = (
     "customer_id", "customer_name", "contact_name", "contact_phone", "contact_email",
     "delivery_address", "sales_user_name", "sales_phone", "sales_email",
     "invoice_date", "express_channel", "shipping_fee", "surcharge_name",
-    "surcharge_amount", "payment_term", "internal_payment_method", "internal_discount",
+    "surcharge_amount", "payment_term", "internal_payment_method", "alibaba_order_no", "internal_discount",
     "packaging_quantity", "internal_accessory", "internal_received", "internal_balance",
     "internal_shipping_type", "okki_new_deal", "okki_free_shipping", "okki_first_return",
     "remark",
@@ -494,6 +494,7 @@ def create_invoice(
     allow_portal_source: bool = False,
 ) -> Invoice:
     validate_payment_channel(body.internal_payment_method, body.express_channel)
+    validate_alibaba_order(body.internal_payment_method, body.alibaba_order_no)
     if allow_portal_source and (allow_external_source or allow_screenshot_source):
         raise ValueError("发票创建入口来源授权冲突")
     if (body.source_type == "portal") != allow_portal_source:
@@ -607,6 +608,7 @@ def create_invoice(
 
 def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None, *, linked_change=False, receipt_rows=None) -> Invoice:
     validate_payment_channel(body.internal_payment_method, body.express_channel)
+    validate_alibaba_order(body.internal_payment_method, body.alibaba_order_no)
     if invoice.transaction_mode == 'local':
         if body.transaction_route == 'legacy':
             raise ValueError('本地订单不能通过旧路线编辑入口保存，请保持原办理路线')
@@ -814,6 +816,8 @@ def serialize_detail(invoice: Invoice, db: Session | None = None, user=None) -> 
         "product_amount": invoice.product_amount,
         **summary,
         "internal_payment_method": invoice.internal_payment_method,
+        "alibaba_order_no": invoice.alibaba_order_no,
+        "alibaba_order_required": alibaba_order_required(invoice.internal_payment_method),
         "internal_discount": invoice.internal_discount,
         "packaging_quantity": invoice.packaging_quantity,
         "internal_accessory": invoice.internal_accessory,
