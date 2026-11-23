@@ -10,6 +10,7 @@ depends_on = None
 
 
 def upgrade():
+    user_id_type = sa.Integer().with_variant(mysql.INTEGER(unsigned=True), 'mysql')
     op.create_table('ark_cross_border_imports',
     sa.Column('id', sa.Integer(), nullable=False, comment='导入批次'),
     sa.Column('file_kind', sa.String(length=10), nullable=False, comment='订单或收款单'),
@@ -19,7 +20,7 @@ def upgrade():
     sa.Column('added', sa.Integer(), nullable=False, comment='新增条目数'),
     sa.Column('suspected', sa.Integer(), nullable=False, comment='本批未出现的同号旧条目数'),
     sa.Column('content_hashes', sa.JSON(), nullable=False, comment='本批条目内容摘要列表，保留批次成员关系'),
-    sa.Column('imported_by', sa.Integer(), nullable=False, comment='导入人'),
+    sa.Column('imported_by', user_id_type, nullable=False, comment='导入人'),
     sa.Column('imported_at', sa.DateTime(), nullable=False, comment='导入北京时间'),
     sa.ForeignKeyConstraint(['imported_by'], ['ark_users.id'], ),
     sa.PrimaryKeyConstraint('id'),
@@ -69,7 +70,7 @@ def upgrade():
     sa.Column('action', sa.String(length=30), nullable=False, comment='核对动作'),
     sa.Column('target', sa.BigInteger(), nullable=True, comment='指定或确认交运的运单跟踪ID'),
     sa.Column('reason', sa.String(length=500), nullable=False, comment='专员核实原因'),
-    sa.Column('created_by', sa.Integer(), nullable=False, comment='操作人'),
+    sa.Column('created_by', user_id_type, nullable=False, comment='操作人'),
     sa.Column('created_at', sa.DateTime(), nullable=False, comment='操作北京时间'),
     sa.ForeignKeyConstraint(['content_hash'], ['ark_cross_border_declarations.content_hash'], ),
     sa.ForeignKeyConstraint(['created_by'], ['ark_users.id'], ),
@@ -79,7 +80,7 @@ def upgrade():
     op.create_index(op.f('ix_ark_cross_border_reviews_content_hash'), 'ark_cross_border_reviews', ['content_hash'], unique=False)
     op.create_table('ark_cross_border_exports',
     sa.Column('id', sa.Integer(), nullable=False, comment='导出记录'),
-    sa.Column('created_by', sa.Integer(), nullable=False, comment='导出人'),
+    sa.Column('created_by', user_id_type, nullable=False, comment='导出人'),
     sa.Column('created_at', sa.DateTime(), nullable=False, comment='导出北京时间'),
     sa.Column('content_hashes', sa.JSON(), nullable=False, comment='按文件顺序导出的申报身份'),
     sa.Column('order_file', sa.LargeBinary().with_variant(mysql.MEDIUMBLOB(), 'mysql'), nullable=False, comment='报关订单原文件'),
