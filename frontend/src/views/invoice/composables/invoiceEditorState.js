@@ -91,6 +91,7 @@ export function normalizeHairRow(line = {}) {
     _importBatchFingerprint: line._importBatchFingerprint || '',
     options: { models: [], colors: [], sizes: [], units: [], all_models: [], all_colors: [], all_sizes: [], all_units: [] },
     matching: false,
+    pricing: false,
   }
 }
 

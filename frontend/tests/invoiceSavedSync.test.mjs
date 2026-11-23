@@ -5,12 +5,13 @@ import { invoiceReceiptSyncGuidance } from '../src/views/invoice/composables/inv
 
 // Execute the actual editor handler with isolated API/UI dependencies.
 const source = readFileSync(new URL('../src/views/invoice/composables/useInvoiceEditor.js', import.meta.url), 'utf8')
+const productsReady = source.slice(source.indexOf('  function productsReadyToSave() {'), source.indexOf('  async function saveDraft('))
 const handler = source.slice(source.indexOf('  async function saveAndSync() {'), source.indexOf('  function showIssues('))
 const outcomes = { SUCCESS: 'success', FAILED: 'failed', DUPLICATE: 'duplicate', CANCELLED: 'cancelled' }
 function fixture({ dirty = false, groups = false, outcome = 'success', remoteStatus = 'synced', readFails = false } = {}) {
   const calls = [], warnings = []
   const form = { id: 1916, order_type: 'stock', sync_status: 'not_synced', xiaoman_order_id: 'existing',
-    receipt_draft: { eligible: false, amount: 0, status: 'draft' } }
+    items: [], receipt_draft: { eligible: false, amount: 0, status: 'draft' } }
   const hasUnsavedChanges = { value: dirty }, submitting = { value: false }
   const dependencies = { form, invoiceIsLocal: () => false, msgWarning: message => warnings.push(message),
     saveAndSyncSubmitting: submitting, hasOnlyGroupChanges: () => groups, hasUnsavedChanges,
@@ -24,9 +25,20 @@ function fixture({ dirty = false, groups = false, outcome = 'success', remoteSta
       calls.push('read'); if (readFails) throw new Error('Read failed')
       return { ...form, sync_status: remoteStatus }
     }, resetForm: current => Object.assign(form, current), drawerVisible: { value: true }, legacyVisible: { value: false } }
-  const run = () => new Function(...Object.keys(dependencies), `let pendingLinkedCompletion; ${handler}; return saveAndSync()`)(...Object.values(dependencies))
+  const run = () => new Function(...Object.keys(dependencies), `let pendingLinkedCompletion; ${productsReady}${handler}; return saveAndSync()`)(...Object.values(dependencies))
   return { form, calls, warnings, dependencies, run }
 }
+
+test('a clean saved invoice cannot sync until the latest line price returns', async () => {
+  const f = fixture()
+  f.form.items.push({ product_id: 38, matching: false, pricing: true })
+  await f.run()
+  assert.deepEqual(f.calls, [])
+  assert.match(f.warnings[0], /取价/)
+  f.form.items[0].pricing = false
+  await f.run()
+  assert.deepEqual(f.calls, [['sync', 1916], 'list', 'read', 'complete'])
+})
 
 test('already saved unsynced invoice syncs directly without an identical linked save', async () => {
   const f = fixture()

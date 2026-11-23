@@ -202,7 +202,9 @@
         </el-table-column>
         <el-table-column label="标准价" min-width="110" align="right" prop="standard_price" sortable="custom">
           <template #default="{ row }">
-            <span v-if="row.standard_price != null" class="std-price">
+            <span v-if="row.pricing">取价中</span>
+            <span v-else-if="row.matching">—</span>
+            <span v-else-if="row.standard_price != null" class="std-price">
               {{ money(row.standard_price) }}
               <el-tooltip v-if="row.color_type_source === 'inferred'" content="该色号未登记色型映射，价格按命名规则推断的色型取得，请人工核对">
                 <StatusBadge size="small" type="warning" effect="plain">色型推断</StatusBadge>
@@ -220,7 +222,7 @@
             <el-tooltip :disabled="!priceHint(row)" :content="priceHint(row)" placement="top">
               <div :class="['price-cell', row.price_source === 'manual' ? 'is-manual' : '']">
                 <!-- blur 也要提交：重输同样的两位值时 EP 不触发 change，行合计会停在旧值 -->
-                <el-input-number class="line-price-input" v-model="row.price_per_piece" :min="0" :precision="2" :controls="false" :aria-label="row.price_source === 'manual' ? '客户价（已手改）' : '客户价'" @change="onPriceInput(row)" @blur="onPriceInput(row)" />
+                <el-input-number class="line-price-input" v-model="row.price_per_piece" :min="0" :precision="2" :controls="false" :disabled="row.matching || row.pricing" :aria-label="row.price_source === 'manual' ? '客户价（已手改）' : '客户价'" @change="onPriceInput(row)" @blur="onPriceInput(row)" />
               </div>
             </el-tooltip>
           </template>

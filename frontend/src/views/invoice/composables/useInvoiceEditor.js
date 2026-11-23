@@ -795,6 +795,12 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   // ── 保存 ────────────────────────────────────────────
 
+  function productsReadyToSave() {
+    if (!form.items.some(line => line.matching || line.pricing)) return true
+    msgWarning('请等待产品匹配和取价完成')
+    return false
+  }
+
   async function saveDraft(options = {}) {
     if (orderSaving.value) return null
     orderSaving.value = true
@@ -806,6 +812,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     const contextSeq = customerContextSeq
     await customerDefaultsPromise
     if (contextSeq !== customerContextSeq) return null
+    if (!productsReadyToSave()) return null
     if (form.receipt_uploading) { msgWarning("请等待回款截图上传完成"); return null }
     if (form.receipt_proof_dirty) { msgWarning("请先保存回款截图变更"); return null }
     if (form.receipt_remark_editing || form.receipt_remark_saving) { msgWarning('请先保存或取消回款备注编辑'); return null }
@@ -873,6 +880,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
         throw error
       }
     }
+    if (!productsReadyToSave()) return null
     const submittedSignature = currentSignature()
     const submittedReceiptStatus = form.receipt_draft?.status
     const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
@@ -937,6 +945,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // 保存 → 校验 → 推送小满；只在确认成功后显示持续提示，失败保留编辑现场。
   async function saveAndSync() {
     if (invoiceIsLocal(form)) { msgWarning('方舟独立订单请保存后在订单履约中确认，不发送小满'); return }
+    if (!productsReadyToSave()) return
     if (form.receipt_sync_refresh_required) { msgWarning('同步状态未能刷新，请关闭并重新打开订单，核对结果后再操作'); return }
     if (form.sync_status === 'sync_uncertain') { msgWarning('请先返回订单列表“处理待核对”，核对原同步结果后再操作'); return }
     if (form.linked_sync_id) { msgWarning('请先处理未结束的关联同步任务'); return }
@@ -968,6 +977,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
           throw error
         }
       }
+      if (!productsReadyToSave()) return
       const useLinked = needsSave && !groupOnly && Boolean(form.id && form.xiaoman_order_id)
       // A saved unsynced order needs a push, not another linked edit of identical data.
       const saved = needsSave ? await saveDraft({ linked: useLinked, confirmZeroReceipt: !groupOnly }) : { ...form }

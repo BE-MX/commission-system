@@ -394,6 +394,19 @@ test('remark editing prevents ordinary order persistence until saved or cancelle
   assert.ok(h.warnings.includes('请先保存或取消回款备注编辑'))
 }))
 
+test('draft save waits for matched product pricing before writing the invoice', () => run(async h => {
+  Object.assign(h.editor.form, defaults('matched product'), { express_channel: 'FEDEX', items: [
+    { ...state.emptyHairRow(), product_id: 38, sku_id: 138, product_name: 'Hair', quantity: 2, pricing: true },
+  ] })
+  assert.equal(await h.editor.saveDraft(), null)
+  assert.equal(h.saved.length, 0)
+  assert.match(h.warnings.at(-1), /取价/)
+
+  Object.assign(h.editor.form.items[0], { pricing: false, price_per_piece: 12.5 })
+  assert.ok(await h.editor.saveDraft())
+  assert.equal(h.saved[0].items[0].price_per_piece, 12.5)
+}))
+
 for (const orderType of ['presale', 'stock', 'production']) {
   test(`${orderType} accessory-only save omits the default blank hair row`, () => run(async h => {
     const accessory = pricing.normalizeAccessoryRow({ product_id: 'A1', sku_id: 7,
