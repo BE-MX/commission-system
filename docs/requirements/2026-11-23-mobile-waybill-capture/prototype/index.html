@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>手机录物流单原型</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <!-- 颜色与字体变量的唯一来源：主站 tokens.css。需从仓库根目录起静态服务打开本页。 -->
+  <link rel="stylesheet" href="../../../../frontend/src/styles/tokens.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="proto-bar">
+    <strong>手机录物流单 · 原型</strong>
+    <label>演示场景
+      <select id="scenario">
+        <option value="normal">条码读出，已揽收有轨迹</option>
+        <option value="not_found">未揽收：承运商暂无记录</option>
+        <option value="failed">物流接口查询失败</option>
+        <option value="exists">运单已录入，同一客户（合并发货）</option>
+        <option value="colleague">运单由同事录入（不在本人范围）</option>
+        <option value="other_customer">运单已关联其他客户：阻断</option>
+        <option value="ups">UPS：暂不支持查询</option>
+        <option value="conflict">提交时验货单已被撤回</option>
+        <option value="mismatch">寄往国家与客户不符</option>
+        <option value="ocr_only">条码被遮挡：AI 识别单号</option>
+        <option value="none">单号都没读出：手动输入</option>
+        <option value="no_edge">取景没找到边缘</option>
+        <option value="no_perm">没有物流单上传权限</option>
+      </select>
+    </label>
+  </div>
+  <div class="app" id="app"></div>
+  <div class="overlay-root" id="overlay"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
