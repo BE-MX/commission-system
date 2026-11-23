@@ -11,6 +11,7 @@ from app.core.time import to_beijing_naive
 from app.invoice.order_role import goods_order_sql
 from app.battle_report.statistics import money
 from app.battle_report.order_decisions import decision_index, resolve_order_role
+from app.battle_report.annual_order_corrections import correct_order, linked_customer_scope
 
 NEW_DEAL_FIELD = "22595163468"
 # Owner-approved identity correction for the 2026 annual award. All three
@@ -35,7 +36,7 @@ def source_facts(db, report, members, now):
         state = projection_status(db, date_from=report.start_date, date_to=min(report.end_date, now.date()))
         from app.trade.return_adjustments import load_return_adjustments
         effects = load_return_adjustments(db, report.start_date, min(report.end_date, now.date()), owner_ids=owners)
-        return [{**r, "order_id": r["event_order_id"], "is_goods": True,
+        return [{**r, "order_id": r["event_order_id"], "is_goods": True, "source_type": "formal_projection",
                  "custom_fields": {NEW_DEAL_FIELD: r["new_deal"]}, "order_name": r["order_no"]}
                 for r in rows if r["company_id"] in customers] + effects, state["last_projected_at"]
     schema = get_settings().BUSINESS_DB_NAME
@@ -54,6 +55,7 @@ def source_facts(db, report, members, now):
                   AND s.user_id IN :users AND s.account_date BETWEEN :start AND :end
             )
         )"""
+    linked_scope += linked_customer_scope(report, params, schema)
     query = text(f"""
         SELECT o.order_id, o.order_no, o.user_id, o.company_id, o.account_date, o.amount_usd,
                {cohort_company} AS cohort_company_id,
@@ -77,7 +79,7 @@ def source_facts(db, report, members, now):
     return [dict(r) for r in rows] + effects, synced.isoformat() if hasattr(synced, "isoformat") else str(synced) if synced else None
 
 
-def normalize_facts(report, raw, now):
+def normalize_facts(report, raw, now, *, native=False):
     now = to_beijing_naive(now)
     issues, orders, seen = [], [], {}
     try:
@@ -122,7 +124,17 @@ def normalize_facts(report, raw, now):
             mark = fields.get(NEW_DEAL_FIELD) if isinstance(fields, dict) else None
             if not oid or not uid or not cid or not amount.is_finite() or amount < 0:
                 raise ValueError
-            role, issue = resolve_order_role({**row, "account_date": day}, mark, decisions)
+            row["account_date"] = day
+            original_row = dict(row)
+            role, issue = (None, None) if native else correct_order(report, row)
+            if role is None:
+                role, issue = resolve_order_role(row, mark, decisions)
+            elif oid in decisions and not issue:
+                manual_role, issue = resolve_order_role(original_row, mark, decisions)
+                if not issue and manual_role != role:
+                    issue = f"订单 {oid} 人工裁定与年度历史裁定冲突；GMV保留，新签复购指标待核对"
+                if issue:
+                    role, row = "pending", original_row
             if issue:
                 issues.append(issue)
             elif oid in decisions:
@@ -183,7 +195,7 @@ def cohort_orders(orders):
 
 def calculate(report, members, raw, now, synced_at=None, *, native=False, source_complete=True):
     now = to_beijing_naive(now)
-    orders, issues, gmv_issues, decision_count, applied_count = normalize_facts(report, raw, now)
+    orders, issues, gmv_issues, decision_count, applied_count = normalize_facts(report, raw, now, native=native)
     if not source_complete:
         issues.append("正式订单来源水位未完整核验，暂停最终排名")
     groups = cohort_orders(orders)

@@ -44,6 +44,7 @@ def list_metric_orders(db, report_id, user, *, metric, customer=None, order_name
                          "source_type": order.get("source_type", "okki"), "return_id": order.get("return_id"),
                          "original_order_id": order.get("original_order_id", order["id"]),
                          "order_name": order["order_name"], "company_id": order["cid"],
+                         "cohort_company_id": cohort_customer_id(order),
                          "company_name": order["company_name"], "account_date": order["day"].isoformat(),
                          "amount_usd": format(order["amount"], "f"),
                          "member_id": member.id, "user_name": member.user_name,
