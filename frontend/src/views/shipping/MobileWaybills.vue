@@ -1,6 +1,6 @@
 <template>
   <main class="mobile-waybills">
-    <header class="mobile-header">
+    <header v-if="!cameraLive" class="mobile-header">
       <button v-if="step !== 'list'" :disabled="busy === 'submit'" aria-label="返回列表" @click="back">‹</button>
       <router-link v-else to="/dashboard" aria-label="返回工作台">‹</router-link>
       <h1>{{ step === 'list' ? '手机录物流单' : step === 'camera' ? '拍运单' : '核对物流单' }}</h1>
@@ -15,10 +15,11 @@
         <label class="search"><span class="sr-only">搜索出库单号、客户名</span><input v-model="keyword" type="search" placeholder="搜索出库单号、客户名" /></label>
       </div>
       <p v-if="!allowed" class="notice">需要物流单上传权限，请联系管理员</p>
-      <p v-if="loading" role="status" class="empty">正在加载验货单…</p>
+      <p v-if="loading && !rows.length" role="status" class="empty">正在加载验货单…</p>
+      <p v-else-if="refreshing" role="status" class="refreshing">正在刷新…</p>
       <div v-else-if="queueError" class="alert" role="alert">{{ queueError }}<button @click="loadQueue">重试</button></div>
-      <p v-else-if="!rows.length" class="empty">{{ tab === 'pending' ? '暂无待录物流单' : '今天还没有录入' }}</p>
-      <section v-for="row in rows" :key="row.id" class="queue-card">
+      <p v-else-if="!rows.length && !loading" class="empty">{{ tab === 'pending' ? '暂无待录物流单' : '今天还没有录入' }}</p>
+      <section v-for="row in rows" :key="row.id" class="queue-card" :class="{ stale: refreshing }" :inert="refreshing || undefined">
         <div class="card-top"><span>{{ row.outbound_no }}</span><span v-if="row.cross_border?.is_9610" class="badge">9610</span></div>
         <h2>{{ row.customer_name || '未填写客户名' }}</h2>
         <p>{{ row.recipient_country || '国家待核对' }} · {{ row.quantity ?? '—' }} 件</p>
@@ -26,12 +27,19 @@
         <div v-if="tab === 'done'" class="done-photo"><WaybillPhotoViewer v-if="row.photo" :photo="row.photo" /><strong>{{ row.shipment?.waybill_no }}</strong></div>
         <button :ref="element => setCardAction(row.id, element)" class="primary card-action" :disabled="!allowed || locked" @click="begin(row)">{{ tab === 'done' ? '更换物流单' : '拍运单' }}</button>
       </section>
-      <button v-if="hasMore" class="older" :disabled="loading" @click="loadMore">加载更多</button>
+      <div v-if="hasMore" ref="moreSentinel" class="more-sentinel"><button class="older" :disabled="loading" @click="loadMore">{{ loading ? '正在加载…' : '加载更多' }}</button></div>
       <button v-if="tab === 'pending' && !includeOlder && !keyword" class="older" @click="includeOlder = true">查看更早</button>
     </template>
     <template v-else>
-      <section class="customer-context"><strong>{{ selected.customer_name }}</strong><span>{{ selected.recipient_country || '国家待核对' }}</span><small>{{ selected.outbound_no }}</small></section>
-      <DocumentScanner v-if="step !== 'list'" v-show="step === 'camera' || adjusting" ref="scanner" finish="capture" direct-capture require-original default-effect="enhanced" :max-upload-bytes="16 * 1024 * 1024" @captured="onCaptured" @cancel="back" />
+      <section v-if="!cameraLive" class="customer-context"><strong>{{ selected.customer_name }}</strong><span>{{ selected.recipient_country || '国家待核对' }}</span><small>{{ selected.outbound_no }}</small></section>
+      <DocumentScanner v-if="step !== 'list'" v-show="step === 'camera' || adjusting" ref="scanner" finish="capture" direct-capture immersive require-original default-effect="enhanced" :max-upload-bytes="16 * 1024 * 1024" @captured="onCaptured" @cancel="back" @camera="scannerCamera = $event">
+        <template #overlay>
+          <div class="camera-context">
+            <button type="button" aria-label="返回列表" @click="back">‹</button>
+            <div><strong>{{ selected.customer_name || '未填写客户名' }}</strong><small>{{ selected.outbound_no }} · {{ selected.recipient_country || '国家待核对' }}</small></div>
+          </div>
+        </template>
+      </DocumentScanner>
       <template v-if="step === 'review' && !adjusting">
         <section class="review-card">
           <img :src="imageUrl" class="captured-photo" alt="本次运单增强裁正图" />
@@ -67,15 +75,29 @@
 </template>
 
 <script setup>
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import DocumentScanner from '@/components/document-scanner/DocumentScanner.vue'
 import WaybillPhotoViewer from './components/WaybillPhotoViewer.vue'
 import { formatBeijingShortDateTime } from '@/utils/datetime'
 import { useMobileWaybills } from './composables/useMobileWaybills'
 import { numberSourceLabel, syncMessage } from './composables/mobileWaybillState'
-const { nextInspectionId, total, hasMore, loadMore, allowed, tab, keyword, includeOlder, rows, loading, queueError, selected, step, busy, error, notice, imageUrl, form, numberSource, photoToken, preview, confirmations, countryOpen, locked, canSubmit, inferredDhl, submitLabel, loadQueue, begin, back, retake, captured, upload, editNumber, sync, submit } = useMobileWaybills()
-const scanner = ref(null), adjusting = ref(false)
+const { refreshing, nextInspectionId, total, hasMore, loadMore, allowed, tab, keyword, includeOlder, rows, loading, queueError, selected, step, busy, error, notice, imageUrl, form, numberSource, photoToken, preview, confirmations, countryOpen, locked, canSubmit, inferredDhl, submitLabel, loadQueue, begin, back, retake, captured, upload, editNumber, sync, submit } = useMobileWaybills()
+const scanner = ref(null), adjusting = ref(false), scannerCamera = ref(false)
+// 只有真正处在全屏取景时才隐藏页头和客户卡；扫描器退回入口/手动裁剪时仍要能返回、能看到是哪张单
+const cameraLive = computed(() => step.value === 'camera' && scannerCamera.value)
 const cardActions = new Map()
+// 滑到列表底部附近自动续载下一页，按钮保留作兜底
+const moreSentinel = ref(null)
+let moreObserver = null
+watch(moreSentinel, element => {
+  moreObserver?.disconnect(); moreObserver = null
+  if (!element || typeof IntersectionObserver === 'undefined') return
+  moreObserver = new IntersectionObserver(entries => {
+    if (entries.some(entry => entry.isIntersecting) && hasMore.value && !loading.value && step.value === 'list') loadMore()
+  }, { rootMargin: '400px 0px' })
+  moreObserver.observe(element)
+})
+onBeforeUnmount(() => moreObserver?.disconnect())
 function setCardAction(id, element) { if (element) cardActions.set(id, element); else cardActions.delete(id) }
 watch(nextInspectionId, async id => {
   if (id == null) return
@@ -103,5 +125,5 @@ button, input, select, summary, .mobile-header a { min-height: 44px; font: inher
 input:not([type="checkbox"]), select { display: block; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-bg); color: var(--text-primary); font-size: 16px; }
 .queue-card, .review-card { margin: 16px 0; padding: 16px; border: 1px solid var(--border-color); border-radius: 16px; background: var(--card-bg); }.card-top { display: flex; justify-content: space-between; gap: 8px; color: var(--text-secondary); font-size: 13px; }.badge, .source-label { background: var(--tag-gold-bg); color: var(--tag-gold-text); padding: 3px 8px; border-radius: 6px; font-size: 12px; }.card-action, .older, .sync-button { width: 100%; }.primary { background: var(--button-primary); color: var(--button-primary-ink); border-color: var(--button-primary); font-weight: 600; }.done-photo { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }.empty { padding: 40px 0; text-align: center; color: var(--text-secondary); }
 .customer-context { display: grid; grid-template-columns: 1fr auto; gap: 6px; padding: 14px; border-radius: 12px; background: var(--tag-gold-bg); }.customer-context strong { font-size: 18px; }.customer-context small { grid-column: 1 / -1; }.captured-photo { width: 100%; max-height: 230px; object-fit: contain; background: var(--page-bg); }.photo-actions { display: flex; gap: 8px; margin-top: 8px; }.photo-actions button { flex: 1; }
-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }label { display: block; margin: 12px 0; line-height: 1.8; }summary { cursor: pointer; padding: 10px 0; }.alert { padding: 12px; color: var(--tag-danger-text); background: var(--tag-danger-bg); border-radius: 8px; }.notice { padding: 12px; color: var(--tag-warning-text); background: var(--tag-warning-bg); border-radius: 8px; }.required { color: var(--tag-danger-text); font-size: 13px; }.confirmation { display: flex; align-items: center; gap: 8px; }.confirmation input { width: 22px; height: 22px; flex-shrink: 0; }.submit-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: min(100%, 560px); padding: 12px 16px max(12px, env(safe-area-inset-bottom)); background: var(--card-bg); border-top: 1px solid var(--border-color); z-index: 5; }.submit-bar button { width: 100%; }.submit-bar p { margin: 0 0 6px; text-align: center; color: var(--text-secondary); font-size: 13px; }.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }label { display: block; margin: 12px 0; line-height: 1.8; }summary { cursor: pointer; padding: 10px 0; }.alert { padding: 12px; color: var(--tag-danger-text); background: var(--tag-danger-bg); border-radius: 8px; }.notice { padding: 12px; color: var(--tag-warning-text); background: var(--tag-warning-bg); border-radius: 8px; }.required { color: var(--tag-danger-text); font-size: 13px; }.confirmation { display: flex; align-items: center; gap: 8px; }.confirmation input { width: 22px; height: 22px; flex-shrink: 0; }.submit-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: min(100%, 560px); padding: 12px 16px max(12px, env(safe-area-inset-bottom)); background: var(--card-bg); border-top: 1px solid var(--border-color); z-index: 5; }.submit-bar button { width: 100%; }.submit-bar p { margin: 0 0 6px; text-align: center; color: var(--text-secondary); font-size: 13px; }.camera-context { display: flex; align-items: center; gap: 8px; color: var(--camera-ink); }.camera-context button { flex-shrink: 0; width: 44px; padding: 0; border: 0; border-radius: 999px; background: var(--camera-scrim); color: var(--camera-ink); font-size: 26px; line-height: 1; }.camera-context div { display: grid; gap: 2px; min-width: 0; }.camera-context strong { font-size: 17px; text-shadow: 0 1px 2px var(--camera-scrim); }.camera-context small { font-size: 13px; opacity: .85; color: var(--camera-ink); }.refreshing { margin: 0; text-align: center; color: var(--text-secondary); font-size: 13px; }.queue-card.stale { opacity: .55; transition: opacity 150ms ease-out; }.more-sentinel { margin-bottom: 16px; }.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 </style>

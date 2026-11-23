@@ -10,13 +10,17 @@ function errorText(failure, fallback) {
   return data?.message || (typeof data?.detail === 'string' ? data.detail : data?.detail?.message) || fallback
 }
 
+// 首屏只取一页，手机上 20 张约三四屏，滑到底再续载；MAX_PAGE_SIZE 与后端 page_size 上限一致
+const PAGE_SIZE = 20
+const MAX_PAGE_SIZE = 200
+
 export function useMobileWaybills() {
   const auth = useAuthStore()
   const allowed = computed(() => auth.hasPermission('tracking:write'))
   const tab = ref('pending'), keyword = ref(''), includeOlder = ref(false)
   const nextInspectionId = ref(null)
   const page = ref(1), total = ref(0), hasMore = ref(false)
-  const rows = ref([]), loading = ref(false), queueError = ref(''), selected = ref(null)
+  const rows = ref([]), loading = ref(false), refreshing = ref(false), queueError = ref(''), selected = ref(null)
   const step = ref('list'), busy = ref(''), error = ref(''), notice = ref(''), imageUrl = ref('')
   const form = reactive({ waybill_no: '', carrier: '', recipient_name: '', recipient_country: '', ship_date: '' })
   const numberSource = ref('manual'), photoToken = ref(''), preview = ref(null), confirmations = ref([])
@@ -33,23 +37,19 @@ export function useMobileWaybills() {
   const loadMore = () => fetchQueue(true)
   async function fetchQueue(append, retainPages = 1) {
     const request = ++queueRequest
-    const nextPage = append ? page.value + 1 : 1
-    loading.value = true; queueError.value = ''
+    loading.value = true; refreshing.value = !append && rows.value.length > 0; queueError.value = ''
     try {
       const params = { tab: tab.value, keyword: keyword.value, include_older: includeOlder.value }
-      const refreshed = []
-      let data, loadedPage = nextPage
-      for (let currentPage = nextPage; currentPage <= (append ? nextPage : retainPages); currentPage++) {
-        const response = await listMobileWaybillQueue({ ...params, page: currentPage })
-        if (request !== queueRequest) return false
-        data = response.data; loadedPage = currentPage; refreshed.push(...data.items)
-        if (!data.has_more) break
-      }
-      rows.value = append ? [...rows.value, ...refreshed] : refreshed
-      total.value = data.total; hasMore.value = data.has_more; page.value = loadedPage
+      // 回列表时保留已滚动的页数：一次请求取回前 N 页（后端每次都要全量过滤权限，逐页串行会成倍变慢）
+      const pages = append ? 1 : Math.max(1, Math.min(retainPages, Math.floor(MAX_PAGE_SIZE / PAGE_SIZE)))
+      const query = append ? { ...params, page: page.value + 1, page_size: PAGE_SIZE } : { ...params, page: 1, page_size: pages * PAGE_SIZE }
+      const { data } = await listMobileWaybillQueue(query)
+      if (request !== queueRequest) return false
+      rows.value = append ? [...rows.value, ...data.items] : data.items
+      total.value = data.total; hasMore.value = data.has_more; page.value = append ? page.value + 1 : pages
       return true
     } catch (failure) { if (request === queueRequest) queueError.value = errorText(failure, '列表加载失败，请重试') }
-    finally { if (request === queueRequest) loading.value = false }
+    finally { if (request === queueRequest) { loading.value = false; refreshing.value = false } }
   }
   watch([tab, includeOlder], () => { nextInspectionId.value = null; if (!changingTab) loadQueue() }, { flush: 'sync' })
   watch(keyword, () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadQueue, 300) })
@@ -60,7 +60,7 @@ export function useMobileWaybills() {
       try { await confirmAction('更换后旧照片仍会保留。请确认手里的包裹属于这张验货单。', '更换物流单', { confirmButtonText: '继续拍摄', cancelButtonText: '取消' }) }
       catch { return }
     }
-    clearTimeout(searchTimer); queueRequest++; loading.value = false; nextInspectionId.value = null
+    clearTimeout(searchTimer); queueRequest++; loading.value = false; refreshing.value = false; nextInspectionId.value = null
     const index = rows.value.findIndex(item => item.id === row.id)
     queueContext = { tab: tab.value, pages: page.value, index, successors: rows.value.slice(index + 1).map(item => item.id), hadMore: hasMore.value }
     operation++; selected.value = row; capture = null; releaseImage()
@@ -159,5 +159,5 @@ export function useMobileWaybills() {
   }
   onMounted(loadQueue)
   onBeforeUnmount(() => { operation++; queueRequest++; syncRequest++; clearTimeout(searchTimer); releaseImage() })
-  return { nextInspectionId, total, hasMore, loadMore, allowed, tab, keyword, includeOlder, rows, loading, queueError, selected, step, busy, error, notice, imageUrl, form, numberSource, photoToken, preview, confirmations, countryOpen, locked, canSubmit, inferredDhl, submitLabel, loadQueue, begin, back, retake, captured, upload, editNumber, sync, submit }
+  return { refreshing, nextInspectionId, total, hasMore, loadMore, allowed, tab, keyword, includeOlder, rows, loading, queueError, selected, step, busy, error, notice, imageUrl, form, numberSource, photoToken, preview, confirmations, countryOpen, locked, canSubmit, inferredDhl, submitLabel, loadQueue, begin, back, retake, captured, upload, editNumber, sync, submit }
 }
