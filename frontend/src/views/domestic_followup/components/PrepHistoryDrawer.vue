@@ -26,35 +26,53 @@
       </div>
     </div>
     <template #footer>
-      <GlassButton @click="visible = false">关闭</GlassButton>
-      <GlassButton v-if="selected?.can_clone" variant="primary" :loading="cloning" @click="clone">基于此卡新建</GlassButton>
+      <div class="history-actions">
+        <GlassButton @click="visible = false">关闭</GlassButton>
+        <GlassButton v-if="selected?.can_clone" :variant="canRecord ? 'secondary' : 'primary'" :loading="cloning" @click="clone">基于此卡新建</GlassButton>
+        <GlassButton v-if="canRecord" v-permission="'domestic_followup:write'" variant="primary" :disabled="cloning" @click="record">沟通完了，记结果</GlassButton>
+      </div>
     </template>
   </el-drawer>
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { apiError, followupApi } from '@/api/domesticFollowup'
 import { msgError } from '@/utils/feedback'
 import { newRequestId } from '../followupDraft'
 
-const emit = defineEmits(['cloned'])
-const visible = ref(false), loading = ref(false), cloning = ref(false), rows = ref([]), selected = ref(null), customer = ref(null)
+const emit = defineEmits(['cloned', 'record'])
+const visible = ref(false), loading = ref(false), cloning = ref(false), rows = ref([]), selected = ref(null)
+const canRecord = computed(() => selected.value?.readonly === false && !selected.value.followup_id
+  && ['draft', 'ready'].includes(selected.value.status))
+let loadRequest = 0
 const statusLabels = { draft: '草稿', ready: '待使用', used: '已使用', abandoned: '已作废', expired: '已过期' }
 const media = window.matchMedia('(max-width: 768px)'), isMobile = ref(media.matches)
 const sync = event => { isMobile.value = event.matches }
 onMounted(() => media.addEventListener('change', sync))
 onBeforeUnmount(() => media.removeEventListener('change', sync))
 async function open(row) {
-  customer.value = row
+  const request = ++loadRequest
+  rows.value = []
+  selected.value = null
   visible.value = true
   loading.value = true
   try {
-    rows.value = await followupApi.preps(row.id)
-    selected.value = rows.value[0] || null
-  } catch (e) { msgError(apiError(e, '历史准备卡加载失败'), e) }
-  finally { loading.value = false }
+    const cards = await followupApi.preps(row.id)
+    if (request !== loadRequest) return
+    rows.value = cards
+    selected.value = cards[0] || null
+  } catch (e) {
+    if (request === loadRequest) msgError(apiError(e, '历史准备卡加载失败'), e)
+  } finally {
+    if (request === loadRequest) loading.value = false
+  }
+}
+function record() {
+  if (!canRecord.value || cloning.value) return
+  visible.value = false
+  emit('record', selected.value)
 }
 async function clone() {
   cloning.value = true
@@ -70,6 +88,7 @@ defineExpose({ open })
 
 <style scoped>
 .history-body { display: flex; flex-direction: column; gap: 14px; }
+.history-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .history-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 14px; }
 .history-list { display: flex; flex-direction: column; gap: 8px; }
 .history-list button { display: flex; flex-direction: column; gap: 5px; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: transparent; text-align: left; cursor: pointer; }

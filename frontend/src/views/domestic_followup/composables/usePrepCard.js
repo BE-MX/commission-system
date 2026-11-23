@@ -86,9 +86,18 @@ export function usePrepCard({ onRecord } = {}) {
     } else if (step.value === 2) {
       if (await ensureSaved()) await generate()
     } else {
-      visible.value = false
-      onRecord?.({ customer: customer.value, prep_id: prep.value.id, prep: prep.value })
+      recordPrep(prep.value)
     }
+  }
+
+  function recordPrep(card) {
+    close()
+    return onRecord?.({ customer: customer.value, prep_id: card.id, prep: card })
+  }
+
+  function close() {
+    visible.value = false
+    generation += 1
   }
 
   async function generate() {
@@ -156,8 +165,7 @@ export function usePrepCard({ onRecord } = {}) {
 
   return {
     visible, step, loading, saving, context, customer, prep, form, template, strategy, remaining, historyVisible,
-    open, next, generate, loadPrep, addFact, feedback,
+    open, next, generate, loadPrep, recordPrep, addFact, feedback, close,
     back: () => { if (step.value > 1) step.value -= 1 },
-    close: () => { visible.value = false; generation += 1 },
   }
 }

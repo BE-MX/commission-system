@@ -12,6 +12,20 @@ import { dictOptionLabels } from '../src/views/domestic_followup/followupDynamic
 const customerStep = { step_key: 'customer', text: '客户约定回访', basis: 'customer_agreed', trigger: 'date', date: '2026-11-20', default_selected: true }
 const actionStep = { step_key: 'action', text: '协调技术', basis: 'our_commitment', trigger: 'date', date: '2026-11-18', default_selected: false, commitment_advice: true }
 
+async function followupTestServer(t, modules) {
+  const server = await createServer({
+    root: fileURLToPath(new URL('..', import.meta.url)), configFile: false, envFile: false, logLevel: 'silent',
+    server: { middlewareMode: true, hmr: false },
+    plugins: [{
+      name: 'mock-followup',
+      resolveId(id) { if (Object.hasOwn(modules, id)) return `\0${id}` },
+      load(id) { if (id.startsWith('\0')) return modules[id.slice(1)] },
+    }],
+  })
+  t.after(() => server.close())
+  return server
+}
+
 test('a managed customer AI draft can save with unselected next steps and a legacy date', async t => {
   const draft = {
     id: 7, version: 1, ai_status: 'done', followup_date: '2026-11-17', attachments: [],
@@ -36,16 +50,7 @@ test('a managed customer AI draft can save with unselected next steps and a lega
     `,
     '@/utils/datetime': `export const currentBeijingDate = () => '2026-11-18'`,
   }
-  const server = await createServer({
-    root: fileURLToPath(new URL('..', import.meta.url)), configFile: false, envFile: false, logLevel: 'silent',
-    server: { middlewareMode: true, hmr: false },
-    plugins: [{
-      name: 'mock-followup-review',
-      resolveId(id) { if (Object.hasOwn(modules, id)) return `\0${id}` },
-      load(id) { if (id.startsWith('\0')) return modules[id.slice(1)] },
-    }],
-  })
-  t.after(() => server.close())
+  const server = await followupTestServer(t, modules)
   const { useFollowupComposer } = await server.ssrLoadModule('/src/views/domestic_followup/composables/useFollowupComposer.js')
   const { submissions } = await server.ssrLoadModule('@/api/domesticFollowup')
   let composer
@@ -71,6 +76,60 @@ test('a managed customer AI draft can save with unselected next steps and a lega
   assert.equal(submissions[0].body.result_code, '有效沟通')
   assert.equal(submissions[0].body.next_date, null)
   assert.deepEqual(submissions[0].body.next_steps, [])
+})
+
+test('recording from history carries the saved preparation into the follow-up without creating a card', async t => {
+  const customer = { id: 12, shop_name: '回访测试店' }
+  const card = {
+    id: 23, customer_id: 12, template_code: 'T06', template_version: 2, goal: '确认修剪效果',
+    status: 'ready', readonly: false, answers: { affected_product: '试戴样品' },
+    strategy_status: 'done', strategy: { key_questions: [{ q: '修剪后还有哪里需要调整？' }] },
+  }
+  const server = await followupTestServer(t, {
+    '@/api/domesticFollowup': `
+      export const prepWrites = []
+      export const apiError = (error, fallback) => error.message || fallback
+      export const followupApi = {
+        prepContext: async () => ({ templates: [{ code: 'T03' }], history_count: 1 }),
+        dicts: async () => ({}), tasks: async () => ({ items: [] }),
+        timeline: async () => ({ customer: { id: 12, writable: true }, open_items: [] }),
+        createPrep: async data => { prepWrites.push(data) },
+        updatePrep: async (id, data) => { prepWrites.push({ id, data }) },
+      }
+    `,
+    '@/utils/feedback': `
+      export const msgError = text => { throw new Error(text) }
+      export const msgWarning = text => { throw new Error(text) }
+      export const msgSuccessText = () => {}
+    `,
+    '@/utils/datetime': `export const currentBeijingDate = () => '2026-11-23'`,
+  })
+  const { useFollowupComposer } = await server.ssrLoadModule('/src/views/domestic_followup/composables/useFollowupComposer.js')
+  const { usePrepCard } = await server.ssrLoadModule('/src/views/domestic_followup/composables/usePrepCard.js')
+  const { prepWrites } = await server.ssrLoadModule('@/api/domesticFollowup')
+  let composer, preparation
+  await renderToString(createSSRApp({ setup() {
+    composer = useFollowupComposer()
+    preparation = usePrepCard({ onRecord: composer.open })
+    return () => null
+  } }))
+
+  await preparation.open({ customer })
+  assert.equal(preparation.step.value, 1)
+  await preparation.recordPrep(card)
+  const form = composer.form.value
+  assert.equal(preparation.visible.value, false)
+  assert.equal(composer.visible.value, true)
+  assert.equal(form.customer_id, customer.id)
+  assert.equal(form.prep_id, card.id)
+  assert.equal(form.template_code, 'T06')
+  assert.equal(form.template_version, 2)
+  assert.deepEqual(form.template_answers, {
+    fields: { affected_product: '试戴样品' },
+    questions: [{ q: '修剪后还有哪里需要调整？', answer: '', state: 'not_asked' }],
+  })
+  assert.equal(formToPayload(form).prep_id, card.id)
+  assert.deepEqual(prepWrites, [])
 })
 
 test('only evidence-backed dated customer agreements are selected by default', () => {
