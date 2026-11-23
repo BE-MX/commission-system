@@ -298,10 +298,6 @@ defineExpose({ fetchDates })
 </script>
 
 <style scoped>
-.calendar-config {
-  max-width: 900px;
-}
-
 .toolbar {
   display: flex;
   align-items: center;

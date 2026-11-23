@@ -120,11 +120,6 @@
   background-color: rgba(245, 236, 220, 0.98);
 }
 
-.invoice-table--compact {
-  /* Include the outer border on both sides of the grid. */
-  width: min(100%, calc(var(--invoice-table-width) + 2px));
-}
-
 /* Include the full sortable header and measure invoices before wrapping. */
 .invoice-table--measuring :deep(th > .cell),
 .invoice-table--measuring :deep(.invoice-number-column .invoice-pair) {

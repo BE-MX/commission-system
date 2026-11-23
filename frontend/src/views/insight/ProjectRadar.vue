@@ -192,7 +192,7 @@ function selectAllCandidates() { selectedCandidates.value = (candidateJob.value?
 .radar-aurora i:nth-child(1) { right: -120px; top: -180px; }
 .radar-aurora i:nth-child(2) { left: -180px; top: 120px; background: radial-gradient(circle, var(--dash-aurora-amber), transparent 68%); }
 .radar-aurora i:nth-child(3) { right: 20%; top: 340px; background: radial-gradient(circle, var(--dash-aurora-peach), transparent 68%); }
-.page-head, .capture-card, .health-strip, .list-card { position: relative; max-width: 1500px; margin-inline: auto; }
+.page-head, .capture-card, .health-strip, .list-card { position: relative; margin-inline: auto; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
 .page-head h1 { margin: 0; font-size: 24px; }
 .page-head p { margin: 5px 0 0; color: var(--text-secondary); }
