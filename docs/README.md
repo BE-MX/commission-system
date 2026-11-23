@@ -16,6 +16,8 @@
 
 9610 跨境申报核对：[需求与设计 v0.6](requirements/2026-11-23-cross-border-declaration/README.md) · [实现笔记](requirements/2026-11-23-cross-border-declaration/implementation.md) · [核对页原型](requirements/2026-11-23-cross-border-declaration/prototype/index.html)（运单与申报仍在 DHL 网站做；方舟累积导入 DHL 申报订单与收款单，按阿里订单号和票金额配对发票、验货单与物流状态，导出报关订单与收款单，取代业务员 Excel；一期只核对 DHL9610，已在独立开发分支实现）。
 
+手机录物流单：[需求与设计 v0.4](requirements/2026-11-23-mobile-waybill-capture/README.md) · [手机原型](requirements/2026-11-23-mobile-waybill-capture/prototype/index.html)（业务员在待发货区用手机打开验货单列表，拍运单即自动裁正增强、条码优先识别单号，同步承运商信息并核对客户、国家后提交，运单已关联其他客户时阻断；物流单照片存档并可在手机、验货单、物流跟踪查看；合并原来的拍照与电脑端上传物流单两步；需求定稿，未开发）。
+
 工厂手写发货单拍照识别入库：[需求与设计 v0.4](requirements/2026-11-18-factory-delivery-inbound/README.md) · [设计开发文档](requirements/2026-11-18-factory-delivery-inbound/design.md) · [高保真原型](requirements/2026-11-18-factory-delivery-inbound/prototype/index.html)（切换前写小满采购入库；对应生产备货订单与订单发票生产单两类，备货单回写、发票只记对应；未开发）。
 
 内贸客户跟进统计看板：[需求与原型](requirements/2026-11-12-followup-stats-board/README.md)、[P1/P2 实施与验收](requirements/2026-11-12-followup-stats-board/implementation.md)（Git 交付，未部署）。
