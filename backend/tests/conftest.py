@@ -40,6 +40,8 @@ from app.domestic_followup import prep_models as _domestic_followup_prep_models 
 from app.design_image import models as _design_image_models  # noqa: F401
 from app.ai_chat import models as _ai_chat_models  # noqa: F401
 from app.sales_automation import models as _sales_automation_models  # noqa: F401
+from app.factory_inbound import models as _factory_inbound_models  # noqa: F401  单跑测试时库存钩子会查入库批次表
+from app.factory_inbound import batch_models as _factory_inbound_batch_models  # noqa: F401
 from app.insight import models as _insight_models  # noqa: F401
 from app.project_radar import models as _project_radar_models  # noqa: F401
 from app.customer_media import models as _customer_media_models  # noqa: F401

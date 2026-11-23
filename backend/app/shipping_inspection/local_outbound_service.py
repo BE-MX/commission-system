@@ -89,6 +89,32 @@ def is_native(db, identity, *, lock=False):
     return is_local(identity) or get(db, identity, lock=lock) is not None
 
 
+def native_identities(db, identities, chunk=500):
+    """Batch form of is_native for read paths: one query per chunk instead of one per identity.
+
+    Same rules as get(): local- ids and transaction-locked parents are native; a legacy id
+    adopted by more than one local outbound is ambiguous and raises like get() does.
+    """
+    native = {str(i) for i in identities if is_local(i) or locked(db, i) is not None}
+    pending = sorted({str(i) for i in identities} - native)
+    record_key = ShipmentOutbound.payload['original_outbound_record_id'].as_string()
+    invoice_key_ = ShipmentOutbound.payload['original_outbound_invoice_id'].as_string()
+    for start in range(0, len(pending), chunk):
+        ids = pending[start:start + chunk]
+        matches = {}
+        for row_id, record_id, invoice_id in db.execute(
+                select(ShipmentOutbound.id, record_key, invoice_key_).where(
+                    ShipmentOutbound.payload['transaction_mode'].as_string() == 'local',
+                    or_(record_key.in_(ids), invoice_key_.in_(ids)))).all():
+            for alias in {record_id, invoice_id} & set(ids):
+                matches.setdefault(alias, set()).add(row_id)
+        for alias, rows in matches.items():
+            if len(rows) > 1:
+                raise ValueError('历史出库身份关联不唯一，请核验来源租户')
+            native.add(alias)
+    return native
+
+
 def ensure_editable(db, identity):
     row = get(db, identity, lock=True)
     if row is None or row.status not in {"local_pending", "local_ready"}:
