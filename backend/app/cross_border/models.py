@@ -1,10 +1,13 @@
 """Imported source rows, specialist decisions and immutable export files."""
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, JSON, LargeBinary, String
-from sqlalchemy.dialects.mysql import MEDIUMBLOB
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import deferred
 
 from app.core.database import Base
 from app.core.time import beijing_now
+
+
+USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
 
 
 class ImportBatch(Base):
@@ -19,7 +22,7 @@ class ImportBatch(Base):
     added = Column(Integer, nullable=False, default=0, comment="新增条目数")
     suspected = Column(Integer, nullable=False, default=0, comment="本批未出现的同号旧条目数")
     content_hashes = Column(JSON, nullable=False, comment="本批条目内容摘要列表，保留批次成员关系")
-    imported_by = Column(Integer, ForeignKey("ark_users.id"), nullable=False, comment="导入人")
+    imported_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="导入人")
     imported_at = Column(DateTime, nullable=False, default=beijing_now, comment="导入北京时间")
 
 
@@ -60,7 +63,7 @@ class Review(Base):
     action = Column(String(30), nullable=False, comment="核对动作")
     target = Column(BigInteger, comment="指定或确认交运的运单跟踪ID")
     reason = Column(String(500), nullable=False, comment="专员核实原因")
-    created_by = Column(Integer, ForeignKey("ark_users.id"), nullable=False, comment="操作人")
+    created_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="操作人")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="操作北京时间")
 
 
@@ -69,8 +72,8 @@ class ExportBatch(Base):
     __table_args__ = {"comment": "报关文件与生成审计"}
 
     id = Column(Integer, primary_key=True, comment="导出记录")
-    created_by = Column(Integer, ForeignKey("ark_users.id"), nullable=False, comment="导出人")
+    created_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="导出人")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="导出北京时间")
     content_hashes = Column(JSON, nullable=False, comment="按文件顺序导出的申报身份")
-    order_file = deferred(Column(LargeBinary().with_variant(MEDIUMBLOB(), "mysql"), nullable=False, comment="报关订单原文件"))
-    receipt_file = deferred(Column(LargeBinary().with_variant(MEDIUMBLOB(), "mysql"), nullable=False, comment="报关收款单原文件"))
+    order_file = deferred(Column(LargeBinary().with_variant(mysql.MEDIUMBLOB(), "mysql"), nullable=False, comment="报关订单原文件"))
+    receipt_file = deferred(Column(LargeBinary().with_variant(mysql.MEDIUMBLOB(), "mysql"), nullable=False, comment="报关收款单原文件"))
