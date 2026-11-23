@@ -1,5 +1,21 @@
 # 莱莎方舟 API 参考
 
+## 方舟开发动态
+
+主站入口为 `/system/devlog`，下表路径均以 `/api/devlog` 为前缀。成功响应沿用方舟的 `data` 信封。
+
+| 方法和路径 | 凭据 | 用途 |
+|---|---|---|
+| GET `/summary` | `devlog:read` | 按北京时间查询 `start` 至 `end` 的事件和 KPI，支持 `type`、`module`、`agent` 筛选。返回当前看板与所选区间时间线 |
+| GET `/items/{item_id}` | `devlog:read` | 读取事项、结构化证据及状态历史 |
+| GET `/pending` | `devlog:read` | 当前非停滞的待发布、待推送及待合并事项，按准备程度分组排序，附迁移、配置和权限前提 |
+| GET `/health` | `devlog:read` | 最近采集时间、数据源状态、发布账本最新版本和新入账记录待核对标记（`ledger_pending_check`） |
+| GET `/machine/releases` | 机器 token | 拉取账本，在开发机比较 Git 内容 |
+| POST `/ingest` | 机器 token | 提交有大小限制的结构化快照，返回写入和逐项失败情况 |
+| POST `/machine/releases` | 机器 token | 人工核对后的历史回填，另需开启 `DEVLOG_BACKFILL_ENABLED` |
+
+机器凭据通过 `X-Devlog-Token` 请求头传递。服务器只保存允许使用的 SHA-256 哈希。正式发布走办公室本地的账本 CLI。
+
 ## 9610 跨境申报核对
 
 主站入口为 `/cross-border`。下表路径以 `/api/cross-border` 为前缀，read、write 分别指 `cross_border:read`、`cross_border:write`。

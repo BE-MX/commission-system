@@ -1,5 +1,5 @@
 {
-  "source_sha256": "30ad6d923c84ae38ed9f80e7328d17a6a5848ace1015e31b620cc7c0fc726dff",
+  "source_sha256": "f2c8fab146026bc915799014da864171992d2a8f064495a433f7211ef88385ad",
   "nodes": [
     {
       "id": "customerPortal",
@@ -382,7 +382,27 @@
       "titleSync": false,
       "path": "/system/navigation",
       "external": false,
-      "rule": "navigation:read / navigation:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "navigation:read / navigation:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "business": "",
+      "phase": false
+    },
+    {
+      "id": "DevlogBoard",
+      "kind": "page",
+      "label": "方舟开发动态",
+      "icon": "DataBoard",
+      "parent": "system",
+      "order": 90,
+      "visible": true,
+      "builtin": true,
+      "protected": false,
+      "badge": "",
+      "badgePlace": "text",
+      "badgeTone": "gold",
+      "titleSync": false,
+      "path": "/system/devlog",
+      "external": false,
+      "rule": "devlog:read / devlog:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -442,7 +462,7 @@
       "titleSync": false,
       "path": "/commerce/transition",
       "external": false,
-      "rule": "commerce_transition:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "commerce_transition:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -2982,7 +3002,7 @@
       "titleSync": false,
       "path": "/system/monid-spend",
       "external": false,
-      "rule": "sales_monid_spend:read / sales_monid_spend:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "sales_monid_spend:read / sales_monid_spend:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3002,7 +3022,7 @@
       "titleSync": false,
       "path": "/system/users",
       "external": false,
-      "rule": "user:read / user:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "user:read / user:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3022,7 +3042,7 @@
       "titleSync": false,
       "path": "/system/roles",
       "external": false,
-      "rule": "role:read / role:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "role:read / role:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3042,7 +3062,7 @@
       "titleSync": false,
       "path": "/system/dicts",
       "external": false,
-      "rule": "dict:read / dict:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "dict:read / dict:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3062,7 +3082,7 @@
       "titleSync": false,
       "path": "/system/followup-templates",
       "external": false,
-      "rule": "domestic_followup:admin / domestic_followup:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "domestic_followup:admin / domestic_followup:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3082,7 +3102,7 @@
       "titleSync": false,
       "path": "/system/ai",
       "external": false,
-      "rule": "ai:admin / ai:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "ai:admin / ai:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3102,7 +3122,7 @@
       "titleSync": false,
       "path": "/system/operations",
       "external": false,
-      "rule": "operations:read / operations:admin / operations:read / operations:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "operations:read / operations:admin / operations:read / operations:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3122,7 +3142,7 @@
       "titleSync": false,
       "path": "/system/mcp-tokens",
       "external": false,
-      "rule": "mcp:admin / mcp:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "mcp:admin / mcp:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3142,7 +3162,7 @@
       "titleSync": false,
       "path": "/system/integration-apps",
       "external": false,
-      "rule": "integration:admin / integration:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "integration:admin / integration:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3162,7 +3182,7 @@
       "titleSync": false,
       "path": "/system/dingtalk-gmv-daily",
       "external": false,
-      "rule": "dingtalk:admin / dingtalk:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "dingtalk:admin / dingtalk:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3182,7 +3202,7 @@
       "titleSync": false,
       "path": "/system/external-bindings",
       "external": false,
-      "rule": "external_binding:read / external_binding:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "external_binding:read / external_binding:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3202,7 +3222,7 @@
       "titleSync": false,
       "path": "/system/whatsapp-connector",
       "external": false,
-      "rule": "whatsapp:read / whatsapp:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "whatsapp:read / whatsapp:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3222,7 +3242,7 @@
       "titleSync": false,
       "path": "/system/whatsapp-translation",
       "external": false,
-      "rule": "whatsapp_translation:admin / whatsapp_translation:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "whatsapp_translation:admin / whatsapp_translation:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },

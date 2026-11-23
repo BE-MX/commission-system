@@ -2,6 +2,14 @@
 
 本文维护运维方法与历史故障依据；发布、迁移和恢复操作统一从[部署说明](../deploy/README.md)进入，运行版本及尚未完成的业务验收见[交接文档](handoff.md)。旧日期段落中的现场状态仅代表当时核验。
 
+## 方舟开发动态采集与账本
+
+**接入和轮换。** 用安全随机源生成机器 token，只在开发机的 `.devlog_state/collector.json` 配置 `base_url` 与 `token`，限制文件访问权限。办公室与北京后端的 `DEVLOG_INGEST_TOKEN_HASHES` 配置小写 SHA-256 值，多个值用逗号分隔。轮换时先追加新哈希并使两端配置生效，切换开发机 token 并确认拉取账本成功，再移除旧哈希并重新加载。用户页面通过角色管理分配 `devlog:read`。
+
+**日常排查。** 页面显示“新发布待核对”时，应等待下一次完整采集再用清单判断是否要发。排查时先看最近同步时间、来源状态与账本最新版本，再查 `ark_devlog_sync_runs.failed_keys`。在开发机运行 `python scripts/devlog/collect.py --no-fetch` 生成离线快照，用 `.devlog_state/last-payload.json` 核对事项键、来源与状态。证据缓存和 keymap 仅在开发机维护。发现缺失的账本 revision 时，先核对是否已取得相应候选对象，再重试；核对失败期间不要把草稿当作已发布事实。
+
+**补记历史全局发布。** 运行 `python scripts/devlog/backfill_releases.py` 预览，逐笔对照办公室发布回执及交接记录，核实范围、完整 SHA 与北京验收时间。通过 `--add <完整SHA>@<北京时间>` 补齐缺失记录。文件修改时间只可作为线索。先用 `--write-cache` 和离线采集检查按日发布分布；历史覆盖不全会将很多事项挤到第一天。确认清单并获生产写入授权后，临时开启 `DEVLOG_BACKFILL_ENABLED` 执行 `--apply`，核对结果后关闭开关。日常采集用 `--push`；可用 `scripts/devlog/register_task.ps1` 预览本机定时采集命令；授权启用后，Windows 在北京时间 08:00 至 22:00 每两小时执行一次。
+
 ## WhatsApp AI消息助手启用与排查
 
 1. 集成并核对迁移链后，由正式部署入口升级到包含193的唯一head；不要开发机升级共享库。

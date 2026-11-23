@@ -393,6 +393,7 @@ def seed_role_permissions(db: Session):
         # 备货管理（2026-07-12 日报页拆独立码，stock:read 保留给销量备货一览）
         ("cross_border:read", "cross_border", "read", "查看跨境申报核对及报关文件"),
         ("cross_border:write", "cross_border", "write", "导入、复核及生成报关文件"),
+        ("devlog:read", "devlog", "read", "查看方舟开发动态（事项、发布账本、待发布清单）"),
         ("factory_inbound:read", "factory_inbound", "read", "查看工厂到货单"),
         ("factory_inbound:write", "factory_inbound", "write", "拍照并核对自己的工厂到货单"),
         ("factory_inbound:admin", "factory_inbound", "admin", "管理工厂到货单与词表"),

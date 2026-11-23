@@ -1,5 +1,17 @@
 # 莱莎方舟 数据库表参考
 
+## 方舟开发动态（278_devlog_tables）
+
+迁移接在 `277_cross_border_review` 之后。以下五张表位于提成系统库，业务时间使用北京时间。
+
+| 表 | 数据与约束 |
+|---|---|
+| `ark_devlog_items` | 以稳定事项键唯一标识。保存过滤后的标题、类型、模块、代理、当前状态、上线前提与证据指纹；已移出完整快照的事项可标记隐藏 |
+| `ark_devlog_evidences` | 以事项、证据类型、标识联合去重，只保存标识与时间 |
+| `ark_devlog_item_events` | 每次状态变化记录事项、前后状态、发生和入库时间，供按日回看 |
+| `ark_devlog_releases` | 发布身份 `release_id` 唯一；保存完整 Git revision、范围、验收时间和来源 |
+| `ark_devlog_sync_runs` | 记录采集起止时间、来源健康、事项数、失败键及完整成功快照标志 `snapshot_complete` |
+
 ## 跨境申报核对（276、277）
 
 `276_invoice_alibaba_order` 为 `ark_invoices` 增加可空的 `alibaba_order_no VARCHAR(20)` 和普通索引。一个信保订单可对应多张发票。

@@ -499,6 +499,8 @@ class Settings(BaseSettings):
     AGENT_RUNTIME_DAILY_TOKEN_BUDGET: _PositiveInt = 200_000
     # JSON: {"worker-instance-id": ["<sha256-of-bearer-token>"]}
     AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON: str = ""
+    DEVLOG_INGEST_TOKEN_HASHES: str = Field(default="", repr=False)
+    DEVLOG_BACKFILL_ENABLED: bool = False
     AGENT_RUNTIME_WORKER_RUNTIMES_JSON: str = ""
     # Run 委托 JWT 独立密钥；开发留空时回退 JWT_SECRET_KEY，生产必须显式配置。
     AGENT_RUNTIME_RUN_TOKEN_SECRET: str = ""

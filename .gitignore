@@ -94,3 +94,5 @@ expo-sales/server/expo.db
 
 # pnpm virtual store (local only)
 .pnpm-store/
+
+/.devlog_state/

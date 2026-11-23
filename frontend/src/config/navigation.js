@@ -189,7 +189,7 @@ export const MENU_GROUPS = {
     // 覆盖全部子项权限：任一子页可见则分组可见（此前漏 ai:admin/external_binding
     // 会让只有这些权限的用户看不到整个分组）
     anyPermission: [
-      'user:read', 'role:read', 'dict:read', 'ai:admin', 'navigation:read', 'domestic_followup:admin',
+      'devlog:read', 'user:read', 'role:read', 'dict:read', 'ai:admin', 'navigation:read', 'domestic_followup:admin',
       'mcp:admin', 'integration:admin', 'commerce_transition:admin',
       'operations:read', 'operations:admin', 'sales_monid_spend:read',
       'dingtalk:admin',
@@ -240,6 +240,12 @@ export const NAV_ENTRIES = [
     component: () => import('@/views/system/navigation-management/NavigationManagement.vue'),
     title: '导航管理', permission: 'navigation:read',
     menu: { group: 'system', title: '导航管理', icon: Connection, order: 35, permission: 'navigation:read' },
+  },
+  {
+    path: '/system/devlog', name: 'DevlogBoard',
+    component: () => import('@/views/devlog/DevlogBoard.vue'),
+    title: '方舟开发动态', permission: 'devlog:read',
+    menu: { group: 'system', title: '方舟开发动态', icon: DataBoard, order: 90, permission: 'devlog:read' },
   },
   { path: '/shipping/native', name: 'NativeOutbound', component: () => import('@/views/shipping/NativeOutbound.vue'), title: '出库管理（方舟独立）', permission: 'shipment:read', menu: { group: 'invoice', icon: Box, order: 16, commercePhases: NATIVE_PHASES } },
   { path: '/commerce/shadow', name: 'CommerceShadow', component: () => import('@/views/commerce-transition/ShadowWorkbench.vue'), title: '双路线核对', permission: 'commerce_shadow:read', menu: { group: 'invoice', icon: DataAnalysis, order: 17 } },
