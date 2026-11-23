@@ -266,10 +266,6 @@ onMounted(fetchAll)
 </script>
 
 <style scoped>
-.capacity-config {
-  max-width: 800px;
-}
-
 /* 玻璃质感覆盖 el-card 白底（Element 样式后于 liquid-glass.css 加载，且
    shadow="never" 的 is-never-shadow 优先级更高，必须在 scoped 里重写
    底/描边/圆角/阴影；hover 上浮与过渡由 lg-card 提供） */

@@ -278,10 +278,6 @@ async function removeRow(row) {
 </script>
 
 <style scoped>
-.accessory-price-config {
-  max-width: 1120px;
-}
-
 .accessory-heading {
   display: flex;
   align-items: center;

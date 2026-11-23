@@ -86,9 +86,7 @@
         :data="invoices"
         border
         class="list-table invoice-table"
-        :class="[densityClass, { 'invoice-table--compact': invoices.length }]"
-        :style="{ '--invoice-table-width': `${tableWidth}px` }"
-        :fit="false"
+        :class="densityClass"
         :max-height="isFullscreen ? undefined : 640"
         @sort-change="handleTableSort"
       >
@@ -104,8 +102,7 @@
           :key="column.key"
           :prop="column.prop || (column.key === 'created_by' ? 'created_by_name' : column.key)" :sortable="column.sortable === false ? false : 'custom'"
           :label="column.label"
-          :width="column.fitContent ? columnWidths[column.key] ?? column.minWidth : undefined"
-          :min-width="column.minWidth"
+          :min-width="column.fitContent ? columnWidths[column.key] ?? column.minWidth : column.minWidth"
           :max-width="column.maxWidth"
           :fixed="column.fixed"
           :align="column.align"
@@ -143,7 +140,7 @@
             <template v-else>{{ row[column.prop] }}</template>
           </template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" :min-width="actionColumnWidth" max-width="260" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="220" max-width="260" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
               <el-button v-permission="'invoice:write'" link type="primary" :disabled="isInvoiceDeleting(row.id) || ['cancel_pending','cancelled'].includes(row.status) || (invoiceIsLocal(row) && row.commerce_status !== 'draft')" @click="openEdit(row.id)">
@@ -532,9 +529,6 @@ const {
 } = listPage
 const invoiceTable = ref(null)
 const columnWidths = useInvoiceColumnWidths(invoiceTable, invoices, visibleColumns)
-const actionColumnWidth = 220
-const tableWidth = computed(() => visibleColumns.value.reduce((sum, column) =>
-  sum + (columnWidths.value[column.key] ?? column.minWidth), actionColumnWidth))
 const router = useRouter(), route = useRoute()
 const copyingInvoiceNos = ref(new Set())
 const invoiceCopyTasks = new Map()

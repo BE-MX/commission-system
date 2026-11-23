@@ -67,7 +67,7 @@
         :aria-labelledby="getTabButtonId(activeKey)"
         tabindex="0"
       >
-        <div class="page-wrapper">
+        <div class="page-wrapper" :class="{ 'page-wrapper--constrained': route.meta.constrainContent }">
           <router-view v-slot="{ Component, route: viewRoute }">
             <transition name="page" mode="out-in">
               <KeepAlive :include="cachedTabNames">
@@ -295,8 +295,7 @@ function handleUserCommand(command) {
   scroll-padding-top: calc(var(--navigation-chrome-height) + 24px);
   background: transparent;
 }
-.page-wrapper { max-width: 1440px; }
-.page-wrapper:has(> .table-card, > * > .table-card) { max-width: none; }
+.page-wrapper--constrained { max-width: 1440px; }
 .page-wrapper > * { min-width: 0; max-width: 100%; box-sizing: border-box; }
 .page-enter-active { transition: opacity 120ms ease; }
 .page-leave-active { transition: opacity 80ms ease; }

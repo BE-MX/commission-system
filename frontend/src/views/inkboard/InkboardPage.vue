@@ -149,7 +149,7 @@ onBeforeUnmount(() => { ++generation; controller?.abort(); issued.value = null }
 </script>
 
 <style scoped>
-.inkboard-page { display: grid; gap: 20px; max-width: 1200px; margin: 0 auto; padding: 24px; color: var(--text-primary); }
+.inkboard-page { display: grid; gap: 20px; margin: 0 auto; padding: 24px; color: var(--text-primary); }
 .page-heading, .section-heading, .entry, .compose-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 h1 { font-size: 24px; margin: 0; } h2 { font-size: 17px; margin: 0; } small { font-weight: 400; }
 p { color: var(--text-secondary); line-height: 1.6; font-size: 13px; margin: 8px 0; }

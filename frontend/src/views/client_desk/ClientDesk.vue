@@ -110,7 +110,7 @@ onMounted(async () => {
 
 <style src="./board.css" scoped></style>
 <style scoped>
-.client-desk { max-width: 1440px; margin: auto; padding: 8px 6px 28px; color: var(--text-primary); font: 500 14px/1.6 var(--font-body); }
+.client-desk { margin: auto; padding: 8px 6px 28px; color: var(--text-primary); font: 500 14px/1.6 var(--font-body); }
 .heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 16px; }
 .eyebrow { color: var(--button-primary-text); font: 700 10px var(--font-display); letter-spacing: 0.12em; }
 h1 { margin: 3px 0; font: 800 28px/1.2 var(--font-display); letter-spacing: -0.03em; }
