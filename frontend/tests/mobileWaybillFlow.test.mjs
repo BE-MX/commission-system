@@ -44,16 +44,19 @@ test('existing carrier display does not change signed input or enable duplicate 
   try { await h.state.captured(h.photo); await h.state.sync(); assert.equal(h.state.form.carrier, 'DHL'); const first = h.state.submit(); await h.state.submit(); assert.equal(h.calls.filter(call => call[0] === 'bindInspectionShipment').length, 1); pending.resolve({ data: {} }); await first } finally { h.stop() }
 })
 
-test('completion reloads loaded pages once and focuses the original next card', async () => {
+test('completion reloads all loaded pages in one request and focuses the original next card', async () => {
   let completed = false
   const cards = [1, 2, 3, 4].map(id => ({ ...row, id }))
-  const h = await harness({ listMobileWaybillQueue: async params => ({ data: { items: completed ? (params.page === 1 ? [cards[0], cards[2]] : [cards[3]]) : (params.page === 1 ? cards.slice(0, 2) : cards.slice(2)), total: completed ? 3 : 4, has_more: params.page === 1 } }), createInspectionShipment: async () => { completed = true; return { data: {} } } })
+  // Fake backend slices by page/page_size; page_size / 10 maps the real 20-row page to 2 fixture cards
+  const listing = params => { const all = completed ? [cards[0], cards[2], cards[3]] : cards, size = params.page_size / 10; const start = (params.page - 1) * size
+    return { data: { items: all.slice(start, start + size), total: all.length, has_more: start + size < all.length } } }
+  const h = await harness({ listMobileWaybillQueue: async params => listing(params), createInspectionShipment: async () => { completed = true; return { data: {} } } })
   try {
     await h.state.loadQueue(); await h.state.loadMore(); await h.state.begin(cards[1])
     await h.state.captured(h.photo); await h.state.sync(); const before = h.calls.filter(call => call[0] === 'listMobileWaybillQueue').length
     await h.state.submit()
     assert.deepEqual(Array.from(h.state.rows.value, item => item.id), [1, 3, 4]); assert.equal(h.state.nextInspectionId.value, 3)
-    assert.deepEqual(h.calls.filter(call => call[0] === 'listMobileWaybillQueue').slice(before).map(call => call[1].page), [1, 2])
+    assert.deepEqual(h.calls.filter(call => call[0] === 'listMobileWaybillQueue').slice(before).map(call => [call[1].page, call[1].page_size]), [[1, 40]])
   } finally { h.stop() }
 })
 test('replacement switches from done to pending with one refresh and focuses its first card', async () => {

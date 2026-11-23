@@ -3,7 +3,7 @@
     <input ref="nativeInput" type="file" accept="image/*" capture="environment" hidden @change="pickPhoto" />
     <input ref="fileInput" type="file" accept="image/*" hidden @change="pickPhoto" />
 
-    <div v-if="error" class="scan-error" role="alert">{{ error }}</div>
+    <div v-if="error && !(immersive && step === 'camera')" class="scan-error" role="alert">{{ error }}</div>
 
     <div v-if="step === 'ready'" class="lg-card is-static scan-entry" :aria-busy="busy">
       <span class="entry-icon" aria-hidden="true"><el-icon :size="34"><Document /></el-icon></span>
@@ -22,15 +22,29 @@
       <GlassButton v-else variant="link" :disabled="busy" @click="$emit('cancel')">返回草稿</GlassButton>
     </div>
 
+    <div v-else-if="step === 'camera' && immersive" class="immersive-camera" role="dialog" aria-modal="true" aria-label="拍运单取景">
+      <div class="viewfinder cover" :style="{ '--ratio': videoRatio }">
+        <video ref="video" autoplay muted playsinline @resize="updateVideoSize"></video>
+        <ScanFrame :corners="liveCorners" :aligned="aligned" />
+      </div>
+      <div class="immersive-top"><slot name="overlay" /></div>
+      <div class="immersive-bottom">
+        <p v-if="error" class="immersive-error" role="alert">{{ error }}</p>
+        <p class="immersive-hint" :class="{ ok: aligned }" role="status">{{ barcode ? '已读到 ' + barcode : cameraHint }}</p>
+        <div class="immersive-controls">
+          <button type="button" class="camera-text-button" @click="closeCamera(); directCapture && $emit('cancel')">取消</button>
+          <button ref="shutter" type="button" class="shutter" :class="{ ready: aligned }" aria-label="拍照" :disabled="!cameraReady" @click="takePhoto"><span></span></button>
+          <button type="button" class="camera-text-button" @click="closeCamera(); fileInput.click()">相册</button>
+        </div>
+      </div>
+    </div>
+
     <div v-else-if="step === 'camera'" class="lg-card is-static scan-workspace">
       <p class="scan-hint" role="status">{{ cameraHint }}</p>
       <p v-if="barcode" role="status">已读到 {{ barcode }}</p>
       <div class="viewfinder" :style="viewfinderStyle">
         <video ref="video" autoplay muted playsinline @resize="updateVideoSize"></video>
-        <svg v-if="liveCorners" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
-          <polygon :points="liveCorners.map(point => point.join(',')).join(' ')" vector-effect="non-scaling-stroke" />
-        </svg>
-        <div v-else class="frame-guide" aria-hidden="true"></div>
+        <ScanFrame :corners="liveCorners" :aligned="aligned" />
       </div>
       <div class="scan-actions">
         <GlassButton @click="closeCamera(); directCapture && $emit('cancel')">取消</GlassButton>
@@ -80,10 +94,11 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { Camera, Document, Download, Picture } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import ScanCorners from './ScanCorners.vue'
+import ScanFrame from './ScanFrame.vue'
 import { encodeCapture } from './documentCapture.js'
 import {
   canvasFrom, readDetectionPixels, readScanPhoto, rectifyDocument, renderScan, scanBlob,
@@ -94,13 +109,14 @@ import { readWaybillBarcode } from './waybillBarcode.js'
 
 const props = defineProps({
   directCapture: { type: Boolean, default: false },
+  immersive: { type: Boolean, default: false },
   requireOriginal: { type: Boolean, default: false },
   finish: { type: String, default: 'download' },
   finishLabel: { type: String, default: '使用这张' },
   defaultEffect: { type: String, default: 'original' },
   maxUploadBytes: { type: Number, default: 6 * 1024 * 1024 },
 })
-const emit = defineEmits(['captured', 'cancel'])
+const emit = defineEmits(['captured', 'cancel', 'camera'])
 
 const PREVIEW_INTERVAL = 135
 const PREVIEW_EDGE = 320
@@ -116,6 +132,11 @@ const cameraReady = ref(false)
 const cameraFailed = ref(false)
 const videoRatio = ref(3 / 4)
 const liveCorners = ref(null)
+const stableFrames = ref(0)
+// 对准带迟滞：连续 3 帧稳定才亮，之后只有明显移动或丢失才熄，避免提示和快门颜色闪烁
+const alignedLatch = ref(false)
+const aligned = computed(() => !!liveCorners.value && alignedLatch.value)
+const shutter = ref(null)
 const corners = ref(fullFrame())
 const foundEdges = ref(false)
 const photoUrl = ref('')
@@ -130,7 +151,8 @@ const effects = [
 
 const cameraHint = computed(() => {
   if (!cameraReady.value) return '正在打开相机…'
-  if (liveCorners.value) return props.directCapture ? '已对准，可以拍照' : '已找到文档边缘，可以拍照'
+  if (aligned.value) return '已对准，可以拍照'
+  if (liveCorners.value) return props.directCapture ? '已找到运单，保持稳定' : '已找到文档边缘，保持稳定'
   return props.directCapture ? '把运单四个角都放进画面' : '将纸张的四个角都放进取景画面'
 })
 const viewfinderStyle = computed(() => ({
@@ -168,6 +190,8 @@ function stopCamera() {
   if (video.value) video.value.srcObject = null
   cameraReady.value = false
   liveCorners.value = null
+  stableFrames.value = 0
+  alignedLatch.value = false
 }
 
 function closeCamera() {
@@ -190,11 +214,14 @@ function updateVideoSize() {
 
 function presentCorners(next) {
   if (!next) {
-    if (++missedFrames >= 2) liveCorners.value = null
+    if (++missedFrames >= 2) { liveCorners.value = null; stableFrames.value = 0; alignedLatch.value = false }
     return
   }
   missedFrames = 0
   const prior = liveCorners.value
+  stableFrames.value = prior && next.every((point, i) => distance(point, prior[i]) < 0.012) ? stableFrames.value + 1 : 0
+  if (stableFrames.value >= 3) alignedLatch.value = true
+  else if (!prior || next.some((point, i) => distance(point, prior[i]) > 0.03)) alignedLatch.value = false
   liveCorners.value = prior && next.every((point, i) => distance(point, prior[i]) < 0.035)
     ? next.map(([x, y], i) => [0.7 * x + 0.3 * prior[i][0], 0.7 * y + 0.3 * prior[i][1]])
     : next
@@ -437,6 +464,14 @@ function downloadScan() {
   link.remove()
 }
 
+watch(step, value => {
+  emit('camera', value === 'camera')
+}, { immediate: true })
+// 快门在相机就绪前是 disabled，focus 无效；就绪后再把焦点移进全屏取景层
+watch(cameraReady, ready => {
+  if (ready && props.immersive) nextTick(() => shutter.value?.focus({ preventScroll: true }))
+})
+
 defineExpose({ adjustEdges: () => { step.value = 'crop' }, retake: () => { reset(); openCamera() } })
 onMounted(() => {
   document.addEventListener('visibilitychange', onVisibilityChange)
@@ -491,23 +526,99 @@ h2 { font-size: 16px; }
   position: relative;
 }
 .viewfinder video { display: block; width: 100%; height: 100%; }
-.viewfinder svg {
-  position: absolute;
+/* 全屏取景：画面按 cover 铺满屏幕，信息与按钮以蒙版浮在画面上 */
+.immersive-camera {
+  position: fixed;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  fill: var(--button-primary);
-  fill-opacity: 0.07;
-  stroke: var(--button-primary);
-  stroke-width: 2px;
+  z-index: 3000;
+  overflow: hidden;
+  background: var(--camera-bg);
+  color: var(--camera-ink);
 }
-.frame-guide {
+.viewfinder.cover {
   position: absolute;
-  inset: 9%;
-  border: 1px dashed var(--button-primary);
-  border-radius: var(--el-border-radius-base);
-  pointer-events: none;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  aspect-ratio: var(--ratio);
+  width: max(100vw, calc(100vh * var(--ratio)));
+  width: max(100vw, calc(100dvh * var(--ratio)));
+  border-radius: 0;
+  background: var(--camera-bg);
 }
+.immersive-top, .immersive-bottom { position: absolute; left: 0; right: 0; }
+.immersive-top {
+  top: 0;
+  padding: max(12px, env(safe-area-inset-top)) 16px 28px;
+  background: linear-gradient(var(--camera-scrim), transparent);
+}
+.immersive-bottom {
+  bottom: 0;
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  padding: 32px 16px max(20px, env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, var(--camera-scrim));
+}
+.immersive-hint {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--camera-scrim);
+  font-size: 14px;
+  transition: color 200ms ease-out;
+}
+.immersive-error {
+  max-width: min(100%, 420px);
+  padding: 8px 14px;
+  border-radius: 12px;
+  color: var(--tag-danger-text);
+  background: var(--tag-danger-bg);
+  font-size: 14px;
+}
+.immersive-hint.ok { color: var(--button-primary); }
+.immersive-controls {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  width: min(100%, 420px);
+}
+.camera-text-button {
+  justify-self: center;
+  min-width: 64px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--camera-scrim);
+  color: var(--camera-ink);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform 160ms ease-out;
+}
+.shutter {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  border: 4px solid var(--camera-ink);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: transform 160ms ease-out, border-color 200ms ease-out;
+}
+.shutter span {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--camera-ink);
+  transition: background-color 200ms ease-out;
+}
+.shutter.ready { border-color: var(--button-primary); }
+.shutter.ready span { background: var(--button-primary); }
+.shutter:disabled { opacity: 0.4; cursor: default; }
+.shutter:active:not(:disabled), .camera-text-button:active { transform: scale(0.95); }
+.shutter:focus-visible, .camera-text-button:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 3px; }
 .crop-area { width: 100%; padding: 20px 22px; box-sizing: border-box; }
 .scan-result {
   display: grid;

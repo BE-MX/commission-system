@@ -330,6 +330,9 @@
   --color-red-deep:       #dc2626;   /* 深红（危险文字） */
   --text-on-dark:         #F5F2EE;   /* 深色面板上的主文字（Hero/侧栏标题） */
   --overlay-scrim:         rgba(20, 20, 20, 0.55);   /* 缩略图上的状态条 / 删除按钮底 */
+  --camera-bg:            #000000;   /* 全屏取景底色（明暗主题都保持黑） */
+  --camera-scrim:         rgba(0, 0, 0, 0.42);   /* 取景画面上的信息蒙版 / 框外压暗 */
+  --camera-ink:           #ffffff;   /* 取景画面上的文字与快门环 */
   --el-success:           #67c23a;   /* Element 语义色的变量化引用 */
   --el-warning:           #e6a23c;
   --el-danger:            #f56c6c;
