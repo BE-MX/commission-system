@@ -19,7 +19,16 @@
       </div>
     </header>
 
-    <EditorToolbar v-if="editor && actions.canSave" :editor="editor" :version="editorVersion" @edit-link="editLink" @insert-image="selectImage" />
+    <EditorToolbar
+      v-if="editor && actions.canSave"
+      :editor="editor"
+      :version="editorVersion"
+      :insert-open="insertOpen"
+      :structured-authoring="structuredAuthoring"
+      @edit-link="editLink"
+      @insert-image="selectImage"
+      @open-insert="openInsertFromButton(editor, $event)"
+    />
     <input ref="imageInput" class="sr-only" type="file" accept="image/jpeg,image/png,image/webp" @change="onImageSelected" />
     <div class="editor-body">
       <div
@@ -30,6 +39,7 @@
         @dragover.prevent
         @drop.prevent="onDrop"
         @knowledge-image-retry="selectImage"
+        @scroll.capture="placeInsertMenu(editor)"
       >
         <BubbleMenu
           v-if="editor && actions.canSave"
@@ -37,22 +47,23 @@
           :should-show="({ from, to }) => from !== to && !editor.isActive('codeBlock')"
           :options="{ placement: 'top', offset: 8 }"
         >
-          <div class="bubble-toolbar" aria-label="选中文本格式工具栏" role="toolbar">
+          <div v-show="!insertOpen" class="bubble-toolbar" aria-label="选中文本格式工具栏" role="toolbar">
             <button :class="{ active: editor.isActive('bold') }" title="加粗" @mousedown.prevent="editor.chain().focus().toggleBold().run()"><strong>B</strong></button>
             <button :class="{ active: editor.isActive('italic') }" title="斜体" @mousedown.prevent="editor.chain().focus().toggleItalic().run()"><em>I</em></button>
             <button :class="{ active: editor.isActive('strike') }" title="删除线" @mousedown.prevent="editor.chain().focus().toggleStrike().run()"><s>S</s></button>
+            <button v-if="structuredAuthoring" :class="{ active: editor.isActive('underline') }" title="下划线" aria-label="下划线" @mousedown.prevent @click="editor.chain().focus().toggleUnderline().run()"><u>U</u></button>
             <button :class="{ active: editor.isActive('code') }" title="行内代码" @mousedown.prevent="editor.chain().focus().toggleCode().run()">&lt;/&gt;</button>
             <button :class="{ active: editor.isActive('link') }" title="链接" @mousedown.prevent="editLink">🔗</button>
           </div>
         </BubbleMenu>
-        <EditorContent :editor="editor" class="document-canvas" :class="{ 'is-empty': editor?.isEmpty }" />
+        <EditorContent :editor="editor" class="document-canvas knowledge-authoring" :class="{ 'is-empty': editor?.isEmpty && actions.canSave }" />
         <EditorSlashMenu
-          :open="slashOpen"
-          :items="filteredCommands"
-          :active-index="slashIndex"
-          :position="slashPosition"
-          @activate="slashIndex = $event"
-          @select="executeSlashCommand"
+          :open="insertOpen && actions.canSave"
+          :items="insertItems"
+          :active-index="insertIndex"
+          :position="insertPosition"
+          @activate="insertIndex = $event"
+          @select="selectInsertCommand(editor, $event)"
         />
       </div>
       <EditorOutline :items="outline" @navigate="navigateOutline" />
@@ -71,30 +82,23 @@
 </template>
 
 <script setup>import { confirmAction, promptAction, msgError } from '@/utils/feedback'
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import { BubbleMenu } from '@tiptap/vue-3/menus'
-import StarterKit from '@tiptap/starter-kit'
-import Link from '@tiptap/extension-link'
-import { TaskItem, TaskList } from '@tiptap/extension-list'
-import { Table } from '@tiptap/extension-table'
-import TableRow from '@tiptap/extension-table-row'
-import TableHeader from '@tiptap/extension-table-header'
-import TableCell from '@tiptap/extension-table-cell'
 import { documentActions } from '../knowledgeState.js'
 import EditorOutline from './EditorOutline.vue'
 import EditorSlashMenu from './EditorSlashMenu.vue'
 import EditorToolbar from './EditorToolbar.vue'
-import { ConfirmationMark } from './ConfirmationMark.js'
-import { TextColorMark } from './TextColorMark.js'
-import { KnowledgeImage } from './KnowledgeImage.js'
 import { contentForKnowledgeSave, createImageUploadId, knowledgeImageUploadError, pendingImageCount } from './knowledgeImageState.js'
 import { deleteTemporaryKnowledgeImage, uploadKnowledgeImage } from '@/api/knowledge'
 import { useAuthStore } from '@/stores/auth'
 import AiOptimizationDrawer from './AiOptimizationDrawer.vue'
-import { EDITOR_COMMANDS, extractOutline, filterEditorCommands, saveStatusLabel } from './editorConfig.js'
-const props = defineProps({ document: { type: Object, default: null }, role: { type: String, default: 'viewer' }, saving: Boolean, externalControls: Boolean })
+import { extractOutline, saveStatusLabel } from './editorConfig.js'
+import { createKnowledgeExtensions } from './knowledgeExtensions.js'
+import { useEditorInsertMenu } from './useEditorInsertMenu.js'
+import './knowledgeAuthoring.css'
+const props = defineProps({ document: { type: Object, default: null }, role: { type: String, default: 'viewer' }, saving: Boolean, externalControls: Boolean, structuredAuthoring: { type: Boolean, default: true } })
 const emit = defineEmits(['save', 'submit', 'dirty-change', 'delete', 'ai-applied'])
 const auth = useAuthStore()
 const canvas = ref(null)
@@ -107,11 +111,11 @@ const savedAt = ref(null)
 const saveError = ref('')
 const editorVersion = ref(0)
 const outline = ref([])
-const slashOpen = ref(false)
-const slashQuery = ref('')
-const slashIndex = ref(0)
-const slashRange = ref(null)
-const slashPosition = ref({ left: 0, top: 0 })
+const {
+  open: insertOpen, items: insertItems, index: insertIndex, position: insertPosition,
+  close: closeInsertMenu, update: updateInsertMenu, place: placeInsertMenu,
+  handleKeydown: handleInsertKeydown, openFromButton: openInsertFromButton, select: selectInsertCommand,
+} = useEditorInsertMenu(selectImage, () => props.structuredAuthoring)
 const actions = computed(() => documentActions({ role: props.role, pendingApprovalId: props.document?.pending_approval_id, canEdit: props.document?.can_edit !== false }))
 const statusLabel = computed(() => ({ draft: '草稿', pending: '待审批', published: '已发布' }[props.document?.status] || props.document?.status))
 const statusType = computed(() => ({ draft: 'info', pending: 'warning', published: 'success' }[props.document?.status] || 'info'))
@@ -122,30 +126,22 @@ const saveTone = computed(() => {
   if (dirty.value) return 'dirty'
   return 'saved'
 })
-const filteredCommands = computed(() => filterEditorCommands(EDITOR_COMMANDS, slashQuery.value))
 const pendingUploads = computed(() => { editorVersion.value; return pendingImageCount(editor.value?.getJSON() || {}) })
 const canUseAi = computed(() => auth.hasPermission('knowledge_ai:write') || auth.hasPermission('knowledge_ai:admin'))
 const editor = useEditor({
   editable: false,
-  extensions: [
-    StarterKit.configure({ link: false, underline: false }),
-    Link.configure({ openOnClick: false, protocols: ['http', 'https', 'mailto'] }),
-    ConfirmationMark,
-    TextColorMark,
-    KnowledgeImage,
-    TaskList, TaskItem.configure({ nested: true }),
-    Table.configure({ resizable: true }), TableRow, TableHeader, TableCell,
-  ],
+  extensions: createKnowledgeExtensions({ editing: true, structuredAuthoring: props.structuredAuthoring }),
   content: { type: 'doc', content: [{ type: 'paragraph' }] },
   onUpdate: ({ editor: instance }) => {
     markDirty()
     refreshDerivedState(instance)
-    updateSlashQuery(instance)
+    updateInsertMenu(instance)
   },
   onSelectionUpdate: ({ editor: instance }) => {
     editorVersion.value += 1
-    if (slashOpen.value) updateSlashPosition(instance)
+    updateInsertMenu(instance, false)
   },
+  onBlur: () => closeInsertMenu(true),
 })
 
 function refreshDerivedState(instance = editor.value) {
@@ -348,72 +344,7 @@ function onEditorKeydown(event) {
     editLink()
     return
   }
-  if (!slashOpen.value && event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
-    const { $from } = editor.value.state.selection
-    if ($from.parentOffset === 0) {
-      slashOpen.value = true
-      slashQuery.value = ''
-      slashIndex.value = 0
-      nextTick(() => updateSlashPosition(editor.value))
-    }
-    return
-  }
-  if (!slashOpen.value) return
-  if (event.key === 'Escape') { event.preventDefault(); closeSlashMenu(); return }
-  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-    event.preventDefault()
-    const total = filteredCommands.value.length
-    if (total) slashIndex.value = (slashIndex.value + (event.key === 'ArrowDown' ? 1 : -1) + total) % total
-    return
-  }
-  if (event.key === 'Enter') {
-    event.preventDefault()
-    const command = filteredCommands.value[slashIndex.value]
-    if (command) executeSlashCommand(command.id)
-  }
-}
-
-function updateSlashQuery(instance) {
-  if (!slashOpen.value) return
-  const { $from } = instance.state.selection
-  const before = $from.parent.textBetween(0, $from.parentOffset, undefined, '\ufffc')
-  const slashAt = before.lastIndexOf('/')
-  if (slashAt < 0) return closeSlashMenu()
-  slashQuery.value = before.slice(slashAt + 1)
-  slashRange.value = { from: $from.start() + slashAt, to: $from.pos }
-  slashIndex.value = Math.min(slashIndex.value, Math.max(0, filteredCommands.value.length - 1))
-  nextTick(() => updateSlashPosition(instance))
-}
-
-function updateSlashPosition(instance) {
-  if (!instance || !slashOpen.value) return
-  const coords = instance.view.coordsAtPos(instance.state.selection.from)
-  slashPosition.value = {
-    left: Math.max(12, Math.min(coords.left, window.innerWidth - 310)),
-    top: coords.bottom + 8,
-  }
-}
-
-function closeSlashMenu() {
-  slashOpen.value = false
-  slashQuery.value = ''
-  slashRange.value = null
-}
-
-function executeSlashCommand(id) {
-  if (slashRange.value) editor.value.chain().focus().deleteRange(slashRange.value).run()
-  const chain = editor.value.chain().focus()
-  if (id === 'paragraph') chain.setParagraph().run()
-  else if (id.startsWith('heading-')) chain.setHeading({ level: Number(id.slice(-1)) }).run()
-  else if (id === 'bullet-list') chain.toggleBulletList().run()
-  else if (id === 'ordered-list') chain.toggleOrderedList().run()
-  else if (id === 'task-list') chain.toggleTaskList().run()
-  else if (id === 'blockquote') chain.toggleBlockquote().run()
-  else if (id === 'code-block') chain.toggleCodeBlock().run()
-  else if (id === 'horizontal-rule') chain.setHorizontalRule().run()
-  else if (id === 'table') chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
-  closeSlashMenu()
-  aiDrawer.value = false
+  handleInsertKeydown(editor.value, event)
 }
 
 function navigateOutline(item) {
@@ -434,10 +365,13 @@ watch([() => props.document, editor], ([value]) => {
   savedAt.value = null
   saveError.value = ''
   emit('dirty-change', false)
-  closeSlashMenu()
+  closeInsertMenu()
   refreshDerivedState()
 }, { immediate: true })
-watch(actions, value => editor.value?.setEditable(Boolean(props.document && value.canSave), false))
+watch(actions, value => {
+  editor.value?.setEditable(Boolean(props.document && value.canSave), false)
+  if (!value.canSave) closeInsertMenu()
+})
 onBeforeUnmount(() => editor.value?.destroy())
 </script>
 <style scoped>

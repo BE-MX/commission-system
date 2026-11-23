@@ -1,38 +1,18 @@
 <template>
-  <EditorContent :editor="editor" class="knowledge-preview" />
+  <EditorContent :editor="editor" class="knowledge-preview knowledge-authoring" />
 </template>
 
 <script setup>
 import { onBeforeUnmount, watch } from 'vue'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
-import StarterKit from '@tiptap/starter-kit'
-import Link from '@tiptap/extension-link'
-import { TaskItem, TaskList } from '@tiptap/extension-list'
-import { Table } from '@tiptap/extension-table'
-import TableRow from '@tiptap/extension-table-row'
-import TableHeader from '@tiptap/extension-table-header'
-import TableCell from '@tiptap/extension-table-cell'
-import { ConfirmationMark } from './ConfirmationMark.js'
-import { KnowledgeImage } from './KnowledgeImage.js'
-import { TextColorMark } from './TextColorMark.js'
+import { createKnowledgeExtensions } from './knowledgeExtensions.js'
+import './knowledgeAuthoring.css'
 
 const props = defineProps({ content: { type: Object, required: true } })
 
 const editor = useEditor({
   editable: false,
-  extensions: [
-    StarterKit.configure({ link: false, underline: false }),
-    Link.configure({ openOnClick: true, protocols: ['http', 'https', 'mailto'] }),
-    ConfirmationMark,
-    TextColorMark,
-    KnowledgeImage,
-    TaskList,
-    TaskItem.configure({ nested: true }),
-    Table.configure({ resizable: false }),
-    TableRow,
-    TableHeader,
-    TableCell,
-  ],
+  extensions: createKnowledgeExtensions(),
   content: props.content,
 })
 

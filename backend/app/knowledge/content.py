@@ -25,11 +25,24 @@ _CONTAINER_TYPES = {
     "tableCell",
     "taskList",
     "taskItem",
+    "knowledgeCallout",
+    "details",
+    "detailsSummary",
+    "detailsContent",
 }
 _LEAF_TYPES = {"text", "hardBreak", "horizontalRule"}
 _ATOM_TYPES = {"knowledgeImage"}
-_ALLOWED_MARKS = {"bold", "italic", "strike", "code", "link", "confirmation", "textColor"}
+_ALLOWED_MARKS = {
+    "bold", "italic", "strike", "code", "link", "confirmation", "textColor",
+    "underline", "knowledgeTextSize", "knowledgeHighlight",
+}
 _TEXT_COLOR_TONES = {"gold", "danger", "success", "info"}
+_TEXT_SIZES = {12, 13, 14, 15, 16, 19, 22, 24, 29, 32, 40, 48}
+_BLOCK_TYPES = {
+    "paragraph", "heading", "bulletList", "orderedList", "blockquote",
+    "codeBlock", "table", "taskList", "horizontalRule", "knowledgeImage",
+    "knowledgeCallout", "details",
+}
 _BLOCK_BREAKS = {
     "paragraph",
     "heading",
@@ -38,6 +51,10 @@ _BLOCK_BREAKS = {
     "codeBlock",
     "tableRow",
     "taskItem",
+    "knowledgeCallout",
+    "detailsSummary",
+    "detailsContent",
+    "details",
 }
 
 
@@ -58,14 +75,19 @@ def _validate_marks(marks: Any) -> None:
                 raise ContentValidationError("invalid link")
             if set(attrs) - {"href", "target", "rel", "class"}:
                 raise ContentValidationError("unsupported link attribute")
-        elif mark["type"] == "textColor":
-            if set(attrs) != {"tone"} or attrs.get("tone") not in _TEXT_COLOR_TONES:
-                raise ContentValidationError("invalid text color")
+        elif mark["type"] in {"textColor", "knowledgeHighlight"}:
+            tone = attrs.get("tone")
+            if set(attrs) != {"tone"} or not isinstance(tone, str) or tone not in _TEXT_COLOR_TONES:
+                raise ContentValidationError("invalid text tone")
+        elif mark["type"] == "knowledgeTextSize":
+            size = attrs.get("size")
+            if set(attrs) != {"size"} or type(size) is not int or size not in _TEXT_SIZES:
+                raise ContentValidationError("invalid text size")
         elif attrs:
             raise ContentValidationError("unsupported mark attributes")
 
 
-def _validate_node(node: Any, *, root: bool = False) -> None:
+def _validate_node(node: Any, *, root: bool = False, parent_type: str | None = None) -> None:
     if not isinstance(node, dict):
         raise ContentValidationError("node must be an object")
     node_type = node.get("type")
@@ -73,15 +95,24 @@ def _validate_node(node: Any, *, root: bool = False) -> None:
         raise ContentValidationError("root node must be doc")
     if node_type not in _CONTAINER_TYPES | _LEAF_TYPES | _ATOM_TYPES:
         raise ContentValidationError("unsupported node")
+    if node_type in {"detailsSummary", "detailsContent"} and parent_type != "details":
+        raise ContentValidationError("details children require a details parent")
 
     attrs = node.get("attrs", {})
     if not isinstance(attrs, dict):
         raise ContentValidationError("attrs must be an object")
     allowed_attrs: set[str] = set()
     if node_type == "heading":
-        allowed_attrs = {"level"}
+        allowed_attrs = {"level", "textAlign"}
         if attrs.get("level") not in range(1, 7):
             raise ContentValidationError("invalid heading level")
+    elif node_type == "paragraph":
+        allowed_attrs = {"textAlign"}
+    elif node_type == "knowledgeCallout":
+        allowed_attrs = {"tone"}
+        tone = attrs.get("tone")
+        if not isinstance(tone, str) or tone not in _TEXT_COLOR_TONES:
+            raise ContentValidationError("invalid callout tone")
     elif node_type in {"tableCell", "tableHeader"}:
         allowed_attrs = {"colspan", "rowspan", "colwidth", "align"}
         if attrs.get("align") not in {None, "left", "center", "right"}:
@@ -107,6 +138,10 @@ def _validate_node(node: Any, *, root: bool = False) -> None:
             raise ContentValidationError("invalid knowledge image caption")
     if set(attrs) - allowed_attrs:
         raise ContentValidationError("unsupported node attribute")
+    if node_type in {"paragraph", "heading"} and attrs.get("textAlign") not in (
+        None, "left", "center", "right", "justify",
+    ):
+        raise ContentValidationError("invalid text alignment")
 
     _validate_marks(node.get("marks"))
     if node_type == "text":
@@ -125,7 +160,19 @@ def _validate_node(node: Any, *, root: bool = False) -> None:
     if not isinstance(children, list):
         raise ContentValidationError("content must be a list")
     for child in children:
-        _validate_node(child)
+        _validate_node(child, parent_type=node_type)
+    if node_type == "details" and [child["type"] for child in children] != [
+        "detailsSummary", "detailsContent",
+    ]:
+        raise ContentValidationError("details requires summary followed by content")
+    if node_type == "detailsSummary" and any(
+        child["type"] != "text" for child in children
+    ):
+        raise ContentValidationError("details summary requires text content")
+    if node_type in {"knowledgeCallout", "detailsContent"} and (
+        not children or any(child["type"] not in _BLOCK_TYPES for child in children)
+    ):
+        raise ContentValidationError("container requires block content")
 
 
 def validate_content(content: Any) -> dict:
@@ -213,7 +260,7 @@ def protected_structure_signature(content: dict) -> list[dict]:
 
     def walk(node: dict) -> None:
         node_type = node["type"]
-        if node_type in {"codeBlock", "table", "knowledgeImage"}:
+        if node_type in {"codeBlock", "table", "knowledgeImage", "knowledgeCallout", "details"}:
             signature.append({
                 "type": node_type,
                 "node": deepcopy(node),

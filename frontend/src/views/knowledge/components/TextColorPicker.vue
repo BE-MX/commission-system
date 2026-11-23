@@ -3,19 +3,19 @@
     <button
       class="color-trigger"
       type="button"
-      aria-label="字体颜色"
+      :aria-label="label"
       aria-haspopup="menu"
       :aria-expanded="open"
-      title="字体颜色"
+      :title="label"
       @mousedown.prevent
       @click.stop="toggle"
     >
-      <span aria-hidden="true">A</span>
+      <span aria-hidden="true">{{ highlight ? 'Aa' : 'A' }}</span>
       <i :style="{ backgroundColor: currentOption.cssColor }" />
     </button>
-    <div v-if="open" class="color-menu" role="menu" aria-label="选择字体颜色">
+    <div v-if="open" class="color-menu" role="menu" :aria-label="'选择' + label">
       <button
-        v-for="option in TEXT_COLOR_OPTIONS"
+        v-for="option in options"
         :key="option.tone || 'default'"
         class="color-option"
         type="button"
@@ -35,21 +35,28 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { TEXT_COLOR_OPTIONS, applyTextColor, normalizeTextColorTone } from './TextColorMark.js'
+import { HIGHLIGHT_COLORS } from './knowledgeAuthoring.js'
 
 const props = defineProps({
   editor: { type: Object, required: true },
   version: { type: Number, default: 0 },
+  highlight: Boolean,
 })
 
 const root = ref(null)
 const open = ref(false)
+const label = computed(() => props.highlight ? '文字高亮' : '字体颜色')
+const mark = computed(() => props.highlight ? 'knowledgeHighlight' : 'textColor')
+const options = computed(() => props.highlight
+  ? TEXT_COLOR_OPTIONS.map(option => ({ ...option, cssColor: HIGHLIGHT_COLORS[option.tone] || 'transparent' }))
+  : TEXT_COLOR_OPTIONS)
 const currentTone = computed(() => {
   void props.version
-  if (!props.editor.isActive('textColor')) return null
-  return normalizeTextColorTone(props.editor.getAttributes('textColor').tone)
+  if (!props.editor.isActive(mark.value)) return null
+  return normalizeTextColorTone(props.editor.getAttributes(mark.value).tone)
 })
 const currentOption = computed(() => (
-  TEXT_COLOR_OPTIONS.find(option => option.tone === currentTone.value) || TEXT_COLOR_OPTIONS[0]
+  options.value.find(option => option.tone === currentTone.value) || options.value[0]
 ))
 
 function toggle() {
@@ -61,7 +68,13 @@ function close() {
 }
 
 function select(tone) {
-  applyTextColor(props.editor, tone)
+  if (props.highlight) {
+    const chain = props.editor.chain().focus()
+    if (tone) chain.setMark('knowledgeHighlight', { tone }).run()
+    else chain.unsetMark('knowledgeHighlight').run()
+  } else {
+    applyTextColor(props.editor, tone)
+  }
   close()
 }
 
