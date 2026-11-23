@@ -115,11 +115,11 @@ class TrackingStatsResponse(BaseModel):
 
 class WaybillCreate(BaseModel):
     waybill_no: str = Field(..., min_length=1, max_length=50)
-    carrier: Literal["FedEx", "DHL", "UPS", "未知"] = "未知"
+    carrier: Literal["FedEx", "DHL", "UPS", "SF", "未知"] = "未知"
     recipient_name: str = Field(..., min_length=1, max_length=100)
     recipient_country: str = Field(..., min_length=1, max_length=100)
     ship_date: date
-    entry_source: Literal["ocr", "manual"] = "manual"
+    entry_source: Literal["ocr", "manual", "barcode"] = "manual"
 
     @field_validator("ship_date")
     @classmethod

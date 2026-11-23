@@ -19,7 +19,7 @@ export const PAYMENT_METHOD_RATES = {
   TT: 0,
 }
 // 快递渠道（2026-09-23）：改为必填单选，不默认选中
-export const EXPRESS_CHANNEL_OPTIONS = ['DHL普货', 'FEDEX普货', 'DHL9610', 'FEDEX9610', '顺丰', '其他快递']
+export const EXPRESS_CHANNEL_OPTIONS = ['DHL普货', 'FEDEX普货', 'DHL9610', 'FEDEX9610', '顺丰', '其他快递', '自提', '货代/海运']
 
 // 存量订单使用旧文本存值，打开编辑时回显到新的普货选项。
 export function normalizeStoredExpressChannel(channel) {

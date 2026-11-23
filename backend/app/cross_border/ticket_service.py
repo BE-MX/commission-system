@@ -16,16 +16,15 @@ from app.invoice.presale_lines import remote_items, remote_quantity, remote_amou
 from app.shipping_inspection.models import ShippingInspection, ShippingOperationEvent
 from app.shipping_inspection import outbound_sync_state, outbound_service
 from app.tracking.models import ShipmentTracking, TrackingEvent
+from app.tracking.carriers.dhl import DHL_PICKUP_CODES
 
 logger = logging.getLogger(__name__)
-# Physical movement/delivery evidence only. Customs/payment can precede pickup.
-PICKUP_CODES = frozenset({'PU', 'PL', 'DF', 'AF', 'TR', 'AR', 'WC', 'OK', 'DL', 'RS', 'RT', 'NU', 'MS'})
 
 
 def picked_up(events, waybill_no, carrier):
     return str(carrier).upper() == 'DHL' and any(
         e.waybill_no == waybill_no and str(e.carrier).upper() == 'DHL'
-        and str(e.status_code or '').strip().upper() in PICKUP_CODES for e in events)
+        and str(e.status_code or '').strip().upper() in DHL_PICKUP_CODES for e in events)
 
 
 def in_scope(invoice, go_live):
@@ -115,11 +114,14 @@ def build_tickets(db, *, order_nos=None):
     sync_events = {e.request_id: e for e in db.query(ShippingOperationEvent).filter(
         ShippingOperationEvent.scope == outbound_sync_state.SCOPE,
         ShippingOperationEvent.request_id.in_(record_ids)).all()} if record_ids else {}
-    bound = {}
+    bound, exported = {}, {}
     events = db.query(ShippingOperationEvent).filter(ShippingOperationEvent.inspection_id.in_([i.id for i in inspections]),
-        ShippingOperationEvent.action == 'shipment_bound').order_by(ShippingOperationEvent.id).all() if inspections else []
+        ShippingOperationEvent.action.in_(['shipment_bound', 'shipment_exported'])).order_by(ShippingOperationEvent.id).all() if inspections else []
     for event in events:
-        bound[event.inspection_id] = event
+        if event.action == 'shipment_bound':
+            bound[event.inspection_id] = event
+        else:
+            exported[event.inspection_id] = (event.payload or {}).get('shipment_tracking_id')
     quantities, linked, unknown = {}, defaultdict(list), set()
     for invoice in invoices:
         for out in by_invoice[invoice.id]:
@@ -204,10 +206,13 @@ def build_tickets(db, *, order_nos=None):
             'carrier': tracking.carrier, 'logistics_status': tracking.unified_status or tracking.current_status,
             'bound_at': None, 'inspection_ids': [], 'invoices': [], 'parts': [],
             'mixed_waybill': tracking_id in mixed_ids,
+            'exported_rebind': False,
             'picked_up': picked_up(tracking_events, tracking.waybill_no, tracking.carrier)})
         for inspection in associated:
             ticket['inspection_ids'].append(inspection.id)
             event = bound.get(inspection.id)
+            if inspection.id in exported and str(exported[inspection.id]) != str(tracking_id):
+                ticket['exported_rebind'] = True
             if event and str((event.payload or {}).get('shipment_tracking_id')) == str(tracking_id):
                 when = to_beijing_naive(event.created_at)
                 ticket['bound_at'] = max(ticket['bound_at'], when) if ticket['bound_at'] else when

@@ -22,6 +22,7 @@ import app.domestic_followup.collaboration_models  # noqa: F401
 import app.cross_border.models  # noqa: F401
 import app.devlog.models  # noqa: F401
 import app.factory_inbound.models  # noqa: F401
+import app.shipping_inspection.waybill_photo_models  # noqa: F401
 import app.factory_inbound.batch_models  # noqa: F401
 
 config = context.config

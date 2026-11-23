@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -11,11 +11,13 @@ from app.core.time import beijing_now, to_beijing_naive
 from app.tracking.models import ShipmentTracking, TrackingEvent, CarrierConfig
 from app.tracking.models import Waybill
 from app.tracking.carriers import get_adapter
+from app.tracking.carriers.dhl import DHL_PICKUP_CODES
 from app.tracking.status import normalize_status
 from app.tracking.push_service import check_and_push
 
 logger = logging.getLogger("tracking.poll")
 settings = get_settings()
+LONG_UNCOLLECTED = "长期未揽收"
 
 
 async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
@@ -31,6 +33,23 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
 
     shipment.poll_count += 1
     shipment.last_polled_at = beijing_now()
+
+    if result.not_found and shipment.current_status not in ("delivered", "returned"):
+        movement = db.query(TrackingEvent.id).filter(
+            TrackingEvent.waybill_no == shipment.waybill_no,
+            TrackingEvent.carrier == shipment.carrier,
+            TrackingEvent.status_code.in_(DHL_PICKUP_CODES),
+        ).first() if shipment.carrier.lower() == "dhl" else shipment.shipped_at
+        if not movement:
+            expired = shipment.last_polled_at - shipment.created_at >= timedelta(days=7)
+            shipment.current_status = shipment.unified_status = "pending"
+            shipment.current_status_text = LONG_UNCOLLECTED if expired else "承运商暂无记录，等待揽收"
+            shipment.consecutive_errors = 0
+            shipment.poll_error = None
+            if expired:
+                shipment.is_active = False
+            db.commit()
+            return {"waybill_no": shipment.waybill_no, "status": "ok", "new_events": 0}
 
     if not result.success:
         shipment.poll_error = result.error
@@ -80,6 +99,9 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
             estimated_delivery_date=eta,
         ))
 
+    # A manual refresh can recover a label that appeared after its seven-day window.
+    if shipment.current_status_text == LONG_UNCOLLECTED:
+        shipment.is_active = True
     shipment.current_status = result.current_status
     shipment.current_status_text = result.current_status_text
     shipment.current_location = result.current_location

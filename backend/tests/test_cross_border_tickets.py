@@ -26,6 +26,24 @@ def make_invoice(db, identity=1, **kwargs):
     return invoice
 
 
+def test_exported_rebind_compares_latest_exact_export_snapshot_through_multiple_changes(db, monkeypatch):
+    monkeypatch.setattr(get_settings(), 'CROSS_BORDER_GO_LIVE_DATE', date(2026, 11, 23))
+    inv = make_invoice(db)
+    for identity in (1, 2, 3):
+        tracking(db, identity)
+    outbound(db, inv, 1)
+    row = db.get(ShippingInspection, 1)
+    db.add(ShippingOperationEvent(scope='test-export', source='pc', action='shipment_exported',
+        login_user_id=1, operator_user_id=1, operator_name='test', login_name='test',
+        outbound_record_id=row.outbound_record_id, inspection_id=row.id,
+        payload={'shipment_tracking_id': 1, 'export_id': 1, 'content_hash': 'decl-one'}))
+    db.flush()
+    for identity, expected in ((2, True), (3, True), (1, False)):
+        row.shipment_tracking_id = identity; db.flush()
+        tickets, _ = build_tickets(db)
+        assert tickets[inv.alibaba_order_no][0]['exported_rebind'] is expected
+
+
 def tracking(db, identity=1):
     row = ShipmentTracking(id=identity, waybill_no=f'WB{identity}', carrier='DHL', carrier_name='DHL',
         dingtalk_user_id='test', dingtalk_user_name='Test', current_status='PU')

@@ -1185,6 +1185,12 @@ export const NAV_ENTRIES = [
   // 不出预览弹框。两种打印都只出那份独立文档，用户也不离开列表页。
 
   {
+    path: '/shipping/waybills', name: 'MobileWaybills', title: '手机录物流单',
+    component: () => import('@/views/shipping/MobileWaybills.vue'),
+    anyPermission: ['shipping_inspection:write', 'shipping_inspection:admin'], fullscreen: true,
+    menu: { group: 'shipping', title: '手机录物流单', icon: Camera, order: 32, anyPermission: ['shipping_inspection:write', 'shipping_inspection:admin'] },
+  },
+  {
     path: '/shipping/scan', name: 'ShippingScan', title: '共用手机发货质检',
     component: () => import('@/views/shipping/ShippingScan.vue'),
     permission: 'shipping_station:write', fullscreen: true,

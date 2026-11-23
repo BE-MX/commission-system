@@ -35,6 +35,7 @@ export const issueHints = {
   non_usd: '发票币种不是 USD，系统不会自动换算，请核对原始发票与申报币种。',
   non_usd_source: 'DHL 源文件币种不是 USD，系统不会自动换算，请修正来源数据后重新导入。',
   go_live_not_configured: '尚未配置跨境申报上线日期，请联系管理员配置后重新核对。',
+  exported_rebind: '此票在报关导出后更换过运单，请对照原报关文件核实运单关联。',
   mixed_waybill: '同一运单还包含非 DHL9610 发票，本页金额只按核对范围内的发票计算。',
   split_missing_declaration: '分票组存在尚未匹配申报的票，请补齐申报后核对组合计。',
 }

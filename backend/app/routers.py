@@ -191,6 +191,8 @@ def register_routers(app: FastAPI) -> None:
     from app.portal.admin_router import router as portal_admin_router
     app.include_router(portal_admin_router, prefix="/api/portal/admin/v1", tags=["客户下单门户管理"])
     app.include_router(integration_router, prefix="/api/integrations", tags=["外部站点发票接入"])
+    from app.shipping_inspection.waybill_photo_router import router as waybill_photo_router
+    app.include_router(waybill_photo_router, prefix="/api", tags=["物流单照片"])
     app.include_router(shipping_inspection_router, prefix="/api/shipping-inspection", tags=["发货检验"])
     app.include_router(whatsapp_translation_router, prefix="/api/whatsapp-translation", tags=["WhatsApp 实时翻译"])
     app.include_router(mail_outreach_router, prefix="/api/mail-outreach", tags=["客户邮件触达"])

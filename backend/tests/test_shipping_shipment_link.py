@@ -12,7 +12,7 @@ from app.shipping_inspection.schemas import InspectionShipmentCreate
 
 def _inspection(**overrides):
     values = dict(id=7, outbound_no='KC-1', customer_name='Acme Ltd', status='submitted', edit_version=3,
-                  shipment_version=0, shipment_tracking_id=None, outbound_record_id='out-1')
+                  shipment_version=0, shipment_tracking_id=None, outbound_record_id='out-1', local_outbound_id=None)
     values.update(overrides)
     return SimpleNamespace(**values)
 
@@ -89,6 +89,7 @@ async def test_stale_inspection_never_creates_orphan_waybill(monkeypatch, inspec
     monkeypatch.setattr(upload_service, 'create_waybill_with_tracking', create)
     db = Mock()
     db.get.return_value = inspection
+    monkeypatch.setattr('app.shipping_inspection.waybill_preview_service.existing_check', lambda *a, **k: (None, {'blocked': False}))
     with pytest.raises(ValueError, match=message):
         await link.create_and_bind(db, 7, body, {'sub': '5'})
     create.assert_not_called()
@@ -99,7 +100,8 @@ def _ready_db(monkeypatch, tracking):
     monkeypatch.setattr(auth, 'get_live_user_authorization', lambda *args: (['super_admin'], []))
     db = Mock()
     db.get.return_value = _inspection()
-    db.query.return_value.filter_by.return_value.first.return_value = tracking
+    db.query.return_value.filter_by.return_value.first.side_effect = [None, tracking]
+    monkeypatch.setattr('app.shipping_inspection.waybill_preview_service.existing_check', lambda *a, **k: (None, {'blocked': False}))
     return db
 
 
@@ -164,7 +166,9 @@ def test_link_candidate_hidden_outside_tracking_scope(monkeypatch):
     monkeypatch.setattr(shipment_service, 'apply_data_scope', lambda query, db, user: query)
     db = Mock()
     db.query.return_value.filter_by.return_value.first.return_value = None
-    assert link.link_candidate(db, _inspection(), 'WB1', 'DHL', 5) == {'visible': False}
+    check = {'exists': True, 'blocked': False, 'carrier': 'DHL', 'linked_inspections': 0, 'outside_tracking_scope': True}
+    monkeypatch.setattr('app.shipping_inspection.waybill_preview_service.existing_check', lambda *a, **k: (SimpleNamespace(id=10), check))
+    assert link.link_candidate(db, _inspection(), 'WB1', 'DHL', 5) == {'visible': False, **check}
 
 
 def test_link_candidate_without_tracking_permission_reveals_nothing(monkeypatch):
@@ -184,5 +188,7 @@ def test_link_candidate_returns_recipient_for_comparison(monkeypatch):
     db.query.return_value.filter_by.return_value.first.return_value = SimpleNamespace(
         id=10, receiver_name='Bob', receiver_country='德国')
     db.query.return_value.filter.return_value.scalar.return_value = 2
+    check = {'exists': True, 'blocked': False, 'carrier': 'DHL', 'linked_inspections': 2, 'outside_tracking_scope': False}
+    monkeypatch.setattr('app.shipping_inspection.waybill_preview_service.existing_check', lambda *a, **k: (SimpleNamespace(receiver_name='Bob', receiver_country='德国'), check))
     assert link.link_candidate(db, _inspection(), 'WB1', 'DHL', 5) == {
-        'visible': True, 'recipient_name': 'Bob', 'recipient_country': '德国', 'linked_inspections': 2}
+        'visible': True, **check, 'recipient_name': 'Bob', 'recipient_country': '德国'}

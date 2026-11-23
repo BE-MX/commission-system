@@ -31,6 +31,7 @@
       <article v-for="row in list" :key="row.id" class="inspection-result">
         <h2>{{ row.outbound_no }}</h2><p>{{ row.customer_name }}</p><p>订单 ID：{{ row.order_id || '—' }}</p>
         <dl><dt>提交人</dt><dd>{{ row.submitted_by_name || '—' }}</dd><dt>提交日期</dt><dd>{{ formatBeijingDateTime(row.submitted_at, { seconds: false, fallback: '—' }) }}</dd><dt>业务员</dt><dd>{{ row.salesperson_name || '未匹配' }}</dd><dt>照片</dt><dd>{{ row.photo_count }} 张</dd><dt>物流单</dt><dd>{{ shipmentText(row) }}</dd></dl>
+        <WaybillPhotoViewer v-if="row.waybill_photo" :photo="row.waybill_photo" compact />
         <div class="result-actions"><GlassButton variant="primary" @click="openDetail(row)">查看验货单</GlassButton><GlassButton :loading="downloading" @click="downloadPdf(row)">下载 PDF</GlassButton>
           <span v-permission="'tracking:write'"><GlassButton v-any-permission="['shipping_inspection:write', 'shipping_inspection:admin']" left-icon="Upload" @click="openShipment(row)">{{ row.shipment ? '更换物流单' : '上传物流单' }}</GlassButton></span></div>
       </article>
@@ -71,6 +72,7 @@
           <template #default="{ row }">
             <router-link v-if="row.shipment" class="shipment-link" :to="`/tracking/${encodeURIComponent(row.shipment.waybill_no)}`">{{ shipmentText(row) }}</router-link>
             <span v-else class="shipment-empty">未关联</span>
+            <WaybillPhotoViewer v-if="row.waybill_photo" :photo="row.waybill_photo" compact />
           </template>
         </el-table-column>
         <el-table-column sortable="custom" v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="140" show-overflow-tooltip>
@@ -150,6 +152,7 @@ import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
 import InspectionPhotos from './components/InspectionPhotos.vue'
+import WaybillPhotoViewer from './components/WaybillPhotoViewer.vue'
 import InspectionVideos from './components/InspectionVideos.vue'
 import InspectionEvents from './components/InspectionEvents.vue'
 import InspectionShipment from './components/InspectionShipment.vue'

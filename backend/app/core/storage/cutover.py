@@ -83,6 +83,9 @@ def check_reference_coverage(db, domain, rows, *, missing_reference_exceptions=(
     elif domain == 'shipping-inspection':
         from app.shipping_inspection.models import ShippingInspectionPhoto
         references.extend((key, None) for key, in db.query(ShippingInspectionPhoto.file_path))
+        from app.shipping_inspection.waybill_photo_models import ShippingWaybillPhoto
+        for rectified, original in db.query(ShippingWaybillPhoto.rectified_path, ShippingWaybillPhoto.original_path):
+            references.extend(((rectified, None), (original, None)))
     else:
         raise ValueError('Unsupported durable reference domain')
     missing_keys = {key for key, _ in references if key not in by_key}

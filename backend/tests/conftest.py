@@ -48,6 +48,7 @@ from app.semifinished import models as _semifinished_models  # noqa: F401
 # 发货检验表 FK 只在模块内（photos→inspections），但 submitted_by/created_by 逻辑上
 # 指向 ark_users（无 FK 约束），显式导入保证单跑测试文件时 create_all 覆盖到
 from app.shipping_inspection import models as _shipping_inspection_models  # noqa: F401
+from app.shipping_inspection import waybill_photo_models as _waybill_photo_models  # noqa: F401
 from app.whatsapp_translation import models as _whatsapp_translation_models  # noqa: F401
 # 邮件触达表 FK 指向 ark_users / ark_customer_*，显式导入保证单跑测试文件时 create_all 覆盖到
 from app.mail_outreach import models as _mail_outreach_models  # noqa: F401

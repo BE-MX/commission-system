@@ -82,7 +82,7 @@ def normalize_status(carrier: str, raw_status: str) -> str:
     carrier_lower = (carrier or "").lower().strip()
     raw = (raw_status or "").strip()
 
-    if not raw:
+    if not raw or raw.lower() == "pending":
         return "pending"
 
     if carrier_lower == "fedex":

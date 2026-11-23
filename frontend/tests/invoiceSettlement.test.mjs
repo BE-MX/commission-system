@@ -73,7 +73,7 @@ test('settlement options use the approved fixed values', () => {
     'TT',
     '现金', '支付宝', '微信', '对公转账（莱莎）', '对公转账（旭和）',
   ])
-  assert.deepEqual(EXPRESS_CHANNEL_OPTIONS, ['DHL普货', 'FEDEX普货', 'DHL9610', 'FEDEX9610', '顺丰', '其他快递'])
+  assert.deepEqual(EXPRESS_CHANNEL_OPTIONS, ['DHL普货', 'FEDEX普货', 'DHL9610', 'FEDEX9610', '顺丰', '其他快递', '自提', '货代/海运'])
   // 新增付款方式均无自动费率：手续费手填
   for (const method of ['现金', '支付宝', '微信', '对公转账（莱莎）', '对公转账（旭和）']) {
     assert.equal(handlingFeeRate(method), null)

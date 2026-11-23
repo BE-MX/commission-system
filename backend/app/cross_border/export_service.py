@@ -85,6 +85,19 @@ def create_export(db, body, actor):
                           created_by=actor, created_at=now))
         db.flush()
         identity = batch.id
+        # Preserve exactly which inspection/ticket each exported declaration used.
+        # Alibaba order number alone is insufficient for split shipments.
+        from app.shipping_inspection import audit_service
+        from app.shipping_inspection.models import ShippingInspection
+        for row in chosen:
+            ticket = row.get('ticket') or {}
+            for inspection_id in ticket.get('inspection_ids', []):
+                inspection = db.get(ShippingInspection, inspection_id)
+                if inspection is not None:
+                    audit_service.record(db, 'shipment_exported', actor, inspection.outbound_record_id,
+                        inspection=inspection, context={'source': 'pc'}, payload={
+                            'shipment_tracking_id': ticket['shipment_tracking_id'],
+                            'export_id': identity, 'content_hash': row['content_hash']})
     return {"id": identity}
 
 

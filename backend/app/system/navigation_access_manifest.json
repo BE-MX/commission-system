@@ -1,5 +1,5 @@
 {
-  "source_sha256": "f2c8fab146026bc915799014da864171992d2a8f064495a433f7211ef88385ad",
+  "source_sha256": "068509c06f20659f6b61ce324be9683bf49c6f20c601c3efd63c60eabaac3319",
   "favorite_access": {
     "CrossBorderReview": [
       {
@@ -2519,6 +2519,27 @@
           "commerce_shadow:read",
           "sales_return:read",
           "cross_border:read"
+        ]
+      }
+    ],
+    "MobileWaybills": [
+      {
+        "anyPermission": [
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
         ]
       }
     ],

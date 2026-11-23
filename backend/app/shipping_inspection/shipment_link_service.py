@@ -7,9 +7,8 @@
 """
 
 import logging
-from types import SimpleNamespace
 
-from sqlalchemy import func, or_, text
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -83,7 +82,7 @@ def _cross_border_prefill(db, inspection, order_ids):
     return {"is_9610": bool(rows), "invoices": rows}
 
 
-def shipment_prefill(db: Session, inspection: ShippingInspection) -> dict:
+def shipment_prefill(db: Session, inspection: ShippingInspection, *, strict=False) -> dict:
     """运单弹框预填。业务库不可用时只降级为空字段，不阻断上传（用户可手填）。"""
     # 降级分支会 rollback，ORM 对象随之过期；先取出要用的字段，避免连接已坏时在 except 里再查库
     inspection_id, customer_name = inspection.id, inspection.customer_name or ""
@@ -108,10 +107,23 @@ def shipment_prefill(db: Session, inspection: ShippingInspection) -> dict:
         result["cross_border"] = _cross_border_prefill(db, inspection, order_ids)
         record = outbound_service.get_outbound_record(db, record_id, include_deleted=True)
         customer_id = str((record or {}).get("company_id") or "").strip()
-        if customer_id:
+        if getattr(inspection, 'local_outbound_id', None):
+            from app.shipping_inspection.waybill_scope_service import invoice_map
+            from app.customer.models import CustomerAccount
+            invoices = invoice_map(db, [inspection]).get(inspection.id, [])
+            invoice = invoices[0] if invoices else None
+            result["recipient_name"] = (invoice.contact_name or "") if invoice else ""
+            if customer_id.startswith('ark:'):
+                customer = db.get(CustomerAccount, int(customer_id[4:]))
+                result["recipient_country"] = (customer.primary_country_code or "") if customer else ""
+            elif customer_id:
+                result["recipient_country"] = _customer_country(db, customer_id)
+        elif customer_id:
             result["recipient_name"] = _invoice_contact(db, customer_id, order_ids)
             result["recipient_country"] = _customer_country(db, customer_id)
     except Exception as exc:  # noqa: BLE001 - 预填失败不能挡住上传
+        if strict:
+            raise
         db.rollback()
         logger.warning("验货单 %s 物流单预填降级: %s", inspection_id, exc)
         print(f"inspection {inspection_id} shipment prefill degraded: {type(exc).__name__}", flush=True)
@@ -127,21 +139,17 @@ def link_candidate(db: Session, inspection: ShippingInspection, waybill_no: str,
     关联后客户门户会展示该运单轨迹，手误串到别的客户的运单就是信息外泄。
     """
     from app.auth.service import get_live_user_authorization
-    from app.tracking.models import ShipmentTracking
-    from app.tracking.shipment_service import apply_data_scope
+    from app.shipping_inspection.waybill_preview_service import existing_check
     roles, permissions = get_live_user_authorization(db, user_id)
-    if "super_admin" not in roles and not {"tracking:read", "tracking:read_all", "tracking:write"} & set(permissions):
-        return {"visible": False}
-    user = db.get(ArkUser, user_id)
-    query = db.query(ShipmentTracking).filter_by(waybill_no=waybill_no, carrier=carrier, deleted_at=None)
-    row = apply_data_scope(query, db, {"sub": str(user_id), "username": user.username if user else "",
-                                       "roles": roles, "permissions": permissions}).first()
-    if row is None:
-        return {"visible": False}
-    linked = db.query(func.count(ShippingInspection.id)).filter(
-        ShippingInspection.shipment_tracking_id == row.id, ShippingInspection.id != inspection.id).scalar() or 0
-    return {"visible": True, "recipient_name": row.receiver_name or "",
-            "recipient_country": row.receiver_country or "", "linked_inspections": int(linked)}
+    if 'super_admin' not in roles and not {'tracking:read', 'tracking:read_all', 'tracking:write'} & set(permissions):
+        return {'visible': False}
+    row, check = existing_check(db, inspection, waybill_no, user_id, roles, permissions)
+    if check['blocked']:
+        return {'visible': False, 'blocked': True}
+    if row is None or check['outside_tracking_scope']:
+        return {'visible': False, **check}
+    return {'visible': True, **check, 'recipient_name': row.receiver_name or '',
+            'recipient_country': row.receiver_country or ''}
 
 
 def _precheck(db: Session, inspection_id: int, body, user_id: int) -> None:
@@ -156,9 +164,17 @@ def _precheck(db: Session, inspection_id: int, body, user_id: int) -> None:
     inspection = db.get(ShippingInspection, inspection_id)
     if inspection is None or inspection.status != "submitted" or inspection.edit_version != body.edit_version:
         raise ValueError("验货单已变化，请重新打开后操作")
-    if inspection.shipment_version != body.shipment_version:
-        raise ValueError("物流单关联已变化，请重新打开后核对")
     service.require_shipment_binding_scope(db, inspection, user_id, roles, permissions)
+    from app.shipping_inspection.waybill_preview_service import existing_check
+    shipment, check = existing_check(db, inspection, body.waybill_no, user_id, roles, permissions)
+    if check['blocked']:
+        raise ValueError('这张运单已关联到另一位客户的验货单，请核对手里的包裹')
+    if inspection.shipment_version != body.shipment_version and not (shipment and inspection.shipment_tracking_id == shipment.id):
+        raise ValueError('物流单关联已变化，请重新打开后核对')
+    if getattr(body, 'source', 'pc') == 'mobile':
+        from app.shipping_inspection.waybill_binding_service import mobile_evidence
+        mobile_evidence(db, inspection, body, user_id, shipment)
+
 
 
 async def create_and_bind(db: Session, inspection_id: int, body, current_user: dict) -> dict:
@@ -175,14 +191,37 @@ async def create_and_bind(db: Session, inspection_id: int, body, current_user: d
     user_id = int(current_user["sub"])
     # 预检与关联是同步 DB（关联还要等验货单行锁），放线程池，不卡住事件循环
     await run_in_threadpool(_precheck, db, inspection_id, body, user_id)
-    db.rollback()  # 结束预检读事务；入库流程自己提交
+    existing = db.query(ShipmentTracking).filter_by(waybill_no=body.waybill_no, deleted_at=None).first()
+    if existing:
+        inspection = db.get(ShippingInspection, inspection_id)
+        if getattr(body, 'source', 'pc') != 'mobile' and inspection.shipment_tracking_id != existing.id:
+            raise upload_service.WaybillConflict({'waybill_no': body.waybill_no})
+        db.rollback()  # release photo preflight lock; binding reacquires locks in export/inspection/photo order
+        data = {'shipment': await run_in_threadpool(_bind_and_commit, db, inspection_id, body, body, user_id)}
+        return data
+    owner = None
+    mobile = getattr(body, 'source', 'pc') == 'mobile'
+    if mobile:
+        from app.shipping_inspection.waybill_scope_service import invoice_map
+        inspection = db.get(ShippingInspection, inspection_id)
+        owners = {inv.sales_user_id for inv in invoice_map(db, [inspection])[inspection.id] if inv.sales_user_id}
+        if len(owners) == 1:
+            actor = db.get(ArkUser, next(iter(owners)))
+            if actor and actor.dingtalk_id:
+                owner = {'dingtalk_user_id': actor.dingtalk_id, 'dingtalk_user_name': actor.real_name or actor.username}
+        body._owner_fallback = owner is None
+    db.rollback()  # end read transaction before upload's own commits
     payload = WaybillCreate(**body.model_dump(include=set(WaybillCreate.model_fields)))
-    data = await upload_service.create_waybill_with_tracking(db, payload, current_user)
+    if mobile:
+        payload.entry_source = body.number_source
+    data = await upload_service.create_waybill_with_tracking(db, payload, current_user,
+        owner=owner, skip_initial_poll=mobile)
     tracking = db.query(ShipmentTracking).filter_by(
         waybill_no=payload.waybill_no, carrier=payload.carrier, deleted_at=None).first()
     if tracking is None:
         # 运单行已写入但跟踪行没建成：重试会撞重复、关联又找不到跟踪行，用户自己走不出来
         raise ShipmentLinkError("运单已录入，但物流跟踪记录没有建成，暂时无法关联；请把运单号发给系统管理员补建跟踪记录")
+    body._created_tracking_id = tracking.id
     try:
         data["shipment"] = await run_in_threadpool(_bind_and_commit, db, inspection_id, payload, body, user_id)
     except Exception as exc:
@@ -195,8 +234,6 @@ async def create_and_bind(db: Session, inspection_id: int, body, current_user: d
 
 
 def _bind_and_commit(db: Session, inspection_id: int, payload, body, user_id: int) -> dict:
-    shipment = service.bind_shipment(db, inspection_id, SimpleNamespace(
-        waybill_no=payload.waybill_no, carrier=payload.carrier,
-        edit_version=body.edit_version, shipment_version=body.shipment_version), user_id)
-    db.commit()
+    shipment = service.bind_shipment(db, inspection_id, body, user_id)
+    service._commit(db)
     return shipment

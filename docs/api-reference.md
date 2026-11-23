@@ -1769,9 +1769,15 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | GET | `/records/{id}` | 验货单详情：单头+实时明细+分开的 photos/videos 数组；视频只供预览，不进入验货打印 |
 | POST | `/records/{id}/recall` | 请求必填 edit_version；submitted → draft，版本加一，保留备注与全部媒体，记录撤回人/时间；过期状态 409 |
 | GET | `/records/{id}/shipment-prefill` | 上传物流单弹框预填：需 `shipping_inspection:write/admin` + 验货单归属；返回 `edit_version/shipment_version/shipment`、`order_id`、`recipient_name`（订单发票联系人 → 客户档案收货联系人 → 客户最近发票联系人 → 验货单客户名）、`recipient_country`（客户覆盖层 → 业务库 `customer_info` 国家名；不用档案国家代码，避免与物流跟踪国家名混写）、`ship_date`（北京时间今天）；业务库不可用时降级为客户名，不报错 |
-| POST | `/records/{id}/shipment` | 录入运单并关联：body = 物流跟踪 `WaybillCreate` + `edit_version/shipment_version`；先校验验货单已提交、版本未变、实时 `shipping_inspection:write/admin` + `tracking:write`，再走物流跟踪原入库流程（轮询/短链/钉钉推送），最后关联验货单。运单号已存在 409 `detail={code,message,data:已有运单}`；运单已入库但关联失败 409 文字说明「已录入物流跟踪」，可用下方 PUT 关联已有运单 |
-| GET | `/records/{id}/shipment-candidate?waybill_no=&carrier=` | 关联已有运单前核对：需验货单 write/admin + 归属；运单不在当前用户物流跟踪查看范围（或无任何 tracking 权限）只返回 `{visible:false}`，在范围内返回 `recipient_name/recipient_country/linked_inspections`（已关联的其他验货单数），供弹框与本单客户比对，防止串单后在客户门户外泄轨迹 |
-| PUT | `/records/{id}/shipment` | 关联已有运单：`{waybill_no,carrier,edit_version,shipment_version}`；运单须在当前用户物流跟踪查看范围内且未删除，不再要求运单图片（PC 上传不存图）；成功后 `shipment_version` 加一 |
+| POST | `/records/{id}/shipment` | 新建运单并关联验货单。手机传 `source=mobile`、照片凭证、签名的预览凭证、单号来源、已确认提醒及两个版本。手机提交后由轮询接手；物流跟踪归订单业务员，拍摄人记为录入人。 |
+| GET | `/records/{id}/shipment-candidate?waybill_no=&carrier=` | PC 关联已有运单前核对；收件信息按运单可见范围返回。 |
+| PUT | `/records/{id}/shipment` | 关联已有运单。按单号匹配并沿用已存承运商；同客户可合并发货，跨客户阻断。已绑定同单可幂等重试。手机需要 `tracking:write`。 |
+| GET | `/mobile/waybill-queue` | 手机的待录和本人今天已录列表，支持 `tab=pending/done`、`keyword`、`include_older`、`page`、`page_size`。范围包括订单业务员和指定跟单员。 |
+| POST | `/records/{id}/waybill-photo` | 一次上传增强图 `rectified`、原图 `original` 及可选 `barcode`；返回 OCR 结果与限本人、本验货单使用的照片凭证。 |
+| POST | `/records/{id}/shipment-preview` | 传本次拍摄的 `photo_token`、单号、承运商、收件资料及验货单版本；只读同步返回承运商查询结果、已有运单核对、确认项和 `preview_token`。修改核对信息后需重新同步。 |
+| GET | `/records/{id}/waybill-photos` | 验货单当前、历史物流单照片及拍摄、替换信息。 |
+| GET | `/records/{id}/waybill-photos/{photo_id}?variant=rectified/original` | 鉴权读取指定验货单下已关联的增强图或原图。 |
+| GET | `/api/tracking/shipments/{shipment_id}/waybill-photos` | 物流跟踪详情的照片列表；先校验可查看运单，再按验货单范围过滤。 |
 | GET | `/images/{rel_path:path}` | 鉴权读取原始照片/视频；`preview=true` 仅照片返回最长边640像素的 JPEG 预览，原件不变；沿用归属权限与 `private, no-store`，预览不可用返回503 |
 | POST | `/api/mini/shipping-inspection/scan` | 验签二维码原文 → 单头+明细+photos/videos+状态/edit_version/已存备注；前缀/签名错 400 |
 | POST | `/api/mini/shipping-inspection/photos` | multipart 上传一张照片（file + outbound_record_id + item_id? + edit_version + request_id?）；draft 懒创建；已提交拒绝 |

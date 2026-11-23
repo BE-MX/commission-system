@@ -26,6 +26,8 @@ class TrackingResult:
     events: list[TrackingEvent]
     error: Optional[str] = None
     estimated_delivery_date: Optional[datetime] = None
+    not_found: bool = False
+    destination_country: Optional[str] = None
 
 
 STATUS_MAP_CN = {

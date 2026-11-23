@@ -14,6 +14,7 @@ LABELS = {
     'non_usd': '非 USD 发票', 'go_live_not_configured': '尚未配置上线日期',
     'mixed_waybill': '同运单含非 9610 发票', 'split_missing_declaration': '分票组缺少申报',
     'non_usd_source': '申报或收款币制不是 USD',
+    'exported_rebind': '导出报关后更换物流单',
 }
 WARNINGS = {'split_incomplete', 'orphan_receipt', 'suspected_changed', 'ticket_without_declaration',
             'unit_mismatch', 'non_dhl', 'mixed_waybill'}
@@ -172,6 +173,8 @@ def reconcile(declarations, receipts, tickets_by_order, invoices_by_order, revie
                     issue(row, 'non_dhl')
                 if ticket.get('mixed_waybill'):
                     issue(row, 'mixed_waybill')
+                if ticket.get('exported_rebind'):
+                    issue(row, 'exported_rebind')
             if str(row['line_json'].get('unit', '')) != '015':
                 issue(row, 'unit_mismatch')
             if row['suspected_changed']:

@@ -24,6 +24,7 @@
 
     <div v-else-if="step === 'camera'" class="lg-card is-static scan-workspace">
       <p class="scan-hint" role="status">{{ cameraHint }}</p>
+      <p v-if="barcode" role="status">已读到 {{ barcode }}</p>
       <div class="viewfinder" :style="viewfinderStyle">
         <video ref="video" autoplay muted playsinline @resize="updateVideoSize"></video>
         <svg v-if="liveCorners" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
@@ -32,7 +33,8 @@
         <div v-else class="frame-guide" aria-hidden="true"></div>
       </div>
       <div class="scan-actions">
-        <GlassButton @click="closeCamera">取消</GlassButton>
+        <GlassButton @click="closeCamera(); directCapture && $emit('cancel')">取消</GlassButton>
+        <GlassButton @click="closeCamera(); fileInput.click()">从相册选</GlassButton>
         <GlassButton variant="primary" :icon="Camera" :disabled="!cameraReady" @click="takePhoto">拍照</GlassButton>
       </div>
     </div>
@@ -88,8 +90,11 @@ import {
 } from './documentImage'
 import { detectDocument } from './documentEdges'
 import { distance, fullFrame, padDetectedQuad } from './documentQuad'
+import { readWaybillBarcode } from './waybillBarcode.js'
 
 const props = defineProps({
+  directCapture: { type: Boolean, default: false },
+  requireOriginal: { type: Boolean, default: false },
   finish: { type: String, default: 'download' },
   finishLabel: { type: String, default: '使用这张' },
   defaultEffect: { type: String, default: 'original' },
@@ -125,8 +130,8 @@ const effects = [
 
 const cameraHint = computed(() => {
   if (!cameraReady.value) return '正在打开相机…'
-  if (liveCorners.value) return '已找到文档边缘，可以拍照'
-  return '将纸张的四个角都放进取景画面'
+  if (liveCorners.value) return props.directCapture ? '已对准，可以拍照' : '已找到文档边缘，可以拍照'
+  return props.directCapture ? '把运单四个角都放进画面' : '将纸张的四个角都放进取景画面'
 })
 const viewfinderStyle = computed(() => ({
   aspectRatio: videoRatio.value,
@@ -143,6 +148,10 @@ let cameraRequest = 0
 let imageRequest = 0
 let source = null
 let rectified = null
+const barcode = ref('')
+let barcodeBusy = false
+let lastBarcodeAt = 0
+let lastBarcodeFound = 0
 
 function stopCamera() {
   cameraRequest++
@@ -214,6 +223,16 @@ function startEdgeWorker() {
 
 function inspectFrame() {
   const frame = video.value
+  if (props.directCapture && frame?.videoWidth && !barcodeBusy && Date.now() - lastBarcodeAt > 600) {
+    barcodeBusy = true
+    lastBarcodeAt = Date.now()
+    const request = cameraRequest
+    readWaybillBarcode(frame).then(value => {
+      if (request !== cameraRequest) return
+      if (value) { barcode.value = value; lastBarcodeFound = Date.now() }
+      else if (Date.now() - lastBarcodeFound > 1200) barcode.value = ''
+    }).finally(() => { barcodeBusy = false })
+  }
   if (pendingFrame || !frame?.videoWidth || frame.readyState < 2) return
   const pixels = readDetectionPixels(previewCanvas, frame, frame.videoWidth, frame.videoHeight, PREVIEW_EDGE)
   if (!edgeWorker) {
@@ -290,10 +309,11 @@ function reset() {
   error.value = ''
   cameraFailed.value = false
   effect.value = props.defaultEffect
+  barcode.value = ''
   step.value = 'ready'
 }
 
-async function processPhoto(getPhoto) {
+async function processPhoto(getPhoto, capturedCorners = null) {
   const request = ++imageRequest
   busy.value = true
   error.value = ''
@@ -305,7 +325,7 @@ async function processPhoto(getPhoto) {
     const findEdges = edge => detectDocument(
       readDetectionPixels(detectionCanvas, canvas, canvas.width, canvas.height, edge, 'high'),
     )
-    const detected = findEdges(PHOTO_DETECTION_EDGE) || findEdges(PREVIEW_EDGE)
+    const detected = findEdges(PHOTO_DETECTION_EDGE) || findEdges(PREVIEW_EDGE) || (props.directCapture ? capturedCorners : null)
     releaseCanvas(detectionCanvas)
     const preview = await scanBlob(canvas)
     if (request !== imageRequest) return
@@ -315,6 +335,7 @@ async function processPhoto(getPhoto) {
     foundEdges.value = !!detected
     corners.value = detected ? padDetectedQuad(detected) : fullFrame()
     step.value = 'crop'
+    if (props.directCapture && detected) await updatePreview(effect.value, true)
   } catch {
     if (request === imageRequest) error.value = '无法读取这张照片，请重拍或选择 JPG、PNG 图片。'
   } finally {
@@ -326,7 +347,10 @@ async function processPhoto(getPhoto) {
 function pickPhoto(event) {
   const file = event.target.files?.[0]
   event.target.value = ''
-  if (file && !busy.value) processPhoto(() => readScanPhoto(file))
+  if (file && !busy.value) {
+    barcode.value = ''
+    processPhoto(() => readScanPhoto(file))
+  }
 }
 
 function takePhoto() {
@@ -339,8 +363,10 @@ function takePhoto() {
     error.value = '拍摄失败，请重新取景后拍照。'
     return
   }
+  if (Date.now() - lastBarcodeFound > 1200) barcode.value = ''
+  const capturedCorners = liveCorners.value?.map(point => [...point])
   closeCamera()
-  processPhoto(() => photo)
+  processPhoto(() => photo, capturedCorners)
 }
 
 async function updatePreview(nextEffect, applyCrop = false) {
@@ -362,6 +388,12 @@ async function updatePreview(nextEffect, applyCrop = false) {
     replaceUrl(resultUrl, blob)
     effect.value = nextEffect
     step.value = 'result'
+    if (props.directCapture) {
+      const decoded = await readWaybillBarcode(canvas)
+      if (request !== imageRequest) return
+      barcode.value = barcode.value || decoded
+      await useCapture()
+    }
   } catch {
     if (request === imageRequest) error.value = '处理图片失败，请重试或调整裁剪范围。'
   } finally {
@@ -385,7 +417,8 @@ async function useCapture() {
   const isCurrent = () => request === imageRequest
   try {
     const capture = await encodeCapture(source, rectified, effect.value, props.maxUploadBytes, isCurrent)
-    if (capture && isCurrent()) emit('captured', { ...capture, corners: corners.value, effect: effect.value })
+    if (capture && props.requireOriginal && !capture.original) throw new RangeError('Original exceeds limit')
+    if (capture && isCurrent()) emit('captured', { ...capture, barcode: barcode.value, corners: corners.value, effect: effect.value })
   } catch (failure) {
     if (isCurrent()) error.value = failure instanceof RangeError
       ? '校正图超过单据上传限制，请调整裁剪范围或换一张照片。'
@@ -404,7 +437,11 @@ function downloadScan() {
   link.remove()
 }
 
-onMounted(() => document.addEventListener('visibilitychange', onVisibilityChange))
+defineExpose({ adjustEdges: () => { step.value = 'crop' }, retake: () => { reset(); openCamera() } })
+onMounted(() => {
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  if (props.directCapture) openCamera()
+})
 onDeactivated(reset)
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
