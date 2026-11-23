@@ -503,6 +503,8 @@ cancelled_keep_freight 不占商品数量或活动批次，仅保留原运费应
 
 2026-10-19 统计来源明细：三个标签复用奖项的有效货物订单、新成交裁定、原新签客户归属及复购顺序规则。先确定完整名单客户归属，再限制明细权限及筛选；默认核算日期倒序。列表中的“下单日期”明确沿用核算日期，金额为 USD；total 为订单笔数、customer_count 为去重客户数，total_amount 是分页前全部筛选结果金额（Decimal 求和后保留两位）；单笔 amount_usd 保留源精度。异常仅给无客户/订单身份的待核对提示，不泄露其他范围的异常详情。PK 总览新签金额按订单负责人统计，明细按原新签客户归属汇总；转交时可能不同，页面和 amount_note 均明确说明，不改变 PK 评奖规则。
 
+订单统计明细 `items[].company_id` 保留源订单客户 ID，`items[].cohort_company_id` 为战报计算首签归属及客户去重使用的 ID。按单裁定的客户名称用于 `company_name` 展示和 `customer` 筛选。
+
 新增 `battle_report:read_all`，kind=data，需角色管理显式分配，启动 seed 不自动授予普通 admin 角色；与 read 配合可读取全部已发布/归档战报及订单明细（无需本人参与或 OKKI 绑定），不开放草稿、配置、审计、海报或他人目标写入。已有 battle_report:admin 和 super_admin 保持全量权限。无 read_all 时仍为本人/组长本组，并核对当前 OKKI 绑定。
 
 源订单只读，按核算日和活动小组统计；source_synced_at=null 明确表示源同步时间未知，calculated_at 不能充当同步时间。归档不冻结镜像数据，不提供删除接口。
