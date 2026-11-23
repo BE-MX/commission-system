@@ -454,7 +454,8 @@ def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = 
 def order_ids_for_records(db: Session, record_ids: list[str]) -> dict[str, list[str]]:
     """Read exact order associations from outbound items; never infer from the document number."""
     from app.shipping_inspection import local_outbound_service as local
-    local_ids = [identity for identity in record_ids if local.is_native(db, identity)]
+    native = local.native_identities(db, record_ids)
+    local_ids = [identity for identity in record_ids if str(identity) in native]
     result = {}
     for identity in local_ids:
         record = local.header(db, identity, include_deleted=True)
