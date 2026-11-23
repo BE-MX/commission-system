@@ -296,6 +296,7 @@ function handleUserCommand(command) {
   background: transparent;
 }
 .page-wrapper { max-width: 1440px; }
+.page-wrapper:has(> .table-card, > * > .table-card) { max-width: none; }
 .page-wrapper > * { min-width: 0; max-width: 100%; box-sizing: border-box; }
 .page-enter-active { transition: opacity 120ms ease; }
 .page-leave-active { transition: opacity 80ms ease; }
