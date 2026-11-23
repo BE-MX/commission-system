@@ -4,7 +4,9 @@ from datetime import date
 
 import pytest
 
-from app.domestic_followup import followup_service, prep_access, prep_service, strategy_service
+from app.ai import call_service
+from app.ai.models import AiPreset, AiProvider
+from app.domestic_followup import attachment_service, followup_service, prep_access, prep_service, strategy_service
 from app.domestic_followup.collaboration_models import FollowupResponsibility
 from app.domestic_followup.models import DomesticFollowup
 from app.domestic_followup.prep_models import DomesticFollowupPrep
@@ -98,6 +100,56 @@ def test_stop_strategy_drops_sales_talk_and_validates_evidence_numbers_and_time(
     assert strategy["time_budget"]["prep_minutes"] == [3, 5]
     reasons = {warning["reason"] for warning in strategy["warnings"]}
     assert "此数字未在资料中出现，请核实" in reasons and "不能补成预算不足" in reasons
+
+
+@pytest.mark.parametrize("recover", [True, False], ids=["retry-succeeds", "retry-exhausted"])
+def test_strategy_retries_truncated_model_output(db, monkeypatch, recover):
+    seed_dicts(db)
+    user = make_user(db, "prep_strategy_retry")
+    customer = make_customer(db, user, "策略重试店")
+    prep = _prep(db, user, customer, _template(db), strategy_status="failed", strategy_count=2)
+    provider = AiProvider(name="DeepSeek test", api_base="https://api.deepseek.com", timeout_sec=120)
+    db.add(provider)
+    db.flush()
+    db.add(AiPreset(
+        preset_name=strategy_service.STRATEGY_PRESET, provider_id=provider.id, model="deepseek-flash",
+        parameters={"temperature": 0.3, "max_tokens": 4096}, system_prompt="只输出 JSON。",
+    ))
+    db.commit()
+
+    requests = []
+    clock = iter((100.0, 128.0, 150.0))
+    monkeypatch.setattr(attachment_service, "monotonic", lambda: next(clock))
+
+    def model_response(_url, *, body, timeout_sec, enforce_total_timeout=False, **_kwargs):
+        requests.append((body, timeout_sec, enforce_total_timeout))
+        if len(requests) == 1 or not recover:
+            return {
+                "choices": [{"message": {"content": '{"headline": "未结束'}, "finish_reason": "length"}],
+                "usage": {"completion_tokens": 4096},
+            }
+        output = {"headline": "核实报价比较口径", "mode": "normal", "opening": "方便聊聊对比的款式吗？"}
+        return {"choices": [{"message": {"content": json.dumps(output)}, "finish_reason": "stop"}]}
+
+    monkeypatch.setattr(call_service, "post_json", model_response)
+    prep, started = strategy_service.start(db, _ctx(user), prep.id)
+    assert started
+    db.commit()
+    strategy_service.run_strategy(prep.id, _ctx(user), expected_version=prep.version,
+                                  session_factory=lambda: nullcontext(db))
+
+    if recover:
+        assert prep.strategy_status == "done", prep.strategy_error
+        assert prep.strategy["headline"] == "核实报价比较口径"
+        assert prep.strategy_error is None and prep.strategy_log_id is not None
+    else:
+        assert prep.strategy_status == "failed"
+        assert prep.strategy is None
+    assert prep.goal == "核实比较口径" and prep.strategy_count == 3
+    assert [(timeout, total) for _, timeout, total in requests] == [(120, True), (92, True)]
+    for body, _, _ in requests:
+        assert body["response_format"] == {"type": "json_object"}
+        assert body["thinking"] == {"type": "disabled"}
 
 
 def test_generation_limit_and_single_use_binding(db):
