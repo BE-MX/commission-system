@@ -520,6 +520,9 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
             coalesce=True,
             misfire_grace_time=60,
         )
+    from app.schedulers.waybill_photos import cleanup_waybill_photos
+    scheduler.add_job(cleanup_waybill_photos, trigger="interval", hours=1,
+                      id="waybill_photo_cleanup", replace_existing=True, max_instances=1, coalesce=True)
     scheduler.add_job(
         redact_expired_raw_events_job,
         trigger="cron",

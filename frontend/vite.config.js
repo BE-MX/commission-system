@@ -60,6 +60,7 @@ export default defineConfig({
         // 治理 F-7：稳定依赖拆独立 vendor chunk——业务代码变更不再打翻大依赖的浏览器缓存
         manualChunks(id) {
           if (id.includes('node_modules')) {
+            if (id.includes('@zxing')) return 'vendor-barcode'
             if (id.includes('echarts') || id.includes('zrender')) return 'vendor-echarts'
             if (id.includes('element-plus')) return 'vendor-element'
             // 只给客户流失态势沉浸层按需加载，不能并进全站共用的 vendor 包

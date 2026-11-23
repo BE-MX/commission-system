@@ -7,6 +7,8 @@ import httpx
 
 from app.tracking.carriers.base import CarrierAdapter, TrackingResult, TrackingEvent
 
+# Physical movement or delivery. Customs notifications and payment can precede pickup.
+DHL_PICKUP_CODES = frozenset({'PU', 'PL', 'DF', 'AF', 'TR', 'AR', 'WC', 'OK', 'DL', 'RS', 'RT', 'NU', 'MS'})
 
 # DHL event typeCode → 系统状态
 DHL_TYPECODE_MAP = {
@@ -78,6 +80,9 @@ class DHLAdapter(CarrierAdapter):
             return TrackingResult(False, waybill_no, "exception", "请求失败", "", None, [], error=str(e))
 
         if resp.status_code != 200:
+            if resp.status_code == 404:
+                return TrackingResult(False, waybill_no, "pending", "承运商暂无记录", "", None, [],
+                                      error="no shipments", not_found=True)
             if resp.status_code in (401, 403):
                 environment = "测试环境" if self.base_url.endswith("/test") else "正式环境"
                 error = (
@@ -99,9 +104,13 @@ class DHLAdapter(CarrierAdapter):
         except Exception:
             return TrackingResult(False, waybill_no, "exception", "JSON解析失败", "", None, [], error="invalid json")
 
-        shipments = data.get("shipments", [])
+        shipments = data.get("shipments") if isinstance(data, dict) else None
+        if not isinstance(shipments, list):
+            return TrackingResult(False, waybill_no, "exception", "DHL 响应缺少运单列表", "", None, [],
+                                  error="invalid shipments response")
         if not shipments:
-            return TrackingResult(False, waybill_no, "exception", "未找到运单", "", None, [], error="no shipments")
+            return TrackingResult(False, waybill_no, "pending", "承运商暂无记录", "", None, [],
+                                  error="no shipments", not_found=True)
 
         shipment = shipments[0]
         raw_events = shipment.get("events", [])
@@ -132,7 +141,7 @@ class DHLAdapter(CarrierAdapter):
 
         # 从最新事件的 typeCode 推断状态
         latest_typecode = latest.status_code.upper() if latest else ""
-        normalized = DHL_TYPECODE_MAP.get(latest_typecode, "in_transit")
+        normalized = DHL_TYPECODE_MAP.get(latest_typecode, "in_transit") if latest else "pending"
 
         # 提取预计送达时间（优先取根节点 estimatedDeliveryDate）
         est_dt = None
@@ -154,4 +163,5 @@ class DHLAdapter(CarrierAdapter):
             last_event_time=latest.event_time if latest else None,
             events=events,
             estimated_delivery_date=est_dt,
+            destination_country=((shipment.get("receiverDetails") or {}).get("postalAddress") or {}).get("countryCode"),
         )

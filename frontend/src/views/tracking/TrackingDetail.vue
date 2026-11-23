@@ -70,6 +70,9 @@
         </div>
       </div>
 
+      <WaybillPhotoGallery v-if="shipment && auth.hasAnyPermission(['shipping_inspection:read','shipping_inspection:write','shipping_inspection:admin'])"
+        :shipment-id="shipment.id" />
+
       <!-- 物流轨迹时间线 -->
       <div class="timeline-section" v-if="shipment">
         <h3 class="section-title">物流轨迹</h3>
@@ -101,6 +104,7 @@
             <StatusBadge :type="shipment.is_active ? 'success' : 'info'" size="small">
               {{ shipment.is_active ? '进行中' : '已结束' }}
             </StatusBadge>
+            <span v-if="shipment.current_status_text === '长期未揽收'">长期未揽收</span>
           </el-descriptions-item>
           <el-descriptions-item label="轮询次数">{{ shipment.poll_count }}</el-descriptions-item>
           <el-descriptions-item label="上次轮询">{{ shipment.last_polled_at || '-' }}</el-descriptions-item>
@@ -123,10 +127,13 @@ import { resolveStatus } from '@/utils/status'
 import { msgSuccessText, msgError } from '@/utils/feedback'
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import WaybillPhotoGallery from '../shipping/components/WaybillPhotoGallery.vue'
 
 import { getShipmentDetail, refreshShipment } from '@/api/tracking'
 
 const route = useRoute()
+const auth = useAuthStore()
 const waybillNo = route.params.waybillNo
 
 const shipment = ref(null)

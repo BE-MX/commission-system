@@ -19,7 +19,7 @@ export const PAYMENT_METHOD_RATES = {
   TT: 0,
 }
 // 快递渠道（2026-09-23）：改为必填单选，不默认选中
-export const EXPRESS_CHANNEL_OPTIONS = ['DHL普货', 'FEDEX普货', 'DHL9610', 'FEDEX9610', '顺丰', '其他快递']
+export const EXPRESS_CHANNEL_OPTIONS = ['DHL普货', 'FEDEX普货', 'DHL9610', 'FEDEX9610', '顺丰', '其他快递', '自提', '货代/海运']
 
 // 存量订单使用旧文本存值，打开编辑时回显到新的普货选项。
 export function normalizeStoredExpressChannel(channel) {
@@ -157,4 +157,16 @@ export function settlementMatchesTotal(total, prepayment, balance) {
   if (prepayment == null || balance == null) return false
   if (toMoneyCents(prepayment) < 0 || toMoneyCents(balance) < 0) return false
   return toMoneyCents(prepayment) + toMoneyCents(balance) === toMoneyCents(total)
+}
+
+
+export function alibabaOrderRequired(form) {
+  return String(form.internal_payment_method || '').includes('便捷发货')
+}
+
+export function alibabaOrderError(form) {
+  const value = String(form.alibaba_order_no || '').replace(/\s+/g, '')
+  if (value && !/^[0-9]{15,20}$/.test(value)) return '阿里信保订单号须为15~20位数字'
+  if (!value && alibabaOrderRequired(form)) return '便捷发货必须填写阿里信保订单号'
+  return ''
 }

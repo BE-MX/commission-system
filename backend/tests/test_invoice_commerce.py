@@ -54,7 +54,7 @@ def test_local_payment_channel_survives_create_edit_and_failed_save(db, stock, b
     sku, _ = stock
     customer, user = buyer
     body = draft(customer, user, sku, internal_payment_method="大莱莎信保（便捷发货）",
-                 express_channel="DHL9610")
+                 express_channel="DHL9610", alibaba_order_no="00123456789012345")
     invoice = create_draft(db, body, user)
     db.commit()
     db.refresh(invoice)
@@ -100,6 +100,7 @@ def test_pre_payment_field_command_replays_but_new_payment_is_distinct(db, stock
     # Reconstruct the persisted command shape used before the payment field existed.
     historical_body = body.model_dump(mode="json")
     historical_body.pop("internal_payment_method")
+    historical_body.pop("alibaba_order_no")
     historical = {"action": "create", "invoice_id": None, "actor_id": int(user["sub"]), "body": historical_body}
     historical_hash = hashlib.sha256(json.dumps(historical, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
     assert event.request_hash == historical_hash

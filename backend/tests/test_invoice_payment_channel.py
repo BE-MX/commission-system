@@ -11,7 +11,7 @@ from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
 def payload(method=None, channel=None):
     return InvoiceCreate(invoice_no="CHANNEL-TEST", order_type="stock", customer_id="101",
         customer_name="Test", invoice_date="2026-11-04", internal_payment_method=method,
-        express_channel=channel, inspection_requirement="single", items=[])
+        express_channel=channel, alibaba_order_no="00123456789012345", inspection_requirement="single", items=[])
 
 
 @pytest.mark.parametrize("method,channel,message", [

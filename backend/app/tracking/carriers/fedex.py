@@ -76,6 +76,12 @@ class FedExAdapter(CarrierAdapter):
                 return TrackingResult(False, waybill_no, "exception", "无追踪结果", "", None, [], error="empty")
 
             r = results[0].get("trackResults", [{}])[0]
+            if error := r.get("error"):
+                code = str(error.get("code") or "")
+                missing = code == "TRACKING.TRACKINGNUMBER.NOTFOUND"
+                return TrackingResult(False, waybill_no, "pending" if missing else "exception",
+                                      "承运商暂无记录" if missing else "FedEx 查询失败", "", None, [],
+                                      error=code or "FedEx tracking error", not_found=missing)
             latest = r.get("latestStatusDetail", {})
             raw_code = latest.get("code", "")
             raw_text = latest.get("description", "")

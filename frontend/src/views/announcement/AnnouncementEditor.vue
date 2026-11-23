@@ -24,7 +24,7 @@
         <span v-if="document.expires_at">截止：{{ formatBeijingDateTime(document.expires_at) }}</span>
       </div>
       <el-alert v-if="document.can_edit || document.pending_approval_id" :title="deliveryNotice" :type="meta.push_dingtalk && !channelReady ? 'warning' : 'info'" :closable="false" />
-      <KnowledgeEditor :key="`${document.id || 'new'}:${document.revision_id || 0}:${document.can_edit}`" ref="editor" :document="document" :role="document.can_edit ? 'editor' : 'viewer'" :saving="saving" external-controls @save="save" @dirty-change="editorDirty = $event" />
+      <KnowledgeEditor :key="`${document.id || 'new'}:${document.revision_id || 0}:${document.can_edit}`" ref="editor" :document="document" :role="document.can_edit ? 'editor' : 'viewer'" :saving="saving" external-controls :structured-authoring="false" @save="save" @dirty-change="editorDirty = $event" />
       <div class="actions">
         <el-button v-if="document.can_edit" v-any-permission="['announcement:write', 'announcement:admin']" :icon="Check" type="primary" :loading="saving" @click="editor.save()">保存草稿</el-button>
         <el-button v-if="document.can_edit && document.id" v-any-permission="['announcement:write', 'announcement:admin']" :icon="Promotion" :disabled="hasChanges || saving" @click="submit">提交审核</el-button>

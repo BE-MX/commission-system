@@ -1,5 +1,6 @@
 """环境变量配置（Pydantic Settings）"""
 
+from datetime import date
 import json
 import re
 from pathlib import Path
@@ -282,6 +283,11 @@ class Settings(BaseSettings):
     CUSTOMER_IMAGE_PUBLIC_RATE_PER_MINUTE: _PositiveInt = 30
     CUSTOMER_IMAGE_MAX_REQUIREMENT_CHARS: _PositiveInt = 500
 
+    # 跨境申报核对
+    CROSS_BORDER_GO_LIVE_DATE: date | None = None
+    CROSS_BORDER_DXP_MODE: str = "DXP"
+    CROSS_BORDER_DXP_ID: str = ""
+
     # ── 工厂到货 ───────────────────────────────────────────
     FACTORY_INBOUND_ENABLED: bool = False
     FACTORY_INBOUND_SYNC_ENABLED: bool = False
@@ -493,6 +499,8 @@ class Settings(BaseSettings):
     AGENT_RUNTIME_DAILY_TOKEN_BUDGET: _PositiveInt = 200_000
     # JSON: {"worker-instance-id": ["<sha256-of-bearer-token>"]}
     AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON: str = ""
+    DEVLOG_INGEST_TOKEN_HASHES: str = Field(default="", repr=False)
+    DEVLOG_BACKFILL_ENABLED: bool = False
     AGENT_RUNTIME_WORKER_RUNTIMES_JSON: str = ""
     # Run 委托 JWT 独立密钥；开发留空时回退 JWT_SECRET_KEY，生产必须显式配置。
     AGENT_RUNTIME_RUN_TOKEN_SECRET: str = ""

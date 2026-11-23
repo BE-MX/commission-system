@@ -211,17 +211,17 @@ def test_same_second_edit_changes_version(db, order):
     old_time, version = order.updated_at, linked.edit_version(order)
     order.remark = "another editor"; order.updated_at = old_time
     assert linked.edit_version(order) != version
-    body = SimpleNamespace(request_key="fresh-key", expected_version=version, model_dump_json=lambda: "{}")
+    body = SimpleNamespace(request_key="fresh-key", expected_version=version, invoice=SimpleNamespace(alibaba_order_no=None), model_dump_json=lambda **kwargs: "{}")
     with pytest.raises(ValueError, match="他人修改"): linked.create(db, order, body, 1)
 
 
 def test_create_idempotency(db, order, monkeypatch):
     add_valid_item(db, order)
     monkeypatch.setattr(linked.service, "update_invoice", lambda *a, **kw: None)
-    body = SimpleNamespace(request_key="fresh-key", expected_version=linked.edit_version(order), invoice=None, model_dump_json=lambda: "{}")
+    body = SimpleNamespace(request_key="fresh-key", expected_version=linked.edit_version(order), invoice=SimpleNamespace(alibaba_order_no=None, customer_id=order.customer_id, currency=order.currency, order_type=order.order_type), model_dump_json=lambda **kwargs: "{}")
     first = linked.create(db, order, body, 1); db.commit()
     assert linked.create(db, order, body, 1).id == first.id
-    body.model_dump_json = lambda: '{"changed":true}'
+    body.model_dump_json = lambda **kwargs: '{"changed":true}'
     with pytest.raises(ValueError): linked.create(db, order, body, 1)
     with pytest.raises(ValueError): linked.ensure_idle(order)
 
@@ -236,7 +236,7 @@ def test_saved_linked_snapshot_matches_reloaded_decimal_values(db, order, monkey
     monkeypatch.setattr(linked.service, "update_invoice", update)
     body = SimpleNamespace(request_key="decimal-key", expected_version=linked.edit_version(order),
         invoice=SimpleNamespace(customer_id=order.customer_id, currency=order.currency,
-                                order_type=order.order_type), model_dump_json=lambda: "{}")
+                                order_type=order.order_type, alibaba_order_no=None), model_dump_json=lambda **kwargs: "{}")
     task = linked.create(db, order, body, 1)
     db.commit()
     db.expire_all()

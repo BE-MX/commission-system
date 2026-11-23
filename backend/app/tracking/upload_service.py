@@ -136,7 +136,7 @@ async def run_ocr(image_bytes: bytes, suffix: str, timeout: int = OCR_TIMEOUT) -
 
 
 async def create_waybill_with_tracking(
-    db: Session, payload: WaybillCreate, current_user: dict
+    db: Session, payload: WaybillCreate, current_user: dict, *, owner: dict | None = None, skip_initial_poll: bool = False
 ) -> dict:
     """创建 Waybill + 自动建 ShipmentTracking + 轮询 + 短链 + 钉钉推送 (异步触发)。
 
@@ -207,8 +207,8 @@ async def create_waybill_with_tracking(
                 carrier_name=carrier_cfg.carrier_name if carrier_cfg else payload.carrier,
                 receiver_name=payload.recipient_name,
                 receiver_country=payload.recipient_country,
-                dingtalk_user_id=dingtalk_id,
-                dingtalk_user_name=current_user.get("username", ""),
+                dingtalk_user_id=owner["dingtalk_user_id"] if owner else dingtalk_id,
+                dingtalk_user_name=owner["dingtalk_user_name"] if owner else current_user.get("username", ""),
                 short_code=short_code,
                 is_active=True,
             )
@@ -231,7 +231,7 @@ async def create_waybill_with_tracking(
     # 立即轮询一次拿实时物流状态
     poll_ok = False
     poll_error = None
-    if tracking:
+    if tracking and not skip_initial_poll:
         try:
             await poll_single(db, tracking)
             poll_ok = True

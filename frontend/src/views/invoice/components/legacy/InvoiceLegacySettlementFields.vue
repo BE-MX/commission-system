@@ -7,6 +7,10 @@
           <el-option v-for="option in paymentMethods" :key="option" :label="option" :value="option" />
         </el-select>
       </el-form-item>
+      <el-form-item v-if="alibabaOrderRequired(form)" label="阿里信保订单号" class="span-2" required
+        data-invoice-field="alibaba_order_no" :error="validationErrors.alibaba_order_no">
+        <el-input v-model="form.alibaba_order_no" inputmode="numeric" placeholder="15~20位数字" />
+      </el-form-item>
       <el-form-item label="预付款" class="span-2" :error="settlementError">
         <el-input-number v-model="form.internal_received" :min="0" :max="total" :precision="2" controls-position="right" />
         <div class="field-hint">订单约定金额；实际到账请在回款区登记</div>
@@ -64,7 +68,7 @@
 import { formatMoney } from '../../../../utils/money.js'
 
 import { computed } from 'vue'
-import { computeHandlingFee, handlingFeeRate } from '../../composables/invoiceSettlement'
+import { alibabaOrderRequired, computeHandlingFee, handlingFeeRate } from '../../composables/invoiceSettlement'
 
 // 旧版下单抽屉的结算区（HEAD 版原样保留，过渡期使用）
 const props = defineProps({

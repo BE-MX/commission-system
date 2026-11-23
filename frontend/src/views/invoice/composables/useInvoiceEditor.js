@@ -80,16 +80,18 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const form = reactive(emptyInvoiceForm())
   const validationErrors = reactive({})
   watch(() => [form.local_customer_id, form.customer_id, form.customer_grade,
-    form.contact_name, form.contact_phone, form.contact_email, form.delivery_address, form.express_channel], () => {
+    form.contact_name, form.contact_phone, form.contact_email, form.delivery_address, form.express_channel,
+    form.internal_payment_method, form.alibaba_order_no], () => {
     const remaining = new Set(invoiceRequiredIssues(form).map(issue => issue.field))
     for (const field of Object.keys(validationErrors)) if (!remaining.has(field)) delete validationErrors[field]
   }, { flush: 'sync' })
-  function validateRequiredFields() {
-    const issues = invoiceRequiredIssues(form)
+  function validateRequiredFields(onlyField) {
+    const issues = invoiceRequiredIssues(form).filter(issue => !onlyField || issue.field === onlyField)
     for (const field of Object.keys(validationErrors)) delete validationErrors[field]
     for (const issue of issues) validationErrors[issue.field] = issue.message
     if (!issues.length) return true
-    msgWarning(`请完善 ${issues.length} 项必填内容：${issues.map(issue => issue.label).join('、')}`)
+    msgWarning(issues.length === 1 && issues[0].field === 'alibaba_order_no'
+      ? issues[0].message : `请完善 ${issues.length} 项必填内容：${issues.map(issue => issue.label).join('、')}`)
     nextTick(() => {
       if (typeof document === 'undefined') return
       const field = issues[0].field
@@ -795,6 +797,12 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   // ── 保存 ────────────────────────────────────────────
 
+  function productsReadyToSave() {
+    if (!form.items.some(line => line.matching || line.pricing)) return true
+    msgWarning('请等待产品匹配和取价完成')
+    return false
+  }
+
   async function saveDraft(options = {}) {
     if (orderSaving.value) return null
     orderSaving.value = true
@@ -806,6 +814,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     const contextSeq = customerContextSeq
     await customerDefaultsPromise
     if (contextSeq !== customerContextSeq) return null
+    if (!productsReadyToSave()) return null
     if (form.receipt_uploading) { msgWarning("请等待回款截图上传完成"); return null }
     if (form.receipt_proof_dirty) { msgWarning("请先保存回款截图变更"); return null }
     if (form.receipt_remark_editing || form.receipt_remark_saving) { msgWarning('请先保存或取消回款备注编辑'); return null }
@@ -814,6 +823,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     const groupOnly = hasOnlyGroupChanges()
     lastSaveType.value = groupOnly ? 'groups' : 'business'
     if (groupOnly) {
+      if (!validateRequiredFields('alibaba_order_no')) return null
       const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
       const submittedSignature = currentSignature()
       const submittedReceiptStatus = form.receipt_draft?.status
@@ -873,6 +883,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
         throw error
       }
     }
+    if (!productsReadyToSave()) return null
     const submittedSignature = currentSignature()
     const submittedReceiptStatus = form.receipt_draft?.status
     const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
@@ -937,6 +948,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // 保存 → 校验 → 推送小满；只在确认成功后显示持续提示，失败保留编辑现场。
   async function saveAndSync() {
     if (invoiceIsLocal(form)) { msgWarning('方舟独立订单请保存后在订单履约中确认，不发送小满'); return }
+    if (!productsReadyToSave()) return
     if (form.receipt_sync_refresh_required) { msgWarning('同步状态未能刷新，请关闭并重新打开订单，核对结果后再操作'); return }
     if (form.sync_status === 'sync_uncertain') { msgWarning('请先返回订单列表“处理待核对”，核对原同步结果后再操作'); return }
     if (form.linked_sync_id) { msgWarning('请先处理未结束的关联同步任务'); return }
@@ -954,6 +966,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     try {
       const groupOnly = hasOnlyGroupChanges()
       const needsSave = !form.id || hasUnsavedChanges.value
+      if (!needsSave && !validateRequiredFields('alibaba_order_no')) return
       if (!needsSave && form.sync_status === 'synced') {
         msgSuccessText('订单已同步且没有未保存修改，可直接补登记回款')
         return
@@ -968,6 +981,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
           throw error
         }
       }
+      if (!productsReadyToSave()) return
       const useLinked = needsSave && !groupOnly && Boolean(form.id && form.xiaoman_order_id)
       // A saved unsynced order needs a push, not another linked edit of identical data.
       const saved = needsSave ? await saveDraft({ linked: useLinked, confirmZeroReceipt: !groupOnly }) : { ...form }

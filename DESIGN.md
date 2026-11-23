@@ -109,7 +109,7 @@ Codex 使用用户级技能 `~/.codex/skills/impeccable/SKILL.md`，不把第三
 - **Sidebar:** 240px（展开）/ 68px（折叠），dark gradient 背景
 - **Header:** 56px 高，与页面标签栏共用浅色毛玻璃表面，细分隔线；见下方 Navigation Chrome Spec
 - **Content padding:** 24px 28px
-- **Max content width:** 1440px
+- **Content width:** 列表默认使用主内容区的全部可用宽度，沿用页面内边距。分页表格、标签页内的表格和卡片列表均遵循此规则。需要限制阅读或录入宽度的页面在 `navigation.js` 的路由条目设置 `constrainContent: true`，内容区上限为 1440px。
 - **Grid:** 表格页用 100% 宽度；Dashboard 用 3 列 metric + 2 列 action grid
 - **Border radius:**
   - Card/button: 12px (card-radius)

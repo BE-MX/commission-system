@@ -1,5 +1,5 @@
 {
-  "source_sha256": "14c47f0a1c5df61e6c501e409b182cd7dbda1ff3e071c0674f0b31f1e2c6ecfe",
+  "source_sha256": "068509c06f20659f6b61ce324be9683bf49c6f20c601c3efd63c60eabaac3319",
   "nodes": [
     {
       "id": "customerPortal",
@@ -347,6 +347,26 @@
       "titleSync": false
     },
     {
+      "id": "CrossBorderReview",
+      "kind": "page",
+      "label": "跨境申报核对",
+      "icon": "Tickets",
+      "parent": "invoice",
+      "order": 18,
+      "visible": true,
+      "builtin": true,
+      "protected": false,
+      "badge": "",
+      "badgePlace": "text",
+      "badgeTone": "gold",
+      "titleSync": false,
+      "path": "/cross-border",
+      "external": false,
+      "rule": "cross_border:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
+      "business": "",
+      "phase": false
+    },
+    {
       "id": "NavigationManagement",
       "kind": "page",
       "label": "导航管理",
@@ -362,7 +382,27 @@
       "titleSync": false,
       "path": "/system/navigation",
       "external": false,
-      "rule": "navigation:read / navigation:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "navigation:read / navigation:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "business": "",
+      "phase": false
+    },
+    {
+      "id": "DevlogBoard",
+      "kind": "page",
+      "label": "方舟开发动态",
+      "icon": "DataBoard",
+      "parent": "system",
+      "order": 90,
+      "visible": true,
+      "builtin": true,
+      "protected": false,
+      "badge": "",
+      "badgePlace": "text",
+      "badgeTone": "gold",
+      "titleSync": false,
+      "path": "/system/devlog",
+      "external": false,
+      "rule": "devlog:read / devlog:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -382,7 +422,7 @@
       "titleSync": false,
       "path": "/shipping/native",
       "external": false,
-      "rule": "shipment:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "shipment:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": true
     },
@@ -402,7 +442,7 @@
       "titleSync": false,
       "path": "/commerce/shadow",
       "external": false,
-      "rule": "commerce_shadow:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "commerce_shadow:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -422,7 +462,7 @@
       "titleSync": false,
       "path": "/commerce/transition",
       "external": false,
-      "rule": "commerce_transition:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "commerce_transition:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -542,7 +582,7 @@
       "titleSync": false,
       "path": "/commerce-migration",
       "external": false,
-      "rule": "commerce_migration:admin / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "commerce_migration:admin / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -562,7 +602,7 @@
       "titleSync": false,
       "path": "/invoice/native",
       "external": false,
-      "rule": "invoice:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "invoice:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": true
     },
@@ -582,7 +622,7 @@
       "titleSync": false,
       "path": "/finance/native",
       "external": false,
-      "rule": "receipt:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "receipt:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": true
     },
@@ -602,7 +642,7 @@
       "titleSync": false,
       "path": "/finance/reference",
       "external": false,
-      "rule": "receipt:admin / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "receipt:admin / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": true
     },
@@ -1062,7 +1102,7 @@
       "titleSync": false,
       "path": "/invoice/manage",
       "external": false,
-      "rule": "invoice:read / invoice:write / invoice:sync / invoice:read / invoice:write / invoice:sync / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "invoice:read / invoice:write / invoice:sync / invoice:read / invoice:write / invoice:sync / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "order",
       "phase": false
     },
@@ -1082,7 +1122,7 @@
       "titleSync": false,
       "path": "/invoice/sales-returns",
       "external": false,
-      "rule": "sales_return:read / sales_return:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "sales_return:read / sales_return:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -1102,7 +1142,7 @@
       "titleSync": false,
       "path": "/invoice/receipts",
       "external": false,
-      "rule": "receipt:read / receipt:write / receipt:admin / receipt:read / receipt:write / receipt:admin / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "receipt:read / receipt:write / receipt:admin / receipt:read / receipt:write / receipt:admin / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "receipt",
       "phase": false
     },
@@ -1122,7 +1162,7 @@
       "titleSync": false,
       "path": "/invoice/price-config",
       "external": false,
-      "rule": "invoice_price:read / invoice_price:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "invoice_price:read / invoice_price:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -1142,7 +1182,7 @@
       "titleSync": false,
       "path": "/invoice/okki-settings",
       "external": false,
-      "rule": "invoice_okki:read / invoice_okki:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "invoice_okki:read / invoice_okki:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -1162,7 +1202,7 @@
       "titleSync": false,
       "path": "/invoice/receipt-repair",
       "external": false,
-      "rule": "invoice_repair:read / invoice_repair:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "invoice_repair:read / invoice_repair:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -1182,7 +1222,7 @@
       "titleSync": false,
       "path": "/invoice/festival-orders",
       "external": false,
-      "rule": "festival_order:read / festival_order:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "festival_order:read / festival_order:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -1202,7 +1242,7 @@
       "titleSync": false,
       "path": "/invoice/battle-reports",
       "external": false,
-      "rule": "battle_report:read / battle_report:admin / battle_report:read / battle_report:admin / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "battle_report:read / battle_report:admin / battle_report:read / battle_report:admin / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -1222,7 +1262,7 @@
       "titleSync": false,
       "path": "/invoice/perf-goals",
       "external": false,
-      "rule": "perf_goal:read / perf_goal:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "perf_goal:read / perf_goal:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -1242,7 +1282,7 @@
       "titleSync": false,
       "path": "/invoice/perf-goals/targets",
       "external": false,
-      "rule": "perf_goal:write / perf_goal:write / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "perf_goal:write / perf_goal:write / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -1262,7 +1302,7 @@
       "titleSync": false,
       "path": "/invoice/perf-goals/reports",
       "external": false,
-      "rule": "perf_goal:read / perf_goal:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "perf_goal:read / perf_goal:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -1282,7 +1322,7 @@
       "titleSync": false,
       "path": "/invoice/order-intelligence",
       "external": false,
-      "rule": "order_intelligence:read / order_intelligence:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "order_intelligence:read / order_intelligence:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -1302,7 +1342,7 @@
       "titleSync": false,
       "path": "/invoice/fx-settlement",
       "external": false,
-      "rule": "fx_settlement:read / fx_settlement:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "fx_settlement:read / fx_settlement:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -1562,7 +1602,7 @@
       "titleSync": false,
       "path": "/festival/",
       "external": true,
-      "rule": "festival:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "festival:read / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "",
       "phase": false
     },
@@ -2182,7 +2222,7 @@
       "titleSync": false,
       "path": "/shipping/outbound",
       "external": false,
-      "rule": "shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
       "business": "outbound",
       "phase": false
     },
@@ -2202,7 +2242,27 @@
       "titleSync": false,
       "path": "/shipping/inspections",
       "external": false,
-      "rule": "shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read",
+      "rule": "shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice:read / invoice:write / invoice:sync / receipt:read / receipt:write / receipt:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin / invoice_price:read / invoice_okki:read / invoice_repair:read / festival:read / festival_order:read / battle_report:read / battle_report:admin / perf_goal:read / perf_goal:write / order_intelligence:read / fx_settlement:read / shipment:read / commerce_shadow:read / sales_return:read / cross_border:read",
+      "business": "",
+      "phase": false
+    },
+    {
+      "id": "MobileWaybills",
+      "kind": "page",
+      "label": "手机录物流单",
+      "icon": "Camera",
+      "parent": "shipping",
+      "order": 32,
+      "visible": true,
+      "builtin": true,
+      "protected": false,
+      "badge": "",
+      "badgePlace": "text",
+      "badgeTone": "gold",
+      "titleSync": false,
+      "path": "/shipping/waybills",
+      "external": false,
+      "rule": "shipping_inspection:write / shipping_inspection:admin / shipping_inspection:write / shipping_inspection:admin / shipping_inspection:read / shipping_inspection:write / shipping_inspection:admin",
       "business": "",
       "phase": false
     },
@@ -2962,7 +3022,7 @@
       "titleSync": false,
       "path": "/system/monid-spend",
       "external": false,
-      "rule": "sales_monid_spend:read / sales_monid_spend:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "sales_monid_spend:read / sales_monid_spend:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -2982,7 +3042,7 @@
       "titleSync": false,
       "path": "/system/users",
       "external": false,
-      "rule": "user:read / user:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "user:read / user:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3002,7 +3062,7 @@
       "titleSync": false,
       "path": "/system/roles",
       "external": false,
-      "rule": "role:read / role:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "role:read / role:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3022,7 +3082,7 @@
       "titleSync": false,
       "path": "/system/dicts",
       "external": false,
-      "rule": "dict:read / dict:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "dict:read / dict:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3042,7 +3102,7 @@
       "titleSync": false,
       "path": "/system/followup-templates",
       "external": false,
-      "rule": "domestic_followup:admin / domestic_followup:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "domestic_followup:admin / domestic_followup:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3062,7 +3122,7 @@
       "titleSync": false,
       "path": "/system/ai",
       "external": false,
-      "rule": "ai:admin / ai:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "ai:admin / ai:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3082,7 +3142,7 @@
       "titleSync": false,
       "path": "/system/operations",
       "external": false,
-      "rule": "operations:read / operations:admin / operations:read / operations:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "operations:read / operations:admin / operations:read / operations:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3102,7 +3162,7 @@
       "titleSync": false,
       "path": "/system/mcp-tokens",
       "external": false,
-      "rule": "mcp:admin / mcp:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "mcp:admin / mcp:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3122,7 +3182,7 @@
       "titleSync": false,
       "path": "/system/integration-apps",
       "external": false,
-      "rule": "integration:admin / integration:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "integration:admin / integration:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3142,7 +3202,7 @@
       "titleSync": false,
       "path": "/system/dingtalk-gmv-daily",
       "external": false,
-      "rule": "dingtalk:admin / dingtalk:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "dingtalk:admin / dingtalk:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3162,7 +3222,7 @@
       "titleSync": false,
       "path": "/system/external-bindings",
       "external": false,
-      "rule": "external_binding:read / external_binding:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "external_binding:read / external_binding:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3182,7 +3242,7 @@
       "titleSync": false,
       "path": "/system/whatsapp-connector",
       "external": false,
-      "rule": "whatsapp:read / whatsapp:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "whatsapp:read / whatsapp:read / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },
@@ -3202,7 +3262,7 @@
       "titleSync": false,
       "path": "/system/whatsapp-translation",
       "external": false,
-      "rule": "whatsapp_translation:admin / whatsapp_translation:admin / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
+      "rule": "whatsapp_translation:admin / whatsapp_translation:admin / devlog:read / user:read / role:read / dict:read / ai:admin / navigation:read / domestic_followup:admin / mcp:admin / integration:admin / commerce_transition:admin / operations:read / operations:admin / sales_monid_spend:read / dingtalk:admin / external_binding:read / external_binding:write / whatsapp:read / whatsapp:write / whatsapp_translation:admin",
       "business": "",
       "phase": false
     },

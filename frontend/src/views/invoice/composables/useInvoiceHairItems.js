@@ -11,6 +11,15 @@ import { createLatestRequestGate } from './accessoryPricing.js'
 import { hasImportedBatch, isBlankInvoiceLine, mapPreviewRowToInvoiceLine } from './useInvoicePasteImport.js'
 import { emptyHairRow, normalizeHairRow } from './invoiceEditorState.js'
 
+const OPTIONS_TTL_MS = 30_000
+const OPTIONS_CACHE_LIMIT = 32
+const lineFilters = row => ({
+  model: row.model || undefined,
+  color: row.color || undefined,
+  size: row.length || undefined,
+  unit: row.net_weight_grams || undefined,
+})
+
 export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions, groupOptions = {}) {
   const getTargetGroupKey = groupOptions.getTargetGroupKey || (() => '')
   const getSourceItems = groupOptions.getSourceItems || (() => hairItems.value)
@@ -20,6 +29,8 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions,
     return key
   }
   const linePriceGates = new WeakMap()
+  const lineMatchGates = new WeakMap()
+  const optionRequests = new Map()
   const linePriceContext = row => [
     form.customer_id || '', row.product_display || '', row.color || '',
     row.length || '', row.net_weight_grams || '',
@@ -40,6 +51,10 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions,
     if (groupKey == null) return false
     const last = getSourceItems(groupKey).at(-1)
     if (!last) return false
+    if (last.matching || last.pricing) {
+      msgWarning('请等待产品匹配和取价完成后再复制')
+      return false
+    }
     const { options, matching, id, created_at, ...data } = last
     const copied = { ...normalizeHairRow(data), group_key: groupKey, created_at: null,
       quantity: last.quantity, discount_amount: last.discount_amount,
@@ -59,29 +74,61 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions,
     if (!doomed.size) return
     form.items = form.items.filter(item => !doomed.has(item))
   }
+  function requestLineOptions(params, key) {
+    const cached = optionRequests.get(key)
+    if (cached && (!cached.expiresAt || cached.expiresAt > Date.now())) return cached.promise
+
+    const entry = { expiresAt: 0 }
+    entry.promise = getInvoiceProductOptions(params).then(result => {
+      entry.expiresAt = Date.now() + OPTIONS_TTL_MS
+      return {
+        models: result.models || [], colors: result.colors || [],
+        sizes: result.sizes || [], units: result.units || [],
+        all_models: result.all_models || result.models || [],
+        all_colors: result.all_colors || result.colors || [],
+        all_sizes: result.all_sizes || result.sizes || [],
+        all_units: result.all_units || result.units || [],
+      }
+    }).catch(() => {
+      // API client reports the failure. Allow a retry without interrupting matching.
+      if (optionRequests.get(key) === entry) optionRequests.delete(key)
+      return null
+    })
+    optionRequests.delete(key)
+    optionRequests.set(key, entry)
+    if (optionRequests.size > OPTIONS_CACHE_LIMIT) {
+      optionRequests.delete(optionRequests.keys().next().value)
+    }
+    return entry.promise
+  }
   async function loadLineOptions(row) {
     if (invoiceIsLocal(form)) return
-    const result = await getInvoiceProductOptions({
-      model: row.model || undefined, color: row.color || undefined,
-      size: row.length || undefined, unit: row.net_weight_grams || undefined,
-    })
-    row.options = {
-      models: result.models || [], colors: result.colors || [],
-      sizes: result.sizes || [], units: result.units || [],
-      all_models: result.all_models || result.models || [],
-      all_colors: result.all_colors || result.colors || [],
-      all_sizes: result.all_sizes || result.sizes || [],
-      all_units: result.all_units || result.units || [],
+    const params = lineFilters(row)
+    const key = JSON.stringify(params)
+    const options = await requestLineOptions(params, key)
+    if (options && !invoiceIsLocal(form) && form.items.includes(row) && key === JSON.stringify(lineFilters(row))) {
+      row.options = options
     }
   }
   async function onLineFilterChange(row) {
     if (invoiceIsLocal(form)) return
-    Object.assign(row, { product_id: null, sku_id: null, product_name: '', product_display: '', stock_warning: '', available_stock: null })
-    await loadLineOptions(row)
-    if (!row.model || !row.color || !row.length || !row.net_weight_grams) return
-    row.matching = true
+    const params = lineFilters(row)
+    const key = JSON.stringify(params)
+    if (!lineMatchGates.has(row)) lineMatchGates.set(row, createLatestRequestGate())
+    const gate = lineMatchGates.get(row)
+    const token = gate.issue(key)
+    const ready = Object.values(params).every(Boolean)
+    linePriceGate(row).invalidate()
+    Object.assign(row, {
+      product_id: null, sku_id: null, product_name: '', product_display: '',
+      stock_warning: '', available_stock: null, matching: ready, pricing: false,
+    })
+    if (!ready) return loadLineOptions(row)
     try {
-      const result = await matchInvoiceProduct({ model: row.model, color: row.color, size: row.length, unit: row.net_weight_grams })
+      const match = matchInvoiceProduct(params)
+      void loadLineOptions(row)
+      const result = await match
+      if (invoiceIsLocal(form) || !form.items.includes(row) || !gate.isCurrent(token, JSON.stringify(lineFilters(row)))) return
       if (!result.is_unique) {
         if ((result.matches || []).length) msgWarning('当前条件匹配到多个产品，请继续确认规格')
         else msgInfo('该组合暂无产品，请在其余下拉的「全部」分组继续调整颜色/长度/克重')
@@ -89,37 +136,48 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions,
       }
       Object.assign(row, {
         product_id: result.item.product_id, sku_id: result.item.sku_id,
+        matching: false,
         stock_warning: result.item.stock_warning || '',
         available_stock: result.item.available_stock == null ? null : Number(result.item.available_stock),
         product_name: result.item.product_name, product_display: result.item.product_display,
       })
       await refreshLinePrice(row)
-    } finally { row.matching = false }
+    } finally {
+      if (gate.isCurrent(token)) row.matching = false
+    }
   }
   async function onCustomFieldChange(row) {
     row.product_name = ''
     row.stock_warning = ''
-    if (row.product_display && row.color && row.length && row.net_weight_grams) await refreshLinePrice(row)
+    await refreshLinePrice(row)
   }
   async function refreshLinePrice(row) {
     if (invoiceIsLocal(form)) return
-    if (!row.product_display || !row.color || !row.length || !row.net_weight_grams) return
-    const context = linePriceContext(row)
     const gate = linePriceGate(row)
-    const token = gate.issue(context)
-    const result = await resolveInvoicePrice({
-      customer_id: form.customer_id || undefined, product_display: row.product_display,
-      length: row.length, unit: row.net_weight_grams, color: row.color,
-    })
-    if (invoiceIsLocal(form) || !gate.isCurrent(token, linePriceContext(row))) return
-    row.standard_price = result.standard_price == null ? null : Number(result.standard_price)
-    row.customer_price = result.customer_price == null ? null : Number(result.customer_price)
-    row.color_type_source = result.color_type_source || ''
-    if (row.customer_price != null) {
-      if (!row._importBatchFingerprint) row.price_per_piece = row.customer_price
-      row.price_source = Number(row.price_per_piece) === row.customer_price ? 'customer_rule' : 'manual'
-    } else row.price_source = 'missing_std'
-    updateLineTotal(row)
+    if (!row.product_display || !row.color || !row.length || !row.net_weight_grams) {
+      gate.invalidate()
+      row.pricing = false
+      return
+    }
+    const token = gate.issue(linePriceContext(row))
+    row.pricing = true
+    try {
+      const result = await resolveInvoicePrice({
+        customer_id: form.customer_id || undefined, product_display: row.product_display,
+        length: row.length, unit: row.net_weight_grams, color: row.color,
+      })
+      if (invoiceIsLocal(form) || !form.items.includes(row) || !gate.isCurrent(token, linePriceContext(row))) return
+      row.standard_price = result.standard_price == null ? null : Number(result.standard_price)
+      row.customer_price = result.customer_price == null ? null : Number(result.customer_price)
+      row.color_type_source = result.color_type_source || ''
+      if (row.customer_price != null) {
+        if (!row._importBatchFingerprint) row.price_per_piece = row.customer_price
+        row.price_source = Number(row.price_per_piece) === row.customer_price ? 'customer_rule' : 'manual'
+      } else row.price_source = 'missing_std'
+      updateLineTotal(row)
+    } finally {
+      if (gate.isCurrent(token)) row.pricing = false
+    }
   }
   function updateLineTotal(row) { row.total_price = calculateLineTotal(row.quantity, row.price_per_piece, row.discount_amount) }
   function onPriceInput(row) {

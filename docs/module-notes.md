@@ -1,5 +1,13 @@
 # 莱莎方舟 模块专题笔记（含各模块已踩坑）
 
+## 方舟开发动态
+
+采集器按 Git 内容等价判定发布。主线的 `07c450d8` 与生产候选的 `d1f5bbb7` 是同一修复的两次提交，比较提交 SHA 会漏算。只有验收通过的办公室＋北京全局发布参与“已发布”判定。部署器写账本失败会在发布回执中留下告警，业务发布结果保持成功。
+
+独立功能分支、能够从合并记录识别的功能分支优先归组，其余合并按整次合并归组，主线直提按北京日期、模块与代理归组。发布或集成过程分支不单独建卡。开发机的 `.devlog_state/keymap.json` 保存已分配的事项键，删掉会导致重新分配。完整快照中消失的未发布事项可退出看板，证据和历史保留。缺少来源时须保留已有状态。
+
+恢复入口（包括 `release_finalize.py`、`recover_release_completion.py`）暂未接入发布账本。恢复全局发布后，核对正式回执，按运维手册通过 `backfill_releases.py --add` 补记。P0 显示账本最新版本，运行版本文件校验、会话/handoff 对账、修复回执、摘要去敏与人工修正留到 P1，全员更新日志留到 P2。
+
 ## 工厂到货拍照核对
 
 手机端复用文档扫描的校正和增强算法，办公室后端私有存放校正图和原图。模型只转写，SKU 匹配由代码按单号、目录规格和词表计算。数量吻合用于排序，规则改写颜色需要人工复核。缺少明确等级的全目录匹配需人工选 SKU。发票号原文按当前账号权限和数据范围返回。
@@ -1053,6 +1061,8 @@ AI 经营简报为数据库持久化后台任务，页面轮询 `queued/running/
 **历史核验**：2026-08-10 曾测得线上 `/api/knowledge/libraries` 404；该记录不代表当前发布状态。当前源码注册与后续发布分别见 `backend/app/routers.py` 和[交接文档](handoff.md)。
 
 代码边界：后端 `app/knowledge/`（`router.py` / `models.py` / `schemas.py` / `service.py` + `access.py` ACL + `content.py` Tiptap JSON 白名单），前端 `views/knowledge/`（`KnowledgeWorkbench.vue` 薄壳 + `knowledgeState.js` + `components/`），MCP 适配器 `app/mcp/knowledge_tools.py`。HTTP 与 MCP 不各自实现权限，而是共同调用 knowledge service。
+
+**文档编辑**：新建后的空白草稿与已有文档共用编辑器。工具栏支持受控字号、下划线、语义背景高亮、清除文字格式和段落对齐。工具栏的「插入」和段首 `/` 或 `／` 共用图片、表格、高亮块和折叠块等命令，表格内可合并或拆分单元格。编辑、审批及 AI 预览共用 Tiptap 格式注册，后端仍校验 JSON 后保存版本。折叠仅影响显示，检索包含折叠正文，AI 排版保护完整高亮块及折叠块。变更无需数据库迁移。
 
 **公海背调接入（2026-08-13）**：OpenClaw 的 `ark-sales` 侧车通过 `/api/sales-automation/agent/knowledge/*` 复用同一 `knowledge.service` 检索/读取已发布文档，仍同时校验 MCP token 的 `knowledge:read` 和库成员 ACL，并记录独立的 sales-agent 读取审计。背调结果只保存文档 ID/标题/版本/用途；企业知识是内部产品匹配基准，不能写入公开事实证据。背调先做行业门控，明确行业无关即停止联系人、社会关系、供应商和深度风险调研；无官网客户改走 Instagram/Facebook/TikTok/预约页等社媒优先路径。
 

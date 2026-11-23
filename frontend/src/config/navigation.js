@@ -68,7 +68,7 @@ export const MENU_GROUPS = {
       'perf_goal:read', 'perf_goal:write',
       ORDER_INTELLIGENCE_PERMISSION,
       'fx_settlement:read', 'shipment:read', 'commerce_shadow:read',
-      'sales_return:read',
+      'sales_return:read', 'cross_border:read',
     ],
   },
   aftersales: {
@@ -189,7 +189,7 @@ export const MENU_GROUPS = {
     // 覆盖全部子项权限：任一子页可见则分组可见（此前漏 ai:admin/external_binding
     // 会让只有这些权限的用户看不到整个分组）
     anyPermission: [
-      'user:read', 'role:read', 'dict:read', 'ai:admin', 'navigation:read', 'domestic_followup:admin',
+      'devlog:read', 'user:read', 'role:read', 'dict:read', 'ai:admin', 'navigation:read', 'domestic_followup:admin',
       'mcp:admin', 'integration:admin', 'commerce_transition:admin',
       'operations:read', 'operations:admin', 'sales_monid_spend:read',
       'dingtalk:admin',
@@ -234,18 +234,25 @@ export const MENU_GROUPS = {
 const NATIVE_PHASES = ['transition', 'local_only']
 
 export const NAV_ENTRIES = [
+  { path: '/cross-border', name: 'CrossBorderReview', component: () => import('@/views/cross_border/CrossBorderReview.vue'), title: '跨境申报核对', permission: 'cross_border:read', menu: { group: 'invoice', icon: Tickets, order: 18 } },
   {
     path: '/system/navigation', name: 'NavigationManagement',
     component: () => import('@/views/system/navigation-management/NavigationManagement.vue'),
     title: '导航管理', permission: 'navigation:read',
     menu: { group: 'system', title: '导航管理', icon: Connection, order: 35, permission: 'navigation:read' },
   },
+  {
+    path: '/system/devlog', name: 'DevlogBoard',
+    component: () => import('@/views/devlog/DevlogBoard.vue'),
+    title: '方舟开发动态', permission: 'devlog:read',
+    menu: { group: 'system', title: '方舟开发动态', icon: DataBoard, order: 90, permission: 'devlog:read' },
+  },
   { path: '/shipping/native', name: 'NativeOutbound', component: () => import('@/views/shipping/NativeOutbound.vue'), title: '出库管理（方舟独立）', permission: 'shipment:read', menu: { group: 'invoice', icon: Box, order: 16, commercePhases: NATIVE_PHASES } },
   { path: '/commerce/shadow', name: 'CommerceShadow', component: () => import('@/views/commerce-transition/ShadowWorkbench.vue'), title: '双路线核对', permission: 'commerce_shadow:read', menu: { group: 'invoice', icon: DataAnalysis, order: 17 } },
   { path: '/commerce/transition', name: 'CommerceTransition', component: () => import('@/views/commerce-transition/TransitionSettings.vue'), title: '交易试点配置', permission: 'commerce_transition:admin', menu: { group: 'system', icon: Setting, order: 95 } },
   { path: '/portal/customers/:accessId/preview', name: 'PortalCustomerPreview', component: () => import('@/views/portal/CustomerPreview.vue'), title: '客户目录预览', permission: 'portal_mapping:read' },
   { path: '/portal/catalog', name: 'PortalCatalog', component: () => import('@/views/portal/PortalCatalog.vue'), title: '门户商品目录', permission: 'portal_site:admin', menu: { group: 'customerPortal', title: '商品目录', icon: Document, order: 30, permission: 'portal_site:admin' } },
-  { path: '/portal/settings', name: 'PortalSettings', component: () => import('@/views/portal/PortalSettings.vue'), title: '客户门户站点设置', permission: 'portal_site:admin', menu: { group: 'customerPortal', title: '站点设置', icon: Document, order: 40, permission: 'portal_site:admin' } },
+  { path: '/portal/settings', name: 'PortalSettings', constrainContent: true, component: () => import('@/views/portal/PortalSettings.vue'), title: '客户门户站点设置', permission: 'portal_site:admin', menu: { group: 'customerPortal', title: '站点设置', icon: Document, order: 40, permission: 'portal_site:admin' } },
   { path: '/portal/customers', name: 'PortalCustomers', component: () => import('@/views/portal/PortalCustomers.vue'), title: '客户访问与账号', permission: 'portal_access:read', menu: { group: 'customerPortal', title: '客户访问', icon: User, order: 20, permission: 'portal_access:read' } },
   { path: '/portal/access-requests', name: 'PortalAccessRequests', component: () => import('@/views/portal/AccessRequestPanel.vue'), title: '客户账号申请', permission: 'portal_access:read', menu: { group: 'customerPortal', title: '账号申请', icon: User, order: 25, permission: 'portal_access:read' } },
   { path: '/portal/orders', name: 'PortalOrders', component: () => import('@/views/portal/PortalOrders.vue'), title: '客户下单请求', permission: 'portal_order:read', menu: { group: 'customerPortal', title: '下单请求', icon: Document, order: 10, permission: 'portal_order:read' } },
@@ -261,6 +268,7 @@ export const NAV_ENTRIES = [
   {
     path: '/dashboard',
     name: 'Dashboard',
+    constrainContent: true,
     component: () => import('@/views/dashboard/Dashboard.vue'),
     title: '工作台',
     menu: { icon: DataAnalysis, order: 0 },
@@ -268,6 +276,7 @@ export const NAV_ENTRIES = [
   {
     path: DOCUMENT_SCAN_PATH,
     name: 'DocumentScan',
+    constrainContent: true,
     component: () => import('@/views/document-scan/DocumentScan.vue'),
     title: '文档扫描',
     menu: { icon: Camera, order: 7 },
@@ -301,6 +310,7 @@ export const NAV_ENTRIES = [
   {
     path: '/agent-runtime/tasks/:runId',
     name: 'AgentRunDetail',
+    constrainContent: true,
     component: () => import('@/views/agent-runtime/AgentRunDetail.vue'),
     title: 'Agent 运行详情',
     anyPermission: ['agent_runtime:read', 'agent_runtime:write', 'agent_runtime:admin'],
@@ -311,6 +321,7 @@ export const NAV_ENTRIES = [
   {
     path: '/knowledge',
     name: 'KnowledgeWorkbench',
+    constrainContent: true,
     component: () => import('@/views/knowledge/KnowledgeWorkbench.vue'),
     title: '企业知识库',
     anyPermission: ['knowledge:read', 'knowledge:write', 'knowledge:review', 'knowledge:admin'],
@@ -459,6 +470,7 @@ export const NAV_ENTRIES = [
   {
     path: '/customer-hub/workspace/:id',
     name: 'CustomerHubWorkspaceDetail',
+    constrainContent: true,
     component: () => import('@/views/customer_hub/CustomerWorkspace.vue'),
     title: '客户作战卡',
     hideInMenu: true,
@@ -533,6 +545,7 @@ export const NAV_ENTRIES = [
   {
     path: '/invoice/receipt-repair',
     name: 'ReceiptDateRepair',
+    constrainContent: true,
     component: () => import('@/views/invoice/ReceiptDateRepair.vue'),
     title: '回款日期修复',
     permission: 'invoice_repair:read',
@@ -611,6 +624,7 @@ export const NAV_ENTRIES = [
   {
     path: '/invoice/fx-settlement',
     name: 'FxSettlement',
+    constrainContent: true,
     component: () => import('@/views/fx-settlement/FxSettlement.vue'),
     title: '结汇决策助手',
     permission: 'fx_settlement:read',
@@ -651,6 +665,7 @@ export const NAV_ENTRIES = [
   {
     path: '/aftersales/cases/new',
     name: 'AfterSalesCreate',
+    constrainContent: true,
     component: () => import('@/views/aftersales/AfterSalesWorkspace.vue'),
     title: '新建售后单',
     permission: 'aftersales:write',
@@ -659,6 +674,7 @@ export const NAV_ENTRIES = [
   {
     path: '/aftersales/cases/:caseId',
     name: 'AfterSalesWorkspace',
+    constrainContent: true,
     component: () => import('@/views/aftersales/AfterSalesWorkspace.vue'),
     title: '售后单工作台',
     anyPermission: ['aftersales:read', 'aftersales:write', 'aftersales:review', 'aftersales:admin'],
@@ -853,6 +869,7 @@ export const NAV_ENTRIES = [
   {
     path: '/tracking/:waybillNo',
     name: 'TrackingDetail',
+    constrainContent: true,
     component: () => import('@/views/tracking/TrackingDetail.vue'),
     title: '运单详情',
     anyPermission: ['tracking:read', 'tracking:write'],
@@ -861,6 +878,7 @@ export const NAV_ENTRIES = [
   {
     path: '/tracking/upload',
     name: 'WaybillUpload',
+    constrainContent: true,
     component: () => import('@/views/tracking/WaybillUpload.vue'),
     title: '运单上传',
     permission: 'tracking:write',
@@ -1038,6 +1056,7 @@ export const NAV_ENTRIES = [
   {
     path: '/production/print-card/:id',
     name: 'PrintCard',
+    constrainContent: true,
     component: () => import('@/views/production/PrintCard.vue'),
     title: '工艺流转卡打印',
     permission: 'production:read',
@@ -1067,6 +1086,7 @@ export const NAV_ENTRIES = [
   {
     path: '/domestic/orders/create',
     name: 'DomesticOrderCreate',
+    constrainContent: true,
     component: () => import('@/views/domestic/DomesticOrderCreate.vue'),
     title: '业务订单下单',
     permission: 'domestic:write',
@@ -1078,6 +1098,7 @@ export const NAV_ENTRIES = [
   {
     path: '/domestic/production-orders/create',
     name: 'DomesticProductionOrderCreate',
+    constrainContent: true,
     component: () => import('@/views/domestic/DomesticProductionOrderCreate.vue'),
     title: '生产订单下单',
     permission: 'domestic:write',
@@ -1164,6 +1185,12 @@ export const NAV_ENTRIES = [
   // 不出预览弹框。两种打印都只出那份独立文档，用户也不离开列表页。
 
   {
+    path: '/shipping/waybills', name: 'MobileWaybills', title: '手机录物流单',
+    component: () => import('@/views/shipping/MobileWaybills.vue'),
+    anyPermission: ['shipping_inspection:write', 'shipping_inspection:admin'], fullscreen: true,
+    menu: { group: 'shipping', title: '手机录物流单', icon: Camera, order: 32, anyPermission: ['shipping_inspection:write', 'shipping_inspection:admin'] },
+  },
+  {
     path: '/shipping/scan', name: 'ShippingScan', title: '共用手机发货质检',
     component: () => import('@/views/shipping/ShippingScan.vue'),
     permission: 'shipping_station:write', fullscreen: true,
@@ -1196,6 +1223,7 @@ export const NAV_ENTRIES = [
   {
     path: '/asset/upload',
     name: 'AssetUpload',
+    constrainContent: true,
     component: () => import('@/views/asset/AssetUpload.vue'),
     title: '素材上传',
     permission: 'asset:write',
@@ -1275,6 +1303,7 @@ export const NAV_ENTRIES = [
   {
     path: '/color-management/trends',
     name: 'ColorTrends',
+    constrainContent: true,
     component: () => import('@/views/color/TrendView.vue'),
     title: '色彩趋势看板',
     permission: 'color_trend:read',
@@ -1311,6 +1340,7 @@ export const NAV_ENTRIES = [
   {
     path: '/training/digests/new',
     name: 'TrainingEditorNew',
+    constrainContent: true,
     component: () => import('@/views/training/TrainingEditor.vue'),
     title: '发布培训速递',
     permission: 'training:write',
@@ -1319,6 +1349,7 @@ export const NAV_ENTRIES = [
   {
     path: '/training/digests/:id',
     name: 'TrainingDetail',
+    constrainContent: true,
     component: () => import('@/views/training/TrainingDetail.vue'),
     title: '培训速览',
     anyPermission: ['training:read', 'training:write', 'training:admin'],
@@ -1327,6 +1358,7 @@ export const NAV_ENTRIES = [
   {
     path: '/training/digests/:id/edit',
     name: 'TrainingEditorEdit',
+    constrainContent: true,
     component: () => import('@/views/training/TrainingEditor.vue'),
     title: '编辑培训速递',
     permission: 'training:write',
@@ -1358,6 +1390,7 @@ export const NAV_ENTRIES = [
   {
     path: '/insight/industry-daily',
     name: 'InsightIndustryDaily',
+    constrainContent: true,
     component: () => import('@/views/insight/IndustryDailyView.vue'),
     title: '行业情报日报',
     permission: 'insight_daily:read',
@@ -1387,6 +1420,7 @@ export const NAV_ENTRIES = [
   {
     path: '/insight/reports',
     name: 'InsightInternalReports',
+    constrainContent: true,
     component: () => import('@/views/insight/InternalReportsView.vue'),
     title: '内部经营报告',
     permission: 'insight:internal_read',
@@ -1409,6 +1443,7 @@ export const NAV_ENTRIES = [
   {
     path: '/insight/minutes',
     name: 'InsightMeetingMinutes',
+    constrainContent: true,
     component: () => import('@/views/insight/MeetingMinutesView.vue'),
     title: '周会纪要',
     anyPermission: ['insight_minutes:read', 'insight_minutes:write', 'insight:admin'],
@@ -1432,6 +1467,7 @@ export const NAV_ENTRIES = [
   {
     path: '/design/image-studio',
     name: 'DesignImageStudio',
+    constrainContent: true,
     component: () => import('@/views/design/image-studio/ImageStudio.vue'),
     title: 'AI 工作台',
     anyPermission: ['design_image:read', 'ai_chat:read'],
@@ -1454,6 +1490,7 @@ export const NAV_ENTRIES = [
   {
     path: '/design/ai-chat',
     name: 'DesignAiChat',
+    constrainContent: true,
     component: () => import('@/views/design/ai-chat/AiChat.vue'),
     title: 'AI 工作台',
     permission: 'ai_chat:read',
@@ -1473,6 +1510,7 @@ export const NAV_ENTRIES = [
   {
     path: '/design/submit',
     name: 'DesignSubmit',
+    constrainContent: true,
     component: () => import('@/views/design/SubmitRequest.vue'),
     title: '提交预约',
     permission: 'design:write',
@@ -1495,6 +1533,7 @@ export const NAV_ENTRIES = [
   {
     path: '/design/media/portal',
     name: 'CustomerMediaPortalPreview',
+    constrainContent: true,
     component: () => import('@/views/design/customer-media/CustomerMediaPortalPreview.vue'),
     title: '客户素材门户',
     anyPermission: ['customer_media_portal:read', 'customer_media:admin'],
@@ -1628,6 +1667,7 @@ export const NAV_ENTRIES = [
   {
     path: '/system/component-showcase',
     name: 'ComponentShowcase',
+    constrainContent: true,
     component: () => import('@/views/system/ComponentShowcase.vue'),
     title: '组件与交互样例',
     permission: 'role:read',
@@ -1669,6 +1709,7 @@ export const NAV_ENTRIES = [
   {
     path: '/system/followup-templates',
     name: 'DomesticFollowupTemplates',
+    constrainContent: true,
     component: () => import('@/views/domestic_followup/FollowupTemplates.vue'),
     title: '跟进模板',
     permission: 'domestic_followup:admin',
@@ -1778,6 +1819,7 @@ export const NAV_ENTRIES = [
   {
     path: '/report/view',
     name: 'ReportView',
+    constrainContent: true,
     component: () => import('@/views/report/ReportView.vue'),
     props: (route) => ({ reportCode: route.query.reportCode, ...route.query }),
     title: '查看报表',
@@ -1800,6 +1842,7 @@ export const NAV_ENTRIES = [
   {
     path: '/governance/concepts/:conceptId',
     name: 'ConceptEditor',
+    constrainContent: true,
     component: () => import('@/views/governance/ConceptEditor.vue'),
     title: '概念编辑',
     anyPermission: ['governance:read', 'governance:write', 'governance:admin'],
@@ -1808,6 +1851,7 @@ export const NAV_ENTRIES = [
   {
     path: '/governance/graph',
     name: 'ConceptGraph',
+    constrainContent: true,
     component: () => import('@/views/governance/ConceptGraph.vue'),
     title: '全景关系图',
     permission: 'governance_graph:read',
@@ -1832,6 +1876,7 @@ export const NAV_ENTRIES = [
   {
     path: '/colorwork/download',
     name: 'ColorworkDownload',
+    constrainContent: true,
     component: () => import('@/views/colorwork/ColorworkFrame.vue'),
     title: '库存图直接下载',
     permission: 'colorwork_download:read',
@@ -1843,6 +1888,7 @@ export const NAV_ENTRIES = [
   {
     path: '/colorwork/edit',
     name: 'ColorworkEdit',
+    constrainContent: true,
     component: () => import('@/views/colorwork/ColorworkFrame.vue'),
     title: '实时库存图修改',
     permission: 'colorwork_edit:read',
@@ -1854,6 +1900,7 @@ export const NAV_ENTRIES = [
   {
     path: '/colorwork/master',
     name: 'ColorworkMaster',
+    constrainContent: true,
     component: () => import('@/views/colorwork/ColorworkFrame.vue'),
     title: '原始库存图文件',
     permission: 'colorwork_master:read',
@@ -1900,6 +1947,7 @@ export const NAV_ENTRIES = [
   {
     path: '/profile',
     name: 'Profile',
+    constrainContent: true,
     component: () => import('@/views/profile/ProfilePage.vue'),
     title: '个人设置',
     hideInMenu: true,

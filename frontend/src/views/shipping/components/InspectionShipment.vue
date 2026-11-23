@@ -1,5 +1,6 @@
 <script setup>
 /** 验货单详情里的物流单区块：展示当前关联，上传/更换走与列表操作列同一个弹框。 */
+import WaybillPhotoGallery from './WaybillPhotoGallery.vue'
 defineProps({ detail: { type: Object, required: true } })
 defineEmits(['upload'])
 </script>
@@ -11,6 +12,7 @@ defineEmits(['upload'])
       <router-link :to="`/tracking/${encodeURIComponent(detail.shipment.waybill_no)}`">{{ detail.shipment.waybill_no }}</router-link>
     </p>
     <p v-else class="shipment-empty">尚未关联物流单</p>
+    <WaybillPhotoGallery :inspection-id="detail.id" :version="detail.shipment_version" />
     <span v-if="detail.status === 'submitted'" v-permission="'tracking:write'">
       <GlassButton v-any-permission="['shipping_inspection:write', 'shipping_inspection:admin']"
         left-icon="Upload" @click="$emit('upload')">{{ detail.shipment ? '更换物流单' : '上传物流单' }}</GlassButton>

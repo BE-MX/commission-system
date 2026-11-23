@@ -1,5 +1,37 @@
 # 莱莎方舟 API 参考
 
+## 方舟开发动态
+
+主站入口为 `/system/devlog`，下表路径均以 `/api/devlog` 为前缀。成功响应沿用方舟的 `data` 信封。
+
+| 方法和路径 | 凭据 | 用途 |
+|---|---|---|
+| GET `/summary` | `devlog:read` | 按北京时间查询 `start` 至 `end` 的事件和 KPI，支持 `type`、`module`、`agent` 筛选。返回当前看板与所选区间时间线 |
+| GET `/items/{item_id}` | `devlog:read` | 读取事项、结构化证据及状态历史 |
+| GET `/pending` | `devlog:read` | 当前非停滞的待发布、待推送及待合并事项，按准备程度分组排序，附迁移、配置和权限前提 |
+| GET `/health` | `devlog:read` | 最近采集时间、数据源状态、发布账本最新版本和新入账记录待核对标记（`ledger_pending_check`） |
+| GET `/machine/releases` | 机器 token | 拉取账本，在开发机比较 Git 内容 |
+| POST `/ingest` | 机器 token | 提交有大小限制的结构化快照，返回写入和逐项失败情况 |
+| POST `/machine/releases` | 机器 token | 人工核对后的历史回填，另需开启 `DEVLOG_BACKFILL_ENABLED` |
+
+机器凭据通过 `X-Devlog-Token` 请求头传递。服务器只保存允许使用的 SHA-256 哈希。正式发布走办公室本地的账本 CLI。
+
+## 9610 跨境申报核对
+
+主站入口为 `/cross-border`。下表路径以 `/api/cross-border` 为前缀，read、write 分别指 `cross_border:read`、`cross_border:write`。
+
+| 方法和路径 | 权限 | 输入与结果 |
+| --- | --- | --- |
+| POST `/imports` | write | multipart 字段 `files`，1–2 个 DHL 的 xls/xlsx。每个文件独立返回 imported、duplicate 或 error，以及新增、重复、疑似修改数或错误位置 |
+| GET `/imports` | read | 各文件批次、时间与处理条数 |
+| GET `/declarations` | read | 支持 view、q、shop、logistics、issue、import_id、salesperson、bound_date_from/to 与分页。返回 items、total、summary、跨页可报关及需确认的内容哈希 |
+| GET `/declarations/{content_hash}` | read | 原始条目、收款、票、候选发票与人工复核记录 |
+| POST `/declarations/{content_hash}/reviews` | write | `action` 支持 confirm_shipped、assign_ticket、exclude、void。须填 reason，指定配对须传运单 tracking ID 到 target |
+| POST `/exports` | write | content_hashes 为所选申报。服务端复核当前配对。重复导出须 confirm_reexport，同号有疑似修改须 confirm_suspected 和 reason。成功返回 id |
+| GET `/exports/{id}/files/{order或receipt}` | read | 带 JWT 下载不可变的 Excel 文件 |
+
+开票现有接口增加文本字段 `alibaba_order_no`。验货单 `shipment-prefill` 增加 `cross_border.is_9610` 和所关联发票的只读数组。
+
 ## 工厂到货拍照核对
 
 所有路径以 `/api/factory-inbound` 开头。JSON 响应使用统一信封。办公室启用 `FACTORY_INBOUND_ENABLED` 后开放。
@@ -486,6 +518,8 @@ cancelled_keep_freight 不占商品数量或活动批次，仅保留原运费应
 成员输入为 ark_user_id/team/is_captain；visibility 为 activity/team/self。周期最长366天、最多200人；目标为正数，NUMERIC(16,2)。普通用户只能在截止前修改本人目标。普通用户明细仅本人，活动组长本组，管理员全活动。403表示越权/填报已截止；404表示不可见对象；409表示版本冲突或非法状态；422表示校验失败或绑定需修复。刷新后重新填写可解决版本冲突，客户端保留失败输入。
 
 2026-10-19 统计来源明细：三个标签复用奖项的有效货物订单、新成交裁定、原新签客户归属及复购顺序规则。先确定完整名单客户归属，再限制明细权限及筛选；默认核算日期倒序。列表中的“下单日期”明确沿用核算日期，金额为 USD；total 为订单笔数、customer_count 为去重客户数，total_amount 是分页前全部筛选结果金额（Decimal 求和后保留两位）；单笔 amount_usd 保留源精度。异常仅给无客户/订单身份的待核对提示，不泄露其他范围的异常详情。PK 总览新签金额按订单负责人统计，明细按原新签客户归属汇总；转交时可能不同，页面和 amount_note 均明确说明，不改变 PK 评奖规则。
+
+订单统计明细 `items[].company_id` 保留源订单客户 ID，`items[].cohort_company_id` 为战报计算首签归属及客户去重使用的 ID。按单裁定的客户名称用于 `company_name` 展示和 `customer` 筛选。
 
 新增 `battle_report:read_all`，kind=data，需角色管理显式分配，启动 seed 不自动授予普通 admin 角色；与 read 配合可读取全部已发布/归档战报及订单明细（无需本人参与或 OKKI 绑定），不开放草稿、配置、审计、海报或他人目标写入。已有 battle_report:admin 和 super_admin 保持全量权限。无 read_all 时仍为本人/组长本组，并核对当前 OKKI 绑定。
 
@@ -1735,9 +1769,15 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | GET | `/records/{id}` | 验货单详情：单头+实时明细+分开的 photos/videos 数组；视频只供预览，不进入验货打印 |
 | POST | `/records/{id}/recall` | 请求必填 edit_version；submitted → draft，版本加一，保留备注与全部媒体，记录撤回人/时间；过期状态 409 |
 | GET | `/records/{id}/shipment-prefill` | 上传物流单弹框预填：需 `shipping_inspection:write/admin` + 验货单归属；返回 `edit_version/shipment_version/shipment`、`order_id`、`recipient_name`（订单发票联系人 → 客户档案收货联系人 → 客户最近发票联系人 → 验货单客户名）、`recipient_country`（客户覆盖层 → 业务库 `customer_info` 国家名；不用档案国家代码，避免与物流跟踪国家名混写）、`ship_date`（北京时间今天）；业务库不可用时降级为客户名，不报错 |
-| POST | `/records/{id}/shipment` | 录入运单并关联：body = 物流跟踪 `WaybillCreate` + `edit_version/shipment_version`；先校验验货单已提交、版本未变、实时 `shipping_inspection:write/admin` + `tracking:write`，再走物流跟踪原入库流程（轮询/短链/钉钉推送），最后关联验货单。运单号已存在 409 `detail={code,message,data:已有运单}`；运单已入库但关联失败 409 文字说明「已录入物流跟踪」，可用下方 PUT 关联已有运单 |
-| GET | `/records/{id}/shipment-candidate?waybill_no=&carrier=` | 关联已有运单前核对：需验货单 write/admin + 归属；运单不在当前用户物流跟踪查看范围（或无任何 tracking 权限）只返回 `{visible:false}`，在范围内返回 `recipient_name/recipient_country/linked_inspections`（已关联的其他验货单数），供弹框与本单客户比对，防止串单后在客户门户外泄轨迹 |
-| PUT | `/records/{id}/shipment` | 关联已有运单：`{waybill_no,carrier,edit_version,shipment_version}`；运单须在当前用户物流跟踪查看范围内且未删除，不再要求运单图片（PC 上传不存图）；成功后 `shipment_version` 加一 |
+| POST | `/records/{id}/shipment` | 新建运单并关联验货单。手机传 `source=mobile`、照片凭证、签名的预览凭证、单号来源、已确认提醒及两个版本。手机提交后由轮询接手；物流跟踪归订单业务员，拍摄人记为录入人。 |
+| GET | `/records/{id}/shipment-candidate?waybill_no=&carrier=` | PC 关联已有运单前核对；收件信息按运单可见范围返回。 |
+| PUT | `/records/{id}/shipment` | 关联已有运单。按单号匹配并沿用已存承运商；同客户可合并发货，跨客户阻断。已绑定同单可幂等重试。手机需要 `tracking:write`。 |
+| GET | `/mobile/waybill-queue` | 手机的待录和本人今天已录列表，支持 `tab=pending/done`、`keyword`、`include_older`、`page`、`page_size`。范围包括订单业务员和指定跟单员。 |
+| POST | `/records/{id}/waybill-photo` | 一次上传增强图 `rectified`、原图 `original` 及可选 `barcode`；返回 OCR 结果与限本人、本验货单使用的照片凭证。 |
+| POST | `/records/{id}/shipment-preview` | 传本次拍摄的 `photo_token`、单号、承运商、收件资料及验货单版本；只读同步返回承运商查询结果、已有运单核对、确认项和 `preview_token`。修改核对信息后需重新同步。 |
+| GET | `/records/{id}/waybill-photos` | 验货单当前、历史物流单照片及拍摄、替换信息。 |
+| GET | `/records/{id}/waybill-photos/{photo_id}?variant=rectified/original` | 鉴权读取指定验货单下已关联的增强图或原图。 |
+| GET | `/api/tracking/shipments/{shipment_id}/waybill-photos` | 物流跟踪详情的照片列表；先校验可查看运单，再按验货单范围过滤。 |
 | GET | `/images/{rel_path:path}` | 鉴权读取原始照片/视频；`preview=true` 仅照片返回最长边640像素的 JPEG 预览，原件不变；沿用归属权限与 `private, no-store`，预览不可用返回503 |
 | POST | `/api/mini/shipping-inspection/scan` | 验签二维码原文 → 单头+明细+photos/videos+状态/edit_version/已存备注；前缀/签名错 400 |
 | POST | `/api/mini/shipping-inspection/photos` | multipart 上传一张照片（file + outbound_record_id + item_id? + edit_version + request_id?）；draft 懒创建；已提交拒绝 |

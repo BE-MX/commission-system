@@ -53,30 +53,42 @@ def measure(table):
       let headers=[...table.querySelectorAll('thead th')].map(e => ({name:e.innerText.trim(),width:e.getBoundingClientRect().width,
         title:e.querySelector('[title]')?.getAttribute('title'), className:e.className}));
       let row=table.querySelector('tbody tr');
-      return {clientWidth:wrap.clientWidth,scrollWidth:wrap.scrollWidth,headTop:table.querySelector('thead').getBoundingClientRect().top,
+      return {clientWidth:wrap.clientWidth,scrollWidth:wrap.scrollWidth,tableWidth:table.getBoundingClientRect().width,
+        bodyWidth:table.querySelector('.el-table__body').getBoundingClientRect().width,
+        panelWidth:table.parentElement.clientWidth,headTop:table.querySelector('thead').getBoundingClientRect().top,
         headers,rowHeight:row.getBoundingClientRect().height,font:getComputedStyle(row.querySelector('td')).fontSize};
     }''')
 
 metrics = {}
 with sync_playwright() as p:
     browser = p.chromium.launch(channel='chrome', headless=True)
-    for width, height in [(1920,1080), (1366,900), (1440,900), (390,844)]:
+    for width, height in [(2560,1440), (1920,1080), (1366,900), (1440,900), (390,844)]:
         page, blocked, errors, warnings = open_page(browser, width, height)
         table = page.locator('.invoice-table')
+        if width >= 1920:
+            # Element Plus fits columns after the page and its measured headers settle.
+            page.wait_for_function('''() => {
+              const table = document.querySelector('.invoice-table');
+              const body = table.querySelector('.el-table__body');
+              const wrap = table.querySelector('.el-scrollbar__wrap');
+              return Math.abs(body.getBoundingClientRect().width - wrap.clientWidth) <= 2;
+            }''')
         data = measure(table)
         metrics[f'{width}x{height}'] = data
         assert data['font'] == '13px', data
         cols = {header['name']: header['width'] for header in data['headers']}
-        assert 152 <= cols['发票号'] <= 215, cols
-        assert 84 <= cols['客户'] <= 200, cols
-        assert cols['操作'] == 220, cols
+        assert cols['发票号'] >= 152, cols
+        assert cols['客户'] >= 84, cols
+        assert cols['操作'] >= 220, cols
+        assert abs(data['tableWidth'] - data['panelWidth']) <= 2, data
         assert table.locator('thead th .cell').evaluate_all(
             '(cells) => cells.every(cell => cell.scrollWidth <= cell.clientWidth)'
         ), data
-        assert 95 <= cols['型号/数量'] <= 125, cols
-        assert 96 <= cols['应付合计'] <= 155, cols
-        assert 84 <= cols['已回款'] <= 155, cols
-        if width == 1920:
+        assert cols['型号/数量'] >= 100, cols
+        assert cols['应付合计'] >= 96, cols
+        assert cols['已回款'] >= 84, cols
+        if width >= 1920:
+            assert abs(data['bodyWidth'] - data['clientWidth']) <= 2, data
             assert data['scrollWidth'] <= data['clientWidth'], data
             assert [h['name'] for h in data['headers']] == ['发票号','客户','型号/数量','订单金额（GMV）','应付合计','已回款','订单/小满状态','操作'], data['headers']
         page.screenshot(path=str(out / f'overview-{width}x{height}.png'))
@@ -176,6 +188,21 @@ with sync_playwright() as p:
     long_customer = rows.nth(3).locator('.invoice-customer-name')
     long_customer.hover()
     expect(page.get_by_role('tooltip').filter(has_text='A Very Long Synthetic Customer Company Name')).to_be_visible()
+
+    # Native Element Plus resizing must remain available with flexible columns.
+    resize_header = table.locator('th.invoice-col-customer_name')
+    bounds = resize_header.bounding_box()
+    original_width = bounds['width']
+    page.mouse.move(bounds['x'] + bounds['width'] - 2, bounds['y'] + bounds['height'] / 2)
+    page.mouse.down()
+    page.mouse.move(bounds['x'] + bounds['width'] + 58, bounds['y'] + bounds['height'] / 2, steps=8)
+    page.mouse.up()
+    assert resize_header.bounding_box()['width'] >= original_width + 40
+    metrics['resizedCustomerWidth'] = resize_header.bounding_box()['width']
+    # Return to a fresh view so auto-fit checks do not depend on a manually resized column.
+    page.reload()
+    expect(rows).to_have_count(10)
+    page.wait_for_load_state('networkidle')
 
     before = {h['name']: h['width'] for h in measure(table)['headers']}
     search = page.get_by_role('textbox', name='搜索发票')

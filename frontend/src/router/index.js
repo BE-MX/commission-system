@@ -31,6 +31,7 @@ const configuredRoutes = NAV_ENTRIES.filter(entry => !entry.external).map(entry 
     anyPermission: entry.anyPermission,
     activeMenu: entry.activeMenu,
     fullscreen: entry.fullscreen,
+    constrainContent: entry.constrainContent,
   },
 }))
 const layoutRoutes = configuredRoutes.filter(route => !route.meta.fullscreen)

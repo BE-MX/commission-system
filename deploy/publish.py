@@ -354,6 +354,18 @@ def publish(args):
                 journal['candidate_retention_error'] = type(error).__name__
                 atomic_json(STATE / 'publish-current.json', journal)
                 raise
+            try:
+                from devlog_ledger import record
+                summary["devlog_ledger"] = record(office, ROOT, revision, release_id, scope)
+            except Exception as error:
+                # The release and rollback history are already durable. Keep the receipt actionable.
+                summary["devlog_ledger"] = {"status": "failed", "error": type(error).__name__}
+                print("WARNING devlog ledger hook failed: " + type(error).__name__, flush=True)
+            try:
+                atomic_json(STATE / "publish-success.json", summary)
+            except OSError as error:
+                # Maintenance will also persist the summary. Keep a verified release successful.
+                print("WARNING devlog receipt update failed: " + type(error).__name__, flush=True)
         atomic_json(STATE / 'maintenance-pending.json', {
             'revision': revision, 'release_id': release_id, 'scope': scope,
             'status': 'pending', 'static_retention': {'status': 'deferred'},

@@ -6,6 +6,7 @@ import {
   EDITOR_COMMANDS,
   extractOutline,
   filterEditorCommands,
+  findSlashQuery,
   saveStatusLabel,
 } from '../src/views/knowledge/components/editorConfig.js'
 import {
@@ -158,8 +159,12 @@ test('text color picker is accessible, closes safely, and is wired into the tool
 test('knowledge editor registers and renders every semantic text color with design tokens', () => {
   const editor = read('../src/views/knowledge/components/KnowledgeEditor.vue')
 
-  assert.match(editor, /import \{ TextColorMark \} from ['"]\.\/TextColorMark\.js['"]/)
-  assert.match(editor, /extensions:\s*\[[\s\S]*?TextColorMark,[\s\S]*?\]/)
+  const extensions = read('../src/views/knowledge/components/knowledgeExtensions.js')
+  const preview = read('../src/views/knowledge/components/KnowledgeDocumentPreview.vue')
+  assert.match(extensions, /import \{ TextColorMark \} from ['"]\.\/TextColorMark\.js['"]/)
+  assert.match(extensions, /^    TextColorMark,$/m)
+  assert.match(editor, /extensions: createKnowledgeExtensions\(\{ editing: true, structuredAuthoring: props\.structuredAuthoring \}\)/)
+  assert.match(preview, /extensions: createKnowledgeExtensions\(\)/)
   assert.match(editor, /\.knowledge-text-color--gold[^}]*color:\s*var\(--color-primary-text\)/)
   assert.match(editor, /\.knowledge-text-color--danger[^}]*color:\s*var\(--color-danger-text\)/)
   assert.match(editor, /\.knowledge-text-color--success[^}]*color:\s*var\(--color-success-text\)/)
@@ -168,12 +173,31 @@ test('knowledge editor registers and renders every semantic text color with desi
 
 test('slash commands cover supported P0 blocks and filter by Chinese or English terms', () => {
   const ids = EDITOR_COMMANDS.map(item => item.id)
-  for (const id of ['paragraph', 'heading-1', 'heading-6', 'bullet-list', 'ordered-list', 'task-list', 'blockquote', 'code-block', 'horizontal-rule', 'table']) {
+  for (const id of ['paragraph', 'heading-1', 'heading-6', 'bullet-list', 'ordered-list', 'task-list', 'blockquote', 'code-block', 'horizontal-rule', 'table', 'image', 'callout', 'details']) {
     assert.ok(ids.includes(id), `missing command ${id}`)
   }
   assert.deepEqual(filterEditorCommands(EDITOR_COMMANDS, '表格').map(item => item.id), ['table'])
   assert.deepEqual(filterEditorCommands(EDITOR_COMMANDS, 'code').map(item => item.id), ['code-block'])
   assert.equal(filterEditorCommands(EDITOR_COMMANDS, '不存在').length, 0)
+})
+
+test('insertion queries accept full-width slash only at the start of editable text blocks', () => {
+  function selection(prefix, type = 'paragraph', empty = true) {
+    return {
+      empty,
+      $from: {
+        parent: { type: { name: type }, textBetween: () => prefix },
+        parentOffset: prefix.length,
+        pos: 5 + prefix.length,
+        start: () => 5,
+      },
+    }
+  }
+  assert.deepEqual(findSlashQuery(selection('／折叠')), { from: 5, to: 8, query: '折叠' })
+  assert.deepEqual(findSlashQuery(selection('/heading 2', 'heading')), { from: 5, to: 15, query: 'heading 2' })
+  for (const value of [selection('https://a'), selection('/path/part'), selection('/code', 'codeBlock'), selection('/表格', 'paragraph', false)]) {
+    assert.equal(findSlashQuery(value), null)
+  }
 })
 
 test('outline extracts nested heading text in document order and ignores empty headings', () => {
@@ -213,7 +237,8 @@ test('editor shell exposes accessible P0 interaction surfaces', () => {
   assert.match(editor, /@keydown\.capture="onEditorKeydown"/)
   assert.match(editor, /event\.key\.toLocaleLowerCase\(\) === 's'/)
   assert.match(editor, /event\.key\.toLocaleLowerCase\(\) === 'k'/)
-  assert.match(editor, /window\.innerWidth - 310/)
+  const menu = read('../src/views/knowledge/components/EditorSlashMenu.vue')
+  assert.match(menu, /<Teleport to="body">/)
   assert.match(editor, /prefers-reduced-motion: reduce/)
   assert.match(editor, /editorVersion\.value; return pendingImageCount/)
   assert.match(editor, /canEdit: props\.document\?\.can_edit !== false/)

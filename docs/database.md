@@ -1,5 +1,31 @@
 # 莱莎方舟 数据库表参考
 
+## 方舟开发动态（278_devlog_tables）
+
+迁移接在 `277_cross_border_review` 之后。以下五张表位于提成系统库，业务时间使用北京时间。
+
+| 表 | 数据与约束 |
+|---|---|
+| `ark_devlog_items` | 以稳定事项键唯一标识。保存过滤后的标题、类型、模块、代理、当前状态、上线前提与证据指纹；已移出完整快照的事项可标记隐藏 |
+| `ark_devlog_evidences` | 以事项、证据类型、标识联合去重，只保存标识与时间 |
+| `ark_devlog_item_events` | 每次状态变化记录事项、前后状态、发生和入库时间，供按日回看 |
+| `ark_devlog_releases` | 发布身份 `release_id` 唯一；保存完整 Git revision、范围、验收时间和来源 |
+| `ark_devlog_sync_runs` | 记录采集起止时间、来源健康、事项数、失败键及完整成功快照标志 `snapshot_complete` |
+
+## 跨境申报核对（276、277）
+
+`276_invoice_alibaba_order` 为 `ark_invoices` 增加可空的 `alibaba_order_no VARCHAR(20)` 和普通索引。一个信保订单可对应多张发票。
+
+| 277 新表 | 数据与约束 |
+| --- | --- |
+| `ark_cross_border_imports` | 文件 SHA-256 唯一。保存导入人、北京时间、条目数、首次新增数、疑似修改数和本批全部条目哈希 |
+| `ark_cross_border_declarations` | 以稳定内容哈希去重，保存原始头、逐行明细、传输企业、首次行号、最近批次、有效状态与疑似修改标记 |
+| `ark_cross_border_receipts` | 独立累积的收款原行及传输企业，以内容哈希和出现序号区分同额多票 |
+| `ark_cross_border_reviews` | 绑定申报哈希的操作、原因、操作人和时间。指定配对或确认交运同时记录运单跟踪 ID |
+| `ark_cross_border_exports` | 所选哈希、导出人、北京时间及两份私有 XLSX 的原始字节。同一事务保存，读取清单时延迟加载文件 |
+
+迁移 B 依赖 A。发票、验货单、现有物流事件和 OKKI 出库镜像用于实时只读核对。
+
 ## 工厂到货核对（274_factory_inbound_review）
 
 迁移接 `273_product_sales_insights`。所有业务时间按北京时间保存。
@@ -687,6 +713,7 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 - 迁移 152（2026-09-15）：检验单增加 `edit_version INT NOT NULL DEFAULT 0`、`recalled_at DATETIME`、`recalled_by BIGINT`；媒体表增加 `media_type VARCHAR(10) NOT NULL DEFAULT 'image'`（image/video）。历史照片自动归为 image，表名保留；`item_id=NULL` 同样代表整单视频。撤回保留照片、视频、备注与上次提交信息，递增编辑版本并记录最新撤回人/时间；再次提交刷新提交信息，`photo_count` 始终只计图片。迁移可续跑已部分完成的同型 DDL，禁止 downgrade 删除字段和历史数据。
 - `ark_shipping_inspections`：每个 OKKI 出库单一行，`outbound_record_id` 唯一键（存业务库出库单 id 字符串，不建跨库外键）；冗余 `outbound_no / customer_name` 便于检索；`status` 为 `draft/submitted`，提交时落 `photo_count / submitted_at / submitted_by`（BigInteger 存 ark_users.id，未建 FK——ark_users.id 为 INT UNSIGNED，类型不匹配）。
 - `ark_shipping_inspection_photos`：`inspection_id → ark_shipping_inspections.id CASCADE`；`item_id` 为出库明细 id 字符串、NULL 表示整单照片；`file_path` 存相对路径（私有存储根 `SHIPPING_INSPECTION_STORAGE_ROOT`，鉴权端点读图，不挂静态目录）。
+- `ark_shipping_waybill_photos`（迁移 279）按验货单、关联的物流跟踪记录保存原图与增强图的私有相对路径。OCR 初始收件国和收件人用于核对，独立于人工编辑值，并从照片列表响应中省略。唯一 token 用于提交，未绑定的记录 24 小时后可清理；提交后的照片保留拍摄人、识别来源及同步结果，更换物流单记录替换时间与操作人。两图使用现有发货检验私有存储域，验货打印和门户仅使用原有数据源。
 - `ark_okki_outbound_presence_days`（迁移 163）：以 `creation_date` 为主键保存 OKKI 有效出库单两轮一致快照，包含 active_ids、列表行版本摘要、逐出库单已解析订单关联、待补查详情 ID、数量、摘要、最近尝试/完成时间及 pending/ready/error 状态。删除对账每轮最多刷新8个创建日，全局最多补查16张缺少镜像关联的详情（单次15秒），逐张持久化进度供下轮续跑；列表行变化只重查对应单。完整日期覆盖之前不据此登记删除，当天在补查后再次确认，只保护替代单、不证明当天候选缺席。
 - 数据源 `lsordertest.okki_outbound_records / okki_outbound_record_items` 为 OKKI 同步只读镜像（2026-09-01 已实库摸底，3966 单 / 14125 明细）：单头单号 `serial_id`、出库时间 `warehouse_invoice_time`、客户 `company_name`、制单人 `create_user_name`；明细数量 `outbound_count`、单位 `product_unit`、规格 `product_model`、SKU `sku_code`。**明细关联单头走 `outbound_invoice_id` 桥**（两表都有此列，全量命中）；`items.outbound_record_id` 是 OKKI 侧另一实体 id，与 `records.id` 完全不相交，不能 join。自适应候选映射见 `app/shipping_inspection/outbound_service.py`。
 - 归属过滤（2026-09-14 实库核验）：`okki_outbound_records.company_id`（bigint，4290 单全量命中 `okki_orders.company_id`）→ `okki_orders.user_id`（varchar(50)，单值）= 当前用户绑定的 OKKI 业务员 id；无 `shipping_inspection:read_all` 时强制，`company_id` 列缺失时 fail-closed 报错而非返回未过滤数据。

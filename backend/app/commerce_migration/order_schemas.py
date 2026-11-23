@@ -1,9 +1,10 @@
 """Whole contract and closing responsibilities; no remaining-quantity pseudo-order."""
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Literal
+from typing import Annotated, Literal
 import json
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BeforeValidator, model_serializer, BaseModel, ConfigDict, Field, model_validator
+from app.invoice.shipping_policy import normalize_alibaba_order_no
 
 ZERO = Decimal('0')
 
@@ -169,6 +170,8 @@ class HistoricalOrder(BaseModel):
     internal_accessory: Decimal | None = Field(ge=0, max_digits=14, decimal_places=2)
     internal_discount: Decimal | None = Field(le=0, max_digits=14, decimal_places=2)
     internal_payment_method: str | None = Field(max_length=64)
+    alibaba_order_no: Annotated[str | None, BeforeValidator(normalize_alibaba_order_no)] = None
+
     internal_shipping_type: str | None = Field(max_length=64)
     product_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     total_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
@@ -193,6 +196,14 @@ class HistoricalOrder(BaseModel):
     historical_shipment_ids: list[str] = Field(max_length=500)
     production_ids: list[str] = Field(max_length=500)
     material_allocation_ids: list[int] = Field(max_length=500)
+
+    @model_serializer(mode='wrap')
+    def stable_historical_payload(self, handler):
+        # Optional enrichment must not change previously reviewed manifest hashes.
+        payload = handler(self)
+        if self.alibaba_order_no is None:
+            payload.pop('alibaba_order_no', None)
+        return payload
 
     @model_validator(mode='after')
     def complete_contract(self):

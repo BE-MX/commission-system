@@ -1,0 +1,57 @@
+.knowledge-authoring {
+  --knowledge-gold-bg: var(--button-primary-soft);
+  --knowledge-danger-bg: var(--button-danger-soft);
+  --knowledge-success-bg: var(--tag-success-bg);
+  --knowledge-info-bg: var(--tag-info-bg);
+}
+
+.knowledge-authoring :is([data-knowledge-highlight], [data-knowledge-callout]) { --block-accent: var(--color-info-text); --block-background: var(--knowledge-info-bg); }
+.knowledge-authoring :is([data-knowledge-highlight='gold'], [data-knowledge-callout='gold']) { --block-accent: var(--color-primary-text); --block-background: var(--knowledge-gold-bg); }
+.knowledge-authoring :is([data-knowledge-highlight='danger'], [data-knowledge-callout='danger']) { --block-accent: var(--color-danger-text); --block-background: var(--knowledge-danger-bg); }
+.knowledge-authoring :is([data-knowledge-highlight='success'], [data-knowledge-callout='success']) { --block-accent: var(--color-success-text); --block-background: var(--knowledge-success-bg); }
+
+.knowledge-authoring [data-knowledge-highlight] { border-radius: 2px; color: inherit; background: var(--block-background); }
+.knowledge-authoring [data-knowledge-callout] {
+  margin: 1em 0;
+  padding: 10px 14px;
+  border-inline-start: 3px solid var(--block-accent);
+  border-radius: var(--radius-md, 8px);
+  background: var(--block-background);
+}
+.knowledge-authoring [data-knowledge-callout] > :first-child,
+.knowledge-authoring [data-type='detailsContent'] > :first-child { margin-top: 0; }
+.knowledge-authoring [data-knowledge-callout] > :last-child,
+.knowledge-authoring [data-type='detailsContent'] > :last-child { margin-bottom: 0; }
+
+.knowledge-authoring [data-type='details'] {
+  position: relative;
+  margin: 1em 0;
+  padding: 8px 12px 8px 40px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+}
+.knowledge-authoring [data-type='details'] > button {
+  position: absolute;
+  top: 6px;
+  left: 7px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.knowledge-authoring [data-type='details'] > button::after { content: '▸'; }
+.knowledge-authoring [data-type='details'].is-open > button::after { content: '▾'; }
+.knowledge-authoring [data-type='details'] > button:hover { background: var(--color-primary-light); }
+.knowledge-authoring [data-type='details'] > button:focus-visible { outline: 2px solid var(--color-primary); }
+.knowledge-authoring [data-type='details'] summary { font-weight: 700; }
+.knowledge-authoring [data-type='details'] summary:has(> br.ProseMirror-trailingBreak)::before {
+  position: absolute;
+  color: var(--text-muted-blue);
+  content: '折叠块标题';
+  font-weight: 400;
+  pointer-events: none;
+}
+.knowledge-authoring [data-type='detailsContent']:not([hidden]) { padding-top: 8px; }

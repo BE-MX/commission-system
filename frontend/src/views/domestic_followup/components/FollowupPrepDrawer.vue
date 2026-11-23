@@ -5,6 +5,10 @@
     <div v-loading="c.loading.value" class="prep-body">
       <div class="steps" aria-label="准备步骤"><span v-for="n in 3" :key="n" :class="{ on: c.step.value >= n }" /></div>
       <p class="step-label">第 {{ c.step.value }} 步 · {{ ['选场景', '背调', '策略'][c.step.value - 1] }}</p>
+      <div v-if="c.step.value < 3 && c.context.value?.history_count" class="history-banner">
+        <span>已保存 {{ c.context.value.history_count }} 张准备卡</span>
+        <GlassButton variant="outline" @click="historyRef.open(c.customer.value)">查看历史准备卡</GlassButton>
+      </div>
 
       <section v-if="c.step.value === 1 && c.context.value" class="prep-section">
         <div v-if="c.context.value.recommendation" class="recommend"><StatusBadge type="warning">推荐</StatusBadge><div><strong>{{ c.context.value.recommendation.code }}</strong><p>{{ c.context.value.recommendation.reason }}</p></div></div>
@@ -19,7 +23,6 @@
 
       <section v-else-if="c.step.value === 2" class="prep-section">
         <div class="context-bar"><el-tag effect="plain">{{ c.template.value?.code }}</el-tag><strong>{{ c.form.value.goal }}</strong><GlassButton variant="link" @click="c.step.value = 1">换场景</GlassButton></div>
-        <div v-if="c.context.value?.history_count" class="history-banner"><span>该客户有 {{ c.context.value.history_count }} 张历史准备卡（含前任负责人）</span><GlassButton variant="outline" @click="historyRef.open(c.customer.value)">查看</GlassButton></div>
         <section><div class="section-title">已知 <span>从上一张已使用准备卡带出，可改可删</span></div>
           <div class="fact-list"><div v-for="(fact, index) in c.form.value.known_facts" :key="index" class="fact-row" :class="{ stale: isStale(fact) }">
             <el-input v-model="fact.text" type="textarea" :rows="2" placeholder="补充一条有来源的已知事实" />
@@ -67,7 +70,7 @@
     </div>
     <template #footer><div class="prep-footer"><GlassButton v-if="c.step.value > 1" @click="c.back">上一步</GlassButton><span class="save-hint">{{ c.saving.value ? '正在保存…' : c.prep.value ? '草稿已自动保存' : '' }}</span><span class="spacer" /><GlassButton v-if="c.step.value === 3 && c.prep.value?.strategy_status !== 'running'" :disabled="!c.remaining.value" @click="c.generate">重新生成</GlassButton><GlassButton variant="primary" :loading="c.saving.value" :disabled="c.step.value === 3 && c.prep.value?.strategy_status === 'running'" @click="c.next">{{ c.step.value === 1 ? '下一步' : c.step.value === 2 ? '生成策略' : '沟通完了，记结果' }}</GlassButton></div></template>
   </el-drawer>
-  <PrepHistoryDrawer ref="historyRef" @cloned="c.loadPrep" />
+  <PrepHistoryDrawer ref="historyRef" @cloned="c.loadPrep" @record="c.recordPrep" />
 </template>
 
 <script setup>

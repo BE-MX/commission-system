@@ -25,6 +25,11 @@
           收件人和国家已按订单客户信息预填，与运单面单不一致时以面单为准修改。
           保存后运单进入物流跟踪，并自动关联本验货单{{ prefill.shipment ? '（替换当前物流单）' : '' }}。
         </p>
+        <el-alert v-if="prefill.cross_border?.is_9610" type="warning" :closable="false" show-icon title="本单走 9610，请确认已在 DHL 填写跨境申报">
+          <p v-for="invoice in prefill.cross_border.invoices" :key="invoice.invoice_id">
+            {{ invoice.invoice_no }} · {{ invoice.shop }} · {{ invoice.alibaba_order_no || '未填写阿里信保订单号，请到发票补录（不影响上传）' }}
+          </p>
+        </el-alert>
         <WaybillUploadForm
           :state="upload"
           linkable

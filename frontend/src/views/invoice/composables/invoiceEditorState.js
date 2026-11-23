@@ -1,4 +1,4 @@
-import { normalizeDiscount } from './invoiceSettlement.js'
+import { alibabaOrderError, alibabaOrderRequired, normalizeDiscount } from './invoiceSettlement.js'
 import { currentBeijingDate } from '../../../utils/datetime.js'
 
 export const INVOICE_NO_MAX_LENGTH = 64
@@ -20,6 +20,10 @@ export function invoiceRequiredIssues(form) {
     if (!String(form[field] || '').trim()) add(field, label)
   }
   if (!form.express_channel) add('express_channel', '快递渠道', '请选择快递渠道')
+  if (alibabaOrderRequired(form)) {
+    const error = alibabaOrderError(form)
+    if (error) add('alibaba_order_no', '阿里信保订单号', error)
+  }
   return issues
 }
 
@@ -48,6 +52,7 @@ export function emptyInvoiceForm() {
     invoice_date: currentBeijingDate(), currency: 'USD', express_channel: '',
     merchandiser_id: null, merchandiser_name: '',
     shipping_fee: 0, surcharge_name: '', surcharge_amount: 0, payment_term: '',
+    alibaba_order_no: '',
     internal_payment_method: '', internal_discount: 0, packaging_quantity: 0,
     internal_accessory: 0, internal_received: null, internal_balance: null,
     internal_shipping_type: '', okki_new_deal: 1, okki_free_shipping: 1,
@@ -91,6 +96,7 @@ export function normalizeHairRow(line = {}) {
     _importBatchFingerprint: line._importBatchFingerprint || '',
     options: { models: [], colors: [], sizes: [], units: [], all_models: [], all_colors: [], all_sizes: [], all_units: [] },
     matching: false,
+    pricing: false,
   }
 }
 
@@ -156,6 +162,8 @@ export function buildInvoicePayload(form, hairDiscount = 0) {
     shipping_fee: form.order_type === 'presale' ? 0 : Number(form.shipping_fee || 0),
     surcharge_name: Number(form.surcharge_amount || 0) ? 'Handling Fee' : null,
     surcharge_amount: Number(form.surcharge_amount || 0), payment_term: form.payment_term || null,
+    alibaba_order_no: !alibabaOrderRequired(form) && alibabaOrderError(form)
+      ? null : String(form.alibaba_order_no || '').replace(/\s+/g, '') || null,
     internal_payment_method: form.internal_payment_method || null, internal_discount: hairDiscount,
     packaging_quantity: Number(form.packaging_quantity || 0),
     internal_accessory: Number(form.internal_accessory || 0), internal_received: form.order_type === 'presale' ? null : form.internal_received,

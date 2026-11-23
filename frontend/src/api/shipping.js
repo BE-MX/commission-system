@@ -92,3 +92,8 @@ export const bindInspectionShipment = (id, body) => shippingClient.put(`/records
 export const getInspectionShipmentPrefill = id => shippingClient.get(`/records/${encodeURIComponent(id)}/shipment-prefill`, { suppressToast: true })
 export const getInspectionShipmentCandidate = (id, params) => shippingClient.get(`/records/${encodeURIComponent(id)}/shipment-candidate`, { params, suppressToast: true })
 export const createInspectionShipment = (id, body) => shippingClient.post(`/records/${encodeURIComponent(id)}/shipment`, body, { suppressToast: true, timeout: 60000 })
+
+// 手机录物流单：预览只读，照片与提交分别重试。
+export const listMobileWaybillQueue = (params, config = {}) => shippingClient.get('/mobile/waybill-queue', { ...config, params, suppressToast: true })
+export const uploadInspectionWaybillPhoto = (id, body, config = {}) => shippingClient.post(`/records/${encodeURIComponent(id)}/waybill-photo`, body, { timeout: 90000, suppressToast: true, ...config })
+export const previewInspectionShipment = (id, body, config = {}) => shippingClient.post(`/records/${encodeURIComponent(id)}/shipment-preview`, body, { timeout: 60000, suppressToast: true, ...config })

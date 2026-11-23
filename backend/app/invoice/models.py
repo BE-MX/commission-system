@@ -74,6 +74,7 @@ class Invoice(Base):
     product_amount = Column(Numeric(14, 2), nullable=False, default=0, comment="sum of item totals after line discounts, before order fees")
     total_amount = Column(Numeric(14, 2), nullable=False, default=0, comment="发票总额=产品净额+包装费+运费+手续费（发票币种）")
     internal_payment_method = Column(String(64), nullable=True, comment="内部结算-付款方式（不出现在发票）")
+    alibaba_order_no = Column(String(20), nullable=True, index=True, comment="阿里信保订单号（便捷发货必填）")
     internal_discount = Column(Numeric(14, 2), nullable=True, comment="明细行折扣合计，只读快照（发票币种）")
     packaging_quantity = Column(Integer, nullable=False, default=0, comment="包装数量，不参与金额乘算")
     internal_accessory = Column(Numeric(14, 2), nullable=True, comment="费用结算-包装费用（发票币种）")

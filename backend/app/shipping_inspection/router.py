@@ -37,6 +37,8 @@ logger = logging.getLogger("commission")
 from app.shipping_inspection.schemas import InspectionShipmentCreate, InspectionShipmentInput
 
 router = APIRouter()
+from app.shipping_inspection.waybill_mobile_router import router as waybill_mobile_router
+router.include_router(waybill_mobile_router)
 from app.shipping_inspection.station_router import router as station_router
 router.include_router(station_router)
 from app.shipping_inspection.outbound_sync_router import router as outbound_sync_router
@@ -92,14 +94,14 @@ def _require_inspection_scope(db: Session, user: dict, inspection_id: int):
     inspection = db.get(ShippingInspection, inspection_id)
     if inspection is None:
         raise HTTPException(status_code=404, detail="验货单不存在")
-    scope = _inspection_scope(db, user, local=inspection.local_outbound_id is not None)
-    if scope is not None:
-        try:
-            record = outbound_service.get_outbound_record(db, inspection.outbound_record_id, okki_user_id=scope, include_deleted=True)
-        except outbound_service.OutboundTableError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-        if record is None:
-            raise HTTPException(status_code=404, detail="验货单不存在")
+    from app.shipping_inspection.waybill_scope_service import require_scope, okki_identity
+    roles, permissions = user.get('roles', []), user.get('permissions', [])
+    try:
+        require_scope(db, inspection, int(user['sub']), roles, permissions)
+    except ValueError as exc:
+        if inspection.local_outbound_id is None and not okki_identity(db, int(user['sub'])):
+            raise HTTPException(status_code=422, detail="当前账号尚未绑定 OKKI 业务员，请联系管理员配置") from exc
+        raise HTTPException(status_code=404, detail="验货单不存在") from exc
     return inspection
 
 
@@ -345,6 +347,10 @@ def list_records(
         )
     except outbound_service.OutboundTableError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    from app.shipping_inspection.waybill_photo_service import current_photos
+    photos = current_photos(db, [item["id"] for item in items])
+    for item in items:
+        item["waybill_photo"] = photos.get(item["id"])
     return ok(page_result(items, total, page, page_size))
 
 
@@ -465,15 +471,20 @@ async def create_inspection_shipment(inspection_id: int, body: InspectionShipmen
         data = await shipment_link_service.create_and_bind(db, inspection_id, body, user)
     except WaybillConflict as exc:
         db.rollback()
-        raise HTTPException(status_code=409, detail={"code": 409, "message": "运单号已存在", "data": exc.existing}) from exc
+        raise HTTPException(status_code=409, detail={"code": 409, "message": "运单号已存在", "data": {"waybill_no": body.waybill_no, "carrier": body.carrier}}) from exc
     except IntegrityError as exc:  # 并发录入同一运单号
         db.rollback()
         logger.warning("验货单 %s 录入运单并发冲突: %s", inspection_id, exc)
         print(f"inspection {inspection_id} waybill create integrity conflict", flush=True)
-        raise HTTPException(status_code=409, detail="运单号刚被其他人录入，请重新输入运单号后选择关联已有运单") from exc
+        raise HTTPException(status_code=409, detail={"code": 409,
+            "message": "运单号刚被其他人录入，请重新同步或核对后关联已有运单",
+            "data": {"waybill_no": body.waybill_no, "carrier": body.carrier}}) from exc
     except ValueError as exc:  # 含 ShipmentLinkError：已入库但未关联
         db.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as exc:
         db.rollback()
         logger.warning("验货单 %s 录入运单失败: %s", inspection_id, exc)
@@ -493,4 +504,7 @@ def bind_inspection_shipment(inspection_id: int, body: 'InspectionShipmentInput'
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except HTTPException:
+        db.rollback()
+        raise
     return ok(result)

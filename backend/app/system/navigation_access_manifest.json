@@ -1,6 +1,40 @@
 {
-  "source_sha256": "14c47f0a1c5df61e6c501e409b182cd7dbda1ff3e071c0674f0b31f1e2c6ecfe",
+  "source_sha256": "068509c06f20659f6b61ce324be9683bf49c6f20c601c3efd63c60eabaac3319",
   "favorite_access": {
+    "CrossBorderReview": [
+      {
+        "permission": "cross_border:read"
+      },
+      {},
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
+          "order_intelligence:read",
+          "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
+          "sales_return:read",
+          "cross_border:read"
+        ]
+      }
+    ],
     "NavigationManagement": [
       {
         "permission": "navigation:read"
@@ -10,6 +44,38 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "navigation:read",
+          "domestic_followup:admin",
+          "mcp:admin",
+          "integration:admin",
+          "commerce_transition:admin",
+          "operations:read",
+          "operations:admin",
+          "sales_monid_spend:read",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "DevlogBoard": [
+      {
+        "permission": "devlog:read"
+      },
+      {
+        "permission": "devlog:read"
+      },
+      {
+        "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -60,7 +126,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -93,7 +160,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -104,6 +172,7 @@
       {},
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -229,7 +298,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -262,7 +332,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -295,7 +366,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -328,7 +400,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -827,7 +900,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -862,7 +936,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -905,7 +980,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -940,7 +1016,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -975,7 +1052,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -1010,7 +1088,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -1045,7 +1124,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -1086,7 +1166,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -1121,7 +1202,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -1156,7 +1238,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -1191,7 +1274,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -1226,7 +1310,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -1261,7 +1346,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -1584,7 +1670,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -2386,7 +2473,8 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
         ]
       }
     ],
@@ -2429,7 +2517,29 @@
           "fx_settlement:read",
           "shipment:read",
           "commerce_shadow:read",
-          "sales_return:read"
+          "sales_return:read",
+          "cross_border:read"
+        ]
+      }
+    ],
+    "MobileWaybills": [
+      {
+        "anyPermission": [
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
         ]
       }
     ],
@@ -3412,6 +3522,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3442,6 +3553,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3472,6 +3584,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3502,6 +3615,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3532,6 +3646,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3562,6 +3677,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3598,6 +3714,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3628,6 +3745,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3658,6 +3776,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3688,6 +3807,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3718,6 +3838,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3748,6 +3869,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3778,6 +3900,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",

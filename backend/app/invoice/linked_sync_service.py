@@ -100,7 +100,9 @@ def current(db, invoice):
 
 def replay(db, invoice, body, actor):
     """Validate the durable original command before reading new external evidence."""
-    digest = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
+    # Preserve pre-9610 hashes when the optional identifier is absent.
+    omitted = {"alibaba_order_no"} if body.invoice.alibaba_order_no is None else set()
+    digest = hashlib.sha256(body.model_dump_json(exclude={"invoice": omitted}).encode()).hexdigest()
     existing = db.query(InvoiceLinkedSync).filter_by(request_key=body.request_key).with_for_update().first()
     if existing:
         same_command = existing.request_hash == digest
@@ -108,7 +110,7 @@ def replay(db, invoice, body, actor):
                 and "inspection_requirement" not in existing.after
                 and "inspection_requirement" not in body.invoice.model_fields_set):
             # A pre-208 command did not serialize the new default-null field.
-            old_json = body.model_dump_json(exclude={"invoice": {"inspection_requirement"}})
+            old_json = body.model_dump_json(exclude={"invoice": omitted | {"inspection_requirement"}})
             same_command = existing.request_hash == hashlib.sha256(old_json.encode()).hexdigest()
         if existing.invoice_id != invoice.id or existing.created_by != actor or not same_command:
             raise ValueError("该提交标识已用于其他修改，请刷新后重新提交")
