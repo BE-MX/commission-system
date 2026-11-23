@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "check": "vite build",
     "audit:status-badges": "node scripts/auditStatusBadgeColumns.mjs",
+    "test:devlog": "node --test tests/devlog.test.mjs",
     "test:cross-border": "node --test tests/crossBorder.test.mjs",
     "test:task-center": "node --test tests/taskCenter.test.mjs",
     "test:domestic-followup": "node --test tests/domesticFollowup.test.mjs tests/domesticFollowupOverview.test.mjs tests/domesticFollowupEdit.test.mjs tests/domesticFollowupStats.test.mjs tests/churnShipLayout.test.mjs tests/followupClosedLoop.test.mjs",

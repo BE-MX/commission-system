@@ -23,6 +23,7 @@ from app.insight.router import router as insight_router
 from app.project_radar.router import router as project_radar_router
 from app.stock.router import router as stock_router
 from app.cross_border.router import router as cross_border_router
+from app.devlog.router import router as devlog_router
 from app.factory_inbound.router import router as factory_inbound_router
 from app.stock.public_router import router as stock_public_router
 from app.asset.router import router as asset_router
@@ -131,6 +132,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(project_radar_router, prefix="/api/project-radar", tags=["项目雷达"])
     app.include_router(stock_router, prefix="/api/stock", tags=["备货管理"])
     app.include_router(cross_border_router, prefix="/api/cross-border", tags=["跨境申报核对"])
+    app.include_router(devlog_router, prefix="/api/devlog", tags=["方舟开发动态"])
     app.include_router(factory_inbound_router, prefix="/api/factory-inbound", tags=["工厂到货入库"])
     app.include_router(stock_public_router, prefix="/api/public/stock", tags=["对外库存查询"])
     app.include_router(semifinished_router, prefix="/api/semifinished", tags=["半成品订单与库存"])

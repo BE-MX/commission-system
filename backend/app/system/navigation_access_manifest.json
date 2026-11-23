@@ -1,5 +1,5 @@
 {
-  "source_sha256": "30ad6d923c84ae38ed9f80e7328d17a6a5848ace1015e31b620cc7c0fc726dff",
+  "source_sha256": "f2c8fab146026bc915799014da864171992d2a8f064495a433f7211ef88385ad",
   "favorite_access": {
     "CrossBorderReview": [
       {
@@ -44,6 +44,38 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "navigation:read",
+          "domestic_followup:admin",
+          "mcp:admin",
+          "integration:admin",
+          "commerce_transition:admin",
+          "operations:read",
+          "operations:admin",
+          "sales_monid_spend:read",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "DevlogBoard": [
+      {
+        "permission": "devlog:read"
+      },
+      {
+        "permission": "devlog:read"
+      },
+      {
+        "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -140,6 +172,7 @@
       {},
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3468,6 +3501,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3498,6 +3532,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3528,6 +3563,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3558,6 +3594,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3588,6 +3625,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3618,6 +3656,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3654,6 +3693,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3684,6 +3724,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3714,6 +3755,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3744,6 +3786,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3774,6 +3817,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3804,6 +3848,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",
@@ -3834,6 +3879,7 @@
       },
       {
         "anyPermission": [
+          "devlog:read",
           "user:read",
           "role:read",
           "dict:read",

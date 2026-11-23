@@ -113,6 +113,8 @@ def test_unchanged_static_does_not_upload(tmp_path, monkeypatch):
 def pipeline(tmp_path, monkeypatch):
     import static_retention_release
     import candidate_retention
+    import devlog_ledger
+    monkeypatch.setattr(devlog_ledger, 'record', Mock(return_value={'status': 'recorded'}))
     monkeypatch.setattr(candidate_retention, 'run', Mock(return_value={'status': 'succeeded'}))
     monkeypatch.setattr(candidate_retention, 'record_success', Mock())
     monkeypatch.setattr(static_retention_release, 'run', Mock(return_value={'status': 'succeeded'}))
@@ -590,6 +592,7 @@ def test_retention_failure_preserves_verified_application_success(pipeline, monk
     journal = json.loads((pipeline.state / 'publish-current.json').read_text())
     assert journal['status'] == 'succeeded'
     assert 'Retention failed' in journal['static_retention_error']
+    assert json.loads((pipeline.state / 'publish-success.json').read_text())['devlog_ledger']['status'] == 'recorded'
 
 
 def test_prepare_only_never_runs_retention(pipeline, monkeypatch):
@@ -681,3 +684,30 @@ def test_publish_rejects_forged_verify_before_success_marker(pipeline,monkeypatc
         publish.publish(pipeline.args)
     complete.assert_not_called()
     assert not (pipeline.state/'publish-success.json').exists()
+
+
+def test_global_release_records_ledger_after_rollback_history(pipeline, monkeypatch):
+    import candidate_retention
+    import devlog_ledger
+
+    ledger = Mock(side_effect=lambda *args: {"status": "recorded"})
+    monkeypatch.setattr(devlog_ledger, "record", ledger)
+    def check_order(*args):
+        ledger.assert_not_called()
+    monkeypatch.setattr(candidate_retention, "record_success", check_order)
+    publish.publish(pipeline.args)
+    journal = json.loads((pipeline.state / "publish-current.json").read_text())
+    assert journal["status"] == "succeeded"
+    ledger.assert_called_once_with(pipeline.prepare.return_value, publish.ROOT, journal["revision"],
+                                   journal["release_id"], "office-and-cloud")
+    assert json.loads((pipeline.state / "publish-success.json").read_text())["devlog_ledger"]["status"] == "recorded"
+
+
+def test_devlog_failure_keeps_verified_release_successful(pipeline, monkeypatch):
+    import devlog_ledger
+
+    monkeypatch.setattr(devlog_ledger, "record", Mock(side_effect=RuntimeError("ledger down")))
+    publish.publish(pipeline.args)
+    success = json.loads((pipeline.state / "publish-success.json").read_text())
+    assert success["devlog_ledger"] == {"status": "failed", "error": "RuntimeError"}
+    assert json.loads((pipeline.state / "publish-current.json").read_text())["status"] == "succeeded"
