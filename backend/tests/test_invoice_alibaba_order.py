@@ -70,8 +70,10 @@ def test_prefill_lists_all_convenient_invoices_and_missing_ids(db):
                        xiaoman_order_id=order, internal_payment_method=method, alibaba_order_no=number))
     db.add(Invoice(invoice_no="fedex", customer_id="C", customer_name="Test", invoice_date=date(2026,11,23),
                    xiaoman_order_id="O4", internal_payment_method=METHOD, express_channel="FEDEX9610", alibaba_order_no=NUMBER))
+    db.add(Invoice(invoice_no="other", customer_id="C", customer_name="Test", invoice_date=date(2026,11,23),
+                   xiaoman_order_id="O5", internal_payment_method=METHOD, express_channel="其他快递", alibaba_order_no=NUMBER))
     db.flush()
-    result = _cross_border_prefill(db, SimpleNamespace(local_outbound_id=None), ["O1","O2","O3","O4"])
+    result = _cross_border_prefill(db, SimpleNamespace(local_outbound_id=None), ["O1","O2","O3","O4","O5"])
     assert result['is_9610']
     assert [r['invoice_no'] for r in result['invoices']] == ['a','b']
     assert result['invoices'][1]['alibaba_order_no'] is None
@@ -119,3 +121,10 @@ def test_linked_sync_old_command_hash_and_changed_identifier():
     body.invoice.alibaba_order_no = NUMBER
     with pytest.raises(ValueError, match="提交标识"):
         replay(db, SimpleNamespace(id=1), body, 1)
+
+
+def test_waybill_9610_flag_excludes_non_dhl_channels():
+    from app.shipping_inspection.waybill_scope_service import is_9610
+    flag = lambda channel: is_9610(SimpleNamespace(internal_payment_method=METHOD, express_channel=channel))
+    assert flag("DHL9610") and flag(None)
+    assert not flag("FEDEX9610") and not flag("其他快递")

@@ -1,3 +1,10 @@
+## 2026-11-24 订单快递渠道按付款方式过滤（Claude，已合入 main，待部署）
+
+- 分支 `claude/express-channel-rules`（主目录，基于 main `49656a91`），已合入 main 并推送 origin。新增渠道 `DHL报关`、`FEDEX报关`；付款方式与渠道按规则表配对，规则见 `docs/requirements/2026-11-24-express-channel-picker/README.md`，后端唯一来源 `app/invoice/shipping_policy.py`，前端镜像由测试锁定一致。
+- 编辑器渠道改为按付款方式过滤的分段按钮（`InvoiceExpressChannelPicker.vue`），先选渠道时付款方式下拉把适用组排前面；改付款方式时同承运商自动切换。旧单不合规保存时拦下。门户/集成不带付款方式时只校验 9610 与精确的报关渠道值。
+- 连带：便捷发货 + 其他快递不再显示「去 DHL 填 9610 申报」提示（`waybill_scope_service.is_9610` 与验货预填）。
+- 验证：后端相关测试 184 项、前端发票测试通过，build 与约定检查通过；`test:invoice-read` 16 项与 `invoiceCustomerRemark.test.mjs` 3 项在改动前已失败。已做两轮独立审查（测验验收按亮哥合并指令跳过）。未部署：上线后在正式订单页点一遍先选渠道、旧单拦截与整单粘贴。
+
 ## 2026-11-24 办公室上传、报工期间其他页面卡顿（Codex，本地修复）
 
 - 10:19 在办公室服务进程采样。一个本机预检请求等待 10.17 秒，期间主线程在处理验货或客户素材上传。另一次预检等待超过 12 秒，主线程多次停在验货照片入库。10:21 两台服务器对同一 RDS 各测八次，复用连接的 `SELECT 1` 在办公室为 184–253 毫秒，北京为 5 毫秒。脱敏时序保存在开发机主工作区的 `.deploy_state/office-latency-20261124/`。

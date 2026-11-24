@@ -131,8 +131,9 @@ async function run(fn, request) {
 
 for (const entry of ['create', 'edit', 'saveAndSync']) {
   for (const [method, channel, message] of [
-    ['大莱莎信保（便捷发货）', 'DHL普货', /快递渠道必须包含“9610”/],
-    ['PayPal', 'FEDEX9610', /付款方式必须包含“便捷发货”/],
+    ['大莱莎信保（便捷发货）', 'DHL普货', /付款方式「大莱莎信保（便捷发货）」只能选择快递渠道：DHL9610、FEDEX9610、其他快递/],
+    ['PayPal', 'FEDEX9610', /付款方式「PayPal」只能选择快递渠道/],
+    ['对公转账（莱莎）', '顺丰', /付款方式「对公转账（莱莎）」只能选择快递渠道：DHL报关、FEDEX报关、其他快递/],
   ]) {
     test(`${entry} blocks inconsistent payment/channel before API or sync and allows correction: ${channel}`, async t => {
       const h = await harness(undefined, undefined, { express_channel: 'DHL', invoice_no: 'CHANNEL-TEST' })

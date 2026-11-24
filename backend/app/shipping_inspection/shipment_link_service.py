@@ -62,6 +62,7 @@ def _customer_country(db: Session, customer_id: str) -> str:
 def _cross_border_prefill(db, inspection, order_ids):
     """List DHL declaration reminders, including historical rows with no recorded carrier."""
     from app.invoice.models import Invoice
+    from app.shipping_inspection.waybill_scope_service import NON_DHL_9610_CHANNELS
     query = db.query(Invoice)
     if getattr(inspection, "local_outbound_id", None) is not None:
         from app.invoice.settlement_models import ShipmentOutbound
@@ -73,7 +74,7 @@ def _cross_border_prefill(db, inspection, order_ids):
         return {"is_9610": False, "invoices": []}
     invoices = query.filter(
         Invoice.internal_payment_method.contains("便捷发货"),
-        or_(Invoice.express_channel.is_(None), Invoice.express_channel != "FEDEX9610"),
+        or_(Invoice.express_channel.is_(None), Invoice.express_channel.notin_(NON_DHL_9610_CHANNELS)),
     ).order_by(Invoice.id).all()
     rows = [{"invoice_id": row.id, "invoice_no": row.invoice_no,
              "alibaba_order_no": row.alibaba_order_no,

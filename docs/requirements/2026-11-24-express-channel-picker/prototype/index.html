@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>快递渠道选择原型</title>
+<style>
+  /* 原型独立运行：值取自 frontend/src/styles/tokens.css */
+  :root {
+    --color-primary: #D4941C;
+    --color-primary-text: #895B0C;
+    --color-primary-hover: #BB8218;
+    --color-primary-light: rgba(212, 148, 28, 0.08);
+    --color-primary-glow: rgba(212, 148, 28, 0.25);
+    --color-gold-soft: #FDF4DC;
+    --color-danger: #DC3545;
+    --color-danger-text: #A93226;
+    --color-danger-bg: rgba(192, 57, 43, 0.08);
+    --color-warning-bg: rgba(245, 203, 92, 0.15);
+    --color-warning-text: #8B6914;
+    --color-success-text: #2f7d4f;
+    --color-success-bg: rgba(47, 125, 79, 0.08);
+    --text-primary: #1a1a2e;
+    --text-secondary: #4a5568;
+    --text-muted: #5B6678;
+    --border-color: #e2e5ef;
+    --border-hover: #c5cce0;
+    --bg-page: #f6f7fb;
+    --bg-card: #ffffff;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg-page); color: var(--text-primary);
+    font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .page { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .lead { color: var(--text-muted); margin: 0 0 16px; }
+
+  .demo {
+    display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
+    padding: 10px 14px; border-radius: 10px; margin-bottom: 16px;
+    background: #fff8e8; border: 1px solid #f1e2bd; font-size: 13px; color: var(--color-warning-text);
+  }
+  .demo button {
+    font: inherit; font-size: 13px; height: 28px; padding: 0 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid #e6cf97; background: #fff; color: var(--color-warning-text);
+    transition: transform 120ms var(--ease-out);
+  }
+  .demo button:active { transform: scale(0.97); }
+
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border-color);
+    border-radius: 12px; padding: 20px 24px; margin-bottom: 16px;
+  }
+  .card-title { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; margin-bottom: 16px; }
+  .step-no {
+    width: 24px; height: 24px; border-radius: 6px; background: var(--color-primary);
+    color: #fff; display: grid; place-items: center; font-size: 13px;
+  }
+  .tag { font-size: 12px; font-weight: 500; padding: 1px 8px; border-radius: 10px; background: #eef0f5; color: var(--text-secondary); }
+
+  .field { margin-bottom: 18px; }
+  .field:last-child { margin-bottom: 0; }
+  .label { color: var(--text-secondary); margin-bottom: 8px; display: block; }
+  .label .req { color: var(--color-danger); margin-right: 4px; }
+  .caption { color: var(--text-muted); font-size: 12px; font-weight: 400; margin-left: 8px; }
+  .is-error .label { color: var(--color-danger-text); }
+
+  select {
+    height: 34px; min-width: 280px; max-width: 100%; padding: 0 10px; font: inherit;
+    border: 1px solid var(--border-color); border-radius: 6px; background: #fff; color: var(--text-primary);
+  }
+  select:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-glow); }
+  .is-error select { border-color: var(--color-danger); }
+
+  /* 渠道分组（未选付款方式时） */
+  .groups { display: grid; grid-template-columns: max-content 1fr; gap: 10px 14px; align-items: center; }
+  .groups .g-name { color: var(--text-muted); font-size: 12px; text-align: right; }
+
+  /* 分段按钮：仿 el-radio-button */
+  .seg { display: flex; flex-wrap: wrap; gap: 8px; }
+  .enter { animation: rise 180ms var(--ease-out); }
+  @keyframes rise { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .seg button {
+    font: inherit; height: 34px; padding: 0 16px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border-color); background: #fff; color: var(--text-secondary);
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms var(--ease-out);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .seg button:not([aria-checked="true"]):not(.stale):hover { border-color: var(--border-hover); color: var(--text-primary); }
+  }
+  .seg button:active { transform: scale(0.97); }
+  .seg button[aria-checked="true"] {
+    background: var(--color-primary-light); border-color: var(--color-primary);
+    color: var(--color-primary-text); font-weight: 600;
+  }
+  .seg button.stale {
+    border-color: var(--color-danger); color: var(--color-danger-text);
+    background: var(--color-danger-bg); text-decoration: line-through; cursor: default;
+  }
+  .seg button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-primary-glow); }
+  .seg .divider { width: 1px; background: var(--border-color); margin: 4px; }
+
+  .hint {
+    margin-top: 10px; font-size: 13px; color: var(--color-warning-text);
+    background: var(--color-warning-bg); padding: 6px 10px; border-radius: 6px; display: inline-block;
+  }
+  .hint.error { color: var(--color-danger-text); background: var(--color-danger-bg); }
+  .hint.muted { background: none; padding: 0; color: var(--text-muted); }
+
+  .stored {
+    margin-top: 14px; font-size: 13px; color: var(--text-muted);
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  }
+  .stored code {
+    font-family: ui-monospace, Consolas, monospace; background: var(--bg-page);
+    border: 1px solid var(--border-color); padding: 1px 8px; border-radius: 4px; color: var(--text-primary);
+  }
+
+  .actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .btn-primary {
+    font: inherit; height: 36px; padding: 0 22px; border-radius: 6px; cursor: pointer; border: none;
+    background: var(--color-primary); color: #fff; font-weight: 600;
+    transition: background-color 120ms ease, transform 120ms var(--ease-out);
+  }
+  @media (hover: hover) and (pointer: fine) { .btn-primary:hover { background: var(--color-primary-hover); } }
+  .btn-primary:active { transform: scale(0.97); }
+  .save-msg { font-size: 13px; padding: 6px 10px; border-radius: 6px; }
+  .save-msg.ok { color: var(--color-success-text); background: var(--color-success-bg); }
+  .save-msg.bad { color: var(--color-danger-text); background: var(--color-danger-bg); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+  th { color: var(--text-muted); font-weight: 500; background: #fafbfd; }
+  tr:last-child td { border-bottom: none; }
+  td .chip {
+    display: inline-block; margin: 0 6px 6px 0; padding: 1px 8px; border-radius: 4px;
+    background: var(--bg-page); border: 1px solid var(--border-color); white-space: nowrap;
+  }
+  td .chip.any { border-style: dashed; color: var(--text-muted); }
+  .table-wrap { overflow-x: auto; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .enter { animation: fade 120ms ease; }
+    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+    .seg button:active, .btn-primary:active, .demo button:active { transform: none; }
+  }
+  @media (max-width: 600px) {
+    .card { padding: 16px; }
+    select { min-width: 0; width: 100%; }
+    .caption { display: block; margin: 2px 0 0; }
+    .groups { grid-template-columns: 1fr; gap: 4px; }
+    .groups .g-name { text-align: left; margin-top: 6px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>快递渠道选择 · 原型 v3</h1>
+  <p class="lead">两个字段谁先选都行：先选付款方式，渠道只列出能用的；先选渠道，付款方式下拉里能用的排在前面。保存时校验，不合规就拦下。</p>
+
+  <div class="demo">
+    <strong>演示场景</strong>
+    <button type="button" data-scene="new">新订单（都没选）</button>
+    <button type="button" data-scene="legacy">旧订单：小莱莎信保（报关）+ DHL普货</button>
+  </div>
+
+  <section class="card">
+    <div class="card-title"><span class="step-no">3</span>付款</div>
+    <div class="field" id="payField">
+      <span class="label">付款方式<span class="caption" id="payCaption"></span></span>
+      <select id="pay"></select>
+      <div id="payHint"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-title"><span class="step-no">4</span>物流与备注</div>
+    <div class="field" id="chField">
+      <span class="label"><span class="req">*</span>快递渠道<span class="caption" id="chCaption"></span></span>
+      <div id="channels"></div>
+      <div id="chHint"></div>
+      <div class="stored">存值：付款 <code id="storedPay">（未选）</code> 渠道 <code id="storedCh">（未选）</code></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="actions">
+      <button type="button" class="btn-primary" id="save">保存订单</button>
+      <span id="saveMsg"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-title">规则一览 <span class="tag">按此校验</span></div>
+    <div class="table-wrap"><table id="rules"></table></div>
+  </section>
+</div>
+
+<script>
+  // 付款方式分组 → 可选渠道；「其他快递」任何付款方式都可选
+  const GROUPS = [
+    { key: 'normal', name: '普通付款', short: '普货',
+      methods: ['PayPal', 'TT', '现金', '支付宝', '微信'],
+      channels: ['DHL普货', 'FEDEX普货', '顺丰', '自提', '货代/海运'] },
+    { key: 'convenient', name: '信保便捷发货', short: '9610',
+      methods: ['大莱莎信保（便捷发货）', '小莱莎信保（便捷发货）', '新莱莎信保（便捷发货）'],
+      channels: ['DHL9610', 'FEDEX9610'] },
+    { key: 'customs', name: '信保报关 / 对公转账', short: '报关',
+      methods: ['大莱莎信保（报关）', '小莱莎信保（报关）', '新莱莎信保（报关）', '对公转账（莱莎）', '对公转账（旭和）'],
+      channels: ['DHL报关', 'FEDEX报关'] },
+  ]
+  const ANY = '其他快递'
+
+  const state = { pay: '', channel: '', saveTried: false }
+  const groupOfPay = m => GROUPS.find(g => g.methods.includes(m))
+  const groupOfChannel = c => GROUPS.find(g => g.channels.includes(c))
+  const carrierOf = c => (c.match(/^(DHL|FEDEX)/) || [])[1] || null
+  const compatible = (m, c) => !m || !c || c === ANY || (groupOfPay(m) && groupOfPay(m).channels.includes(c))
+
+  const $ = id => document.getElementById(id)
+  const payEl = $('pay')
+
+  // 付款方式下拉：先选了渠道时，能用的组排前面并标注
+  function renderPayOptions() {
+    const g = groupOfChannel(state.channel)
+    const ordered = g ? [g, ...GROUPS.filter(x => x !== g)] : GROUPS
+    payEl.innerHTML = '<option value="">请选择</option>' + ordered.map(x => {
+      const tag = !g ? '' : x === g ? '（适用「' + state.channel + '」）' : '（选了会改渠道）'
+      return `<optgroup label="${x.name}${tag}">${x.methods.map(m => `<option>${m}</option>`).join('')}</optgroup>`
+    }).join('')
+    payEl.value = state.pay
+    $('payCaption').textContent = g && !state.pay ? `已按渠道「${state.channel}」把能用的排在前面` : ''
+  }
+
+  const btn = (c, extra = '') =>
+    `<button type="button" role="radio" data-c="${c}" aria-checked="${state.channel === c}" ${extra}>${c}</button>`
+
+  function renderChannels(animate) {
+    const g = groupOfPay(state.pay)
+    const box = $('channels')
+    const stale = state.channel && !compatible(state.pay, state.channel)
+    const cls = animate ? ' enter' : ''
+    if (!g) {
+      // 没选付款方式：全部渠道按申报方式分三行
+      box.innerHTML = `<div class="groups${cls}">
+        ${GROUPS.map(x => `<span class="g-name">${x.short}</span><div class="seg">${x.channels.map(c => btn(c)).join('')}</div>`).join('')}
+        <span class="g-name">通用</span><div class="seg">${btn(ANY)}</div>
+      </div>`
+      $('chCaption').textContent = '选了付款方式后只显示能用的'
+    } else {
+      box.innerHTML = `<div class="seg${cls}" role="radiogroup" aria-label="快递渠道">
+        ${stale ? `<button type="button" class="stale" data-stale aria-disabled="true" title="与付款方式不符">${state.channel}</button><span class="divider"></span>` : ''}
+        ${g.channels.map(c => btn(c)).join('')}<span class="divider" aria-hidden="true"></span>${btn(ANY)}
+      </div>`
+      $('chCaption').textContent = `按「${g.name}」显示，其他渠道需换付款方式`
+    }
+    $('chField').classList.toggle('is-error', state.saveTried && (!state.channel || stale))
+  }
+
+  function render({ animate = false, hint = '' } = {}) {
+    renderPayOptions()
+    renderChannels(animate)
+    const stale = state.channel && !compatible(state.pay, state.channel)
+    $('chHint').innerHTML = stale
+      ? `<div class="hint error">原渠道「${state.channel}」与付款方式「${state.pay}」不符，保存前请改选下面的渠道</div>`
+      : hint ? `<div class="hint enter">${hint}</div>` : ''
+    $('storedPay').textContent = state.pay || '（未选）'
+    $('storedCh').textContent = state.channel || '（未选）'
+  }
+
+  // 换付款方式：同承运商自动切换；对不上则清空并说明
+  payEl.addEventListener('change', () => {
+    const prev = state.channel
+    state.pay = payEl.value
+    let hint = ''
+    const g = groupOfPay(state.pay)
+    if (prev && g && !compatible(state.pay, prev)) {
+      const carrier = carrierOf(prev)
+      const match = carrier && g.channels.find(c => carrierOf(c) === carrier)
+      if (match) { state.channel = match; hint = `已从「${prev}」自动改为「${match}」` }
+      else { state.channel = ''; hint = `「${prev}」不适用于「${state.pay}」，已清空，请重新选择` }
+    }
+    clearSaveMsg()
+    render({ animate: true, hint })
+  })
+
+  $('channels').addEventListener('click', e => {
+    const b = e.target.closest('button[data-c]'); if (!b) return
+    state.channel = b.dataset.c
+    clearSaveMsg()
+    render()
+  })
+
+  // 保存校验（正式实现时前后端各做一遍）
+  $('save').addEventListener('click', () => {
+    state.saveTried = true
+    let msg = ''
+    if (!state.channel) msg = '请选择快递渠道'
+    else if (!compatible(state.pay, state.channel)) msg = `快递渠道「${state.channel}」与付款方式「${state.pay}」不符，请改正后再保存`
+    $('saveMsg').innerHTML = msg
+      ? `<span class="save-msg bad enter">${msg}</span>`
+      : `<span class="save-msg ok enter">已保存（演示）：${state.pay || '未填付款方式'} + ${state.channel}</span>`
+    render()
+  })
+  function clearSaveMsg() { $('saveMsg').innerHTML = '' }
+
+  document.querySelectorAll('[data-scene]').forEach(b => b.addEventListener('click', () => {
+    state.saveTried = false; clearSaveMsg()
+    if (b.dataset.scene === 'new') { state.pay = ''; state.channel = '' }
+    else { state.pay = '小莱莎信保（报关）'; state.channel = 'DHL普货' }
+    render({ animate: true })
+  }))
+
+  $('rules').innerHTML =
+    '<tr><th>付款方式</th><th>可选快递渠道</th></tr>' +
+    GROUPS.map(g => `<tr>
+      <td>${g.methods.map(m => `<span class="chip">${m}</span>`).join('')}</td>
+      <td>${g.channels.map(c => `<span class="chip">${c}</span>`).join('')}<span class="chip any">${ANY}</span></td>
+    </tr>`).join('')
+
+  render()
+</script>
+</body>
+</html>

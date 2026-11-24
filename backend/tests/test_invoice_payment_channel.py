@@ -15,12 +15,21 @@ def payload(method=None, channel=None):
 
 
 @pytest.mark.parametrize("method,channel,message", [
-    ("大莱莎信保（便捷发货）", "DHL普货", "快递渠道必须包含“9610”"),
-    ("小莱莎信保（便捷发货）", "FEDEX", "快递渠道必须包含“9610”"),
-    ("新莱莎信保（便捷发货）", None, "快递渠道必须包含“9610”"),
-    ("PayPal", "DHL9610", "付款方式必须包含“便捷发货”"),
-    (None, "FEDEX9610", "付款方式必须包含“便捷发货”"),
-    ("大莱莎信保（报关）", "FEDEX9610", "付款方式必须包含“便捷发货”"),
+    ("大莱莎信保（便捷发货）", "DHL普货", "只能选择快递渠道：DHL9610、FEDEX9610、其他快递"),
+    ("小莱莎信保（便捷发货）", "FEDEX", "只能选择快递渠道"),
+    ("新莱莎信保（便捷发货）", None, "须选择快递渠道"),
+    ("新莱莎信保（便捷发货）", "DHL报关", "只能选择快递渠道"),
+    ("PayPal", "DHL9610", "只能选择快递渠道：DHL普货、FEDEX普货、顺丰、自提、货代/海运、其他快递"),
+    ("TT", "DHL报关", "只能选择快递渠道"),
+    ("微信", "FEDEX报关", "只能选择快递渠道"),
+    ("大莱莎信保（报关）", "FEDEX9610", "只能选择快递渠道：DHL报关、FEDEX报关、其他快递"),
+    ("大莱莎信保（报关）", "DHL普货", "只能选择快递渠道"),
+    ("对公转账（莱莎）", "顺丰", "只能选择快递渠道"),
+    ("对公转账（旭和）", "自提", "只能选择快递渠道"),
+    ("小莱莎信保（报关）", "货代/海运", "只能选择快递渠道"),
+    (None, "FEDEX9610", "须配合付款方式「信保便捷发货」"),
+    (None, "DHL报关", "须配合付款方式「信保报关 / 对公转账」"),
+    ("自定义方式", "FEDEX报关", "须配合付款方式"),
 ])
 @pytest.mark.parametrize("operation", ["create", "update", "local_create", "local_update"])
 def test_mismatch_rejected_before_database_or_route_writes(method, channel, message, operation):
@@ -40,11 +49,15 @@ def test_mismatch_rejected_before_database_or_route_writes(method, channel, mess
 @pytest.mark.parametrize("method,channel", [
     ("大莱莎信保（便捷发货）", "DHL9610"),
     ("小莱莎信保（便捷发货）", "FEDEX9610"),
-    ("新莱莎信保（便捷发货）", "DHL9610"),
+    ("新莱莎信保（便捷发货）", "其他快递"),
     ("自定义便捷发货方式", "自定义9610渠道"),
-    ("PayPal", "DHL普货"), ("TT", "FEDEX普货"),
-    (None, None), ("现金", "顺丰"), ("大莱莎信保（报关）", "其他快递"),
+    ("PayPal", "DHL普货"), ("TT", "FEDEX普货"), ("支付宝", "自提"), ("微信", "货代/海运"),
+    (None, None), ("现金", "顺丰"), ("PayPal", "其他快递"),
+    ("大莱莎信保（报关）", "其他快递"), ("大莱莎信保（报关）", "DHL报关"),
+    ("对公转账（莱莎）", "FEDEX报关"), ("对公转账（旭和）", "DHL报关"),
     ("TT", "DHL"), ("PayPal", "FEDEX"),
+    (None, "DHL普货"), (None, "Customer courier"), ("自定义方式", "顺丰"),
+    (None, "DHL 报关"), ("大莱莎信保（报关）", "DHL 报关"),
 ])
 def test_matching_pair_can_create_and_edit(db, monkeypatch, method, channel):
     monkeypatch.setattr(product_service, "valid_okki_product_skus", lambda db, pairs: pairs)
@@ -69,7 +82,7 @@ def test_invalid_edit_preserves_saved_order(db, monkeypatch):
     db.commit()
     update = InvoiceUpdate(**body.model_dump())
     update.express_channel = "DHL9610"
-    with pytest.raises(ValueError, match="付款方式必须"):
+    with pytest.raises(ValueError, match="只能选择快递渠道"):
         service.update_invoice(db, invoice, update, 1)
     db.rollback()
     db.refresh(invoice)
@@ -83,5 +96,5 @@ def test_save_api_returns_actionable_400_without_creating_order(db, method, chan
     with pytest.raises(HTTPException) as error:
         _write_invoice_or_400(db, lambda: service.create_invoice(db, payload(method, channel), 1))
     assert error.value.status_code == 400
-    assert "必须包含" in error.value.detail
+    assert "只能选择快递渠道" in error.value.detail
     assert db.query(Invoice).count() == 0

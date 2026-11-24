@@ -89,7 +89,7 @@ export function resolvePaymentMethod(raw) {
 export function resolveExpressChannel(raw) {
   const value = String(raw || '').trim().toLowerCase()
   if (!value) return null
-  const suffix = value.includes('9610') ? '9610' : '普货'
+  const suffix = value.includes('9610') ? '9610' : value.includes('报关') ? '报关' : '普货'
   if (value.includes('fedex') || value.includes('联邦')) return `FEDEX${suffix}`
   if (value.includes('dhl')) return `DHL${suffix}`
   if (value.includes('顺丰') || value === 'sf') return '顺丰'

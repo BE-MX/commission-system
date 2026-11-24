@@ -44,8 +44,9 @@
       </el-form-item>
       <el-form-item label="快递渠道" class="span-2" data-invoice-field="express_channel" :error="validationErrors.express_channel">
         <el-select v-model="form.express_channel" clearable placeholder="请选择">
-          <el-option v-for="option in expressChannels" :key="option" :label="option" :value="option" />
+          <el-option v-for="option in channelOptions" :key="option" :label="option" :value="option" />
         </el-select>
+        <div v-if="expressChannelNotice" class="channel-notice" role="status">{{ expressChannelNotice }}</div>
       </el-form-item>
       <el-form-item label="运费" class="span-2">
         <el-input-number v-model="form.shipping_fee" :min="0" :precision="2" controls-position="right" />
@@ -68,7 +69,7 @@
 import { formatMoney } from '../../../../utils/money.js'
 
 import { computed } from 'vue'
-import { alibabaOrderRequired, computeHandlingFee, handlingFeeRate } from '../../composables/invoiceSettlement'
+import { alibabaOrderRequired, channelsForPayment, computeHandlingFee, handlingFeeRate } from '../../composables/invoiceSettlement'
 
 // 旧版下单抽屉的结算区（HEAD 版原样保留，过渡期使用）
 const props = defineProps({
@@ -82,10 +83,13 @@ const props = defineProps({
   accessoryDiscount: { type: Number, required: true },
   paymentMethods: { type: Array, required: true },
   expressChannels: { type: Array, required: true },
+  expressChannelNotice: { type: String, default: '' },
   money: { type: Function, required: true },
   onPaymentMethodChange: { type: Function, default: () => {} },
   onHandlingFeeInput: { type: Function, default: () => {} },
 })
+// 只列出当前付款方式可选的渠道；未选付款方式时列出全部
+const channelOptions = computed(() => channelsForPayment(props.form.internal_payment_method) || props.expressChannels)
 
 // 手续费提示：比例方式显示自动费率；当前值与费率×基数不符时（如编辑单改了产品、
 // 或手动改过）给出重算引导；报关提示手填，其余留空
@@ -105,6 +109,7 @@ const handlingHint = computed(() => {
 </script>
 
 <style scoped>
+.channel-notice { margin-top: 4px; padding: 2px 8px; border-radius: 6px; font-size: 12px; line-height: 1.5; color: var(--color-warning-text); background: var(--color-warning-bg); }
 .head-section { max-width: 1400px; padding-bottom: 2px; margin: 18px 0 10px; border-bottom: 1px solid var(--border-color); }
 .col-title { margin: 2px 0 10px; color: var(--text-secondary); font-size: 14px; font-weight: 700; }
 .head-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0 16px; align-items: start; }

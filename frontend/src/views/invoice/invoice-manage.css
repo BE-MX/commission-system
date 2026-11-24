@@ -493,13 +493,6 @@
   color: var(--color-danger);
 }
 
-/* 快递渠道：横向单选组 */
-.express-radio-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 22px;
-}
-
 /* 物流费用同行录入；窄屏沿用 fgrid 单列规则。 */
 .logistics-fees-row :deep(.el-input-number) {
   width: 100%;

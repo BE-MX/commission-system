@@ -149,6 +149,7 @@
           :accessory-discount="formAccessoryDiscount"
           :payment-methods="PAYMENT_METHOD_OPTIONS"
           :express-channels="EXPRESS_CHANNEL_OPTIONS"
+          :express-channel-notice="editor.expressChannelNotice.value"
           :money="money"
           :on-payment-method-change="onPaymentMethodChange"
           :on-handling-fee-input="markHandlingFeeTouched"

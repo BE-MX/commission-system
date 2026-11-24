@@ -32,6 +32,7 @@ import {
   handlingFeeRate,
   normalizeStoredExpressChannel,
   paymentChannelError,
+  reconcileChannelForPayment,
   normalizeDiscount,
   settlementMatchesTotal,
   sumLineNet,
@@ -90,7 +91,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
     for (const field of Object.keys(validationErrors)) delete validationErrors[field]
     for (const issue of issues) validationErrors[issue.field] = issue.message
     if (!issues.length) return true
-    msgWarning(issues.length === 1 && issues[0].field === 'alibaba_order_no'
+    // 单项问题直接给出原因（如订单号格式、渠道与付款方式不符），多项时汇总
+    msgWarning(issues.length === 1
       ? issues[0].message : `请完善 ${issues.length} 项必填内容：${issues.map(issue => issue.label).join('、')}`)
     nextTick(() => {
       if (typeof document === 'undefined') return
@@ -283,8 +285,21 @@ export function useInvoiceEditor({ onSaved } = {}) {
     form.surcharge_amount = computeHandlingFee(rate, formBaseAmount.value)
   }
 
+  // 换付款方式时修正快递渠道（同承运商自动切换，对不上清空），提示挂在渠道下方；
+  // 用户再选渠道后提示消失。打开旧单不触发，旧单不合规由保存校验拦下。
+  const expressChannelNotice = ref('')
+  let noticeChannel = null
+  watch(() => form.express_channel, channel => { if (channel !== noticeChannel) expressChannelNotice.value = '' })
+
   // 付款方式用 @change 触发（仅用户操作，避开 resetForm 程序化赋值误触发覆盖存值）
   function onPaymentMethodChange() {
+    expressChannelNotice.value = ''
+    const { channel, notice } = reconcileChannelForPayment(form.internal_payment_method, form.express_channel)
+    if (notice) {
+      noticeChannel = channel
+      form.express_channel = channel
+      expressChannelNotice.value = notice
+    }
     handlingFeeTouched = false
     const rate = handlingFeeRate(form.internal_payment_method)
     if (rate == null) {
@@ -344,6 +359,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   function resetForm(data = emptyInvoiceForm()) {
     quantityErrorRow.value = null
+    expressChannelNotice.value = ''
     for (const field of Object.keys(validationErrors)) delete validationErrors[field]
     loadedUpdatedAt.value = data.edit_version || null
     loadedGroupVersion.value = data.item_groups_version || null
@@ -472,7 +488,14 @@ export function useInvoiceEditor({ onSaved } = {}) {
     } else if (parsed.payment_raw) {
       skipped.push(`付款方式「${parsed.payment_raw}」未匹配，请手选`)
     }
-    if (parsed.express_channel) { form.express_channel = parsed.express_channel; applied.push('快递渠道') }
+    if (parsed.express_channel) {
+      // 粘贴的「DHL / 联邦」没写申报方式时，按付款方式补全（如报关付款 → DHL报关）；
+      // 明确写了 9610/报关/普货的保留原样，不合规由保存校验提示
+      const explicit = /9610|报关|普货/.test(parsed.express_raw || '')
+      const { channel } = explicit ? { channel: '' } : reconcileChannelForPayment(form.internal_payment_method, parsed.express_channel)
+      form.express_channel = channel || parsed.express_channel
+      applied.push('快递渠道')
+    }
     if (parsed.handling_fee != null) {
       form.surcharge_amount = parsed.handling_fee
       markHandlingFeeTouched()
@@ -1075,6 +1098,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     entryOptions,
     form,
     validationErrors,
+    expressChannelNotice,
     contactDetailsExpanded,
     contactDetailsComplete,
     hairItems: accessories.hairItems,

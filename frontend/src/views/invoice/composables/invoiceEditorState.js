@@ -1,4 +1,4 @@
-import { alibabaOrderError, alibabaOrderRequired, normalizeDiscount } from './invoiceSettlement.js'
+import { alibabaOrderError, alibabaOrderRequired, normalizeDiscount, paymentChannelError } from './invoiceSettlement.js'
 import { currentBeijingDate } from '../../../utils/datetime.js'
 
 export const INVOICE_NO_MAX_LENGTH = 64
@@ -20,6 +20,10 @@ export function invoiceRequiredIssues(form) {
     if (!String(form[field] || '').trim()) add(field, label)
   }
   if (!form.express_channel) add('express_channel', '快递渠道', '请选择快递渠道')
+  else {
+    const channelError = paymentChannelError(form.internal_payment_method, form.express_channel)
+    if (channelError) add('express_channel', '快递渠道', channelError)
+  }
   if (alibabaOrderRequired(form)) {
     const error = alibabaOrderError(form)
     if (error) add('alibaba_order_no', '阿里信保订单号', error)

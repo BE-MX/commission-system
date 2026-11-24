@@ -18,8 +18,21 @@ export const PAYMENT_METHOD_RATES = {
   '新莱莎信保（便捷发货）': 0.03,
   TT: 0,
 }
-// 快递渠道（2026-09-23）：改为必填单选，不默认选中
-export const EXPRESS_CHANNEL_OPTIONS = ['DHL普货', 'FEDEX普货', 'DHL9610', 'FEDEX9610', '顺丰', '其他快递', '自提', '货代/海运']
+// 快递渠道（2026-09-23 必填单选；2026-11-24 按付款方式分组）。
+// 付款方式 → 可选渠道。后端 app/invoice/shipping_policy.py 有同一张表，测试锁定两边一致。
+export const ANY_EXPRESS_CHANNEL = '其他快递'
+export const PAYMENT_CHANNEL_GROUPS = [
+  { key: 'normal', label: '普通付款', short: '普货',
+    methods: ['PayPal', 'TT', '现金', '支付宝', '微信'],
+    channels: ['DHL普货', 'FEDEX普货', '顺丰', '自提', '货代/海运'] },
+  { key: 'convenient', label: '信保便捷发货', short: '9610',
+    methods: ['大莱莎信保（便捷发货）', '小莱莎信保（便捷发货）', '新莱莎信保（便捷发货）'],
+    channels: ['DHL9610', 'FEDEX9610'] },
+  { key: 'customs', label: '信保报关 / 对公转账', short: '报关',
+    methods: ['大莱莎信保（报关）', '小莱莎信保（报关）', '新莱莎信保（报关）', '对公转账（莱莎）', '对公转账（旭和）'],
+    channels: ['DHL报关', 'FEDEX报关'] },
+]
+export const EXPRESS_CHANNEL_OPTIONS = [...PAYMENT_CHANNEL_GROUPS.flatMap(group => group.channels), ANY_EXPRESS_CHANNEL]
 
 // 存量订单使用旧文本存值，打开编辑时回显到新的普货选项。
 export function normalizeStoredExpressChannel(channel) {
@@ -28,12 +41,64 @@ export function normalizeStoredExpressChannel(channel) {
   return channel || ''
 }
 
+const CONVENIENT = PAYMENT_CHANNEL_GROUPS[1]
+const CUSTOMS = PAYMENT_CHANNEL_GROUPS[2]
+
+// 未登记的付款方式沿用「含便捷发货」关键字口径，其余返回 null（不限制渠道）
+export function paymentGroupOf(method) {
+  const value = String(method || '').trim()
+  return PAYMENT_CHANNEL_GROUPS.find(group => group.methods.includes(value))
+    || (value.includes('便捷发货') ? CONVENIENT : null)
+}
+
+// keywords=false：未选付款方式时「报关」自由文本不算报关渠道（门户/集成原样保存）
+export function channelGroupOf(channel, { keywords = true } = {}) {
+  const value = normalizeStoredExpressChannel(String(channel || '').trim())
+  return PAYMENT_CHANNEL_GROUPS.find(group => group.channels.includes(value))
+    || (value.includes('9610') ? CONVENIENT : keywords && value.includes('报关') ? CUSTOMS : null)
+}
+
+// 当前付款方式可选的渠道；未选付款方式返回 null（显示全部）
+export function channelsForPayment(method) {
+  const group = paymentGroupOf(method)
+  return group ? [...group.channels, ANY_EXPRESS_CHANNEL] : null
+}
+
 export function paymentChannelError(method, channel) {
-  const convenient = String(method || '').includes('便捷发货')
-  const customs9610 = String(channel || '').includes('9610')
-  if (convenient && !customs9610) return '付款方式包含“便捷发货”时，快递渠道必须包含“9610”，请修改快递渠道'
-  if (customs9610 && !convenient) return '快递渠道包含“9610”时，付款方式必须包含“便捷发货”，请选择对应付款方式'
+  const value = String(channel || '').trim()
+  const methodGroup = paymentGroupOf(method)
+  const allowed = group => [...group.channels, ANY_EXPRESS_CHANNEL].join('、')
+  if (!value) return methodGroup === CONVENIENT ? `付款方式「${method}」须选择快递渠道：${allowed(methodGroup)}` : ''
+  if (value === ANY_EXPRESS_CHANNEL) return ''
+  const channelGroup = channelGroupOf(value, { keywords: Boolean(methodGroup) })
+  if (methodGroup) {
+    return channelGroup === methodGroup ? '' : `付款方式「${method}」只能选择快递渠道：${allowed(methodGroup)}，请修改快递渠道`
+  }
+  if (channelGroup && channelGroup.key !== 'normal') {
+    return `快递渠道「${value}」须配合付款方式「${channelGroup.label}」，请选择对应付款方式`
+  }
   return ''
+}
+
+// 用户改付款方式后修正已选渠道：同承运商自动切换，对不上则清空。返回 { channel, notice }
+export function reconcileChannelForPayment(method, channel) {
+  const allowed = channelsForPayment(method)
+  if (!channel || !allowed || !paymentChannelError(method, channel)) return { channel, notice: '' }
+  const carrier = (normalizeStoredExpressChannel(channel).match(/^(DHL|FEDEX)/) || [])[1]
+  const match = carrier && allowed.find(option => option.startsWith(carrier))
+  if (match) return { channel: match, notice: `快递渠道已从「${channel}」自动改为「${match}」` }
+  return { channel: '', notice: `「${channel}」不适用于付款方式「${method}」，已清空，请重新选择快递渠道` }
+}
+
+// 付款方式下拉分组：已选渠道时把适用的组排前面
+export function paymentMethodGroupsFor(channel) {
+  const value = String(channel || '').trim()
+  const fit = value && value !== ANY_EXPRESS_CHANNEL ? channelGroupOf(value) : null
+  const ordered = fit ? [fit, ...PAYMENT_CHANNEL_GROUPS.filter(group => group !== fit)] : PAYMENT_CHANNEL_GROUPS
+  return ordered.map(group => ({
+    label: fit ? `${group.label}${group === fit ? `（适用「${value}」）` : '（选了会改渠道）'}` : group.label,
+    methods: group.methods,
+  }))
 }
 
 // 命中返回费率（含 0），未登记返回 null（手填，不自动算）。
