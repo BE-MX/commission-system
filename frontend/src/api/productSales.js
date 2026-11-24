@@ -18,4 +18,4 @@ const query = (params, config = {}) => ({ ...config, params, paramsSerializer: {
 export const getRadar = (params, config) => unwrap(productSalesClient.get('/radar', query(params, config)))
 export const getRadarItem = (params, config) => unwrap(productSalesClient.get('/radar/item', query(params, config)))
 export const getRadarScopes = (params, config) => unwrap(productSalesClient.get('/radar/scopes', query(params, config)))
-export const explainRadarItem = payload => unwrap(productSalesClient.post('/radar/insight', payload, { showLoading: false }))
+export const explainRadarGrade = payload => unwrap(productSalesClient.post('/radar/insight', payload, { showLoading: false }))
