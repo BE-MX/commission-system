@@ -84,3 +84,37 @@ test('finishing the last card leaves an empty queue without a focus target', asy
   const h = await harness({ listMobileWaybillQueue: async () => ({ data: { items: completed ? [] : [row], total: completed ? 0 : 1, has_more: false } }), createInspectionShipment: async () => { completed = true; return { data: {} } } })
   try { await h.state.loadQueue(); await h.state.begin(row); await h.state.captured(h.photo); await h.state.sync(); await h.state.submit(); assert.equal(h.state.rows.value.length, 0); assert.equal(h.state.nextInspectionId.value, null) } finally { h.stop() }
 })
+test('a saved photo starts exactly one automatic sync', async () => {
+  const h = await harness()
+  try {
+    await h.state.captured(h.photo); await new Promise(resolve => setImmediate(resolve))
+    assert.equal(h.calls.filter(call => call[0] === 'previewInspectionShipment').length, 1)
+    assert.equal(h.state.preview.value?.preview_token, 'signed'); assert.equal(h.state.canSubmit.value, true)
+  } finally { h.stop() }
+})
+test('leaving review keeps a draft that restores without uploading the photo again', async () => {
+  const h = await harness()
+  try {
+    await h.state.captured(h.photo); await h.state.sync(); h.state.form.recipient_name = 'Bob'; h.state.back()
+    assert.equal(h.state.step.value, 'list'); assert.equal(h.state.draft.value?.row.id, 1)
+    await h.state.restoreDraft(); await h.state.sync()
+    assert.equal(h.state.step.value, 'review'); assert.equal(h.state.photoToken.value, 'photo'); assert.equal(h.state.form.recipient_name, 'Bob')
+    assert.equal(h.calls.filter(call => call[0] === 'uploadInspectionWaybillPhoto').length, 1)
+    assert.equal(h.state.canSubmit.value, true); assert.equal(h.state.draft.value, null)
+  } finally { h.stop() }
+})
+test('starting another card discards the draft', async () => {
+  const h = await harness()
+  try { await h.state.captured(h.photo); h.state.back(); assert.ok(h.state.draft.value); await h.state.begin({ ...row, id: 2 }); assert.equal(h.state.draft.value, null) } finally { h.stop() }
+})
+test('a manual sync during the automatic one joins it instead of querying twice', async () => {
+  const pending = deferred(), h = await harness({ previewInspectionShipment: () => pending.promise })
+  try {
+    await h.state.captured(h.photo); const manual = h.state.sync(); pending.resolve({ data: result }); await manual
+    assert.equal(h.calls.filter(call => call[0] === 'previewInspectionShipment').length, 1); assert.equal(h.state.canSubmit.value, true)
+  } finally { h.stop() }
+})
+test('a version conflict leaves review without keeping a draft', async () => {
+  const h = await harness({ previewInspectionShipment: async () => { throw { response: { status: 409, data: { message: '验货单已变化，请刷新' } } } } })
+  try { await h.state.captured(h.photo); await h.state.sync(); assert.equal(h.state.step.value, 'list'); assert.equal(h.state.draft.value, null) } finally { h.stop() }
+})

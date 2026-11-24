@@ -1,7 +1,7 @@
 <template>
   <main class="mobile-waybills">
     <header v-if="!cameraLive" class="mobile-header">
-      <button v-if="step !== 'list'" :disabled="busy === 'submit'" aria-label="返回列表" @click="back">‹</button>
+      <button v-if="step !== 'list'" :disabled="busy === 'submit'" aria-label="返回列表" @click="back()">‹</button>
       <router-link v-else to="/dashboard" aria-label="返回工作台">‹</router-link>
       <h1>{{ step === 'list' ? '手机录物流单' : step === 'camera' ? '拍运单' : '核对物流单' }}</h1>
       <span v-if="step === 'list'">{{ total }} 张</span>
@@ -15,6 +15,10 @@
         <label class="search"><span class="sr-only">搜索出库单号、客户名</span><input v-model="keyword" type="search" placeholder="搜索出库单号、客户名" /></label>
       </div>
       <p v-if="!allowed" class="notice">需要物流单上传权限，请联系管理员</p>
+      <div v-if="draft" class="draft-bar" role="status">
+        <p>已退出「{{ draft.row.customer_name || draft.row.outbound_no }}」的核对，照片和填写内容还在</p>
+        <div><button class="primary" :disabled="!allowed || locked" @click="onRestore">继续核对</button><button aria-label="不再保留这张的照片和填写内容" @click="discardDraft">丢弃</button></div>
+      </div>
       <p v-if="loading && !rows.length" role="status" class="empty">正在加载验货单…</p>
       <p v-else-if="refreshing" role="status" class="refreshing">正在刷新…</p>
       <div v-else-if="queueError" class="alert" role="alert">{{ queueError }}<button @click="loadQueue">重试</button></div>
@@ -32,10 +36,10 @@
     </template>
     <template v-else>
       <section v-if="!cameraLive" class="customer-context"><strong>{{ selected.customer_name }}</strong><span>{{ selected.recipient_country || '国家待核对' }}</span><small>{{ selected.outbound_no }}</small></section>
-      <DocumentScanner v-if="step !== 'list'" v-show="step === 'camera' || adjusting" ref="scanner" finish="capture" direct-capture immersive require-original default-effect="enhanced" :max-upload-bytes="16 * 1024 * 1024" @captured="onCaptured" @cancel="back" @camera="scannerCamera = $event">
+      <DocumentScanner v-if="step !== 'list'" v-show="step === 'camera' || adjusting" ref="scanner" finish="capture" cancel-label="返回列表" :auto-open="step === 'camera'" direct-capture immersive require-original default-effect="enhanced" :max-upload-bytes="16 * 1024 * 1024" @captured="onCaptured" @cancel="back()" @camera="scannerCamera = $event">
         <template #overlay>
           <div class="camera-context">
-            <button type="button" aria-label="返回列表" @click="back">‹</button>
+            <button type="button" aria-label="返回列表" @click="back()">‹</button>
             <div><strong>{{ selected.customer_name || '未填写客户名' }}</strong><small>{{ selected.outbound_no }} · {{ selected.recipient_country || '国家待核对' }}</small></div>
           </div>
         </template>
@@ -43,7 +47,7 @@
       <template v-if="step === 'review' && !adjusting">
         <section class="review-card">
           <img :src="imageUrl" class="captured-photo" alt="本次运单增强裁正图" />
-          <div class="photo-actions"><button :disabled="locked" @click="retakePhoto">重拍</button><button :disabled="locked" @click="adjust">调整边缘</button></div>
+          <div class="photo-actions"><button :disabled="locked" @click="retakePhoto">重拍</button><button v-if="!restored" :disabled="locked" @click="adjust">调整边缘</button></div>
           <p v-if="busy === 'photo'" role="status">正在保存照片并识别…</p>
           <p v-if="notice" class="notice" role="status">{{ notice }}</p>
           <div v-if="error" class="alert" role="alert">{{ error }}<button v-if="!photoToken" :disabled="locked" @click="upload">重试上传</button></div>
@@ -55,7 +59,9 @@
           </fieldset>
           <p v-if="selected.cross_border?.is_9610" class="notice">本单走 9610，请确认已在 DHL 填写跨境申报。{{ selected.cross_border.invoices?.map(invoice => invoice.alibaba_order_no).filter(Boolean).join('、') }}</p>
           <p v-if="selected.cross_border?.has_exported" class="notice">本单已导出报关，更换后会在 9610 核对里标为异常</p>
-          <button class="sync-button" :disabled="locked || !photoToken" @click="sync">{{ busy === 'sync' ? '正在同步…' : preview ? '重新同步物流信息' : '同步物流信息' }}</button>
+          <p v-if="busy === 'sync'" class="secondary" role="status">正在核对物流信息…</p>
+          <!-- 照片存好、字段齐了会自动核对；按钮只在核对失败时作为重试出现 -->
+          <button v-else-if="syncReady && (preview ? preview.sync_result === 'failed' : !!error)" class="sync-button" :disabled="locked" @click="sync">{{ preview ? '重新查询物流' : '重试核对' }}</button>
         </section>
         <section v-if="preview" class="review-card" aria-live="polite">
           <h2>物流信息与系统核对</h2>
@@ -68,24 +74,54 @@
           <p v-else-if="preview.existing?.exists" class="notice">{{ preview.existing.outside_tracking_scope ? '运单已由其他同事录入' : `运单已录入，已关联本客户 ${preview.existing.linked_inspections || 0} 张验货单` }}，承运商沿用已有记录（{{ preview.existing.carrier }}）。</p>
           <div v-for="warning in preview.warnings" :key="warning.code" class="notice"><p>{{ warning.message }}</p><label v-if="warning.requires_confirmation" class="confirmation"><input v-model="confirmations" type="checkbox" :value="warning.code" :disabled="locked" />我已核对，确认没有拍错包裹</label></div>
         </section>
-        <footer class="submit-bar"><p v-if="!preview">先同步物流信息</p><button class="primary" :disabled="!canSubmit" @click="submit">{{ busy === 'submit' ? '正在提交…' : submitLabel }}</button></footer>
+        <footer class="submit-bar"><p v-if="!preview">{{ waitingText }}</p><button class="primary" :disabled="!canSubmit" @click="submit">{{ busy === 'submit' ? '正在提交…' : submitLabel }}</button></footer>
       </template>
     </template>
   </main>
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import DocumentScanner from '@/components/document-scanner/DocumentScanner.vue'
 import WaybillPhotoViewer from './components/WaybillPhotoViewer.vue'
 import { formatBeijingShortDateTime } from '@/utils/datetime'
 import { useMobileWaybills } from './composables/useMobileWaybills'
 import { numberSourceLabel, syncMessage } from './composables/mobileWaybillState'
-const { refreshing, nextInspectionId, total, hasMore, loadMore, allowed, tab, keyword, includeOlder, rows, loading, queueError, selected, step, busy, error, notice, imageUrl, form, numberSource, photoToken, preview, confirmations, countryOpen, locked, canSubmit, inferredDhl, submitLabel, loadQueue, begin, back, retake, captured, upload, editNumber, sync, submit } = useMobileWaybills()
+const { draft, restoreDraft, discardDraft, syncReady, refreshing, nextInspectionId, total, hasMore, loadMore, allowed, tab, keyword, includeOlder, rows, loading, queueError, selected, step, busy, error, notice, imageUrl, form, numberSource, photoToken, preview, confirmations, countryOpen, locked, canSubmit, inferredDhl, submitLabel, loadQueue, begin, back, retake, captured, upload, editNumber, sync, submit } = useMobileWaybills()
 const scanner = ref(null), adjusting = ref(false), scannerCamera = ref(false)
+// 恢复的草稿只有成品图，扫描器里没有原片，不能再调整边缘，只能重拍
+const restored = ref(false)
+function onRestore() { adjusting.value = false; restored.value = true; restoreDraft() }
 // 只有真正处在全屏取景时才隐藏页头和客户卡；扫描器退回入口/手动裁剪时仍要能返回、能看到是哪张单
 const cameraLive = computed(() => step.value === 'camera' && scannerCamera.value)
 const cardActions = new Map()
+const waitingText = computed(() => {
+  if (busy.value === 'photo') return '正在保存照片…'
+  if (busy.value === 'sync') return '正在核对物流信息…'
+  if (!syncReady.value) return '填好运单号、承运商和收件国家后自动核对'
+  return error.value ? '核对没有完成，可以点「重试核对」' : '即将自动核对物流信息'
+})
+// 拍运单和核对接入浏览器历史：手机返回手势回到列表（核对中的照片和填写内容留作草稿），不会直接退出整个页面
+const route = useRoute(), router = useRouter()
+const inCapture = () => route.query.step === 'capture'
+const withoutStep = () => { const { step: _step, ...rest } = route.query; return rest }
+watch(step, (value, previous) => {
+  if (value === 'list') adjusting.value = false
+  if (previous === 'list' && value !== 'list' && !inCapture()) router.push({ query: { ...route.query, step: 'capture' } })
+  else if (value === 'list' && inCapture()) router.back()
+})
+watch(() => route.query.step, value => {
+  if (route.name !== 'MobileWaybills') return // 提交中被踢去登录等离开本页的跳转，不往别的页面塞 step
+  if (value === 'capture') { if (step.value === 'list') router.replace({ query: withoutStep() }) }
+  else if (step.value !== 'list') {
+    back()
+    // 提交途中拒绝返回时把历史补回去，否则下一次返回手势会直接离开整页、丢掉照片
+    if (step.value !== 'list') router.push({ query: { ...route.query, step: 'capture' } })
+  }
+})
+// 刷新或前进进来的 step=capture 没有对应的拍摄状态，直接清掉
+onMounted(() => { if (inCapture()) router.replace({ query: withoutStep() }) })
 // 滑到列表底部附近自动续载下一页，按钮保留作兜底
 const moreSentinel = ref(null)
 let moreObserver = null
@@ -109,7 +145,7 @@ watch(nextInspectionId, async id => {
 }, { flush: 'post' })
 function eventText(event) { return [formatBeijingShortDateTime(event.event_time), event.location, event.description].filter(Boolean).join(' · ') }
 async function retakePhoto() { retake(); await nextTick(); scanner.value?.retake() }
-function onCaptured(value) { adjusting.value = false; captured(value) }
+function onCaptured(value) { adjusting.value = false; restored.value = false; captured(value) }
 async function adjust() { adjusting.value = true; await nextTick(); scanner.value?.adjustEdges() }
 </script>
 
@@ -125,5 +161,5 @@ button, input, select, summary, .mobile-header a { min-height: 44px; font: inher
 input:not([type="checkbox"]), select { display: block; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-bg); color: var(--text-primary); font-size: 16px; }
 .queue-card, .review-card { margin: 16px 0; padding: 16px; border: 1px solid var(--border-color); border-radius: 16px; background: var(--card-bg); }.card-top { display: flex; justify-content: space-between; gap: 8px; color: var(--text-secondary); font-size: 13px; }.badge, .source-label { background: var(--tag-gold-bg); color: var(--tag-gold-text); padding: 3px 8px; border-radius: 6px; font-size: 12px; }.card-action, .older, .sync-button { width: 100%; }.primary { background: var(--button-primary); color: var(--button-primary-ink); border-color: var(--button-primary); font-weight: 600; }.done-photo { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }.empty { padding: 40px 0; text-align: center; color: var(--text-secondary); }
 .customer-context { display: grid; grid-template-columns: 1fr auto; gap: 6px; padding: 14px; border-radius: 12px; background: var(--tag-gold-bg); }.customer-context strong { font-size: 18px; }.customer-context small { grid-column: 1 / -1; }.captured-photo { width: 100%; max-height: 230px; object-fit: contain; background: var(--page-bg); }.photo-actions { display: flex; gap: 8px; margin-top: 8px; }.photo-actions button { flex: 1; }
-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }label { display: block; margin: 12px 0; line-height: 1.8; }summary { cursor: pointer; padding: 10px 0; }.alert { padding: 12px; color: var(--tag-danger-text); background: var(--tag-danger-bg); border-radius: 8px; }.notice { padding: 12px; color: var(--tag-warning-text); background: var(--tag-warning-bg); border-radius: 8px; }.required { color: var(--tag-danger-text); font-size: 13px; }.confirmation { display: flex; align-items: center; gap: 8px; }.confirmation input { width: 22px; height: 22px; flex-shrink: 0; }.submit-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: min(100%, 560px); padding: 12px 16px max(12px, env(safe-area-inset-bottom)); background: var(--card-bg); border-top: 1px solid var(--border-color); z-index: 5; }.submit-bar button { width: 100%; }.submit-bar p { margin: 0 0 6px; text-align: center; color: var(--text-secondary); font-size: 13px; }.camera-context { display: flex; align-items: center; gap: 8px; color: var(--camera-ink); }.camera-context button { flex-shrink: 0; width: 44px; padding: 0; border: 0; border-radius: 999px; background: var(--camera-scrim); color: var(--camera-ink); font-size: 26px; line-height: 1; }.camera-context div { display: grid; gap: 2px; min-width: 0; }.camera-context strong { font-size: 17px; text-shadow: 0 1px 2px var(--camera-scrim); }.camera-context small { font-size: 13px; opacity: .85; color: var(--camera-ink); }.refreshing { margin: 0; text-align: center; color: var(--text-secondary); font-size: 13px; }.queue-card.stale { opacity: .55; transition: opacity 150ms ease-out; }.more-sentinel { margin-bottom: 16px; }.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }label { display: block; margin: 12px 0; line-height: 1.8; }summary { cursor: pointer; padding: 10px 0; }.alert { padding: 12px; color: var(--tag-danger-text); background: var(--tag-danger-bg); border-radius: 8px; }.notice { padding: 12px; color: var(--tag-warning-text); background: var(--tag-warning-bg); border-radius: 8px; }.required { color: var(--tag-danger-text); font-size: 13px; }.confirmation { display: flex; align-items: center; gap: 8px; }.confirmation input { width: 22px; height: 22px; flex-shrink: 0; }.submit-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: min(100%, 560px); padding: 12px 16px max(12px, env(safe-area-inset-bottom)); background: var(--card-bg); border-top: 1px solid var(--border-color); z-index: 5; }.submit-bar button { width: 100%; }.submit-bar p { margin: 0 0 6px; text-align: center; color: var(--text-secondary); font-size: 13px; }.camera-context { display: flex; align-items: center; gap: 8px; color: var(--camera-ink); }.camera-context button { flex-shrink: 0; width: 44px; padding: 0; border: 0; border-radius: 999px; background: var(--camera-scrim); color: var(--camera-ink); font-size: 26px; line-height: 1; }.camera-context div { display: grid; gap: 2px; min-width: 0; }.camera-context strong { font-size: 17px; text-shadow: 0 1px 2px var(--camera-scrim); }.camera-context small { font-size: 13px; opacity: .85; color: var(--camera-ink); }.refreshing { margin: 0; text-align: center; color: var(--text-secondary); font-size: 13px; }.queue-card { transition: opacity var(--motion-fast) var(--ease-out-strong); }.queue-card.stale { opacity: .55; }.draft-bar { margin: 4px 0 12px; padding: 12px; border: 1px solid var(--button-primary); border-radius: 12px; background: var(--tag-gold-bg); transition: opacity var(--motion-base) var(--ease-out-strong), transform var(--motion-base) var(--ease-out-strong); }.draft-bar p { margin: 0 0 8px; }.draft-bar div { display: flex; gap: 8px; }.draft-bar .primary { flex: 1; }@starting-style { .draft-bar { opacity: 0; transform: translateY(-4px); } }.more-sentinel { margin-bottom: 16px; }.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 </style>

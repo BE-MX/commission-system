@@ -55,9 +55,9 @@ const bracketPath = computed(() => shown.value.map((point, i, all) => {
 
 <style scoped>
 .scan-frame { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
-.dim { fill: var(--camera-scrim); stroke: none; opacity: 0; transition: opacity 200ms ease-out; }
-.edge { fill: var(--button-primary); fill-opacity: 0; stroke: var(--button-primary); stroke-width: 1.5px; stroke-opacity: 0; transition: fill-opacity 200ms ease-out, stroke-opacity 200ms ease-out; }
-.brackets { fill: none; stroke: var(--camera-ink); stroke-width: 3px; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; transition: stroke 200ms ease-out; }
+.dim { fill: var(--camera-scrim); stroke: none; opacity: 0; transition: opacity var(--motion-fast) var(--ease-out-strong); }
+.edge { fill: var(--button-primary); fill-opacity: 0; stroke: var(--button-primary); stroke-width: 1.5px; stroke-opacity: 0; transition: fill-opacity var(--motion-fast) var(--ease-out-strong), stroke-opacity var(--motion-fast) var(--ease-out-strong); }
+.brackets { fill: none; stroke: var(--camera-ink); stroke-width: 3px; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; transition: stroke var(--motion-fast) ease; }
 .found .dim { opacity: 1; }
 .found .edge { fill-opacity: 0.1; stroke-opacity: 0.9; }
 .found .brackets { stroke: var(--button-primary); }

@@ -120,7 +120,17 @@ Codex 使用用户级技能 `~/.codex/skills/impeccable/SKILL.md`，不把第三
   - Alert: 10px
 
 ## Motion
-- **Approach:** intentional — 有意义的过渡，不滥用动画
+- **Approach:** intentional — 有意义的过渡，不滥用动画。动效用来交代「东西从哪来、到哪去、变成了什么」，不做装饰
+- **Tokens（2026-11-24 起，新写和改到的过渡一律用变量，不写裸时长和裸曲线；存量随改随换）：**
+
+  | 变化类型 | 时长 | 曲线 | 例子 |
+  | --- | --- | --- | --- |
+  | 按下 / 松开 | `--motion-press` 120ms | `--ease-out-strong` | 按钮 `:active` 的 `scale(.97)` |
+  | 颜色、悬停、小文字换内容、消失 | `--motion-fast` 160ms | `ease`（颜色）/ `--ease-out-strong` | Tab 底色、提示语交叉淡化、元素淡出 |
+  | 区块出现、层淡入、滑块移动 | `--motion-base` 220ms | `--ease-out-strong`（进入）/ `--ease-in-out-strong`（屏内移动） | 提示卡、相机层、分段控件滑块 |
+  | 抽屉、底部面板、共享元素位移 | `--motion-sheet` 320ms | `--ease-drawer` | 照片从取景缩到缩略图位置 |
+
+  规则：退出比进入快一档；高频重复操作宁可不动；不用 `ease-in`、不用 `transition: all`；只动 `transform` / `opacity`；需要可打断的用 transition 或 WAAPI，一次性的才用 keyframes；JS/WAAPI 动画自己判断 `prefers-reduced-motion`，减少动态时只保留透明度变化
 - **Page transition:** 主站高频页面切换只淡入/淡出，进入 120ms、退出 80ms；不位移业务表格。
 - **Stagger:** 业务表单和列表不延迟显示；低频介绍场景才使用短交错入场。
 - **Card hover:** translateY(-2px) + shadow 加深, 250ms ease

@@ -19,7 +19,7 @@
         @click="nativeInput.click()"
       >使用系统相机</GlassButton>
       <small v-if="finish === 'download'">图片在当前浏览器内处理</small>
-      <GlassButton v-else variant="link" :disabled="busy" @click="$emit('cancel')">返回草稿</GlassButton>
+      <GlassButton v-else variant="link" :disabled="busy" @click="$emit('cancel')">{{ cancelLabel }}</GlassButton>
     </div>
 
     <div v-else-if="step === 'camera' && immersive" class="immersive-camera" role="dialog" aria-modal="true" aria-label="拍运单取景">
@@ -51,6 +51,13 @@
         <GlassButton @click="closeCamera(); fileInput.click()">从相册选</GlassButton>
         <GlassButton variant="primary" :icon="Camera" :disabled="!cameraReady" @click="takePhoto">拍照</GlassButton>
       </div>
+    </div>
+
+    <!-- 直拍：按下快门后定格这一帧并原地校正，只有找不到边或处理失败才进入手动校正，不闪过中间步骤 -->
+    <div v-else-if="step === 'processing'" class="immersive-camera processing">
+      <canvas ref="freeze" class="freeze" aria-hidden="true"></canvas>
+      <div class="immersive-top"><slot name="overlay" /></div>
+      <div class="immersive-bottom"><p class="immersive-hint" role="status">正在校正…</p></div>
     </div>
 
     <div v-else-if="step === 'crop'" class="lg-card is-static scan-workspace" :aria-busy="busy">
@@ -113,6 +120,9 @@ const props = defineProps({
   requireOriginal: { type: Boolean, default: false },
   finish: { type: String, default: 'download' },
   finishLabel: { type: String, default: '使用这张' },
+  cancelLabel: { type: String, default: '返回草稿' },
+  // 直拍模式挂载时是否立即开相机；恢复草稿时扫描器只为「重拍」待命，不能在看不见的地方开着相机
+  autoOpen: { type: Boolean, default: true },
   defaultEffect: { type: String, default: 'original' },
   maxUploadBytes: { type: Number, default: 6 * 1024 * 1024 },
 })
@@ -137,6 +147,7 @@ const stableFrames = ref(0)
 const alignedLatch = ref(false)
 const aligned = computed(() => !!liveCorners.value && alignedLatch.value)
 const shutter = ref(null)
+const freeze = ref(null)
 const corners = ref(fullFrame())
 const foundEdges = ref(false)
 const photoUrl = ref('')
@@ -174,6 +185,8 @@ const barcode = ref('')
 let barcodeBusy = false
 let lastBarcodeAt = 0
 let lastBarcodeFound = 0
+// 拍摄中被切到后台会关相机；回到前台时自动重开，不让人自己找按钮
+let resumeOnVisible = false
 
 function stopCamera() {
   cameraRequest++
@@ -312,7 +325,30 @@ async function openCamera() {
 }
 
 function onVisibilityChange() {
-  if (document.hidden && step.value === 'camera') closeCamera()
+  if (document.hidden) {
+    if (step.value === 'camera') { closeCamera(); resumeOnVisible = props.directCapture }
+  } else if (resumeOnVisible) {
+    resumeOnVisible = false
+    if (step.value === 'ready' && !busy.value) openCamera()
+  }
+}
+
+// 把拍下的帧按 cover 画到全屏定格层：和取景画面同一帧、同一裁切，看起来就是画面停住了
+async function showFrozenFrame(photo) {
+  step.value = 'processing'
+  await nextTick()
+  const canvas = freeze.value
+  if (!canvas) return
+  const ratio = Math.min(window.devicePixelRatio || 1, 2)
+  const width = canvas.clientWidth, height = canvas.clientHeight
+  canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio)
+  const scale = Math.max(canvas.width / photo.width, canvas.height / photo.height)
+  const drawWidth = photo.width * scale, drawHeight = photo.height * scale
+  canvas.getContext('2d')?.drawImage(photo, (canvas.width - drawWidth) / 2, (canvas.height - drawHeight) / 2, drawWidth, drawHeight)
+}
+
+function leaveProcessing(next) {
+  if (step.value === 'processing') step.value = next
 }
 
 function replaceUrl(target, blob = null) {
@@ -327,6 +363,7 @@ function releaseCanvas(canvas) {
 function reset() {
   imageRequest++
   stopCamera()
+  resumeOnVisible = false
   replaceUrl(photoUrl)
   replaceUrl(resultUrl)
   releaseCanvas(source)
@@ -348,6 +385,9 @@ async function processPhoto(getPhoto, capturedCorners = null) {
   try {
     canvas = await getPhoto()
     if (request !== imageRequest) return
+    // 先让定格帧和快门闪光画出来，再做整张找边（同步计算会占住主线程几十到上百毫秒）
+    if (step.value === 'processing') await new Promise(resolve => setTimeout(resolve, 34))
+    if (request !== imageRequest) return
     const detectionCanvas = document.createElement('canvas')
     const findEdges = edge => detectDocument(
       readDetectionPixels(detectionCanvas, canvas, canvas.width, canvas.height, edge, 'high'),
@@ -361,10 +401,13 @@ async function processPhoto(getPhoto, capturedCorners = null) {
     photoRatio.value = canvas.width / canvas.height
     foundEdges.value = !!detected
     corners.value = detected ? padDetectedQuad(detected) : fullFrame()
-    step.value = 'crop'
     if (props.directCapture && detected) await updatePreview(effect.value, true)
+    else step.value = 'crop'
   } catch {
-    if (request === imageRequest) error.value = '无法读取这张照片，请重拍或选择 JPG、PNG 图片。'
+    if (request === imageRequest) {
+      leaveProcessing('ready')
+      error.value = '无法读取这张照片，请重拍或选择 JPG、PNG 图片。'
+    }
   } finally {
     if (canvas !== source) releaseCanvas(canvas)
     if (request === imageRequest) busy.value = false
@@ -392,7 +435,10 @@ function takePhoto() {
   }
   if (Date.now() - lastBarcodeFound > 1200) barcode.value = ''
   const capturedCorners = liveCorners.value?.map(point => [...point])
-  closeCamera()
+  if (props.directCapture && props.immersive) {
+    stopCamera()
+    showFrozenFrame(photo)
+  } else closeCamera()
   processPhoto(() => photo, capturedCorners)
 }
 
@@ -414,7 +460,7 @@ async function updatePreview(nextEffect, applyCrop = false) {
     if (request !== imageRequest) return
     replaceUrl(resultUrl, blob)
     effect.value = nextEffect
-    step.value = 'result'
+    if (step.value !== 'processing') step.value = 'result'
     if (props.directCapture) {
       const decoded = await readWaybillBarcode(canvas)
       if (request !== imageRequest) return
@@ -422,7 +468,10 @@ async function updatePreview(nextEffect, applyCrop = false) {
       await useCapture()
     }
   } catch {
-    if (request === imageRequest) error.value = '处理图片失败，请重试或调整裁剪范围。'
+    if (request === imageRequest) {
+      leaveProcessing('crop')
+      error.value = '处理图片失败，请重试或调整裁剪范围。'
+    }
   } finally {
     releaseCanvas(canvas)
     if (request === imageRequest) busy.value = false
@@ -445,11 +494,17 @@ async function useCapture() {
   try {
     const capture = await encodeCapture(source, rectified, effect.value, props.maxUploadBytes, isCurrent)
     if (capture && props.requireOriginal && !capture.original) throw new RangeError('Original exceeds limit')
-    if (capture && isCurrent()) emit('captured', { ...capture, barcode: barcode.value, corners: corners.value, effect: effect.value })
+    if (capture && isCurrent()) {
+      emit('captured', { ...capture, barcode: barcode.value, corners: corners.value, effect: effect.value })
+      releaseCanvas(freeze.value) // 定格帧完成使命，别在核对期间一直占着内存
+    }
   } catch (failure) {
-    if (isCurrent()) error.value = failure instanceof RangeError
-      ? '校正图超过单据上传限制，请调整裁剪范围或换一张照片。'
-      : '无法生成上传图片，请再试一次。'
+    if (isCurrent()) {
+      leaveProcessing('crop')
+      error.value = failure instanceof RangeError
+        ? '校正图超过单据上传限制，请调整裁剪范围或换一张照片。'
+        : '无法生成上传图片，请再试一次。'
+    }
   } finally {
     if (isCurrent()) busy.value = false
   }
@@ -465,7 +520,8 @@ function downloadScan() {
 }
 
 watch(step, value => {
-  emit('camera', value === 'camera')
+  // 定格校正层同样是全屏沉浸态，父页面继续隐藏页头
+  emit('camera', value === 'camera' || value === 'processing')
 }, { immediate: true })
 // 快门在相机就绪前是 disabled，focus 无效；就绪后再把焦点移进全屏取景层
 watch(cameraReady, ready => {
@@ -475,7 +531,7 @@ watch(cameraReady, ready => {
 defineExpose({ adjustEdges: () => { step.value = 'crop' }, retake: () => { reset(); openCamera() } })
 onMounted(() => {
   document.addEventListener('visibilitychange', onVisibilityChange)
-  if (props.directCapture) openCamera()
+  if (props.directCapture && props.autoOpen) openCamera()
 })
 onDeactivated(reset)
 onBeforeUnmount(() => {
@@ -565,7 +621,7 @@ h2 { font-size: 16px; }
   border-radius: 999px;
   background: var(--camera-scrim);
   font-size: 14px;
-  transition: color 200ms ease-out;
+  transition: color var(--motion-fast) ease;
 }
 .immersive-error {
   max-width: min(100%, 420px);
@@ -593,7 +649,7 @@ h2 { font-size: 16px; }
   font: inherit;
   font-size: 15px;
   cursor: pointer;
-  transition: transform 160ms ease-out;
+  transition: transform var(--motion-press) var(--ease-out-strong);
 }
 .shutter {
   display: grid;
@@ -605,20 +661,32 @@ h2 { font-size: 16px; }
   border-radius: 50%;
   background: transparent;
   cursor: pointer;
-  transition: transform 160ms ease-out, border-color 200ms ease-out;
+  transition: transform var(--motion-press) var(--ease-out-strong), border-color var(--motion-fast) ease;
 }
 .shutter span {
   width: 60px;
   height: 60px;
   border-radius: 50%;
   background: var(--camera-ink);
-  transition: background-color 200ms ease-out;
+  transition: background-color var(--motion-fast) ease;
 }
 .shutter.ready { border-color: var(--button-primary); }
 .shutter.ready span { background: var(--button-primary); }
 .shutter:disabled { opacity: 0.4; cursor: default; }
 .shutter:active:not(:disabled), .camera-text-button:active { transform: scale(0.95); }
 .shutter:focus-visible, .camera-text-button:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 3px; }
+.freeze { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* 快门闪一下：确认「拍到了」；减少动态时全局规则把它缩到 0 */
+.processing::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--camera-ink);
+  opacity: 0;
+  pointer-events: none;
+  animation: shutter-flash var(--motion-base) var(--ease-out-strong);
+}
+@keyframes shutter-flash { from { opacity: 0.5; } to { opacity: 0; } }
 .crop-area { width: 100%; padding: 20px 22px; box-sizing: border-box; }
 .scan-result {
   display: grid;
