@@ -82,7 +82,8 @@ def build_insights(customers, dimensions, quality, config, finance=None):
                 add("credit_account_check", row["customer_id"], f"{row['shop_name']}有账户欠款",
                     f"截止时点账户欠款 {row['debt']} 元；缺少账期与逐笔核销证据，不能认定逾期。",
                     row["evidence_refs"][-5:], "high", "由业务与财务核对账户和约定付款安排")
-                months = row["monthly_balances"]
+                first_recharge_month = row["first_recharge_date"][:7]
+                months = [month for month in row["monthly_balances"] if month["month"] >= first_recharge_month]
                 if len(months) == 3 and all(month["debt"] is not None for month in months) and months[0]["debt"] < months[1]["debt"] < months[2]["debt"]:
                     add("credit_debt_growth", row["customer_id"], f"{row['shop_name']}账户欠款连续扩大",
                         "连续完整月末欠款为 " + "、".join(f"{month['month']} {month['debt']} 元" for month in months) + "；无约定账期证据，不认定逾期。",

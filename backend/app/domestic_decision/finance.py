@@ -128,7 +128,13 @@ def coverage_metrics(customer, history, commercial_orders, closing, reliable, as
             "coverage_limitation": "按有效商业订单实际扣款毛额估算；账户全部退款/正向订单调整参与异常检查，未知或非商业订单扣款暂停预测"}
 
 
-def completed_month_balances(history, as_of):
+def recharged_customer_debt(balance, has_recharged):
+    if balance is None:
+        return None
+    return number(max(-balance, 0)) if has_recharged else 0
+
+
+def completed_month_balances(history, as_of, first_recharge_day):
     """Only recorded month-end ledger states, never today's customer balance."""
     month_start = as_of.replace(day=1)
     last_day = as_of.replace(day=monthrange(as_of.year, as_of.month)[1])
@@ -141,7 +147,8 @@ def completed_month_balances(history, as_of):
         entry = entries[-1] if entries else None
         balance = decimal(entry.balance_after) if entry else None
         months.append({"month": month_start.strftime("%Y-%m"), "closing_balance": number(balance) if balance is not None else None,
-                       "debt": number(max(-balance, decimal(0))) if balance is not None else None, "ledger_id": entry.id if entry else None})
+                       "debt": recharged_customer_debt(balance, first_recharge_day is not None and first_recharge_day < next_month),
+                       "ledger_id": entry.id if entry else None})
         month_start = (month_start - timedelta(days=1)).replace(day=1)
     return list(reversed(months))
 
@@ -187,6 +194,7 @@ def build_finance(db, customers, payload, commercial_orders, config=None):
         recharges = [r for r in during if r.transaction_type == "recharge" and decimal(r.amount) > 0]
         all_recharges = [r for r in history if r.transaction_type == "recharge" and decimal(r.amount) > 0]
         recharge_days = sorted({_stamp(r.created_at).date() for r in all_recharges})
+        first_recharge_day = recharge_days[0] if recharge_days else None
         intervals = [(b - a).days for a, b in zip(recharge_days, recharge_days[1:])]
         components = {kind: number(sum((decimal(r.amount) for r in during if r.transaction_type == kind), decimal(0))) for kind in sorted({r.transaction_type for r in during})}
         net_deduction = -sum((decimal(r.amount) for r in during if r.transaction_type in ORDER_TYPES), decimal(0))
@@ -200,17 +208,17 @@ def build_finance(db, customers, payload, commercial_orders, config=None):
                                      "order_adjustment_negative": number(-sum((decimal(r.amount) for r in during if r.transaction_type == "order_adjustment" and decimal(r.amount) < 0), decimal(0))),
                                      "receipt": components.get("receipt", 0), "order_refund": components.get("order_refund", 0), "init": components.get("init", 0), "adjust": components.get("adjust", 0), "level_adjust": components.get("level_adjust", 0)},
                "positive_balance": number(max(closing, decimal(0))) if closing is not None else None,
-               "debt": number(max(-closing, decimal(0))) if closing is not None else None,
+               "debt": recharged_customer_debt(closing, first_recharge_day is not None),
                "recharge_amount": number(sum((decimal(r.amount) for r in recharges), decimal(0))),
                "recharge_count": len(recharges), "net_order_deduction": number(net_deduction),
                "debt_improvement": number(sum((min(decimal(r.amount), max(-decimal(r.balance_before), decimal(0))) for r in recharges), decimal(0))),
                "pending_recharge_amount": number(sum((decimal(r.amount) for r in pending[customer.id]), decimal(0))),
                "pending_recharge_count": len(pending[customer.id]), "recharge_cycle_days": median(intervals[-6:]) if len(recharge_days) >= 3 else None,
-               "first_recharge_date": recharge_days[0].isoformat() if recharge_days else None,
+               "first_recharge_date": first_recharge_day.isoformat() if first_recharge_day else None,
                "last_recharge_date": recharge_days[-1].isoformat() if recharge_days else None,
                "recharge_recency_days": (min(payload.end_date, beijing_today()) - recharge_days[-1]).days if recharge_days else None,
                "manual_adjustment_count_30d": sum(r.transaction_type == "adjust" and _stamp(r.created_at).date() >= min(payload.end_date, beijing_today()) - timedelta(days=29) for r in history),
-               "monthly_balances": completed_month_balances(history, min(payload.end_date, beijing_today())),
+               "monthly_balances": completed_month_balances(history, min(payload.end_date, beijing_today()), first_recharge_day),
                "reliable": not reasons, "anomalies": reasons,
                "bridge_difference": number(bridge_difference) if bridge_difference is not None else None,
                "current_reconciliation_difference": number(current_difference) if current_difference is not None else None,
@@ -233,7 +241,7 @@ def build_finance(db, customers, payload, commercial_orders, config=None):
                "unknown_balance_customer_count": sum(r["closing_balance"] is None for r in rows),
                "pending_recharge_amount": number(sum((decimal(r["pending_recharge_amount"]) for r in rows), decimal(0))),
                "pending_recharge_count": sum(r["pending_recharge_count"] for r in rows), "anomaly_count": len(anomalies)}
-    summary["net_balance"] = number(decimal(summary["positive_balance"]) - decimal(summary["debt"]))
+    summary["net_balance"] = number(sum((decimal(r["closing_balance"]) for r in rows if r["closing_balance"] is not None), decimal(0)))
     summary["balance_scope"] = "known_balances_only" if summary["unknown_balance_customer_count"] else "all_selected_customers"
     summary["opening_balance"] = number(sum((decimal(r["opening_balance"]) for r in rows), decimal(0))) if rows and all(r["opening_balance"] is not None for r in rows) else None
     summary["closing_balance"] = number(sum((decimal(r["closing_balance"]) for r in rows), decimal(0))) if rows and all(r["closing_balance"] is not None for r in rows) else None

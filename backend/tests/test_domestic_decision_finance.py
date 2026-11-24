@@ -79,6 +79,56 @@ def test_a06_credit_debt_positive_balance_separate(db, ledger_seed):
     assert all(insight["requires_finance"] for insight in result["insights"] if insight["rule_key"] == "credit_account_check")
 
 
+@pytest.mark.parametrize("kind,amount,when,expected_debt", [
+    ("recharge", 100, datetime(2026, 8, 31, 23, 59, 59), 500),
+    ("recharge", 100, datetime(2026, 9, 30, 23, 59, 59), 500),
+    ("recharge", 100, datetime(2026, 10, 1), 0),
+    ("recharge", 0, datetime(2026, 8, 1), 0),
+    ("recharge", -100, datetime(2026, 8, 1), 0),
+    ("init", 100, datetime(2026, 8, 1), 0),
+    ("order_refund", 100, datetime(2026, 8, 1), 0),
+])
+def test_debt_requires_positive_recharge_by_period_end(db, ledger_seed, kind, amount, when, expected_debt):
+    s = ledger_seed
+    s.entry("order_charge", -600, 0, -600, datetime(2026, 7, 1))
+    s.entry(kind, amount, -600, -600 + amount, when)
+    finance = build_analysis(db, s.actor, s.request())["finance"]
+    row = finance["customers"][0]
+    expected_closing = -600 + amount if when < datetime(2026, 10, 1) else -600
+    assert row["closing_balance"] == expected_closing
+    assert row["debt"] == expected_debt
+    assert finance["summary"]["debt"] == expected_debt
+    assert finance["summary"]["net_balance"] == expected_closing
+
+
+def test_non_recharged_negative_balance_still_contributes_to_net_balance(db, ledger_seed):
+    s = ledger_seed
+    other = s.customers[1]
+    other.owner_user_id = s.users[0].id
+    s.entry("recharge", 100, 0, 100, datetime(2026, 8, 1))
+    s.entry("order_charge", -600, 100, -500)
+    s.entry("order_charge", -700, 0, -700, customer=other)
+    finance = build_analysis(db, s.actor, s.request())["finance"]
+    assert len(finance["customers"]) == 2
+    assert finance["summary"]["debt"] == 500
+    assert finance["summary"]["net_balance"] == -1200
+    assert finance["summary"]["closing_balance"] == -1200
+
+
+def test_monthly_debt_uses_recharge_history_as_of_each_month_end(db, ledger_seed):
+    s = ledger_seed
+    s.customers[0].settle_mode = "credit"
+    s.entry("order_charge", -600, 0, -600, datetime(2026, 7, 1))
+    s.entry("recharge", 100, -600, -500, datetime(2026, 8, 15))
+    s.entry("order_charge", -100, -500, -600, datetime(2026, 9, 1))
+    result = build_analysis(db, s.actor, s.request())
+    monthly = result["finance"]["customers"][0]["monthly_balances"]
+    assert [row["month"] for row in monthly] == ["2026-07", "2026-08", "2026-09"]
+    assert [row["closing_balance"] for row in monthly] == [-600, -500, -600]
+    assert [row["debt"] for row in monthly] == [0, 500, 600]
+    assert not any(i["rule_key"] == "credit_debt_growth" for i in result["insights"])
+
+
 def test_a07_a08_a22_actual_recharge_only_pending_suppression_safe_evidence(db, ledger_seed):
     s = ledger_seed
     s.entry("init", 5000, 0, 5000)
@@ -235,13 +285,14 @@ def test_recharge_waiting_day_grain_and_review_duration(db, ledger_seed):
 def test_credit_debt_growth_uses_three_recorded_complete_months(db, ledger_seed):
     s = ledger_seed
     s.customers[0].settle_mode = "credit"
+    s.entry("recharge", 100, -100, 0, datetime(2026, 6, 1))
     s.entry("order_charge", -100, 0, -100, datetime(2026, 7, 1))
     s.entry("order_charge", -100, -100, -200, datetime(2026, 8, 1))
     s.entry("order_charge", -100, -200, -300, datetime(2026, 9, 1))
     result = build_analysis(db, s.actor, s.request())
     assert [row["debt"] for row in result["finance"]["customers"][0]["monthly_balances"]] == [100, 200, 300]
     assert any(insight["rule_key"] == "credit_debt_growth" and insight["requires_finance"] for insight in result["insights"])
-    assert len(result["evidence"]["history_ledger"]) == 2
+    assert len(result["evidence"]["history_ledger"]) == 3
 
 
 @pytest.mark.parametrize("return_type", ["order_refund", "order_adjustment"])

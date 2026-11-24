@@ -1,3 +1,8 @@
+## 2026-11-24 内贸经营决策台欠款口径（Codex，待部署）
+
+- `codex/recharged-debt` 将欠款限定为截至统计期末曾有正向充值入账客户的负余额绝对值。客户明细、月末画像与汇总沿用同一口径，净余额仍汇总所有已知账本余额。指标版本升级为 `domestic-v4-recharged-debt`，旧分析快照需刷新。
+- 本地实现只读核对生产账本：截至 10 月 31 日为 6 家、19,847.00 元，截至 11 月 24 日 13:27:32 为 7 家、38,171.00 元。
+
 ## 2026-11-24 订单快递渠道按付款方式过滤（Claude，已合入 main，待部署）
 
 - 分支 `claude/express-channel-rules`（主目录，基于 main `49656a91`），已合入 main 并推送 origin。新增渠道 `DHL报关`、`FEDEX报关`；付款方式与渠道按规则表配对，规则见 `docs/requirements/2026-11-24-express-channel-picker/README.md`，后端唯一来源 `app/invoice/shipping_policy.py`，前端镜像由测试锁定一致。
