@@ -75,11 +75,13 @@ def drilldown(kind: str = Query("records", pattern="^(records|overdue|signal|pla
               date_to: date | None = None, followup_date: date | None = None,
               result_code: str | None = Query(None, max_length=32), obstacle: str | None = Query(None, max_length=32),
               state_change: str | None = Query(None, max_length=64), quality: str | None = Query(None, max_length=32),
+              customer_level: str | None = Query(None, pattern="^(S级|A级|B级|C级)$"),
               page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
               db: Session = Depends(get_db), user=Depends(_require_read)):
     with _errors():
         return ok(stats_service.drilldown(
             db, user, kind=kind, user_id=user_id, date_from=date_from, date_to=date_to,
             followup_date=followup_date, result_code=result_code, obstacle=obstacle,
-            state_change=state_change, quality=quality, page=page, page_size=page_size,
+            state_change=state_change, quality=quality, customer_level=customer_level,
+            page=page, page_size=page_size,
         ))

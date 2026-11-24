@@ -1,5 +1,9 @@
 <template>
   <DetailDrawer :model-value="visible" :title="title" width="680px" @update:model-value="value => { visible = value }">
+    <div v-if="kind === 'overdue'" class="stats-chead">
+      <span>客户等级</span>
+      <StatsSegments :model-value="customerLevel" :options="levelOptions" label="客户等级" @change="changeLevel" />
+    </div>
     <el-alert v-if="error" class="stats-error" type="error" :title="error" :closable="false" show-icon />
     <div v-loading="loading" class="stats-drill-list">
       <template v-for="row in items" :key="row.id || row.customer_id">
@@ -19,7 +23,7 @@
           <GlassButton variant="link" @click="$emit('timeline', row.customer_id)">客户时间线</GlassButton><GlassButton v-permission="'domestic_followup:write'" variant="link" @click="$emit('write', row)">记跟进</GlassButton>
         </article>
       </template>
-      <el-empty v-if="!loading && !items.length" description="当前条件下没有数据" :image-size="72" />
+      <el-empty v-if="!loading && !error && !items.length" description="当前条件下没有数据" :image-size="72" />
     </div>
     <el-pagination v-if="total > pageSize" v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[20, 50, 100]" :total="total" layout="total, sizes, prev, pager, next" @current-change="load" @size-change="load(1)" />
   </DetailDrawer>
@@ -29,19 +33,27 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import { ref } from 'vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
+import StatsSegments from './StatsSegments.vue'
 import { followupApi } from '@/api/domesticFollowup'
 import { errorMessage } from '@/utils/errors'
 
 const emit = defineEmits(['record', 'timeline', 'write'])
 const visible = ref(false), loading = ref(false), error = ref(''), title = ref('统计明细')
 const items = ref([]), kind = ref('records'), total = ref(0), page = ref(1), pageSize = ref(20)
+const customerLevel = ref('')
+const levelOptions = [
+  { value: '', label: '全部' },
+  ...['S级', 'A级', 'B级', 'C级'].map(level => ({ value: level, label: level })),
+]
 let params = {}, run = 0
 async function load(pageNumber = 1) {
   const current = ++run
   loading.value = true
   error.value = ''
   try {
-    const data = await followupApi.statsDrilldown({ ...params, page: pageNumber, page_size: pageSize.value })
+    const query = { ...params, page: pageNumber, page_size: pageSize.value }
+    if (kind.value === 'overdue' && customerLevel.value) query.customer_level = customerLevel.value
+    const data = await followupApi.statsDrilldown(query)
     if (current !== run) return
     items.value = data.items
     total.value = data.total
@@ -49,15 +61,23 @@ async function load(pageNumber = 1) {
   } catch (failure) { if (current === run) error.value = errorMessage(failure, '统计明细加载失败') }
   finally { if (current === run) loading.value = false }
 }
-function open(nextParams, nextTitle = '统计明细') {
-  run += 1
-  params = { ...nextParams }
-  kind.value = nextParams.kind || 'records'
-  title.value = nextTitle
+function loadFirstPage() {
+  page.value = 1
   items.value = []
   total.value = 0
+  return load(1)
+}
+function changeLevel(level) {
+  customerLevel.value = level
+  return loadFirstPage()
+}
+function open(nextParams, nextTitle = '统计明细') {
+  params = { ...nextParams }
+  customerLevel.value = ''
+  kind.value = nextParams.kind || 'records'
+  title.value = nextTitle
   visible.value = true
-  load(1)
+  loadFirstPage()
 }
 defineExpose({ open })
 </script>

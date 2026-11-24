@@ -357,7 +357,8 @@ def rhythm(db: Session, current_user: dict, *, scope: str = "personal", range_ke
 def drilldown(db: Session, current_user: dict, *, kind: str = "records", user_id: int | None = None,
               date_from: date | None = None, date_to: date | None = None, followup_date: date | None = None,
               result_code: str | None = None, obstacle: str | None = None, state_change: str | None = None,
-              quality: str | None = None, page: int = 1, page_size: int = 20) -> dict:
+              quality: str | None = None, customer_level: str | None = None,
+              page: int = 1, page_size: int = 20) -> dict:
     actor_id = visibility.uid(current_user)
     if user_id and not visibility.can_read_all(current_user) and user_id != actor_id:
         raise PermissionError("只能查看自己的统计明细")
@@ -369,7 +370,11 @@ def drilldown(db: Session, current_user: dict, *, kind: str = "records", user_id
         for user in users:
             coverage = coverage_for(entries, user.id, config["frequency_days"], period["today"])
             rows.extend({**row, "owner_name": user.real_name} for row in coverage["overdue_customers"])
-        rows.sort(key=lambda row: (-row["overdue_days"], row["shop_name"]))
+        if customer_level:
+            rows = [row for row in rows if row["level"] == customer_level]
+        level_order = {level: index for index, level in enumerate(("S级", "A级", "B级", "C级"))}
+        rows.sort(key=lambda row: (level_order.get(row["level"], len(level_order)),
+                                   -row["overdue_days"], row["shop_name"]))
         total = len(rows)
         start = (page - 1) * page_size
         return {"kind": kind, "items": rows[start:start + page_size], "total": total, "page": page,

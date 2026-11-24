@@ -3286,7 +3286,7 @@ stock条目含external_id、mode、warehouse_id、local_sku_id、quality、整�
 | GET | `/stats/team` | 同时间参数；需 `domestic_followup:read_all`，返回团队去重指标、人员对比、信号、异常及协调入口计数。 |
 | GET | `/stats/rhythm` | `scope=personal/team` 和时间参数，可选 `user_id`；team 同样验证 read_all。 |
 | GET | `/stats/missing-today` | 北京时间今日提交情况；业务员仅自己，周日/配置非工作日不提示。 |
-| GET | `/stats/drilldown` | `kind=records/overdue/signal/plans`；支持 user_id、日期、followup_date、result_code、obstacle、state_change、quality，page/page_size（最多 100）；复用当前身份及统计名单范围。 |
+| GET | `/stats/drilldown` | `kind=records/overdue/signal/plans`；支持 user_id、日期、followup_date、result_code、obstacle、state_change、quality，page/page_size（最多 100）；overdue 支持可选 customer_level=S级/A级/B级/C级，在总数和分页前筛选，按 S/A/B/C 等级优先、同级按原超期天数及店名排序；复用当前身份及统计名单范围。 |
 | GET | `/stats/churn-map` | 客户流失态势（当前快照，不随时间范围变化）：每个有归属客户的释放日与先到期的钟（`public_sea.compute_clocks`，新规则生效前跟进钟按预演口径）、频率绑带、按 7 大区 + 未填地区聚合、近 30 天落海明细。`domestic_followup:read` 只返回本人归属或负责跟进的客户、不返回姓名，带他人 `user_id` 403；查看某人（业务员本人，或 `read_all` 传 `user_id`）时近 30 天落海只算、只列原归属是这个人的，同事的落海客户只计入各区公海总数。`read_all` 返回归属人选项。 |
 | GET | `/insights` | 可选 user_id；返回 personal/company 完成快照和 refresh 状态/配额。证据及责任范围实时复核，公司普通业务员只读脱敏聚合。 |
 | POST | `/insights/refresh` | JSON `{user_id?}`；每人北京时间每日两次。返回 snapshot_ids、status、started；相同目标复用活跃任务。个人与公司任务独立完成，失败保留旧快照。 |
