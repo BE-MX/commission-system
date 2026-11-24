@@ -243,9 +243,17 @@ test('pollDecision keeps polling while AI runs and gives up to drafts at the lim
 test('pollDecision waits for fallback OCR after AI failure, then applies', () => {
   const ocring = { ai_status: 'failed', attachments: [{ ocr_status: 'pending' }] }
   assert.equal(pollDecision(ocring, 3), 'continue')
-  assert.equal(pollDecision(ocring, POLL_LIMIT), 'apply')  // 截图文字没出来也让人手填
+  assert.equal(pollDecision(ocring, POLL_LIMIT), 'continue')
+  assert.equal(pollDecision(ocring, POLL_LIMIT + 30), 'apply')  // 截图文字没出来也让人手填
   assert.equal(pollDecision({ ai_status: 'failed', attachments: [{ ocr_status: 'done' }] }, 3), 'apply')
   assert.equal(pollDecision({ ai_status: 'done', attachments: [] }, 0), 'apply')
+})
+
+test('pollDecision allows a long single-image draft to finish separate OCR', () => {
+  const running = { ai_status: 'running', attachments: [{ ocr_status: 'pending' }] }
+  const seconds165 = Math.ceil(165_000 / POLL_MS)
+  assert.equal(pollDecision(running, seconds165), 'continue')
+  assert.equal(pollDecision(running, POLL_LIMIT + 30), 'timeout')
 })
 
 test('draft confirmation keeps employee-confirmed outcomes separate from responsibility changes', () => {

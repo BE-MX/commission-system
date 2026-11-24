@@ -3,6 +3,7 @@ import io
 import json
 from datetime import date
 
+import httpx
 import pytest
 from PIL import Image, ImageDraw
 from sqlalchemy.orm import sessionmaker
@@ -94,12 +95,14 @@ def test_draft_starts_background_parse_and_conflict_maps_409(db, monkeypatch):
         assert good.status_code == 200 and good.json()["data"]["status"] == "confirmed"
 
 
-@pytest.mark.parametrize(("failed_ocr", "truncated_parse"), [
-    (None, False), (5, False), (None, True),
-], ids=["all_readable", "last_ocr_failed", "truncated_parse_then_recovered"])
-def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, failed_ocr, truncated_parse):
+@pytest.mark.parametrize(("shot_count", "failed_ocr", "parse_failure"), [
+    (6, None, None), (6, 5, None), (6, None, "truncated"),
+    (1, None, None), (1, None, "overloaded"), (1, None, "dense_screenshot"),
+], ids=["all_readable", "last_ocr_failed", "truncated_parse_then_recovered", "long_text_single_image",
+        "long_text_recovers_from_overload", "dense_single_image_recovers_from_truncation"])
+def test_images_produce_a_reviewable_draft(db, monkeypatch, tmp_path, shot_count, failed_ocr, parse_failure):
     seed_dicts(db)
-    user = make_user(db, "fu_rt_six")
+    user = make_user(db, "fu_rt_screenshots")
     customer = make_customer(db, user, "测试客户")
     provider = AiProvider(name="Test provider", api_base="https://example.invalid/v1")
     db.add(provider)
@@ -116,15 +119,20 @@ def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, f
     monkeypatch.setattr(file_service.cloud_files, "read_path", lambda _ns, rel, root: root / rel)
     jobs_to_run = _record_jobs(monkeypatch)
 
+    raw_text = ""
+    if shot_count == 1 and parse_failure != "dense_screenshot":
+        raw_text = ("客户在比较多个补货方案，月底前会反馈。\n" * 450).strip()
     screenshots = []
     transcripts = [
         f"客户：第 {index} 张聊天记录\n" + "客户：关于样品发片颜色和长度，我们内部还要再核对一次。\n" * 40
-        for index in range(1, 7)
+        for index in range(1, shot_count + 1)
     ]
     resolved_quote = "最短规格是20厘米，报价已经按20厘米解释清楚"
     transcripts[-1] += f"我：{resolved_quote}"
     requests = []
     deadlines = []
+    waits = []
+    monkeypatch.setattr(attachment_service, "sleep", waits.append)
 
     def model_response(_url, *, body, timeout_sec, enforce_total_timeout=False, **_kwargs):
         pictures = [
@@ -139,12 +147,19 @@ def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, f
         if body["model"] == "domestic_followup_ocr":
             [picture] = pictures
             index = screenshots.index(picture)
+            if parse_failure == "overloaded" and len(requests) == 3:
+                request = httpx.Request("POST", _url)
+                httpx.Response(503, request=request).raise_for_status()
             if index == failed_ocr:
                 return {"choices": [{"message": {"content": '{"text": "截断'}, "finish_reason": "length"}]}
             output = json.dumps({"text": transcripts[index], "unreadable": []})
         else:
             instructions = " ".join(msg["content"] for msg in body["messages"] if msg["role"] == "system")
-            if truncated_parse and len(requests) == 1:
+            assert body["messages"][-1]["content"][0]["text"].endswith(raw_text)
+            if parse_failure == "overloaded" and len(requests) == 1:
+                request = httpx.Request("POST", _url)
+                httpx.Response(503, request=request, headers={"Retry-After": "2"}).raise_for_status()
+            if parse_failure == "truncated" and len(requests) == 1:
                 return {"choices": [{"message": {"content": '{"summary": "未结束'},
                                      "finish_reason": "length"}], "usage": {"completion_tokens": 4096}}
             if "ocr 必须是空数组" not in instructions:
@@ -155,17 +170,19 @@ def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, f
                 "customer_hint": {"chat_title": "测试客户", "matched_customer_id": customer.id, "confidence": 0.96},
                 "suggestions": [{
                     "text": "客户认为报价偏高",
-                    "handled_source": {"kind": "attachment", "attachment_index": 5, "excerpt": resolved_quote},
+                    "handled_source": {"kind": "attachment", "attachment_index": shot_count - 1, "excerpt": resolved_quote},
                 }],
                 # Even if the model ignores the prompt and repeats a quote in ocr, only the independent OCR is evidence.
-                "ocr": [{"attachment_index": 5, "text": resolved_quote}],
+                "ocr": [] if parse_failure == "dense_screenshot" else [
+                    {"attachment_index": shot_count - 1, "text": resolved_quote},
+                ],
             }, ensure_ascii=False)
         return {"choices": [{"message": {"content": output}, "finish_reason": "stop"}]}
 
     monkeypatch.setattr(call_service, "post_json", model_response)
     with followup_client(db, user) as client:
         attachment_ids = []
-        for index in range(1, 7):
+        for index in range(1, shot_count + 1):
             image = Image.new("RGB", (360, 210), "white")
             draw = ImageDraw.Draw(image)
             draw.text((10, 10), f"Test customer - chat page {index}", fill="black")
@@ -179,7 +196,7 @@ def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, f
             assert response.status_code == 200
             attachment_ids.append(response.json()["data"]["id"])
         response = client.post("/api/domestic-followup/drafts", json={
-            "request_id": "rt-six-screenshots", "attachment_ids": attachment_ids,
+            "request_id": "rt-screenshots", "attachment_ids": attachment_ids, "raw_text": raw_text or None,
         })
         assert response.status_code == 200, response.text
         draft = response.json()["data"]
@@ -189,6 +206,7 @@ def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, f
         draft = client.get(f"/api/domestic-followup/drafts/{draft['id']}").json()["data"]
 
     assert draft["ai_status"] == "done", draft["ai_error"]
+    assert (draft["raw_text"] or "") == raw_text
     assert draft["ai_result"]["summary"] == "已解释规格报价"
     assert draft["ai_result"]["customer_id"] == customer.id
     assert draft["ai_result"]["items"][0]["record_only"] is (failed_ocr is None)
@@ -196,22 +214,27 @@ def test_six_screenshots_produce_a_reviewable_draft(db, monkeypatch, tmp_path, f
         text if index != failed_ocr else None for index, text in enumerate(transcripts)
     ]
     assert [row["ocr_status"] for row in draft["attachments"]] == [
-        "done" if index != failed_ocr else "failed" for index in range(6)
+        "done" if index != failed_ocr else "failed" for index in range(shot_count)
     ]
     assert bool(draft["ai_result"]["unreadable"]) is (failed_ocr is not None)
-    parse_count = 2 if truncated_parse else 1
+    parse_count = 2 if parse_failure else 1
     assert requests[:parse_count] == [("domestic_followup_parse", screenshots)] * parse_count
     ocr_requests = [("domestic_followup_ocr", [shot]) for shot in screenshots]
     if failed_ocr is not None:
         ocr_requests.insert(failed_ocr, ocr_requests[failed_ocr])
+    if parse_failure == "overloaded":
+        ocr_requests = ocr_requests * 2
     assert requests[parse_count:] == ocr_requests
     assert deadlines[0] == (120, True)
     assert all(0 < seconds <= 120 and total for seconds, total in deadlines[:parse_count])
     assert all(0 < seconds <= 45 and total for seconds, total in deadlines[parse_count:])
+    assert waits == ([2, 1] if parse_failure == "overloaded" else [])
 
 
-@pytest.mark.parametrize("thinking", [None, {"type": "enabled"}], ids=["default", "explicit"])
-def test_text_only_draft_recovers_from_truncated_json(db, monkeypatch, thinking):
+@pytest.mark.parametrize(("thinking", "long_text"), [
+    (None, False), ({"type": "enabled"}, False), (None, True),
+], ids=["default", "explicit", "near_input_limit"])
+def test_text_only_draft_recovers_from_truncated_json(db, monkeypatch, thinking, long_text):
     seed_dicts(db)
     user = make_user(db, "fu_rt_text")
     customer = make_customer(db, user, "测试客户")
@@ -226,6 +249,8 @@ def test_text_only_draft_recovers_from_truncated_json(db, monkeypatch, thinking)
     db.commit()
     jobs_to_run = _record_jobs(monkeypatch)
     raw_text = "客户确认试用效果正常，下周三反馈是否补货。"
+    if long_text:
+        raw_text = ("已讨论补货规格。\n" * 2400)[:19_900] + raw_text
     requests = []
     clock_ticks = iter((100.0, 122.0))
     monkeypatch.setattr(attachment_service, "monotonic", lambda: next(clock_ticks))
@@ -234,6 +259,7 @@ def test_text_only_draft_recovers_from_truncated_json(db, monkeypatch, thinking)
         requests.append((body, timeout_sec))
         instructions = " ".join(msg["content"] for msg in body["messages"] if msg["role"] == "system")
         assert "本次只有业务员原文" in instructions
+        assert ("请通读完整原文" in instructions) is long_text
         assert body["messages"][-1]["content"][0]["text"].endswith(raw_text)
         assert all(part["type"] == "text" for part in body["messages"][-1]["content"])
         if len(requests) == 1:

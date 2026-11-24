@@ -29,7 +29,8 @@ logger = logging.getLogger("commission")
 
 PARSE_PRESET = "domestic_followup_parse"
 CANDIDATE_LIMIT = 200
-MULTI_SCREENSHOT_OCR_TIMEOUT_SEC = 45  # 120 + 9 * 45 秒小于草稿的 10 分钟超时。
+LONG_TEXT_CHARS = 4000
+SEPARATE_OCR_TIMEOUT_SEC = 45  # 120 + 9 * 45 秒小于草稿的 10 分钟超时。
 
 ITEM_HANDLING_INSTRUCTIONS = (
     "在预设的 JSON 结构上补充异常意见的处理证据。逐条判断 issues 和 suggestions 是否还需处理。"
@@ -43,10 +44,16 @@ ITEM_HANDLING_INSTRUCTIONS = (
     "下一步只写尚未完成的动作，已给出的解释无需再次建议。\n"
 )
 
-MULTI_SCREENSHOT_INSTRUCTIONS = (
-    "本次有多张截图，请按顺序阅读全部截图并整理业务字段。覆盖预设的逐行转写要求："
+SEPARATE_OCR_INSTRUCTIONS = (
+    "\n请按顺序阅读全部截图并整理业务字段。覆盖预设的逐行转写要求："
     "ocr 必须是空数组，截图全文会单独转写。保留核对所需的短句出处与原始 attachment_index，"
     "相同事实只记录一次，省略无内容的可选字段。"
+)
+
+LONG_TEXT_INSTRUCTIONS = (
+    "\n请通读完整原文，尤其保留具体问题、客户异议、实际处理和未完成的承诺。"
+    "summary 用一句话概括，facts 和 contents 不重复记录同一事项。"
+    "需要核对时只引用能支持该项判断的连续原句，省略重复对话和无内容的可选字段。"
 )
 
 PARSE_RETRY_INSTRUCTION = (
@@ -95,7 +102,7 @@ def _customer_context(db: Session, customer: DomesticCustomer, today, current_us
 
 
 def build_messages(db: Session, followup: DomesticFollowup, current_user: dict, values: dict, today,
-                   attachments: list[DomesticFollowupAttachment]) -> tuple[list, list[dict]]:
+                   attachments: list[DomesticFollowupAttachment], *, separate_ocr: bool) -> tuple[list, list[dict]]:
     candidates = [] if followup.customer_id else _candidates(db, current_user)
     customer = db.get(DomesticCustomer, followup.customer_id) if followup.customer_id else None
     config = config_service.get_config(db)
@@ -157,10 +164,12 @@ def build_messages(db: Session, followup: DomesticFollowup, current_user: dict, 
     for att in attachments:
         content.append({"type": "image_url", "image_url": {"url": attachment_service.data_url(att)}})
     instructions = ITEM_HANDLING_INSTRUCTIONS
-    if len(attachments) > 1:
-        instructions += MULTI_SCREENSHOT_INSTRUCTIONS
+    if separate_ocr:
+        instructions += SEPARATE_OCR_INSTRUCTIONS
     elif not attachments:
         instructions += "本次只有业务员原文。按原文整理，ocr 返回空数组，出处只能引用原文。"
+    if len(followup.raw_text or "") >= LONG_TEXT_CHARS:
+        instructions += LONG_TEXT_INSTRUCTIONS
     return [
         {"role": "system", "content": instructions},
         {"role": "user", "content": content},
@@ -442,7 +451,7 @@ def _transcribe_for_review(db: Session, followup_id: int, attachment_ids: list[i
         db.rollback()
         return
     db.commit()  # OCR 自建 session，等待模型前释放父记录锁。
-    _ocr_pending(attachment_ids, session_factory, timeout_sec=MULTI_SCREENSHOT_OCR_TIMEOUT_SEC)
+    _ocr_pending(attachment_ids, session_factory, timeout_sec=SEPARATE_OCR_TIMEOUT_SEC)
     db.expire_all()  # 用已落库的截图转写核对模型引用。
 
 
@@ -458,10 +467,12 @@ def run_parse(followup_id: int, current_user: dict, session_factory=SessionLocal
             attachments = (db.query(DomesticFollowupAttachment)
                            .filter(DomesticFollowupAttachment.followup_id == followup_id)
                            .order_by(DomesticFollowupAttachment.seq).all())
-            separate_ocr = len(attachments) > 1
+            separate_ocr = bool(attachments) and (
+                len(attachments) > 1 or len(followup.raw_text or "") >= LONG_TEXT_CHARS
+            )
             ocr_ids = [int(a.id) for a in attachments if a.ocr_status != "done"]
             if separate_ocr:
-                ocr_timeout_sec = MULTI_SCREENSHOT_OCR_TIMEOUT_SEC
+                ocr_timeout_sec = SEPARATE_OCR_TIMEOUT_SEC
                 # 此刻才出队。给整理和逐张 OCR 完整执行时间，勿沿用等待队列的时间戳。
                 (db.query(DomesticFollowup)
                  .filter_by(id=followup_id, status="draft", ai_status="running")
@@ -469,18 +480,26 @@ def run_parse(followup_id: int, current_user: dict, session_factory=SessionLocal
                 db.commit()
             today = beijing_today()
             values = dict_service.load_values(db)
-            messages, candidates = build_messages(db, followup, current_user, values, today, attachments)
+            messages, candidates = build_messages(
+                db, followup, current_user, values, today, attachments, separate_ocr=separate_ocr,
+            )
+            retry_instruction = PARSE_RETRY_INSTRUCTION
+            if attachments and not separate_ocr:
+                retry_instruction += SEPARATE_OCR_INSTRUCTIONS
             output, result = attachment_service.request_json(
                 chat, db=db, preset_name=PARSE_PRESET, messages=messages,
                 caller_module="domestic_followup_parse", caller_user_id=followup.author_user_id,
-                timeout_sec=120, retry_instruction=PARSE_RETRY_INSTRUCTION,
+                timeout_sec=120, retry_instruction=retry_instruction, retry_http_errors=True,
             )
-            if separate_ocr:
-                output.pop("ocr", None)
             parsed = AiParseOut.model_validate(output)
-            if separate_ocr and ocr_ids:
-                _transcribe_for_review(db, followup_id, ocr_ids, session_factory)
-                ocr_ids = []  # 每张已尝试过一次，保留失败状态供核对。
+            if attachments and not separate_ocr:
+                # 单图全文在重试时可能省略，即使没有粘贴长文字也要补齐截图证据。
+                separate_ocr = not any(row.attachment_index == 0 and row.text.strip() for row in parsed.ocr)
+            if separate_ocr:
+                parsed.ocr = []
+                if ocr_ids:
+                    _transcribe_for_review(db, followup_id, ocr_ids, session_factory)
+                    ocr_ids = []  # 每张已尝试过一次，保留失败状态供核对。
             draft = normalize(db, current_user, parsed, values, today, followup, candidates)
             locked = _lock_followup(db, followup_id)
             if locked is None:

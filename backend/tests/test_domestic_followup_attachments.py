@@ -2,6 +2,7 @@ import io
 from contextlib import nullcontext
 from datetime import date
 
+import httpx
 import pytest
 from PIL import Image
 
@@ -20,6 +21,26 @@ def _gif() -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", (10, 10), "white").save(buf, format="GIF")
     return buf.getvalue()
+
+
+@pytest.mark.parametrize(("status", "retry_after"), [(401, "1"), (429, "60")])
+def test_json_does_not_retry_permanent_errors_or_wait_outside_deadline(monkeypatch, status, retry_after):
+    attempts = []
+    waits = []
+    request = httpx.Request("POST", "https://example.invalid/v1/chat/completions")
+
+    def respond(**kwargs):
+        attempts.append(kwargs["timeout_sec"])
+        httpx.Response(status, request=request, headers={"Retry-After": retry_after}).raise_for_status()
+
+    monkeypatch.setattr(attachment_service, "sleep", waits.append)
+    with pytest.raises(httpx.HTTPStatusError) as error:
+        attachment_service.request_json(
+            respond, preset_name="domestic_followup_ocr", messages=[], timeout_sec=45,
+            retry_instruction="", retry_http_errors=True,
+        )
+    assert error.value.response.status_code == status
+    assert attempts == [45] and waits == []
 
 
 @pytest.fixture
