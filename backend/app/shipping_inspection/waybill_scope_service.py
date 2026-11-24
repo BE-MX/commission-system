@@ -72,8 +72,13 @@ def customer_id(db, inspection):
     return identity
 
 
+# 9610 hints only mean the DHL declaration; FEDEX9610 and 其他快递 (allowed for
+# 便捷发货 since 2026-11-24) are declared elsewhere.
+NON_DHL_9610_CHANNELS = ('FEDEX9610', '其他快递')
+
+
 def is_9610(invoice):
-    return '便捷发货' in (invoice.internal_payment_method or '') and invoice.express_channel != 'FEDEX9610'
+    return '便捷发货' in (invoice.internal_payment_method or '') and invoice.express_channel not in NON_DHL_9610_CHANNELS
 
 
 def countries(db, identities):

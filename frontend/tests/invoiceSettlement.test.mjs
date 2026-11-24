@@ -13,6 +13,10 @@ import {
   computeHandlingFee,
   handlingFeeRate,
   paymentChannelError,
+  PAYMENT_CHANNEL_GROUPS,
+  channelsForPayment,
+  paymentMethodGroupsFor,
+  reconcileChannelForPayment,
   normalizeStoredExpressChannel,
   normalizeDiscount,
   settlementMatchesTotal,
@@ -73,24 +77,88 @@ test('settlement options use the approved fixed values', () => {
     'TT',
     '现金', '支付宝', '微信', '对公转账（莱莎）', '对公转账（旭和）',
   ])
-  assert.deepEqual(EXPRESS_CHANNEL_OPTIONS, ['DHL普货', 'FEDEX普货', 'DHL9610', 'FEDEX9610', '顺丰', '其他快递', '自提', '货代/海运'])
+  assert.deepEqual(EXPRESS_CHANNEL_OPTIONS, ['DHL普货', 'FEDEX普货', '顺丰', '自提', '货代/海运', 'DHL9610', 'FEDEX9610', 'DHL报关', 'FEDEX报关', '其他快递'])
   // 新增付款方式均无自动费率：手续费手填
   for (const method of ['现金', '支付宝', '微信', '对公转账（莱莎）', '对公转账（旭和）']) {
     assert.equal(handlingFeeRate(method), null)
   }
 })
 
-test('payment and channel must both use convenient shipping / 9610 or neither', () => {
-  for (const method of PAYMENT_METHOD_OPTIONS) {
-    for (const channel of [...EXPRESS_CHANNEL_OPTIONS, 'DHL', 'FEDEX', '', null]) {
-      const expected = method.includes('便捷发货') !== String(channel || '').includes('9610')
-      assert.equal(Boolean(paymentChannelError(method, channel)), expected, `${method} / ${channel}`)
+// 2026-11-24 规则表：付款方式分组 → 可选渠道，其他快递任何付款方式可选
+const CHANNEL_RULES = {
+  normal: { methods: ['PayPal', 'TT', '现金', '支付宝', '微信'], channels: ['DHL普货', 'FEDEX普货', '顺丰', '自提', '货代/海运'] },
+  convenient: { methods: ['大莱莎信保（便捷发货）', '小莱莎信保（便捷发货）', '新莱莎信保（便捷发货）'], channels: ['DHL9610', 'FEDEX9610'] },
+  customs: { methods: ['大莱莎信保（报关）', '小莱莎信保（报关）', '新莱莎信保（报关）', '对公转账（莱莎）', '对公转账（旭和）'], channels: ['DHL报关', 'FEDEX报关'] },
+}
+
+test('payment groups cover every payment option exactly once', () => {
+  const methods = PAYMENT_CHANNEL_GROUPS.flatMap(group => group.methods)
+  assert.deepEqual([...methods].sort(), [...PAYMENT_METHOD_OPTIONS].sort())
+  assert.equal(new Set(methods).size, methods.length)
+  for (const group of PAYMENT_CHANNEL_GROUPS) assert.deepEqual(
+    { methods: group.methods, channels: group.channels }, CHANNEL_RULES[group.key])
+})
+
+test('frontend rule table matches the backend shipping policy', () => {
+  const policy = readFileSync(new URL('../../backend/app/invoice/shipping_policy.py', import.meta.url), 'utf8')
+  const tuples = [...policy.matchAll(/"(methods|channels)": \(([^)]*)\)/g)]
+    .map(([, kind, body]) => [kind, [...body.matchAll(/"([^"]+)"/g)].map(match => match[1])])
+  const expected = PAYMENT_CHANNEL_GROUPS.flatMap(group => [['methods', group.methods], ['channels', group.channels]])
+  assert.deepEqual(tuples, expected)
+  assert.match(policy, /ANY_CHANNEL = "其他快递"/)
+})
+
+test('payment and channel follow the group table; 其他快递 fits every payment', () => {
+  for (const [key, rule] of Object.entries(CHANNEL_RULES)) {
+    for (const method of rule.methods) {
+      for (const channel of EXPRESS_CHANNEL_OPTIONS) {
+        const expected = channel !== '其他快递' && !rule.channels.includes(channel)
+        assert.equal(Boolean(paymentChannelError(method, channel)), expected, `${key}: ${method} / ${channel}`)
+      }
+      assert.deepEqual(channelsForPayment(method), [...rule.channels, '其他快递'])
     }
   }
-  assert.match(paymentChannelError('任意便捷发货方式', 'DHL普货'), /快递渠道必须包含“9610”/)
-  assert.match(paymentChannelError(null, 'FEDEX9610'), /付款方式必须包含“便捷发货”/)
+  // 存量 DHL/FEDEX 视同普货
+  assert.equal(paymentChannelError('TT', 'DHL'), '')
+  assert.match(paymentChannelError('大莱莎信保（报关）', 'FEDEX'), /只能选择快递渠道：DHL报关、FEDEX报关、其他快递/)
+  assert.match(paymentChannelError('大莱莎信保（便捷发货）', ''), /须选择快递渠道/)
+  assert.equal(paymentChannelError('PayPal', ''), '')
+  // 未选/未登记付款方式：只限制 9610 与报关渠道
   assert.equal(paymentChannelError(null, null), '')
+  assert.equal(paymentChannelError(null, 'DHL普货'), '')
+  assert.equal(paymentChannelError(null, '顺丰'), '')
+  assert.equal(paymentChannelError(null, 'DHL 报关'), '')
+  assert.equal(paymentChannelError('大莱莎信保（报关）', 'DHL 报关'), '')
+  assert.match(paymentChannelError(null, 'FEDEX9610'), /须配合付款方式「信保便捷发货」/)
+  assert.match(paymentChannelError('', 'DHL报关'), /须配合付款方式「信保报关 \/ 对公转账」/)
+  assert.equal(channelsForPayment(''), null)
+  // 未登记但含「便捷发货」沿用 9610 口径
+  assert.match(paymentChannelError('任意便捷发货方式', 'DHL普货'), /只能选择快递渠道/)
   assert.equal(paymentChannelError('任意便捷发货方式', '其他9610渠道'), '')
+})
+
+test('changing payment keeps the carrier when possible, otherwise clears with a notice', () => {
+  assert.deepEqual(reconcileChannelForPayment('大莱莎信保（便捷发货）', 'DHL普货'),
+    { channel: 'DHL9610', notice: '快递渠道已从「DHL普货」自动改为「DHL9610」' })
+  assert.equal(reconcileChannelForPayment('对公转账（旭和）', 'FEDEX9610').channel, 'FEDEX报关')
+  assert.equal(reconcileChannelForPayment('PayPal', 'DHL').channel, 'DHL')
+  assert.equal(reconcileChannelForPayment('TT', 'DHL报关').channel, 'DHL普货')
+  const cleared = reconcileChannelForPayment('小莱莎信保（报关）', '顺丰')
+  assert.equal(cleared.channel, '')
+  assert.match(cleared.notice, /「顺丰」不适用于付款方式「小莱莎信保（报关）」/)
+  for (const channel of ['其他快递', '', 'DHL9610']) {
+    assert.deepEqual(reconcileChannelForPayment('新莱莎信保（便捷发货）', channel), { channel, notice: '' })
+  }
+  assert.deepEqual(reconcileChannelForPayment('', '顺丰'), { channel: '顺丰', notice: '' })
+})
+
+test('payment options put the group matching the chosen channel first', () => {
+  assert.deepEqual(paymentMethodGroupsFor('').map(group => group.label), ['普通付款', '信保便捷发货', '信保报关 / 对公转账'])
+  assert.deepEqual(paymentMethodGroupsFor('其他快递').map(group => group.label), ['普通付款', '信保便捷发货', '信保报关 / 对公转账'])
+  const groups = paymentMethodGroupsFor('DHL报关')
+  assert.deepEqual(groups.map(group => group.label),
+    ['信保报关 / 对公转账（适用「DHL报关」）', '普通付款（选了会改渠道）', '信保便捷发货（选了会改渠道）'])
+  assert.deepEqual(groups.flatMap(group => group.methods).sort(), [...PAYMENT_METHOD_OPTIONS].sort())
 })
 
 test('stored legacy channels load as ordinary cargo without changing other channels', () => {
@@ -204,8 +272,8 @@ test('settlement inputs live in the side pane; derived amounts moved to the summ
   assert.match(settlementFields, /readonly-label">包装费用<\/span>/)
   assert.match(settlementFields, /label="手续费"/)
   // 快递渠道移到底部「物流与备注」卡：必填横向单选，不再出现在结算卡
-  assert.doesNotMatch(settlementFields, /express_channel/)
-  assert.match(invoiceView, /<el-radio-group v-model="form\.express_channel"/)
+  assert.doesNotMatch(settlementFields, /v-model="form\.express_channel"/)
+  assert.match(invoiceView, /<InvoiceExpressChannelPicker v-model="form\.express_channel" :payment-method="form\.internal_payment_method"/)
   // 总折扣录入框：默认=产品行折扣合计，手改后均分到产品行
   assert.match(settlementFields, /label="折扣"/)
   assert.match(settlementFields, /:model-value="totalDiscount"/)

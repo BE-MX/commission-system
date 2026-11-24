@@ -4,7 +4,9 @@
     <div class="sgrid">
       <el-form-item label="付款方式" class="c2">
         <el-select v-model="form.internal_payment_method" clearable placeholder="请选择" @change="onPaymentMethodChange">
-          <el-option v-for="option in paymentMethods" :key="option" :label="option" :value="option" />
+          <el-option-group v-for="group in paymentGroups" :key="group.label" :label="group.label">
+            <el-option v-for="option in group.methods" :key="option" :label="option" :value="option" />
+          </el-option-group>
         </el-select>
       </el-form-item>
       <el-form-item v-if="alibabaOrderRequired(form)" label="阿里信保订单号" class="c2" required
@@ -61,20 +63,22 @@
 import { formatMoney } from '../../../utils/money.js'
 
 import { computed, watch } from 'vue'
-import { computeHandlingFee, handlingFeeRate, alibabaOrderRequired } from '../composables/invoiceSettlement'
+import { computeHandlingFee, handlingFeeRate, alibabaOrderRequired, paymentMethodGroupsFor } from '../composables/invoiceSettlement'
 
 const props = defineProps({
   form: { type: Object, required: true },
   validationErrors: { type: Object, default: () => ({}) },
   total: { type: Number, required: true },
   settlementError: { type: String, default: '' },
-  paymentMethods: { type: Array, required: true },
   totalDiscount: { type: Number, default: 0 },
   money: { type: Function, required: true },
   onPaymentMethodChange: { type: Function, default: () => {} },
   onHandlingFeeInput: { type: Function, default: () => {} },
   onTotalDiscountChange: { type: Function, default: () => {} },
 })
+
+// 先选了快递渠道时，适用的付款方式组排在前面（其他组仍可选，选了会自动修正渠道）
+const paymentGroups = computed(() => paymentMethodGroupsFor(props.form.express_channel))
 
 watch(() => props.form.order_type, type => { if (type === 'presale') props.form.shipping_fee = 0 }, { immediate: true })
 

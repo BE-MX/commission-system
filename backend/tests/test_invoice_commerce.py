@@ -67,7 +67,7 @@ def test_local_payment_channel_survives_create_edit_and_failed_save(db, stock, b
     assert (invoice.internal_payment_method, invoice.express_channel) == (body.internal_payment_method, "FEDEX9610")
     invalid = edit.model_copy(update={"request_key": "bad-channel", "expected_version": 2,
                                       "internal_payment_method": "TT"})
-    with pytest.raises(ValueError, match="付款方式必须"):
+    with pytest.raises(ValueError, match="只能选择快递渠道"):
         update_draft(db, invoice.id, invalid, user)
     db.refresh(invoice)
     assert invoice.internal_payment_method == body.internal_payment_method

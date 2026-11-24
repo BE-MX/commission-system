@@ -311,9 +311,8 @@
               <section class="form-card">
                 <div class="card-title"><span class="step">4</span>物流与备注</div>
                 <el-form-item label="快递渠道" required data-invoice-field="express_channel" :error="editor.validationErrors.express_channel">
-                  <el-radio-group v-model="form.express_channel" class="express-radio-row">
-                    <el-radio v-for="option in EXPRESS_CHANNEL_OPTIONS" :key="option" :value="option">{{ option }}</el-radio>
-                  </el-radio-group>
+                  <InvoiceExpressChannelPicker v-model="form.express_channel" :payment-method="form.internal_payment_method"
+                    :notice="editor.expressChannelNotice.value" />
                 </el-form-item>
                 <div class="fgrid logistics-fees-row">
                   <el-form-item label="运费">
@@ -384,7 +383,6 @@
                 :form="form"
                 :total="formTotal"
                 :settlement-error="settlementError"
-                :payment-methods="PAYMENT_METHOD_OPTIONS"
                 :total-discount="formHairDiscountAbs"
                 :money="money"
                 :on-payment-method-change="onPaymentMethodChange"
@@ -481,7 +479,6 @@ import { copyText } from '@/utils/clipboard'
 import { notifyFeedback } from '@/utils/feedback'
 import { useInvoiceColumnWidths } from './composables/useInvoiceColumnWidths'
 import { receivedAmountTone } from './invoiceListPresentation'
-import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
 import { useRouter, useRoute } from 'vue-router'
 import { useInvoiceEditor } from './composables/useInvoiceEditor'
 import { useInvoiceManagePage } from './composables/useInvoiceManagePage'
@@ -494,6 +491,7 @@ import InvoiceSyncLogsDialog from './components/InvoiceSyncLogsDialog.vue'
 import InvoiceAccessoryTable from './components/InvoiceAccessoryTable.vue'
 import InvoiceReceiptFields from './components/InvoiceReceiptFields.vue'
 import InvoiceSettlementFields from './components/InvoiceSettlementFields.vue'
+import InvoiceExpressChannelPicker from './components/InvoiceExpressChannelPicker.vue'
 import InvoiceSummaryCard from './components/InvoiceSummaryCard.vue'
 import InvoiceTotalsFooter from './components/InvoiceTotalsFooter.vue'
 import InvoiceOverview from './components/InvoiceOverview.vue'
