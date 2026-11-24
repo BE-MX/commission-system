@@ -459,6 +459,14 @@ deploy\deploy.bat --recover-colorwork-start-order PLAN_JSON
 
 销售研究专用 Agent 的停用准备、凭据及验收见 [北京销售 Agent](sales-agent-cloud.md)。
 
+## 客户聊天的 TeamoRouter 新加坡出口
+
+`customer_ai_chat` 通过独立的 Anthropic Provider 访问 `https://leshine.work/_ark/teamrouter/v1/messages`。新加坡 Nginx 校验请求携带的聊天 Key，只将 POST 发往 `https://api.teamorouter.com/v1/messages`，验证上游证书并实时传送 SSE。模型和 Provider 在方舟 AI 接入管理中配置。
+
+路由专项通过 `deploy/deploy.bat --teamrouter-chat-route prepare` 准备。准备进程从环境变量 `ARK_TEAMROUTER_CHAT_VERIFIER` 接收 Nginx secure_link 所需的校验值。算法取固定 ASCII 前缀 `ark-teamrouter-chat-v1|` 与聊天 Key 的拼接字节，计算 MD5，再使用 URL-safe Base64 编码并去除尾部填充。运维时在持有加密 Provider 的受信环境中计算，只传校验值。更换上游 Key 时需同步更新路由校验值。
+
+同一工作目录运行 `deploy/deploy.bat --teamrouter-chat-route activate` 激活已准备的候选。验收依次覆盖生产后端的普通与流式生成、保存后预设以及主站独立测试会话。恢复时先将预设绑定回切换前验证可用的供应商和模型，再执行 `deploy/deploy.bat --teamrouter-chat-route rollback`。本地恢复回执在 `.deploy_state/teamrouter-chat-route.json`，服务器原始配置备份在 `/etc/nginx/.ark-backups/teamrouter-chat/`。
+
 ## WhatsApp业务号API路由
 
 `deploy/deploy.bat --whatsapp-routing-only --prepare-only` 准备两站路由并检查Nginx语法，保持线上流量。获得生产切换授权后移除 `--prepare-only` 激活；专项不可与其他发布动作混用。

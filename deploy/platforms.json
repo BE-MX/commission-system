@@ -294,6 +294,14 @@
   "egress_infrastructure": [
     {
       "host": "singapore",
+      "name": "teamrouter-chat",
+      "manager": "nginx",
+      "access": "HTTPS POST /_ark/teamrouter/v1/messages with a verified TeamRouter chat key",
+      "upstream": "https://api.teamorouter.com/v1/messages",
+      "consumers": ["customer_ai_chat"]
+    },
+    {
+      "host": "singapore",
       "name": "private-research-forward-proxy",
       "access": "authenticated private link or tunnel; no public listener",
       "consumers": ["beijing private-research Monid adapter", "beijing Maigret scanner", "beijing OpenClaw web tools"],

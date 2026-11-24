@@ -1,3 +1,9 @@
+## 2026-11-24 客户聊天恢复 TeamoRouter Fable 5.2（新加坡路由和生产预设已启用）
+
+- 生产预设 `customer_ai_chat`（20）已绑定专用 Provider `TeamRouter-Chat-SG`（18），模型 `claude-fable-5-2`。北京经新加坡 HTTPS 固定路径访问 TeamoRouter Messages，路由、校验和恢复步骤见 [专项部署说明](../deploy/README.md#客户聊天的-teamorouter-新加坡出口)。
+- 北京生产后端切换前普通与流式日志为 41799、41800，切换后为 41801、41802。17:50 在 `leshine.cloud` 新建独立会话，页面显示 Fable 5.2 并收到完整回复 `OK`，生产日志 41803，耗时 7.145 秒。此次页面验收使用主站公网入口。
+- 专项只调整新加坡 Nginx 的一个精确路径和一个聊天预设。已回读确认 Provider 18 只有此预设使用。回退目标为 `Fusecode`（16）及 `claude-opus-5-5`。结汇顾问仍使用 Provider 11。
+
 ## 2026-11-24 内贸经营决策台欠款口径（Codex，待部署）
 
 - `codex/recharged-debt` 将欠款限定为截至统计期末曾有正向充值入账客户的负余额绝对值。客户明细、月末画像与汇总沿用同一口径，净余额仍汇总所有已知账本余额。指标版本升级为 `domestic-v4-recharged-debt`，旧分析快照需刷新。
