@@ -2,14 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { computed, reactive, ref } from 'vue'
-import { deliveryTotal, deliveryPayload, filterDeliveryRows, deliveryUnitPrice } from '../src/views/domestic/deliverySelection.js'
+import { deliveryTotal, deliveryPayload, filterDeliveryRows, deliveryUnitPrice, deliveryFundingGap } from '../src/views/domestic/deliverySelection.js'
 
 const source = readFileSync(new URL('../src/views/domestic/composables/useDomesticDelivery.js', import.meta.url), 'utf8')
   .replace(/^import[\s\S]*?from ['"][^'"]+['"]\s*$/gm, '')
   .replace('export function useDomesticDelivery', 'function useDomesticDelivery')
 
-function harness() {
-  const env = { computed, reactive, ref, deliveryTotal, deliveryPayload, filterDeliveryRows, deliveryUnitPrice, msgWarning() {} }
+function harness(overrides = {}) {
+  const env = { computed, reactive, ref, deliveryTotal, deliveryPayload, filterDeliveryRows, deliveryUnitPrice, msgWarning() {}, currentBeijingDate: () => '2026-11-24', newRequestId: () => 'test', ...overrides }
   return new Function(...Object.keys(env), `${source}; return useDomesticDelivery`)(...Object.values(env))(() => {})
 }
 
@@ -32,4 +32,85 @@ test('batch override survives quantity and explicit-unit edits; deselection rese
   state.toggle(row, true)
   assert.equal(state.batchUnitPrice(row), 100)
   assert.equal(row.unit_price, 100)
+})
+
+test('funding coverage compares only shipped batches against unallocated receipts and recharge', () => {
+  assert.equal(deliveryFundingGap({ scope: 'customer', transit_unpaid_amount: 0, received_unpaid_amount: 0, unallocated_recharges: 0, unallocated_receipts: 0, transit_unpaid_amount: 24823, unallocated_recharges: 20000, unallocated_receipts: 4823, account_balance: -99999 }), 0)
+  assert.equal(deliveryFundingGap({ scope: 'customer', transit_unpaid_amount: 0, received_unpaid_amount: 0, unallocated_recharges: 0, unallocated_receipts: 0, received_unpaid_amount: 24823, unallocated_recharges: 20000 }), 4823)
+  assert.equal(deliveryFundingGap({ scope: 'customer', transit_unpaid_amount: 0, received_unpaid_amount: 0, unallocated_recharges: 0, unallocated_receipts: 0, transit_unpaid_amount: 24823, unallocated_recharges: 30000 }), -5177)
+})
+
+test('recharge allocation retains earlier allocations and submits cumulative values without creating receipt', async () => {
+  const writes = []
+  const state = harness({ allocateDomesticRecharge: async (...args) => writes.push(args), msgSuccessText() {},
+    getShipmentCandidates: async () => ({ data: [] }), getCustomerDelivery: async () => ({ data: {} }) })
+  state.visible.value = true
+  state.customerId.value = 7
+  state.summary.value = { scope: 'customer' }
+  state.batches.value = [{ id: 1, unpaid_amount: 0 }, { id: 2, unpaid_amount: 100 }]
+  const recharge = { id: 9, amount: 150, unallocated_amount: 100, allocations: [{ shipment_id: 1, amount: 50 }] }
+  state.openReceipt(null, recharge, 'recharge')
+  assert.equal(state.allocationBatches.value.length, 2)
+  assert.equal(state.receipt.allocations[2], 0)
+  state.setAllocation(state.batches.value[1], 40)
+  assert.equal(state.allocationTotal.value, 40)
+  await state.confirmReceipt()
+  assert.deepEqual(writes, [[7, 9, [{ shipment_id: 2, amount: 40 }]]])
+})
+
+test('restricted scope and a changed customer cannot submit a stale funding dialog', async () => {
+  let writes = 0
+  const state = harness({ allocateDomesticRecharge: async () => writes++ })
+  state.customerId.value = 7
+  state.summary.value = { scope: 'own_orders' }
+  state.openReceipt(null, { id: 9, unallocated_amount: 10, allocations: [] }, 'recharge')
+  assert.equal(state.receipt.visible, false)
+  state.summary.value = { scope: 'customer' }
+  state.openReceipt(null, { id: 9, unallocated_amount: 10, allocations: [] }, 'recharge')
+  state.customerId.value = 8
+  await state.confirmReceipt()
+  assert.equal(writes, 0)
+})
+
+test('Tang Lan actual figures show a 24823 surplus and ignore account and unshipped deductions', () => {
+  assert.equal(deliveryFundingGap({ scope: 'customer', transit_unpaid_amount: 192580, received_unpaid_amount: 18399,
+    unallocated_recharges: 235802, unallocated_receipts: 0, account_balance: -17535, unshipped_amount: 42468 }), -24823)
+})
+
+test('legacy, incomplete and own-order scopes do not infer funding coverage', () => {
+  const summary = { scope: 'customer', transit_unpaid_amount: 10, received_unpaid_amount: 0, unallocated_recharges: 20, unallocated_receipts: 0 }
+  assert.equal(deliveryFundingGap({ ...summary, legacy_shipped_items: 1 }), null)
+  assert.equal(deliveryFundingGap({ ...summary, scope: 'own_orders' }), null)
+  assert.equal(deliveryFundingGap({ ...summary, unallocated_recharges: undefined }), null)
+  assert.equal(deliveryFundingGap({}), null)
+})
+
+test('own-order readback retains scoped receipts but drops customer recharge data', async () => {
+  const ownReceipt = { id: 3, amount: 20, status: 'approved', unallocated_amount: 10 }
+  const state = harness({ getShipmentCandidates: async () => ({ data: [] }), getCustomerDelivery: async () => ({ data: {
+    scope: 'own_orders', receipts: [ownReceipt], recharges: [{ id: 99 }], summary: { unallocated_receipts: 10 } } }) })
+  state.visible.value = true; state.customerId.value = 7
+  await state.reload()
+  assert.deepEqual(state.receipts.value, [ownReceipt])
+  assert.deepEqual(state.recharges.value, [])
+  assert.equal(state.summary.value.unallocated_receipts, 10)
+  state.openReceipt(null, ownReceipt)
+  assert.equal(state.receipt.visible, false)
+})
+
+test('more than 200 historical allocations send only the changed cumulative target and disallow empty saves', async () => {
+  const writes = []
+  const state = harness({ allocateDomesticRecharge: async (...args) => writes.push(args), msgSuccessText() {},
+    getShipmentCandidates: async () => ({ data: [] }), getCustomerDelivery: async () => ({ data: { scope: 'customer' } }) })
+  state.visible.value = true; state.customerId.value = 7; state.summary.value = { scope: 'customer' }
+  state.batches.value = [{ id: 300, unpaid_amount: 50 }]
+  const allocations = Array.from({ length: 250 }, (_, i) => ({ shipment_id: i + 1, amount: 1 }))
+  allocations.push({ shipment_id: 300, amount: 10 })
+  state.openReceipt(null, { id: 9, amount: 360, unallocated_amount: 100, allocations }, 'recharge')
+  await state.confirmReceipt()
+  assert.equal(writes.length, 0)
+  state.setAllocation(state.batches.value[0], 30)
+  assert.equal(state.allocationTotal.value, 20)
+  await state.confirmReceipt()
+  assert.deepEqual(writes, [[7, 9, [{ shipment_id: 300, amount: 30 }]]])
 })

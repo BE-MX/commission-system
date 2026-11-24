@@ -59,7 +59,7 @@ class DomesticShipmentUnit(Base):
 class DomesticReceiptAllocation(Base):
     __tablename__ = "ark_domestic_receipt_allocations"
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    request_id = Column(BigInteger, ForeignKey("ark_domestic_customer_requests.id"), nullable=False, index=True, comment="来源申请ID或客户端幂等键")
+    request_id = Column(BigInteger, ForeignKey("ark_domestic_customer_requests.id"), nullable=True, index=True, comment="收款申请ID；充值核销为空")
     shipment_id = Column(BigInteger, ForeignKey("ark_domestic_shipments.id"), nullable=False, index=True, comment="发货批次ID")
     amount = Column(Numeric(14, 2), nullable=False, comment="货款或核销金额")
     ledger_id = Column(BigInteger, ForeignKey("ark_domestic_customer_ledger.id"), comment="已入账证据；待审核为空")
@@ -68,4 +68,5 @@ class DomesticReceiptAllocation(Base):
     created_by = Column(_UINT, ForeignKey("ark_users.id"), nullable=False, comment="经办人ID")
     __table_args__ = (
         CheckConstraint("amount > 0", name="ck_dom_receipt_allocation_amount"),
+        CheckConstraint("request_id IS NOT NULL OR ledger_id IS NOT NULL", name="ck_dom_allocation_source"),
     )

@@ -6,23 +6,32 @@
         <el-select v-model="customerId" filterable remote :remote-method="searchCustomers" class="delivery-control" placeholder="选择客户店名" :disabled="saving" @change="changeCustomer">
           <el-option v-for="row in customers" :key="row.id" :label="row.shop_name" :value="row.id" />
         </el-select>
-        <span v-if="customer">{{ customer.settle_mode === 'credit' ? '先下单后付款 · 货款收款不改变会员等级' : '预存客户 · 本页登记交付，充值沿用客户管理' }}</span>
+        <span v-if="customer">{{ customer.settle_mode === 'credit' ? '先下单后付款 · 货款收款不改变会员等级' : '预存客户 · 已到账充值可跨批次核销' }}</span>
         <GlassButton variant="secondary" left-icon="Refresh" :loading="loading" :disabled="saving" @click="reload">刷新</GlassButton>
       </div>
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
       <el-alert v-if="summary.scope === 'own_orders'" type="info" :closable="false" title="当前仅展示本人订单的交付记录，完整客户对账由客户归属销售查看。" />
       <el-alert v-if="summary.legacy_shipped_items" type="warning" :closable="false" show-icon
-        :title="`有 ${summary.legacy_shipped_items} 条历史已发明细尚无批次及收款对应关系，下方应收不包含它们，需核对期初。`" />
-      <div v-if="customerId" class="delivery-summary">
+        :title="`有 ${summary.legacy_shipped_items} 条历史已发明细尚无批次及收款对应关系，历史交付待核对，暂不判断资金总额能否覆盖已发货。`" />
+      <div v-if="customerId && !loading && !error && summary.scope" class="delivery-summary">
         <span>未发货订单金额 <strong>{{ money(summary.unshipped_amount) }}</strong></span>
-        <span>在途未结 <strong>{{ money(summary.transit_unpaid_amount) }}</strong></span>
-        <span>已收货未结 <strong>{{ money(summary.received_unpaid_amount) }}</strong></span>
-        <span>待核销收款 <strong>{{ money(summary.unallocated_receipts) }}</strong></span>
+        <span>在途待核销 <strong>{{ money(summary.transit_unpaid_amount) }}</strong></span>
+        <span>已收货待核销 <strong>{{ money(summary.received_unpaid_amount) }}</strong></span>
+        <template v-if="summary.scope === 'customer'">
+          <span v-if="summary.account_balance != null">账户余额 <strong>{{ money(summary.account_balance) }}</strong></span>
+          <span v-if="summary.unallocated_recharges != null">未分配充值 <strong>{{ money(summary.unallocated_recharges) }}</strong></span>
+        </template>
+        <span v-if="summary.unallocated_receipts != null">{{ summary.scope === 'own_orders' ? '本人未分配货款' : '未分配货款' }} <strong>{{ money(summary.unallocated_receipts) }}</strong></span>
+      </div>
+      <div v-if="customerId && coverageLabel && !loading && !error" class="delivery-toolbar">
+        <strong>{{ coverageLabel }}</strong><span>按已发货待核销与未分配到账资金核对总额，实际分配见流水。账户余额含未发货订单扣款。</span>
+        <GlassButton v-if="recharges.length" variant="secondary" @click="tab = 'recharges'">查看充值核销</GlassButton>
       </div>
       <el-tabs v-model="tab">
         <el-tab-pane label="发货批次" name="batches" />
         <el-tab-pane v-if="auth.hasAnyPermission(['domestic:write', 'domestic:admin'])" label="创建发货批次" name="create" />
-        <el-tab-pane label="收款记录" name="receipts" />
+        <el-tab-pane v-if="summary.scope === 'customer'" :label="`充值流水（${recharges.length}）`" name="recharges" />
+        <el-tab-pane label="货款收款记录" name="receipts" />
       </el-tabs>
       <template v-if="tab === 'create'">
         <el-alert title="本批单价默认取订单单价，可在选择产品后修改；仅影响本批货款与收款核销，原订单价格和账户扣款保持不变。" type="info" :closable="false" />
@@ -90,22 +99,35 @@
           <el-table-column prop="received_date" label="收货日期" min-width="110" sortable />
           <el-table-column prop="total_amount" label="批次金额" min-width="110" align="right" sortable><template #default="{ row }">{{ money(row.total_amount) }}</template></el-table-column>
           <el-table-column prop="paid_amount" label="已核销" min-width="110" align="right" sortable><template #default="{ row }">{{ money(row.paid_amount) }}</template></el-table-column>
-          <el-table-column prop="unpaid_amount" label="未结" min-width="110" align="right" sortable><template #default="{ row }">{{ money(row.unpaid_amount) }}</template></el-table-column>
+          <el-table-column prop="unpaid_amount" label="待核销" min-width="110" align="right" sortable><template #default="{ row }">{{ money(row.unpaid_amount) }}</template></el-table-column>
           <el-table-column label="操作" min-width="340" class-name="table-action-column">
             <template #default="{ row }">
               <StatusBadge v-if="row.cancelled_at" label="已取消" size="small" />
               <GlassButton v-if="!row.cancelled_at && !row.received_date && row.created_by === auth.user?.id" v-permission="'domestic:write'" variant="link" left-icon="Check" :disabled="saving" @click="openReceive(row)">确认收货</GlassButton>
-              <GlassButton v-if="!row.cancelled_at && canFunds && customer?.settle_mode === 'credit' && row.unpaid_amount > 0" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Wallet" :disabled="saving" @click="openReceipt(row)">登记收款</GlassButton>
+              <GlassButton v-if="!row.cancelled_at && canFunds && !hasUnallocatedFunds && customer?.settle_mode === 'credit' && row.unpaid_amount > 0" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Wallet" :disabled="saving" @click="openReceipt(row)">登记收款</GlassButton>
               <GlassButton variant="link" left-icon="Download" @click="exportBatch(row)">导出清单</GlassButton>
               <GlassButton v-if="!row.cancelled_at && !row.received_date && row.created_by === auth.user?.id" v-any-permission="['domestic:write', 'domestic:admin']" variant="link" link-tone="danger" left-icon="Close" :disabled="saving || loading || !!error" @click="cancelBatch(row)">取消批次</GlassButton>
             </template>
           </el-table-column>
         </el-table>
       </template>
-      <template v-else>
+      <template v-else-if="tab === 'recharges' && summary.scope === 'customer'">
+        <p>已到账充值按原流水核销，不重复入账；历史记录需手动选择批次。</p>
+        <el-table :data="recharges" row-key="id" border class="list-table density-compact" v-loading="loading" v-sticky-scrollbar>
+          <template #empty><ListPageStatus :loading="loading" :error="error" @retry="reload"><el-empty description="暂无已到账充值流水" :image-size="64" /></ListPageStatus></template>
+          <el-table-column prop="id" label="资金流水号" min-width="115" sortable />
+          <el-table-column prop="created_at" label="入账时间" min-width="175" sortable><template #default="{ row }">{{ formatBeijingDateTime(row.created_at) }}</template></el-table-column>
+          <el-table-column prop="amount" label="充值金额" min-width="115" align="right" sortable><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column>
+          <el-table-column prop="allocated_amount" label="已核销" min-width="115" align="right" sortable><template #default="{ row }">{{ money(row.allocated_amount) }}</template></el-table-column>
+          <el-table-column prop="unallocated_amount" label="未分配金额" min-width="120" align="right" sortable><template #default="{ row }">{{ money(row.unallocated_amount) }}</template></el-table-column>
+          <el-table-column label="对应批次" min-width="260" show-overflow-tooltip><template #default="{ row }">{{ row.allocations.map(a => a.shipment_no + '：' + money(a.amount)).join('；') || '待核销' }}</template></el-table-column>
+          <el-table-column label="操作" min-width="140" class-name="table-action-column"><template #default="{ row }"><GlassButton v-if="canFunds && row.unallocated_amount > 0" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" :disabled="saving || loading || !!error || !openBatches.length" @click="openReceipt(null, row, 'recharge')">核销到批次</GlassButton></template></el-table-column>
+        </el-table>
+      </template>
+      <template v-else-if="tab === 'receipts'">
         <div class="delivery-toolbar">
           <GlassButton v-if="canFunds && customer?.settle_mode === 'credit'" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="primary" left-icon="Wallet" :disabled="saving || loading || !!error" @click="openReceipt()">登记收款</GlassButton>
-          <span>待审核款不计入已收款；可先登记收款，再核销到批次。</span>
+          <span>仅登记本次新增到账货款；已登记充值请到充值流水核销，待审核款不计入到账资金。</span>
         </div>
         <el-table :data="receipts" row-key="id" border class="list-table density-compact" v-loading="loading" v-sticky-scrollbar>
           <template #empty><ListPageStatus :loading="loading" :error="error" @retry="reload"><el-empty description="暂无货款收款记录" :image-size="64" /></ListPageStatus></template>
@@ -115,7 +137,7 @@
           <el-table-column prop="status" label="审核状态" min-width="100" sortable><template #default="{ row }">{{ statusLabel[row.status] || row.status }}</template></el-table-column>
           <el-table-column label="对应批次" min-width="260" show-overflow-tooltip :sortable="false"><template #default="{ row }">{{ row.allocations.map(a => a.shipment_no + '：' + money(a.amount)).join('；') || '待核销' }}</template></el-table-column>
           <el-table-column prop="unallocated_amount" label="未核销金额" min-width="120" align="right" sortable><template #default="{ row }">{{ money(row.unallocated_amount) }}</template></el-table-column>
-          <el-table-column label="操作" min-width="140" class-name="table-action-column"><template #default="{ row }"><GlassButton v-if="canFunds && row.status === 'approved' && row.unallocated_amount > 0" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" @click="openReceipt(null, row)">核销到批次</GlassButton></template></el-table-column>
+          <el-table-column label="操作" min-width="140" class-name="table-action-column"><template #default="{ row }"><GlassButton v-if="canFunds && row.status === 'approved' && row.unallocated_amount > 0" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" :disabled="saving || loading || !!error || !openBatches.length" @click="openReceipt(null, row)">核销到批次</GlassButton></template></el-table-column>
         </el-table>
       </template>
     </div>
@@ -140,22 +162,24 @@
     <el-date-picker v-model="receive.date" type="date" value-format="YYYY-MM-DD" placeholder="收货日期" :disabled="saving" />
     <template #footer><GlassButton variant="primary" left-icon="Check" :loading="saving" @click="confirmReceive">确认收货</GlassButton></template>
   </el-dialog>
-  <el-dialog v-model="receipt.visible" :title="receipt.existing ? '核销已入账货款' : '登记货款收款（提交审核）'" width="760px" :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving">
+  <el-dialog v-model="receipt.visible" :title="receipt.existing ? (receipt.source === 'recharge' ? '核销已到账充值' : '核销已入账货款') : '登记货款收款（提交审核）'" width="760px" :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving">
     <el-form label-position="top" :disabled="saving">
       <div class="delivery-receipt-fields">
-        <el-form-item label="本次金额"><el-input-number v-model="receipt.amount" :precision="2" :min="0.01" :disabled="!!receipt.existing" /></el-form-item>
+        <el-form-item :label="receipt.existing ? '可继续核销金额' : '本次金额'"><el-input-number v-model="receipt.amount" :precision="2" :min="0.01" :disabled="!!receipt.existing" /></el-form-item>
         <el-form-item v-if="!receipt.existing" label="实际收款日期"><el-date-picker v-model="receipt.date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
       </div>
       <el-form-item v-if="!receipt.existing" label="转账凭证"><AppUpload v-model="receipt.files" accept="image/jpeg,image/png,image/webp,application/pdf" :limit="1" :upload-fn="selectVoucher" :disabled="saving" /></el-form-item>
       <el-form-item v-if="!receipt.existing" label="说明"><el-input v-model="receipt.remark" maxlength="500" /></el-form-item>
-      <p>填写本次要核销的批次金额；可跨批次，也可保留未核销金额。</p>
-      <el-table :data="openBatches" row-key="id" border class="list-table density-compact" max-height="280" v-sticky-scrollbar>
+      <p v-if="receipt.existing">{{ receipt.source === 'recharge' ? '充值流水' : '收款申请' }} #{{ receipt.existing.id }} · 原金额 {{ money(receipt.existing.amount) }}</p>
+      <p>填写各批次累计核销金额；可跨批次，也可保留未分配金额。</p>
+      <p v-if="!openBatches.length">暂无待核销批次，资金保留在原流水中。</p>
+      <el-table :data="allocationBatches" row-key="id" border class="list-table density-compact" max-height="280" v-sticky-scrollbar>
         <el-table-column prop="shipment_no" label="发货批次" min-width="235" sortable />
-        <el-table-column prop="unpaid_amount" label="未结金额" min-width="110" align="right" sortable><template #default="{ row }">{{ money(row.unpaid_amount) }}</template></el-table-column>
+        <el-table-column prop="unpaid_amount" label="待核销金额" min-width="110" align="right" sortable><template #default="{ row }">{{ money(row.unpaid_amount) }}</template></el-table-column>
         <el-table-column :label="receipt.existing ? '累计核销' : '本次核销'" min-width="155" :sortable="false"><template #default="{ row }"><input type="number" class="delivery-money" :value="receipt.allocations[row.id] || 0" :min="previousAllocation(row.id)" :max="row.unpaid_amount + previousAllocation(row.id)" step="0.01" :aria-label="`${row.shipment_no} 核销金额`" :disabled="saving" @change="event => { setAllocation(row, Number(event.target.value)); event.target.value = receipt.allocations[row.id] || 0 }" /></template></el-table-column>
       </el-table>
     </el-form>
-    <template #footer><span>核销 {{ money(allocationTotal) }} · 剩余 {{ money(receipt.amount - allocationTotal) }}</span><GlassButton variant="primary" left-icon="Check" :loading="saving" @click="confirmReceipt">{{ receipt.existing ? '保存核销' : '提交收款审核' }}</GlassButton></template>
+    <template #footer><span>核销 {{ money(allocationTotal) }} · 剩余 {{ money(receipt.amount - allocationTotal) }}</span><GlassButton variant="primary" left-icon="Check" :loading="saving" :disabled="!!receipt.existing && allocationTotal <= 0" @click="confirmReceipt">{{ receipt.existing ? '保存核销' : '提交收款审核' }}</GlassButton></template>
   </el-dialog>
 </template>
 
@@ -165,16 +189,24 @@ import AppUpload from '@/components/AppUpload.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatMoney } from '@/utils/money'
+import { formatBeijingDateTime } from '@/utils/datetime'
 import { downloadBlob } from '@/utils/download'
+import { deliveryFundingGap } from '../deliverySelection'
 import { useDomesticDelivery } from '../composables/useDomesticDelivery'
 const emit = defineEmits(['changed'])
 const auth = useAuthStore()
-const { visible, loading, saving, error, customers, customerId, customer, batches, receipts, summary, tab,
+const { visible, loading, saving, error, customers, customerId, customer, batches, receipts, recharges, summary, tab,
   keyword, selected, onlySelected, page, pageSize, sort, shipment, units, receive, receipt, totals, filtered, pageRows,
-  openBatches, allocationTotal, unitOptions, open, searchCustomers, close, changeCustomer, reload, setQuantity, setUnitPrice, batchUnitPrice, toggle, openUnits,
+  openBatches, allocationBatches, allocationTotal, unitOptions, open, searchCustomers, close, changeCustomer, reload, setQuantity, setUnitPrice, batchUnitPrice, toggle, openUnits,
   confirmUnits, scanUnit, submitShipment, cancelBatch, openReceive, confirmReceive, openReceipt, selectVoucher, setAllocation, confirmReceipt } = useDomesticDelivery(emit)
 const money = value => Number.isFinite(Number(value ?? 0)) ? formatMoney(Number(value ?? 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) : '待填写有效单价'
-const canFunds = computed(() => customer.value?.can_operate_funds ?? (customer.value?.owner_user_id === auth.user?.id || (auth.user?.roles || []).includes('super_admin')))
+const canFunds = computed(() => summary.value.scope === 'customer' && (customer.value?.can_operate_funds ?? (customer.value?.owner_user_id === auth.user?.id || (auth.user?.roles || []).includes('super_admin'))))
+const hasUnallocatedFunds = computed(() => Number(summary.value.unallocated_recharges || 0) + Number(summary.value.unallocated_receipts || 0) > 0)
+const coverageLabel = computed(() => {
+  const gap = deliveryFundingGap(summary.value)
+  if (gap == null) return ''
+  return gap > 0 ? `按总额还差 ${money(gap)}` : gap < 0 ? `按总额余 ${money(-gap)}` : '金额相抵'
+})
 const previousAllocation = id => receipt.existing?.allocations.find(row => row.shipment_id === id)?.amount || 0
 const statusLabel = { pending: '待审核', approved: '已通过', rejected: '已驳回', withdrawn: '已撤回' }
 watch([keyword, onlySelected, pageSize], () => { page.value = 1 })

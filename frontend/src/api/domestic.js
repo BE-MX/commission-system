@@ -340,3 +340,5 @@ export function createDomesticReceipt(id, data, file) {
 export const allocateDomesticReceipt = (id, data) => domesticClient.post(`/customer-requests/${id}/allocate`, data)
 
 export const getDeliveryCustomers = (keyword = '') => domesticClient.get('/delivery-customers', { params: { keyword } })
+
+export const allocateDomesticRecharge = (customerId, ledgerId, data) => domesticClient.post(`/customers/${customerId}/recharges/${ledgerId}/allocate`, data)

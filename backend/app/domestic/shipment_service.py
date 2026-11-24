@@ -312,7 +312,7 @@ def cancel_shipment(db, shipment_id, user_id):
     return cancel(db, shipment_id, user_id)
 
 
-def customer_summary(db, customer_id, user_id=None):
+def customer_summary(db, customer_id, user_id=None, *, recharges=None):
     query = db.query(DomesticShipment).filter_by(customer_id=customer_id, cancelled_at=None)
     if user_id is not None:
         query = query.filter_by(created_by=user_id)
@@ -336,6 +336,17 @@ def customer_summary(db, customer_id, user_id=None):
     rows = rows_query.all()
     unshipped = sum((balance_service.money(i.unit_price) * i.order_qty - shipped_item_amount(db, i) for i in rows), Decimal(0))
     legacy_count = sum(i.status == C.ITEM_SHIPPED and not shipped_unit_ids(db, i.id) for i in rows)
-    return {"unshipped_amount": float(unshipped), "transit_unpaid_amount": float(transit),
+    summary = {"unshipped_amount": float(unshipped), "transit_unpaid_amount": float(transit),
             "received_unpaid_amount": float(due), "unallocated_receipts": float(unapplied),
             "legacy_shipped_items": legacy_count}
+    if user_id is None:
+        from app.domestic.models import DomesticCustomer
+        from app.domestic.recharge_allocation_service import list_recharges
+        customer = db.get(DomesticCustomer, customer_id)
+        summary["account_balance"] = float(balance_service.money(customer.balance if customer else 0))
+        if recharges is None:
+            recharges = list_recharges(db, customer_id)
+        summary["unallocated_recharges"] = float(sum(
+            (balance_service.money(row["unallocated_amount"]) for row in recharges), Decimal(0),
+        ))
+    return summary

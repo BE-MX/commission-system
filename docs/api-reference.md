@@ -2878,6 +2878,9 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | POST | `/shipments/{id}/cancel` | domestic:write/admin且批次创建人；无请求体，取消未收货且无核销关联的有效批次，幂等返回批次；恢复可发件，不操作账户余额 |
 | POST | `/customers/{id}/receipts` | multipart data=ReceiptCreate JSON + file凭证；客户资金权限；提交后待审核 |
 | POST | `/customer-requests/{id}/allocate` | 已入账收款补核销，数组shipment_id/amount（累计目标）；只增不减，追加增量证据 |
+| POST | `/customers/{customer_id}/recharges/{ledger_id}/allocate` | 用客户的已入账充值流水核销批次。请求体为 1–200 个不同批次的 `{shipment_id, amount}`，金额为该充值对该批次的累计分配目标。响应为该流水的批次分配列表 |
+
+客户级 `GET /customers/{id}/delivery` 返回 `recharges`，每行含账本 `id`、`created_at`、`amount`、`allocated_amount`、`unallocated_amount` 与 `allocations[{shipment_id, shipment_no, amount}]`。`summary.account_balance` 为含订单扣款的账户余额，`summary.unallocated_recharges` 为未分配到批次的充值。`scope=own_orders` 时充值列表为空，摘要省略这两个客户级字段。写入要求资金操作权限及该客户的资金操作范围；支持预存及先下单后付款客户。只提交变更批次即可，省略的历史分配继续占用额度，同一累计目标可重放。
 
 现有 `/customer-requests` 类型筛选新增 receipt；审核通过在同事务执行货款入账及核销，不改会员。单条 `/items/{id}/ship` 沿用入口并生成逐件批次。数量与资金边界见 [说明](domestic-delivery.md)。
 

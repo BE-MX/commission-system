@@ -1,5 +1,6 @@
 """Receipt applications share approval/voucher workflow, without recharge membership effects."""
 from decimal import Decimal
+from types import SimpleNamespace
 from sqlalchemy import func
 from app.domestic import balance_service
 from app.domestic.models import DomesticCustomer, DomesticCustomerRequest, DomesticCustomerLedger
@@ -34,6 +35,26 @@ def _lock_and_validate_batches(db, customer_id, allocations):
         paid = sum((balance_service.money(value) for (value,) in paid_rows), Decimal(0))
         if balance_service.money(row.amount) > balance_service.money(by_id[row.shipment_id].total_amount) - paid:
             raise ValueError("核销金额超过批次未结金额，请刷新后重试")
+
+
+def allocation_increments(existing, allocations, available, source_label):
+    """Interpret supplied rows as cumulative targets, retaining all omitted history."""
+    if not allocations or len(allocations) > 200 or len({r.shipment_id for r in allocations}) != len(allocations):
+        raise ValueError("请选择不重复的核销批次")
+    increments = []
+    for row in allocations:
+        target = balance_service.money(row.amount)
+        before = existing.get(row.shipment_id, Decimal(0))
+        if not target.is_finite() or target <= 0 or target > balance_service._MAX_MONEY:
+            raise ValueError("核销金额必须为有效正数")
+        if target < before:
+            raise ValueError("累计核销金额不能减少，历史核销记录保留")
+        if target > before:
+            increments.append(SimpleNamespace(shipment_id=row.shipment_id, amount=target-before, target=target))
+    total = sum(existing.values(), Decimal(0)) + sum((row.amount for row in increments), Decimal(0))
+    if total > available:
+        raise ValueError(f"核销合计不能超过{source_label}金额")
+    return increments
 
 
 def _create_receipt_once(db, customer_id, payload, voucher_path, user_id, can_operate_all=False):
@@ -105,20 +126,13 @@ def allocate_approved_receipt(db, request_id, allocations, user_id, can_operate_
     existing = {}
     for r in db.query(DomesticReceiptAllocation).filter_by(request_id=req.id).with_for_update().all():
         existing[r.shipment_id] = existing.get(r.shipment_id, Decimal(0)) + r.amount
-    from types import SimpleNamespace
-    new_rows = []
-    for row in allocations:
-        before = existing.get(row.shipment_id, Decimal(0))
-        target = balance_service.money(row.amount)
-        if target < before:
-            raise ValueError("累计核销金额不能减少，历史核销记录保留")
-        if target > before:
-            new_rows.append(SimpleNamespace(shipment_id=row.shipment_id, amount=target-before, target=target))
-    total = sum(existing.values(), Decimal(0)) + sum((r.amount for r in new_rows), Decimal(0))
-    if total > req.amount:
-        raise ValueError("核销合计不能超过收款金额")
+    new_rows = allocation_increments(existing, allocations, req.amount, "收款")
     _lock_and_validate_batches(db, req.customer_id, new_rows)
-    ledger = db.query(DomesticCustomerLedger).filter_by(business_key=req.business_key).with_for_update().one()
+    ledger = db.query(DomesticCustomerLedger).filter_by(
+        business_key=req.business_key, customer_id=req.customer_id, transaction_type="receipt",
+    ).populate_existing().with_for_update().first()
+    if not ledger or ledger.amount <= 0 or ledger.amount != req.amount:
+        raise ValueError("收款入账记录不匹配，请核对原申请")
     db.add_all([DomesticReceiptAllocation(request_id=req.id, shipment_id=row.shipment_id, amount=row.amount,
         ledger_id=ledger.id, business_key=f"receipt-allocate:{req.id}:{row.shipment_id}:{row.target}", created_by=user_id) for row in new_rows])
     db.commit()

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_any_permission
 from app.core.database import get_db
 from app.core.response import ok
-from app.domestic import shipment_service, receipt_service, file_service
+from app.domestic import shipment_service, receipt_service, file_service, recharge_allocation_service
 from app.domestic.shipment_schemas import ShipmentCreate, ShipmentReceive, ReceiptCreate, ReceiptAllocationInput
 
 router = APIRouter()
@@ -70,11 +70,13 @@ def create_shipment(payload: ShipmentCreate, db: Session = Depends(get_db),
 def customer_delivery(customer_id: int, db: Session = Depends(get_db),
                       user: dict = Depends(require_any_permission("domestic:read", "domestic:write", "domestic:recharge", "domestic:admin"))):
     full_scope = _customer_scope(db, customer_id, user)
+    recharges = recharge_allocation_service.list_recharges(db, customer_id) if full_scope else []
     # Customer owner can reconcile all their customer's shipments.
     return ok({"items": shipment_service.list_shipments(db, customer_id, int(user["sub"]), full_scope),
-               "summary": shipment_service.customer_summary(db, customer_id, None if full_scope else int(user["sub"])),
+               "summary": shipment_service.customer_summary(db, customer_id, None if full_scope else int(user["sub"]), recharges=recharges),
                "scope": "customer" if full_scope else "own_orders",
-               "receipts": receipt_service.list_receipts(db, customer_id, None if full_scope else int(user["sub"]))})
+               "receipts": receipt_service.list_receipts(db, customer_id, None if full_scope else int(user["sub"])),
+               "recharges": recharges})
 
 
 
@@ -121,3 +123,12 @@ def allocate_receipt(request_id: int, payload: list[ReceiptAllocationInput], db:
         raise HTTPException(400, "请选择不重复的核销批次")
     return _run(db, lambda: receipt_service.allocate_approved_receipt(
         db, request_id, payload, int(user["sub"]), _can_operate_all_customers(user)))
+
+
+@router.post("/customers/{customer_id}/recharges/{ledger_id}/allocate")
+def allocate_recharge(customer_id: int, ledger_id: int, payload: list[ReceiptAllocationInput],
+                      db: Session = Depends(get_db),
+                      user: dict = Depends(require_any_permission("domestic:recharge", "domestic:admin"))):
+    from app.domestic.router import _can_operate_all_customers
+    return _run(db, lambda: recharge_allocation_service.allocate_recharge(
+        db, customer_id, ledger_id, payload, int(user["sub"]), _can_operate_all_customers(user)))

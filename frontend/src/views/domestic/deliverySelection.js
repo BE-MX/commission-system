@@ -42,3 +42,10 @@ export function filterDeliveryRows(rows, keyword, selected, onlySelected) {
     && (!needle || [row.guest_name, row.domestic_no, row.order_no, row.line_code, row.product_name]
       .some(value => String(value || '').toLocaleLowerCase().includes(needle))))
 }
+
+export function deliveryFundingGap(summary) {
+  if (summary.scope !== 'customer' || summary.legacy_shipped_items > 0
+    || ['transit_unpaid_amount', 'received_unpaid_amount', 'unallocated_recharges', 'unallocated_receipts'].some(key => summary[key] == null || !Number.isFinite(Number(summary[key])))) return null
+  return Math.round((Number(summary.transit_unpaid_amount || 0) + Number(summary.received_unpaid_amount || 0)
+    - Number(summary.unallocated_recharges || 0) - Number(summary.unallocated_receipts || 0)) * 100) / 100
+}
