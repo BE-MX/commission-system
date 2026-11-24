@@ -1,4 +1,12 @@
-## 2026-11-24 手机录物流单体验 P0 与动效 token（Claude，已合入 main，待部署）
+## 2026-11-25 00:06 全局部署 main 9508fc9b（手机录物流单 P0、内贸充值核销迁移 280、产品雷达等）
+
+- 生产原版本 `51be4eaa` 含 main 没有的 WhatsApp 恢复提交，故候选 `106c6dfed11fd220042598b121a13ce681fbcc44`（本地分支 `claude/release-global-9508fc9b-20261124`，未推 origin）以生产为基合入 main `9508fc9b`；相对 main 只多那 9 个 WhatsApp 文件，与 51be4eaa 一致。
+- 包含 main 自上次发布以来 10 个提交：手机录物流单 P0 与动效 token、内贸充值跨批次核销（迁移 `280_domestic_recharge_allocate`）、内贸欠款口径、产品雷达分级、客户聊天 TeamRouter 路由代码、客户跟进抽屉与长草稿、工厂到货草稿滑动删除。
+- 经办公室统一 `deploy.bat`（bundle 导入＋计划任务，`--revision 106c6dfe --no-pull`）发布，release_id `60de7108169a4a759ba388d915cbb761`。首次 activate 在新加坡静态准备时 SSH 握手超时失败（completed 为空、未冻结、未迁移，服务全程运行）；按 README 以同一 revision 重试成功：status succeeded、`deferred=[]`，schema 升至 `280_domestic_recharge_allocate`，出库轮询 verified 且 timer active，北京 ark-backend active。
+- 外部核验：leshine.work、leshine.cloud、办公室 8001 `/health` 均 connected；两公网站点供应含新代码的 `MobileWaybills-CtyF5ZFt.js`、`DocumentScanner-M6XH1WXs.js`。三个临时计划任务已移除；证据位于办公室 `.deploy_state/global-9508fc9b-20261124/`。办公室管理 SSH 本次经 GameViewer 映射的 2224 端口。
+- 未做：仓库手机真机拍单验收（定格校正、自动核对、返回手势与草稿恢复）；内贸充值核销的业务验收按其条目进行；静态与候选清理按受管维护入口 deferred。
+
+## 2026-11-24 手机录物流单体验 P0 与动效 token（Claude，已全局部署）
 
 - 拍完照定格当前帧并原地校正，不再闪过入口卡、校正、预览；只在找不到边或处理失败时进入手动校正。切到后台再回来自动重开相机（仅直拍模式）。
 - 照片存好且单号、承运商、收件国家齐了自动核对物流，改字段停顿 0.7 秒再核；失败不自动重试，只给「重试核对」。
