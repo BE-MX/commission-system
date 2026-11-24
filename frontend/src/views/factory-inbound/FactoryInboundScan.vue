@@ -47,19 +47,12 @@
       <div v-else-if="loadingDrafts && !drafts.length" class="station-card skeleton-card"><el-skeleton :rows="3" animated /></div>
       <div v-else-if="!drafts.length" class="empty-card"><strong>暂无草稿</strong>拍下送货单后，识别结果会保存在这里</div>
       <ul v-else class="draft-list">
-        <li v-for="draft in drafts" :key="draft.id">
-          <button class="draft-card" type="button" :disabled="uploading" @click="goNote(draft.id)">
-            <span class="draft-main">
-              <span class="draft-eyebrow">工厂单据{{ draft.delivery_no ? '' : draft.recognized_delivery_no ? ' · 待确认' : '' }}</span>
-              <strong class="draft-no" :class="{ pending: !draftNumber(draft) }">{{ draftNumber(draft) || '编号待确认' }}</strong>
-              <small>{{ draft.inbound_no }} · {{ deliveryDate(draft) }}</small>
-            </span>
-            <span class="pill" :class="'tone-' + noteTone(draft)">{{ noteStatus(draft) }}</span>
-            <ArrowRight class="chevron" />
-          </button>
-        </li>
+        <InboundDraftRow v-for="draft in drafts" :key="draft.id" :draft="draft"
+          :open="openDraftId === draft.id" :disabled="uploading" :busy="removingDraft"
+          @reveal="openDraftId = $event ? draft.id : null"
+          @open="goNote(draft.id)" @remove="removeDraft(draft)" />
       </ul>
-      <button v-if="drafts.length < draftTotal" class="station-secondary more-button" type="button" :disabled="loadingDrafts" @click="loadDrafts(true)">
+      <button v-if="drafts.length < draftTotal" class="station-secondary more-button" type="button" :disabled="loadingDrafts || removingDraft" @click="loadDrafts(true)">
         {{ loadingDrafts ? '正在加载…' : '加载更多草稿' }}
       </button>
     </section>
@@ -174,9 +167,10 @@ import { ArrowLeft, ArrowRight, Camera, Delete, HomeFilled, Picture, Plus, Refre
 import DocumentScanner from '@/components/document-scanner/DocumentScanner.vue'
 import { factoryInboundApi } from '@/api/factoryInbound'
 import { useAuthStore } from '@/stores/auth'
-import { confirmAction, confirmDanger, msgWarning, promptAction } from '@/utils/feedback'
+import { confirmAction, confirmDanger, msgSuccessText, msgWarning, promptAction } from '@/utils/feedback'
 import CandidateSheet from './components/CandidateSheet.vue'
 import InboundBatchStatus from './components/InboundBatchStatus.vue'
+import InboundDraftRow from './components/InboundDraftRow.vue'
 import InboundPhoto from './components/InboundPhoto.vue'
 import InboundReviewLine from './components/InboundReviewLine.vue'
 import InboundSummarySheet from './components/InboundSummarySheet.vue'
@@ -201,6 +195,8 @@ const drafts = shallowRef([])
 const draftTotal = ref(0)
 const draftError = ref(false)
 const loadingDrafts = ref(false)
+const openDraftId = ref(null)
+const removingDraft = ref(false)
 const busy = ref(false)
 const batchRefresh = ref(0)
 const candidateId = ref(null)
@@ -239,7 +235,10 @@ async function loadDrafts(more = false) {
   draftRequest = controller
   loadingDrafts.value = true
   draftError.value = false
-  if (!more) drafts.value = []
+  if (!more) {
+    openDraftId.value = null
+    drafts.value = []
+  }
   try {
     const page = more ? draftPage + 1 : 1
     const { data } = await factoryInboundApi.list({ mine: true, status: 'draft', page }, { signal: controller.signal, suppressToast: true })
@@ -251,6 +250,24 @@ async function loadDrafts(more = false) {
     if (!controller.signal.aborted) draftError.value = true
   } finally {
     if (!controller.signal.aborted) loadingDrafts.value = false
+  }
+}
+
+async function removeDraft(draft) {
+  if (uploading.value || removingDraft.value) return
+  removingDraft.value = true
+  try {
+    await confirmDanger('删除', draft.inbound_no, '删除后，单据将移出「我的草稿」，并保留为已作废记录。')
+    if (!alive) return
+    await factoryInboundApi.void(draft.id, { version: draft.version, duplicate: false, reason: '手动作废草稿' })
+    if (!alive) return
+    msgSuccessText('草稿已删除')
+    if (!noteId.value && !scanning.value) await loadDrafts()
+  } catch (error) {
+    // OCR or another device may have changed this draft since the list was loaded.
+    if (alive && !noteId.value && !scanning.value && [404, 409].includes(error.response?.status)) await loadDrafts()
+  } finally {
+    removingDraft.value = false
   }
 }
 

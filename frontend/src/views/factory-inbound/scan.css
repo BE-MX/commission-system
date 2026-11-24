@@ -16,12 +16,11 @@
 .submit-button{border-color:var(--button-primary);background:var(--button-primary);color:var(--button-surface)}
 .station-secondary{width:100%;box-sizing:border-box;background:var(--card-bg);color:var(--text-primary)}
 .station-secondary.danger{color:var(--button-danger-text);border-color:var(--button-danger-border)}
-.scan-button:active:not(:disabled),.submit-button:active:not(:disabled),.station-secondary:active:not(:disabled),.draft-card:active:not(:disabled),.tool:active:not(:disabled){transform:scale(.97)}
+.scan-button:active:not(:disabled),.submit-button:active:not(:disabled),.station-secondary:active:not(:disabled),.tool:active:not(:disabled){transform:scale(.97)}
 @media (hover:hover) and (pointer:fine){
   .scan-button:hover:not(:disabled),.submit-button:hover:not(:disabled){background:var(--button-primary-hover);border-color:var(--button-primary-hover)}
   .station-secondary:hover:not(:disabled),.tool:hover:not(:disabled){border-color:var(--button-primary-hover);color:var(--button-primary-hover)}
   .station-secondary.danger:hover:not(:disabled),.tool.danger:hover:not(:disabled){border-color:var(--button-danger-hover);color:var(--button-danger-hover)}
-  .draft-card:hover:not(:disabled){border-color:var(--button-primary-border)}
 }
 .scan-button:disabled,.submit-button:disabled,.station-secondary:disabled,.tool:disabled{background:var(--button-disabled-bg);border-color:var(--button-border);color:var(--button-disabled-text);cursor:not-allowed}
 button:focus-visible{outline:3px solid var(--button-focus,var(--button-primary));outline-offset:3px}
@@ -48,13 +47,6 @@ button:focus-visible{outline:3px solid var(--button-focus,var(--button-primary))
 
 /* 草稿列表 */
 .draft-list{display:grid;gap:10px;margin:12px 0 0;padding:0;list-style:none}
-.draft-card{width:100%;display:flex;align-items:center;gap:12px;padding:16px 14px 16px 18px;border:1px solid var(--border-color);border-radius:18px;background:var(--card-bg);color:inherit;font:inherit;text-align:left;cursor:pointer;transition:transform 140ms cubic-bezier(.23,1,.32,1),border-color 160ms ease}
-.draft-main{flex:1;min-width:0;display:grid;gap:2px}
-.draft-eyebrow{font-size:11px;color:var(--text-secondary)}
-.draft-no{font-family:var(--font-mono,ui-monospace,monospace);font-size:20px;font-weight:750;letter-spacing:.02em;overflow-wrap:anywhere}
-.draft-no.pending{font-family:inherit;font-size:16px;color:var(--text-secondary)}
-.draft-main small{font-size:12px;color:var(--text-secondary)}
-.draft-card .chevron{width:16px;height:16px;color:var(--text-tertiary)}
 .empty-card{margin-top:12px;padding:28px 20px;border:1px dashed var(--border-color);border-radius:18px;text-align:center;font-size:13px;line-height:1.7;color:var(--text-secondary)}
 .empty-card strong{display:block;margin-bottom:2px;font-size:15px;color:var(--text-primary)}
 .more-button{margin-top:12px}
@@ -120,8 +112,8 @@ button:focus-visible{outline:3px solid var(--button-focus,var(--button-primary))
   .record-meta{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (prefers-reduced-motion:reduce){
-  .scan-button,.submit-button,.station-secondary,.draft-card,.tool,.progress-track span{transition:none}
-  .scan-button:active,.submit-button:active,.station-secondary:active,.draft-card:active,.tool:active{transform:none}
+  .scan-button,.submit-button,.station-secondary,.tool,.progress-track span{transition:none}
+  .scan-button:active,.submit-button:active,.station-secondary:active,.tool:active{transform:none}
   .sweep span{animation:none;width:100%;opacity:.5}
 }
 .sweep.compact{width:160px}
