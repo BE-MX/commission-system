@@ -85,17 +85,18 @@ _ORDER_INTELLIGENCE_SYSTEM_PROMPT = '''你是莱莎发制品订单经营分析�
 
 
 # 产品风向标「解读这款」（2026-11-18）：维度与款的取值由调用方运行时注入 user message（宪法 7）。
-_PRODUCT_SALES_INSIGHT_SYSTEM_PROMPT = '''你是莱莎发制品的产品销量解读助手，读者是外贸业务员。输入是系统根据 OKKI 有效订单实时计算的单款销量证据（重量 kg），你只能基于输入解读，不能重新计算或编造数字。
+_PRODUCT_SALES_GRADE_INSIGHT_SYSTEM_PROMPT = '''你是莱莎发制品的产品销量分析助手，读者是外贸业务员和产品负责人。输入是系统根据 OKKI 有效订单实时计算的某个产品大类的销量证据（重量 kg，件数 quantity），含各维度（颜色、尺寸、规格及其组合 SKU）的本期排行、上期对比、涨跌榜和近 12 个月走势。你只能基于输入分析，不能重新计算或编造数字。
 
-输出中文，不超过 220 字，固定三段：
-现状：这款近期卖了多少、占比、主要型号和国家。
-变化：和上期比怎么样、可能的原因（只能从输入的型号/国家分布里找线索，说明是推测）。
-可以怎么用：业务员向客户推荐时可引用的一句事实。
+输出中文 Markdown，不超过 450 字，固定四节，每节 1~3 条短句：
+**总体**：本期销量、和上期比的变化。
+**排行规律**：颜色、尺寸、规格各自集中在哪里（头部占比、结构特征），引用输入里的名次和 kg。
+**涨跌**：涨得最多和跌得最多的颜色/尺寸/规格/SKU，可能的结构性原因（必须标明是推测）。
+**趋势预测**：只依据 monthly 里 credible=true 且 partial=false 的完整月份给出未来 1~2 个月的方向判断（上升/持平/下降）和依据；这类月份少于 3 个时写「数据不足，暂不预测」。
 
 硬规则：
-1. 每个数字都必须来自输入。
-2. comparable=false 或月份 credible=false 时，不得给出涨跌趋势结论，只描述现状并提示数据为估算。
-3. 不评价业务员个人，不给库存或生产建议，不推断输入没有的价格、利润或市场份额。'''
+1. 每个数字都必须来自输入，可以说「约」但不得换算出输入没有的数。
+2. comparable=false 时，涨跌一节只描述数字并注明「对比期含估算数据，仅供参考」，不得下涨跌趋势结论。
+3. 不评价业务员个人，不推断输入没有的价格、利润、库存或市场份额。'''
 
 
 _INVOICE_SCREENSHOT_SYSTEM_PROMPT = '''你是 OKKI 销售订单截图字段提取助手。你的职责仅限于读取截图中实际可见的订单头、产品明细和金额字段，并按用户消息给出的 JSON 结构返回。
@@ -442,10 +443,10 @@ def auto_init_ai_presets() -> None:
         description="订单经营智能分析：基于确定性指标生成证据化经营简报",
     )
     _auto_create_preset(
-        preset_name="product_sales_insight",
-        system_prompt=_PRODUCT_SALES_INSIGHT_SYSTEM_PROMPT,
-        parameters={"temperature": 0.2, "max_tokens": 1024},
-        description="产品风向标：基于单款 kg 销量证据生成业务员可用的解读",
+        preset_name="product_sales_grade_insight",
+        system_prompt=_PRODUCT_SALES_GRADE_INSIGHT_SYSTEM_PROMPT,
+        parameters={"temperature": 0.2, "max_tokens": 1500},
+        description="产品风向标：按 B1/B3/50%幅度 大类汇总各维度销量与涨跌，给出规律与趋势预测",
     )
     from app.bootstrap.seed_fx_settlement import auto_init_fx_settlement_preset
     auto_init_fx_settlement_preset()

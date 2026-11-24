@@ -1723,10 +1723,10 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | POST | `/mappings/refresh` | `product_sales:admin` | 扫描 2025-01 起未命中产品表的品名，新品名写预填，已有行只刷新统计；不覆盖人工结论；并发冲突 409 |
 | PUT | `/mappings` | `product_sales:admin` | body `{items:[{id,status,model,unit_grams}]}`（≤200）；confirmed 必须有型号和克重；ignored 不计重量、不清型号 |
 | GET | `/models` | `product_sales:admin` | 当前产品表型号及其最常见克重，供下拉选择 |
-| GET | `/radar` | `product_sales:read` | `window`（30/90/180，默认 90）、`models[]`、`user_id`/`team`（read_all）；返回可信度与可比标记、总览与份额、颜色×发长涨跌榜、品类、小款冒头、型号选项。全公司明细按窗口+映射版本缓存 5 分钟 |
-| GET | `/radar/item` | `product_sales:read` | `dimension`（color_size/category/item）、`key`、`window`；近 12 个月走势（含可信月标记）、主要型号/国家、份额；无销量 404 |
+| GET | `/radar` | `product_sales:read` | `grade`（B1/B3/50，默认 B1）、`dims[]`（spec/color/size 任选 ≥1，默认三者=SKU）、`window`（30/60/90/180，默认 90）、`user_id`/`team`（read_all）；返回三个大类本期/上期 kg（`tabs`）与未归类 kg、全公司口径可信度与可比标记、该大类总览与份额、按维度组合的全部排行行（含名次与上期名次）、涨跌榜各 10 条、24 小时内已生成的大类 AI 分析（`insight`，可能为空）。全公司明细按截止日+映射版本缓存 5 分钟 |
+| GET | `/radar/item` | `product_sales:read` | `grade` + `spec`/`color`/`size`（至少一个）+ `window`；近 12 个月走势（含可信月标记）、未选维度与国家分布、实际型号列表（客户深链用）、份额；无销量 404 |
 | GET | `/radar/scopes` | `product_sales:read` + read_all | 窗口内有销量的团队与业务员，供份额切换；无 read_all 403 |
-| POST | `/radar/insight` | `product_sales:read` | body `{dimension,key,window,user_id?,team?}`；AI 解读（preset `product_sales_insight`，30 秒总超时，失败降级规则摘要），按范围+款+窗口+日期+映射版本存 `ark_product_sales_ai_insights` 24 小时复用 |
+| POST | `/radar/insight` | `product_sales:read` | body `{grade,window,refresh?}`；大类 AI 分析（preset `product_sales_grade_insight`，45 秒总超时，失败降级规则摘要），公司口径不含个人份额，按大类+窗口+日期+映射版本存 `ark_product_sales_ai_insights`（dimension=`grade`）24 小时全员复用；同 key 进程内单飞，`refresh` 有 5 分钟冷却（返回 `cooldown_until`），重新分析失败时返回上次结果并标 `refresh_failed` |
 | GET | `/coverage` | `product_sales:admin` | `date_from`/`date_to`（默认 2025-01-01 至今）；按月件数分档与 kg，`credible`=exact+derived 件数占比 ≥90%；按窗口+映射版本缓存 5 分钟 |
 
 ## 订单经营智能分析（`/api/order-intelligence`，2026-08-12）

@@ -88,21 +88,28 @@ def _share(db: Session, user: dict, user_id: str | None, team: str | None) -> ra
 
 @router.get("/radar")
 def radar(
+    grade: str = Query("B1", max_length=8),
+    dims: list[str] | None = Query(None),
     window: int = Query(90),
-    models: list[str] | None = Query(None),
     user_id: str | None = Query(None, max_length=64),
     team: str | None = Query(None, max_length=100),
     db: Session = Depends(get_db),
     user=Depends(require_permission(READ_PERMISSION)),
 ):
     share = _share(db, user, user_id, team)
-    return ok(radar_service.get_radar(db, share, window, models, service.mapping_version(db)))
+    data = radar_service.get_radar(db, share, grade, dims, window, service.mapping_version(db))
+    data["insight"] = insight_service.latest_grade_insight(
+        db, data["grade"], window, data["window"]["current"][1], service.persistent_mapping_version(db),
+    )
+    return ok(data)
 
 
 @router.get("/radar/item")
 def radar_item(
-    dimension: str = Query(..., max_length=24),
-    key: str = Query(..., min_length=1, max_length=512),
+    grade: str = Query(..., max_length=8),
+    spec: str | None = Query(None, max_length=200),
+    color: str | None = Query(None, max_length=100),
+    size: str | None = Query(None, max_length=50),
     window: int = Query(90),
     user_id: str | None = Query(None, max_length=64),
     team: str | None = Query(None, max_length=100),
@@ -110,7 +117,8 @@ def radar_item(
     user=Depends(require_permission(READ_PERMISSION)),
 ):
     share = _share(db, user, user_id, team)
-    return ok(radar_service.get_item_detail(db, share, dimension, key, window, service.mapping_version(db)))
+    values = {"spec": spec, "color": color, "size": size}
+    return ok(radar_service.get_item_detail(db, share, grade, values, window, service.mapping_version(db)))
 
 
 @router.get("/radar/scopes")
@@ -129,8 +137,7 @@ def radar_insight(
     db: Session = Depends(get_db),
     user=Depends(require_permission(READ_PERMISSION)),
 ):
-    share = _share(db, user, payload.user_id, payload.team)
-    return ok(insight_service.explain(
-        db, share, payload.dimension, payload.key, payload.window,
-        service.mapping_version(db), service.persistent_mapping_version(db), _user_id(user), payload.refresh,
+    return ok(insight_service.explain_grade(
+        db, payload.grade, payload.window, service.mapping_version(db), service.persistent_mapping_version(db),
+        _user_id(user), payload.refresh,
     ))

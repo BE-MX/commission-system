@@ -17,9 +17,8 @@ class MappingSaveRequest(BaseModel):
 
 
 class InsightRequest(BaseModel):
+    """大类 AI 分析：公司口径，不带份额参数。"""
+
     refresh: bool = False
-    dimension: Literal["color_size", "category", "item"]
-    key: str = Field(..., min_length=1, max_length=512)
+    grade: Literal["B1", "B3", "50"]
     window: int = 90
-    user_id: str | None = Field(None, max_length=64)
-    team: str | None = Field(None, max_length=100)
