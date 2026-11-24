@@ -141,16 +141,16 @@ def media_for(db, session, media_id):
     return media
 
 
-async def upload(db, login_id, session_id, file, item_id, edit_version, request_id, media_type):
+def upload(db, login_id, session_id, file, item_id, edit_version, request_id, media_type):
     # Never keep authorization/session locks while receiving a large file.
     session_for(db, login_id, session_id)
     db.rollback()
     rel_path = None
     try:
         if media_type == 'video':
-            rel_path = await file_service.store_video(file)
+            rel_path = file_service.store_video_sync(file)
         else:
-            content = await file.read(20 * 1024 * 1024 + 1)
+            content = file.file.read(20 * 1024 * 1024 + 1)
             file_service.validate_upload(file.filename, file.content_type or '', len(content))
             rel_path = file_service.store_bytes(file.filename, content)
         digest = hashlib.sha256()

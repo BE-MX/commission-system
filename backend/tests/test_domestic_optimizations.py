@@ -1,6 +1,5 @@
 """内贸优化：草稿/余额/金额/逐件二维码/客户进度工序显隐。"""
 
-import asyncio
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import uuid4
@@ -846,11 +845,11 @@ def test_unit_submit_requires_qr_signature_again_at_write_time(db):
         unit_id=unit.id, unit_sign="deadbeef",
     )
     with pytest.raises(HTTPException, match="单件二维码签名无效"):
-        asyncio.run(domestic_submit(invalid, current_user=worker, db=db))
+        domestic_submit(invalid, current_user=worker, db=db)
 
     sign = report_service.generate_unit_qr_data(unit.id).rsplit(":", 1)[1]
     valid = invalid.model_copy(update={"unit_sign": sign})
-    result = asyncio.run(domestic_submit(valid, current_user=worker, db=db))
+    result = domestic_submit(valid, current_user=worker, db=db)
     assert result["unit_codes"] == ["A1-01"]
 
 

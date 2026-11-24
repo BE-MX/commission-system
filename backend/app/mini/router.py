@@ -228,12 +228,14 @@ async def vision_recognize(
 
 
 # ── 内贸报工 ──────────────────────────────────────────────
+# Synchronous SQLAlchemy/file work runs in FastAPI workers, never on the event loop.
+# Keep each request session sequential, including commit and response assembly.
 # 业务逻辑全在 app/domestic/report_service，这里只做薄路由。
 # 与上面的外贸报工两点不同：二维码前缀是 ARK-D/ARK-DU、报工可按数量或逐件。
 # 登录沿用 mini token；入口权限控制访问，报工模式权限决定数量或逐件操作。
 
 @router.get("/domestic/scan/{item_id}", summary="内贸扫码：取明细与可报数量")
-async def domestic_scan(
+def domestic_scan(
     item_id: int,
     sign: str = Query(..., description="二维码 HMAC 签名"),
     current_user: ArkUser = Depends(require_mini_entry("domestic")),
@@ -261,7 +263,7 @@ async def domestic_scan(
 
 
 @router.get("/domestic/unit-scan/{unit_id}", summary="内贸逐件二维码扫码")
-async def domestic_unit_scan(
+def domestic_unit_scan(
     unit_id: int,
     sign: str = Query(..., description="逐件二维码 HMAC 签名"),
     current_user: ArkUser = Depends(require_mini_entry("domestic")),
@@ -292,7 +294,7 @@ async def domestic_unit_scan(
 
 
 @router.get("/domestic/unit-history/{unit_id}", summary="内贸逐件码工序扫描记录（只读）")
-async def domestic_unit_history(
+def domestic_unit_history(
     unit_id: int,
     sign: str = Query(...),
     current_user: ArkUser = Depends(require_mini_entry("domestic")),
@@ -312,7 +314,7 @@ async def domestic_unit_history(
 
 
 @router.post("/domestic/scan/submit", summary="内贸报工（带数量，可拆批）")
-async def domestic_submit(
+def domestic_submit(
     body: DomesticSubmitRequest,
     current_user: ArkUser = Depends(require_mini_entry("domestic")),
     db: Session = Depends(get_db),
@@ -347,7 +349,7 @@ async def domestic_submit(
 
 
 @router.post("/domestic/scan/revoke", summary="内贸撤销报工")
-async def domestic_revoke(
+def domestic_revoke(
     body: DomesticRevokeRequest,
     current_user: ArkUser = Depends(require_mini_entry("domestic")),
     db: Session = Depends(get_db),
@@ -359,7 +361,7 @@ async def domestic_revoke(
 
 
 @router.get("/domestic/history", summary="内贸今日报工记录")
-async def domestic_history(
+def domestic_history(
     current_user: ArkUser = Depends(require_mini_entry("domestic")),
     db: Session = Depends(get_db),
 ):
@@ -373,7 +375,7 @@ async def domestic_history(
 
 
 @router.get("/domestic/history/all", summary="内贸历史报工记录（分页）")
-async def domestic_history_all(
+def domestic_history_all(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: ArkUser = Depends(require_mini_entry("domestic")),
@@ -386,7 +388,7 @@ async def domestic_history_all(
 
 
 @router.get("/domestic/images/{rel_path:path}", summary="内贸参考图（小程序）")
-async def domestic_image(
+def domestic_image(
     rel_path: str,
     current_user: ArkUser = Depends(require_mini_entry("domestic", "lookup")),
 ):
@@ -403,7 +405,7 @@ async def domestic_image(
 
 
 @router.get("/domestic/orders", summary="内贸订单进度（车间/跟单查看）")
-async def domestic_orders(
+def domestic_orders(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     keyword: str = Query(""),
@@ -420,7 +422,7 @@ async def domestic_orders(
 
 
 @router.get("/domestic/lookup", summary="订单速查：单号或扫码直接查进度")
-async def domestic_lookup(
+def domestic_lookup(
     code: str = Query(..., description="二维码内容 / 系统单号 / 客户订单号，服务端自行分辨"),
     current_user: ArkUser = Depends(require_mini_entry("lookup")),
     db: Session = Depends(get_db),
@@ -435,7 +437,7 @@ async def domestic_lookup(
 
 
 @router.get("/domestic/track", summary="产品明细进度（小程序码免登录查看）")
-async def domestic_track(
+def domestic_track(
     scene: str = Query(..., description="小程序码 scene：i:<item_id>:<hmac16>"),
     db: Session = Depends(get_db),
 ):
@@ -468,7 +470,7 @@ async def domestic_track(
 
 
 @router.get("/domestic/track-image", summary="进度码授权范围内的参考图")
-async def domestic_track_image(
+def domestic_track_image(
     scene: str = Query(...),
     rel_path: str = Query(...),
     db: Session = Depends(get_db),
@@ -502,7 +504,7 @@ async def domestic_track_image(
 
 
 @router.get("/domestic/orders/{order_id}", summary="内贸订单明细进度")
-async def domestic_order_detail(
+def domestic_order_detail(
     order_id: int,
     current_user: ArkUser = Depends(require_mini_entry("domestic", "lookup")),
     db: Session = Depends(get_db),

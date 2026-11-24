@@ -1,4 +1,6 @@
 """SQLite-only submission/ownership tests; DingTalk is always a fake."""
+import asyncio
+import threading
 from datetime import timedelta
 from unittest.mock import AsyncMock
 
@@ -171,3 +173,59 @@ def test_multiple_current_owners_deduplicate_same_platform_user(db, owner):
     db.execute(text("UPDATE lsordertest.customer_info SET owner_user_ids='[1001,1002,1001]' WHERE company_id='C001'"))
     db.flush()
     assert [u.id for u in notices.current_salespeople(db, 'OB001')] == [owner[0].id]
+
+
+@pytest.mark.asyncio
+async def test_real_notice_lookup_leaves_loop_free_and_http_on_loop(db, storage, owner, monkeypatch):
+    # Exercise the real savepoint, ownership lookup and ORM projection.
+    inspector = _user(db, 'notice-worker-inspector')
+    with _mini_client(db, inspector) as client:
+        _upload(client)
+    inspection = db.query(ShippingInspection).one()
+    inspection_id = inspection.id
+    db.commit()
+    loop = asyncio.get_running_loop()
+    loop_thread = threading.get_ident()
+    entered, release = asyncio.Event(), threading.Event()
+    real_lookup = notices.current_salespeople
+    def slow_lookup(*args):
+        assert threading.get_ident() != loop_thread
+        loop.call_soon_threadsafe(entered.set)
+        assert release.wait(3)
+        return real_lookup(*args)
+    monkeypatch.setattr(notices, 'current_salespeople', slow_lookup)
+    async def send(recipients, title, content, url):
+        assert threading.get_ident() == loop_thread
+        assert recipients == ['ding-current-owner']
+        assert str(inspection_id) in url
+        return True
+    owner[-1].send_oa_notice.side_effect = send
+    task = asyncio.create_task(notices.notify_submitted(db, [inspection_id]))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        assert not task.done()
+    finally:
+        release.set()
+    await task
+    owner[-1].send_oa_notice.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_notice_lookup_failure_savepoint_allows_next_notice(db, storage, owner, monkeypatch):
+    inspector = _user(db, 'notice-failure-inspector')
+    with _mini_client(db, inspector) as client:
+        _upload(client)
+    inspection_id = db.query(ShippingInspection).one().id
+    db.commit()
+    lookup = notices.current_salespeople
+    calls = []
+    def fail_first(*args):
+        calls.append(True)
+        if len(calls) == 1:
+            raise ValueError('bad owner response')
+        return lookup(*args)
+    monkeypatch.setattr(notices, 'current_salespeople', fail_first)
+    await notices.notify_submitted(db, [inspection_id, inspection_id])
+    assert len(calls) == 2
+    owner[-1].send_oa_notice.assert_awaited_once()
+    assert db.query(ShippingInspection).one().status == 'draft'

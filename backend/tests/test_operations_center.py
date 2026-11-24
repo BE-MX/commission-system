@@ -686,8 +686,7 @@ def test_runtime_heartbeat_bounds_instance_cardinality(monkeypatch):
         ))
 
 
-@pytest.mark.asyncio
-async def test_runtime_heartbeat_three_misses_degrades_once(monkeypatch):
+def test_runtime_heartbeat_three_misses_degrades_once(monkeypatch):
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -728,7 +727,7 @@ async def test_runtime_heartbeat_three_misses_degrades_once(monkeypatch):
         lambda: MissingWebhookSender(),
     )
 
-    await observability.monitor_runtime_heartbeats()
+    observability.monitor_runtime_heartbeats()
 
     with session_factory() as db:
         row = db.query(RuntimeInstance).one()
@@ -738,9 +737,19 @@ async def test_runtime_heartbeat_three_misses_degrades_once(monkeypatch):
         # alerted_at so the next monitor cycle retries instead of losing the alert.
         assert row.alerted_at is None
 
+    from unittest.mock import AsyncMock
 
-@pytest.mark.asyncio
-async def test_runtime_heartbeat_retires_and_can_reactivate(monkeypatch):
+    delivered = AsyncMock(return_value={})
+    monkeypatch.setattr("app.dingtalk.webhook.get_webhook_sender",
+                        lambda: SimpleNamespace(send_markdown=delivered))
+    observability.monitor_runtime_heartbeats()
+    observability.monitor_runtime_heartbeats()
+    delivered.assert_awaited_once()
+    with session_factory() as db:
+        assert db.query(RuntimeInstance).one().alerted_at is not None
+
+
+def test_runtime_heartbeat_retires_and_can_reactivate(monkeypatch):
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -781,7 +790,7 @@ async def test_runtime_heartbeat_retires_and_can_reactivate(monkeypatch):
     monkeypatch.setattr(observability, "SessionLocal", session_factory)
     monkeypatch.setattr(observability, "get_settings", lambda: settings)
 
-    await observability.monitor_runtime_heartbeats()
+    observability.monitor_runtime_heartbeats()
     assert observability.list_runtime_instances() == []
 
     observability.ingest_runtime_heartbeat(RuntimeHeartbeatPayload(

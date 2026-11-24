@@ -4,6 +4,7 @@ import json
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.customer_media.access import require_any_permission, require_permission
 from app.core.database import get_db
@@ -353,7 +354,7 @@ async def upload_batch_asset(
         directory_id=directory_id, directory_name=directory_name,
         tags=_parse_tags_json(tags_json),
     )
-    return ok(_batch_full(db, row), "上传成功")
+    return ok(await run_in_threadpool(_batch_full, db, row), "上传成功")
 
 
 @router.patch("/batches/{batch_id}/assets/{asset_id}/tags")

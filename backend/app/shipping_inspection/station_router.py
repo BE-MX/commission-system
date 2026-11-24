@@ -1,16 +1,16 @@
 """Browser station endpoints, with live DB authorization (not delegated JWT claims)."""
-import inspect
 import logging
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
+
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.core.response import ok
 from app.core.storage import transfers
-from starlette.concurrency import run_in_threadpool
-from app.shipping_inspection import file_service, station_service as service
+from app.shipping_inspection import station_service as service
 
 router = APIRouter(prefix='/station')
 logger = logging.getLogger('commission')
@@ -40,18 +40,16 @@ class SubmitRequest(BaseModel):
 
 async def invoke(db, function, *args, **kwargs):
     try:
-        result = function(db, *args, **kwargs)
-        if inspect.isawaitable(result):
-            result = await result
+        result = await run_in_threadpool(function, db, *args, **kwargs)
         return ok(result)
     except service.StationError as exc:
-        db.rollback()
+        await run_in_threadpool(db.rollback)
         raise HTTPException(exc.status, {'code': exc.code, 'message': str(exc)}) from exc
     except ValueError as exc:
-        db.rollback()
+        await run_in_threadpool(db.rollback)
         raise HTTPException(400, {'code': 'OPERATION_REJECTED', 'message': str(exc)}) from exc
     except Exception as exc:
-        db.rollback()
+        await run_in_threadpool(db.rollback)
         logger.warning('Shipping station operation failed', exc_info=True)
         print('Shipping station operation failed; refresh to confirm result', flush=True)
         raise HTTPException(500, {'code': 'OPERATION_UNCONFIRMED', 'message': '操作结果未确认，请刷新核对后重试'}) from exc
@@ -113,5 +111,5 @@ async def media(session_id: str, media_id: int, user=Depends(login_id), db: Sess
         media = service.media_for(db, session, media_id)
         return {'key': media.file_path, 'record': transfers.snapshot(db, 'shipping-inspection', media.file_path)}
     result = await invoke(db, path_for)
-    db.rollback()  # Release row locks before streaming the private object.
+    await run_in_threadpool(db.rollback)  # Release locks before streaming.
     return await run_in_threadpool(transfers.response, 'shipping-inspection', result['data']['key'], result['data']['record'])

@@ -67,6 +67,16 @@ def session_factory(engine):
 # ── 注册测试 ─────────────────────────────────────────
 
 class TestSchedulerRegistration:
+    def test_runtime_heartbeat_monitor_uses_scheduler_worker(self):
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from apscheduler.util import iscoroutinefunction_partial
+        from app.schedulers.registry import _register_jobs, JOB_RUNTIME_HEARTBEAT_MONITOR
+
+        scheduler = AsyncIOScheduler()
+        _register_jobs(scheduler, outbound_mode="legacy")
+        # AsyncIOExecutor runs synchronous jobs in its worker pool.
+        assert not iscoroutinefunction_partial(scheduler.get_job(JOB_RUNTIME_HEARTBEAT_MONITOR).func)
+
     async def test_start_scheduler_registers_jobs(self, monkeypatch):
         """start_scheduler 应注册全部固定 job 且 id 命名约定一致"""
         from app.core.config import get_settings

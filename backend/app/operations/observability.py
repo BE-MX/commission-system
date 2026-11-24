@@ -276,7 +276,7 @@ def list_runtime_instances() -> list[RuntimeInstance]:
         return rows
 
 
-async def monitor_runtime_heartbeats() -> None:
+def monitor_runtime_heartbeats() -> None:
     """Mark three-cycle silence degraded, alert once, and prune old heartbeat samples."""
     settings = get_settings()
     interval = max(15, int(settings.OPERATIONS_HEARTBEAT_INTERVAL_SECONDS))
@@ -342,10 +342,12 @@ async def monitor_runtime_heartbeats() -> None:
             for _service_id, name, instance_id, age, _observed_at in confirmed_alerts
         )
         alert_timeout = max(1.0, float(getattr(settings, "OPERATIONS_ALERT_TIMEOUT_SECONDS", 10.0)))
-        await asyncio.wait_for(
+        # This synchronous scheduler job owns a worker thread, including the
+        # database transactions and HTTPS client setup for the alert.
+        asyncio.run(asyncio.wait_for(
             get_webhook_sender().send_markdown("云端运行实例告警", "\n".join(lines)),
             timeout=alert_timeout,
-        )
+        ))
     except Exception as exc:
         logger.error("runtime heartbeat alert failed (%s)", type(exc).__name__)
         print(f"runtime heartbeat alert failed ({type(exc).__name__})", flush=True)

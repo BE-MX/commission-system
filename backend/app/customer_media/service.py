@@ -1,5 +1,6 @@
 """客户素材交付业务服务。"""
 
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -11,6 +12,7 @@ from app.core.time import beijing_now
 from sqlalchemy import collate, delete, distinct, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
+from starlette.concurrency import run_in_threadpool
 
 from app.asset.models import TagDimension, TagValue
 from app.auth.models import ArkUser, ArkUserExternalBinding
@@ -368,17 +370,21 @@ def _find_directory(db: Session, customer_id: str, name: str) -> CustomerMediaDi
 
 def find_or_create_directory(db: Session, batch: CustomerMediaBatch, name: str, user_id: int) -> CustomerMediaDirectory:
     """按客户+目录名幂等获取目录：同名（数据库 ci 排序规则下忽略大小写）直接复用，否则新建。"""
+    return _find_or_create_customer_directory(db, batch.customer_id, name, user_id)
+
+
+def _find_or_create_customer_directory(db, customer_id, name, user_id):
     normalized = _normalize_directory_name(name)
-    existing = _find_directory(db, batch.customer_id, normalized)
+    existing = _find_directory(db, customer_id, normalized)
     if existing:
         return existing
-    directory = CustomerMediaDirectory(customer_id=batch.customer_id, name=normalized, created_by=user_id)
+    directory = CustomerMediaDirectory(customer_id=customer_id, name=normalized, created_by=user_id)
     db.add(directory)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        existing = _find_directory(db, batch.customer_id, normalized)
+        existing = _find_directory(db, customer_id, normalized)
         if existing:
             return existing
         raise
@@ -513,6 +519,45 @@ async def upload_asset(
     directory_id: int | None = None, directory_name: str | None = None,
     tags: list | None = None,
 ) -> CustomerMediaBatch:
+    # A cancelled waiter must not close the request Session or lose the storage
+    # result while its worker is still running. Finish the accepted operation
+    # (including failure cleanup) before propagating cancellation.
+    operation = asyncio.create_task(_upload_asset(
+        db, batch_id, payload, upload, directory_id, directory_name, tags,
+    ))
+    try:
+        return await asyncio.shield(operation)
+    except asyncio.CancelledError:
+        try:
+            await operation
+        except Exception as exc:
+            logger.warning("[customer-media] cancelled upload failed type=%s", type(exc).__name__)
+            print(f"[customer-media] cancelled upload failed type={type(exc).__name__}", flush=True)
+        raise
+
+
+async def _upload_asset(db, batch_id, payload, upload, directory_id, directory_name, tags):
+    # Request sessions are used sequentially: synchronous SQL and cleanup never run
+    # on the event loop, and the read transaction ends before storing the file.
+    user_id, customer_id, max_batch_bytes, max_file_bytes = await run_in_threadpool(
+        _prepare_upload, db, batch_id, payload, tags,
+    )
+    stored: StoredUpload | None = None
+    try:
+        storage = await run_in_threadpool(storage_for)
+        stored = await storage.save_upload(
+            upload, customer_id=customer_id, batch_id=batch_id, max_bytes=max_file_bytes,
+        )
+        return await run_in_threadpool(
+            _finish_upload, db, batch_id, payload, stored, user_id, customer_id,
+            max_batch_bytes, directory_id, directory_name, tags,
+        )
+    except Exception:
+        await run_in_threadpool(_rollback_upload, db, stored)
+        raise
+
+
+def _prepare_upload(db, batch_id, payload, tags):
     user_id, _, _ = user_identity(db, payload)
     batch = db.scalar(select(CustomerMediaBatch).where(CustomerMediaBatch.id == batch_id))
     if not batch:
@@ -532,79 +577,80 @@ async def upload_asset(
     # 上传可能持续数分钟。先结束只读事务，文件落盘后再短暂锁批次做最终校验，
     # 避免上传期间占用数据库连接和行锁。
     db.rollback()
+    return user_id, customer_id, max_batch_bytes, settings.CUSTOMER_MEDIA_MAX_FILE_MB * 1024 * 1024
 
-    stored: StoredUpload | None = None
-    try:
-        stored = await storage_for().save_upload(
-            upload,
-            customer_id=customer_id,
-            batch_id=batch_id,
-            max_bytes=settings.CUSTOMER_MEDIA_MAX_FILE_MB * 1024 * 1024,
-        )
-        directory = None
-        if directory_id is not None:
-            directory = db.get(CustomerMediaDirectory, directory_id)
-            if not directory or directory.customer_id != customer_id:
-                raise CustomerMediaNotFound("素材目录不存在")
-        elif directory_name and directory_name.strip():
-            # 文件夹拖拽上传按顶层文件夹名归组：同名目录直接复用，否则自动新建。
-            directory = find_or_create_directory(db, batch, directory_name, user_id)
-        if directory is not None:
-            directory = db.scalar(select(CustomerMediaDirectory).where(
-                CustomerMediaDirectory.id == directory.id,
-            ).with_for_update().execution_options(populate_existing=True))
-            if directory is None:
-                raise CustomerMediaNotFound("素材目录已删除，请刷新后重试")
-        batch = db.scalar(select(CustomerMediaBatch).where(
-            CustomerMediaBatch.id == batch_id,
+
+def _finish_upload(db, batch_id, payload, stored, user_id, customer_id,
+                   max_batch_bytes, directory_id, directory_name, tags):
+    resolved_directory_id = directory_id
+    if resolved_directory_id is None and directory_name and directory_name.strip():
+        # Directory creation retains its independent commit.
+        resolved = _find_or_create_customer_directory(db, customer_id, directory_name, user_id)
+        resolved_directory_id = resolved.id
+    # Always start a fresh write transaction, discarding any snapshot opened by
+    # directory resolution. Acquire directory -> batch locks before the first
+    # consistent read, so later quota reads see uploads committed while waiting.
+    db.rollback()
+    directory = None
+    if resolved_directory_id is not None:
+        directory = db.scalar(select(CustomerMediaDirectory).where(
+            CustomerMediaDirectory.id == resolved_directory_id,
         ).with_for_update().execution_options(populate_existing=True))
-        if not batch:
-            raise CustomerMediaNotFound("素材批次不存在")
-        task, _ = _load_task(db, batch.task_id)
-        _assert_writer(db, payload, task)
-        if batch.status not in EDITABLE_STATUSES:
-            raise CustomerMediaConflict("上传期间批次状态已变化，请刷新后重试")
-        current_size = db.scalar(select(func.coalesce(func.sum(CustomerMediaAsset.file_size), 0)).where(
-            CustomerMediaAsset.batch_id == batch.id,
-            CustomerMediaAsset.deleted_at.is_(None),
-        )) or 0
-        if current_size + stored.file_size > max_batch_bytes:
-            raise CustomerMediaConflict("该批次已达到容量上限")
-        sort_order = db.scalar(select(func.count(CustomerMediaAsset.id)).where(
-            CustomerMediaAsset.batch_id == batch.id,
-            CustomerMediaAsset.deleted_at.is_(None),
-        )) or 0
-        asset = CustomerMediaAsset(
-            batch_id=batch.id,
-            directory_id=directory.id if directory else None,
-            file_name=stored.file_name,
-            media_type=stored.media_type,
-            content_type=stored.content_type,
-            file_size=stored.file_size,
-            sha256=stored.sha256,
-            storage_provider=stored.provider,
-            object_key=stored.object_key,
-            playback_key=stored.playback_key,
-            playback_size=stored.playback_size,
-            thumbnail_key=stored.thumbnail_key,
-            width=stored.width,
-            height=stored.height,
-            duration_seconds=stored.duration_seconds,
-            sort_order=sort_order,
-            uploaded_by=user_id,
-        )
-        db.add(asset)
-        db.flush()
-        _insert_asset_tags(db, asset.id, tags)
-        _validate_customer_tag_items(db, tags, batch.customer_id, lock=True)
-        batch.updated_at = beijing_now()
-        db.commit()
-    except Exception:
-        db.rollback()
-        if stored:
-            _cleanup_unbound_upload(db, stored)
-        raise
-    return get_batch(db, batch.id)
+        if not directory or directory.customer_id != customer_id:
+            raise CustomerMediaNotFound("素材目录不存在或已删除，请刷新后重试")
+    batch = db.scalar(select(CustomerMediaBatch).where(
+        CustomerMediaBatch.id == batch_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    if not batch:
+        raise CustomerMediaNotFound("素材批次不存在")
+    task, _ = _load_task(db, batch.task_id)
+    _assert_writer(db, payload, task)
+    if batch.status not in EDITABLE_STATUSES:
+        raise CustomerMediaConflict("上传期间批次状态已变化，请刷新后重试")
+    # The parent batch lock serializes writes, and this fresh transaction's
+    # first consistent read happened after acquiring it. An unlocked aggregate
+    # therefore sees prior uploads without next-key locks on empty asset ranges.
+    current_size, sort_order = db.execute(select(
+        func.coalesce(func.sum(CustomerMediaAsset.file_size), 0),
+        func.count(CustomerMediaAsset.id),
+    ).where(
+        CustomerMediaAsset.batch_id == batch.id,
+        CustomerMediaAsset.deleted_at.is_(None),
+    )).one()
+    if current_size + stored.file_size > max_batch_bytes:
+        raise CustomerMediaConflict("该批次已达到容量上限")
+    asset = CustomerMediaAsset(
+        batch_id=batch.id,
+        directory_id=directory.id if directory else None,
+        file_name=stored.file_name,
+        media_type=stored.media_type,
+        content_type=stored.content_type,
+        file_size=stored.file_size,
+        sha256=stored.sha256,
+        storage_provider=stored.provider,
+        object_key=stored.object_key,
+        playback_key=stored.playback_key,
+        playback_size=stored.playback_size,
+        thumbnail_key=stored.thumbnail_key,
+        width=stored.width,
+        height=stored.height,
+        duration_seconds=stored.duration_seconds,
+        sort_order=sort_order,
+        uploaded_by=user_id,
+    )
+    db.add(asset)
+    db.flush()
+    _insert_asset_tags(db, asset.id, tags)
+    _validate_customer_tag_items(db, tags, batch.customer_id, lock=True)
+    batch.updated_at = beijing_now()
+    db.commit()
+    return get_batch(db, batch_id)
+
+
+def _rollback_upload(db, stored):
+    db.rollback()
+    if stored:
+        _cleanup_unbound_upload(db, stored)
 
 
 def _cleanup_unbound_upload(db, stored):
@@ -625,6 +671,7 @@ def _cleanup_unbound_upload(db, stored):
                     storage.delete(key)
                 except Exception:
                     logger.warning('[customer-media] derivative cleanup deferred key=%s', key)
+                    print(f'[customer-media] derivative cleanup deferred key={key}', flush=True)
     except Exception:
         db.rollback()
         logger.warning('Customer media upload cleanup deferred; reference or storage unavailable')

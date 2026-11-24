@@ -1,6 +1,5 @@
 """内贸条件路线规则与逐件分流的状态机契约。"""
 
-import asyncio
 import importlib.util
 from datetime import date, datetime
 from decimal import Decimal
@@ -1361,7 +1360,7 @@ def test_mini_submit_marks_concurrent_idempotency_result_as_retryable(monkeypatc
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(mini_router.domestic_submit(body, current_user=worker, db=db))
+        mini_router.domestic_submit(body, current_user=worker, db=db)
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == {

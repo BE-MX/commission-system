@@ -11,6 +11,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from fastapi import UploadFile
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
 from app.core.storage.cos import CosObjectStore, ObjectMissing, StorageError, enabled
@@ -110,6 +111,14 @@ class LocalMediaStorage:
         batch_id: int,
         max_bytes: int,
     ) -> StoredUpload:
+        return await run_in_threadpool(
+            self._save_upload, upload, customer_id=customer_id,
+            batch_id=batch_id, max_bytes=max_bytes,
+        )
+
+    def _save_upload(self, upload, *, customer_id, batch_id, max_bytes) -> StoredUpload:
+        # FastAPI has already spooled multipart content. Keep reads, hashing,
+        # writes/fsync, image decoding and transcoding in this worker together.
         original_name = Path(upload.filename or "upload").name[:255]
         extension = Path(original_name).suffix.lower()
         declared = _ALLOWED_EXTENSIONS.get(extension)
@@ -130,7 +139,7 @@ class LocalMediaStorage:
         try:
             with temp.open("xb") as stream:
                 while True:
-                    chunk = await upload.read(CHUNK_BYTES)
+                    chunk = upload.file.read(CHUNK_BYTES)
                     if not chunk:
                         break
                     if len(header) < 32:
@@ -152,7 +161,7 @@ class LocalMediaStorage:
             temp.unlink(missing_ok=True)
             raise
         finally:
-            await upload.close()
+            upload.file.close()
 
         width = height = None
         if declared[0] == "image":
@@ -170,9 +179,7 @@ class LocalMediaStorage:
         playback_path = thumbnail_path = None
         if declared[0] == "video":
             try:
-                # 转码是秒级 CPU 操作，放到线程池，避免阻塞单 worker 的事件循环。
-                from starlette.concurrency import run_in_threadpool
-                derivatives = await run_in_threadpool(self.build_derivatives, object_key)
+                derivatives = self.build_derivatives(object_key)
             except transcode.TranscodeError as exc:
                 # 转码失败即拒绝上传：不能让客户拿到浏览器无法播放的文件。
                 target.unlink(missing_ok=True)
@@ -278,33 +285,38 @@ class CosMediaStorage:
         self.store = store or CosObjectStore("customer-media")
 
     async def save_upload(self, upload, *, customer_id, batch_id, max_bytes):
-        from starlette.concurrency import run_in_threadpool
+        return await run_in_threadpool(
+            self._save_upload, upload, customer_id=customer_id,
+            batch_id=batch_id, max_bytes=max_bytes,
+        )
+
+    def _save_upload(self, upload, *, customer_id, batch_id, max_bytes):
         cache = Path(get_settings().COS_CACHE_ROOT)
         cache.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(prefix="customer-media-", dir=cache) as directory:
             local = LocalMediaStorage(directory)
-            stored = await local.save_upload(upload, customer_id=customer_id,
-                                            batch_id=batch_id, max_bytes=max_bytes)
+            stored = local._save_upload(upload, customer_id=customer_id,
+                                        batch_id=batch_id, max_bytes=max_bytes)
             published: list[str] = []
             try:
                 # 先登记键再上传：put_file 在写完后才校验，失败时对象可能已存在。
                 published.append(stored.object_key)
-                result = await run_in_threadpool(self.store.put_file, stored.object_key,
-                                                 local.resolve(stored.object_key), stored.content_type)
+                result = self.store.put_file(stored.object_key,
+                                             local.resolve(stored.object_key), stored.content_type)
                 if result.sha256 != stored.sha256 or result.size != stored.file_size:
                     raise MediaStorageError("云端素材校验失败")
                 if stored.playback_path and stored.playback_key:
                     published.append(stored.playback_key)
-                    playback = await run_in_threadpool(
-                        self.store.put_file, stored.playback_key,
+                    playback = self.store.put_file(
+                        stored.playback_key,
                         stored.playback_path, transcode.PLAYBACK_CONTENT_TYPE,
                     )
                     if playback.size != stored.playback_size:
                         raise MediaStorageError("云端播放版校验失败")
                 if stored.thumbnail_path and stored.thumbnail_key:
                     published.append(stored.thumbnail_key)
-                    poster = await run_in_threadpool(
-                        self.store.put_file, stored.thumbnail_key,
+                    poster = self.store.put_file(
+                        stored.thumbnail_key,
                         stored.thumbnail_path, transcode.POSTER_CONTENT_TYPE,
                     )
                     if poster.size != stored.thumbnail_size:
@@ -316,6 +328,7 @@ class CosMediaStorage:
                         self.store.delete(key)
                     except Exception as exc:  # noqa: BLE001 - 清理失败不覆盖原始错误
                         logger.warning("[customer-media] orphan cleanup deferred type=%s", type(exc).__name__)
+                        print(f"[customer-media] orphan cleanup deferred type={type(exc).__name__}", flush=True)
                 raise
             # 临时目录即将销毁，返回的对象不再携带本地路径。
             return replace(stored, provider=self.provider, playback_path=None, thumbnail_path=None)

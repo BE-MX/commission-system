@@ -10,6 +10,8 @@ import logging
 import os
 from pathlib import Path
 
+from starlette.concurrency import run_in_threadpool
+
 from app.core.config import get_settings
 
 logger = logging.getLogger("commission")
@@ -43,6 +45,11 @@ def remove_file(rel_path: str) -> None:
 
 
 async def store_video(upload) -> str:
+    return await run_in_threadpool(store_video_sync, upload)
+
+
+def store_video_sync(upload) -> str:
+    """Consume the already parsed UploadFile spool in a worker, never the loop."""
     ext = Path(upload.filename or "").suffix.lower()
     if ext not in VIDEO_MIMES:
         raise FileValidationError("视频仅支持 MP4、MOV、M4V")
@@ -57,7 +64,7 @@ async def store_video(upload) -> str:
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_suffix(target.suffix + '.part')
     try:
-        first = await upload.read(1024 * 1024)
+        first = upload.file.read(1024 * 1024)
         # ISO BMFF/QuickTime 文件头；拒绝仅更改扩展名的非视频文件。
         if len(first) < 12 or first[4:8] not in {b"ftyp", b"moov", b"mdat", b"wide"}:
             raise FileValidationError("无法识别视频文件，请从相册重新选择")
@@ -69,7 +76,7 @@ async def store_video(upload) -> str:
                 if total > VIDEO_MAX_BYTES:
                     raise FileValidationError("视频不能超过 100MB")
                 stream.write(chunk)
-                chunk = await upload.read(1024 * 1024)
+                chunk = upload.file.read(1024 * 1024)
             stream.flush()
             os.fsync(stream.fileno())
         temporary.replace(target)
