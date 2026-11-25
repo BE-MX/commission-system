@@ -116,6 +116,50 @@ class DomesticFollowupAttachment(Base):
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="上传时间（北京时间）")
 
 
+class DomesticFollowupRecording(Base):
+    __tablename__ = "ark_domestic_followup_recordings"
+    __table_args__ = (
+        Index("ix_dom_followup_rec_followup", "followup_id"),
+        Index("ix_dom_followup_rec_uploader", "uploader_user_id", "sha256"),
+        Index("ix_dom_followup_rec_queue", "asr_status", "next_attempt_at"),
+        {"comment": "跟进录音：办公室 ASR 转写为 txt，成功后删除原音频"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    followup_id = Column(BigInteger, ForeignKey("ark_domestic_followups.id"), nullable=True, comment="所属跟进；上传后未绑定为空")
+    uploader_user_id = Column(_UINT, ForeignKey("ark_users.id"), nullable=False, comment="上传人")
+    seq = Column(SmallInteger, nullable=False, default=0, comment="在记录中的顺序")
+    file_key = Column(String(255), nullable=True, comment="音频在 domestic 存储的相对路径；转写成功删除后置空")
+    file_name = Column(String(255), nullable=True, comment="原始文件名")
+    mime_type = Column(String(64), nullable=True, comment="MIME")
+    file_size = Column(BigInteger, nullable=False, default=0, comment="字节数")
+    sha256 = Column(String(64), nullable=False, comment="音频 SHA-256，同人重复上传复用")
+    hotwords = Column(String(500), nullable=True, comment="转写热词，逗号分隔")
+    asr_status = Column(String(12), nullable=False, default="queued", comment="queued/running/done/failed")
+    attempts = Column(SmallInteger, nullable=False, default=0, comment="已计次的转写尝试")
+    next_attempt_at = Column(DateTime, nullable=False, default=beijing_now, comment="最早可领取时间（北京时间）")
+    lease_token = Column(String(32), nullable=True, comment="worker 租约令牌")
+    lease_until = Column(DateTime, nullable=True, comment="租约到期（北京时间）")
+    duration_sec = Column(Integer, nullable=True, comment="音频时长（秒）")
+    transcript_key = Column(String(255), nullable=True, comment="转写 txt 在 domestic 存储的相对路径")
+    transcript_text = Column(mysql.MEDIUMTEXT().with_variant(Text(), "sqlite"), nullable=True,
+                             comment="转写纯文本，AI 整理与引用核对用")
+    segments = Column(JSON, nullable=True, comment="分段 [{start,end,speaker,text}]")
+    transcript_chars = Column(Integer, nullable=True, comment="转写字数")
+    asr_engine = Column(String(64), nullable=True, comment="转写引擎")
+    asr_elapsed_sec = Column(Integer, nullable=True, comment="转写耗时（秒）")
+    error_message = Column(String(255), nullable=True, comment="最近失败原因（不含录音内容）")
+    organize_status = Column(String(12), nullable=False, default="none", comment="AI 整理 none/running/done/failed")
+    organize_result = Column(JSON, nullable=True, comment="AI 整理建议（引用已核对）")
+    organize_error = Column(String(255), nullable=True, comment="AI 整理失败原因")
+    organize_log_id = Column(BigInteger, nullable=True, comment="AI 整理调用日志ID")
+    organized_at = Column(DateTime, nullable=True, comment="AI 整理开始时间（北京时间）")
+    audio_deleted_at = Column(DateTime, nullable=True, comment="原音频删除时间（北京时间）")
+    archived_at = Column(DateTime, nullable=True, comment="编辑移除时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="上传时间（北京时间）")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间（北京时间）")
+
+
 class DomesticFollowupRevision(Base):
     __tablename__ = "ark_domestic_followup_revisions"
     __table_args__ = (

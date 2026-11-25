@@ -82,6 +82,7 @@ class DirectSaveIn(FollowupFields):
     request_id: str = Field(..., min_length=8, max_length=64)
     raw_text: str | None = Field(None, max_length=20000)
     attachment_ids: list[int] = Field(default_factory=list, max_length=9)
+    recording_ids: list[int] = Field(default_factory=list, max_length=3)
     source: Literal["web", "mobile"] = "web"
     source_task_id: int | None = Field(None, gt=0)
 
@@ -90,6 +91,7 @@ class DraftCreateIn(FollowupOutcomeFields):
     request_id: str = Field(..., min_length=8, max_length=64)
     raw_text: str | None = Field(None, max_length=20000)
     attachment_ids: list[int] = Field(default_factory=list, max_length=9)
+    recording_ids: list[int] = Field(default_factory=list, max_length=3)
     customer_id: int | None = Field(None, gt=0)
     followup_date: dt.date | None = None
     channel: str | None = Field(None, max_length=16)
@@ -128,6 +130,7 @@ class EditFollowupIn(FollowupOutcomeFields):
     next_method: str | None = Field(None, max_length=16)
     items: list[EditItemIn] = Field(default_factory=list, max_length=30)
     attachment_ids: list[int] = Field(default_factory=list, max_length=9)
+    recording_ids: list[int] | None = Field(None, max_length=3)
     template_code: str | None = Field(None, max_length=8)
     template_version: int | None = Field(None, ge=1)
     template_answers: dict | None = None

@@ -1,9 +1,10 @@
 """内贸客户跟进 API（/api/domestic-followup）。业务逻辑全在 service 层（红线 2）。"""
 from contextlib import contextmanager
 from datetime import date
+from urllib.parse import quote
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_permission
@@ -12,8 +13,8 @@ from app.core.response import ok
 from app.core.time import beijing_today
 from app.domestic_followup import (
     ai_parse_service, attachment_service, collaboration_router, config_service, customer_overview_router,
-    dict_service, edit_service, followup_service, insight_router, jobs, prep_router, stats_router, task_service,
-    template_router, visibility,
+    dict_service, edit_service, followup_service, insight_router, jobs, prep_router, recording_organize_service,
+    recording_service, stats_router, task_service, template_router, visibility,
 )
 from app.domestic_followup.schemas import (
     ActionCancelIn, ActionCompleteIn, ActionUpdateIn, ConfirmIn, DirectSaveIn, DraftCreateIn, EditFollowupIn,
@@ -114,6 +115,54 @@ def attachment_file(attachment_id: int, db: Session = Depends(get_db), user=Depe
     with _errors():
         path, mime = followup_service.attachment_file(db, user, attachment_id)
     return FileResponse(path, media_type=mime)
+
+
+@router.post("/recordings")
+def upload_recording(file: UploadFile = File(...), followup_id: int | None = Form(None, gt=0),
+                     hotwords: str | None = Form(None, max_length=500),
+                     db: Session = Depends(get_db), user=Depends(_require_write)):
+    content = file.file.read(recording_service.MAX_BYTES + 1)
+    if len(content) > recording_service.MAX_BYTES:
+        raise HTTPException(status_code=400, detail="录音不能超过 200MB")
+    with _errors(db):
+        row = recording_service.upload(db, user, file.filename or "", file.content_type or "", content,
+                                       followup_id=followup_id, hotwords=hotwords)
+        db.commit()
+        return ok(recording_service.serialize(row, queue_position=recording_service.queue_position(db, row)),
+                  message="录音已上传，转写排队中")
+
+
+@router.get("/recordings/{recording_id}")
+def recording_detail(recording_id: int, db: Session = Depends(get_db), user=Depends(_require_read)):
+    with _errors():
+        return ok(recording_service.detail(db, user, recording_id))
+
+
+@router.get("/recordings/{recording_id}/transcript.txt")
+def recording_transcript(recording_id: int, db: Session = Depends(get_db), user=Depends(_require_read)):
+    with _errors():
+        content, filename = recording_service.transcript_download(db, user, recording_id)
+    return Response(content, media_type="text/plain; charset=utf-8", headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+        "Cache-Control": "private, no-store",
+    })
+
+
+@router.post("/recordings/{recording_id}/retry")
+def retry_recording(recording_id: int, db: Session = Depends(get_db), user=Depends(_require_write)):
+    with _errors(db):
+        row = recording_service.retry(db, user, recording_id)
+        db.commit()
+        return ok(recording_service.serialize(row), message="已重新排队")
+
+
+@router.post("/recordings/{recording_id}/organize")
+def organize_recording(recording_id: int, background: BackgroundTasks, db: Session = Depends(get_db),
+                       user=Depends(_require_write)):
+    with _errors(db):
+        row = recording_organize_service.start(db, user, recording_id)
+    background.add_task(_submit_job, recording_organize_service.run, row.id)
+    return ok(recording_service.serialize(row), message="AI 整理中")
 
 
 @router.post("/followups")

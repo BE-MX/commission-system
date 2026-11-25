@@ -17,6 +17,7 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
   const dicts = reactive({ domestic_followup_state_change: [], domestic_followup_category: [], domestic_followup_channel: [] })
   const form = ref(emptyForm(currentBeijingDate()))
   const attachments = ref([]) // { id, file_name, ocr_status, ocr_text, previewUrl, uploading }
+  const recordings = ref([]) // 已上传的录音：{ id, file_name, asr_status, ... }，转写在办公室异步进行
   const customerOptions = ref([])
   const searching = ref(false)
   const openTasks = ref([])
@@ -39,7 +40,7 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
 
   const uploading = computed(() => attachments.value.some(a => a.uploading))
   const canSubmit = computed(() => !saving.value && !uploading.value
-    && (form.value.raw_text.trim() || attachments.value.length))
+    && (form.value.raw_text.trim() || attachments.value.length || recordings.value.length))
   const selectedCustomer = computed(() => customerOptions.value.find(o => o.id === form.value.customer_id) || null)
   // 选项里查不到时不拦（后端仍会校验）；明确不可写才禁用确认
   const customerWritable = computed(() => selectedCustomer.value?.writable !== false)
@@ -76,6 +77,7 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
     stopPolling()
     revokePreviews()
     attachments.value = []
+    recordings.value = []
     openTasks.value = []
     openActionTasks.value = []
     form.value = { ...emptyForm(currentBeijingDate()), ...preset }
@@ -246,6 +248,7 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
     request_id: requestId,
     raw_text: form.value.raw_text,
     attachment_ids: attachments.value.map(a => a.id).filter(Boolean),
+    recording_ids: recordings.value.map(r => r.id).filter(Boolean),
     source: window.matchMedia?.('(max-width: 768px)').matches ? 'mobile' : 'web',
     source_task_id: form.value.source_task_id || null,
     prep_id: form.value.prep_id || null,
@@ -434,6 +437,7 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
       form.value.id = draft.id
       // 恢复的草稿只有附件 id，没有本地预览：缩略图区显示文件名
       attachments.value = draft.attachments.map(a => ({ ...a, previewUrl: '', uploading: false }))
+      recordings.value = draft.recordings || []
       if (draft.ai_status === 'running') {
         step.value = 'parsing'
         poll(draft.id, 0)
@@ -449,7 +453,7 @@ export function useFollowupComposer({ onSaved, onClosed, onChangePrep } = {}) {
   onBeforeUnmount(stopPolling)
 
   return {
-    visible, step, saving, uploading, canSubmit, canSave, saveBlocker, customerWritable, restricted, recordOnly, needsPlanPurpose, planAssignees, dicts, loadDicts, form, attachments,
+    visible, step, saving, uploading, canSubmit, canSave, saveBlocker, customerWritable, restricted, recordOnly, needsPlanPurpose, planAssignees, dicts, loadDicts, form, attachments, recordings,
     customerOptions, searching, openTasks, openActionTasks, openItems, aiFailed, nextValidation,
     reviewDirty, open, resume, close, handleClosed, uploadAttachment, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, selectProspect,
     loadCustomerContext, saveDirect, startAi, confirm, discard, addRow, toggleResolved, changePrep,

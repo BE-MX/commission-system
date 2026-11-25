@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 from app.auth.models import ArkUser
 from app.core.time import beijing_now, beijing_today
 from app.domestic.models import DomesticCustomer
-from app.domestic_followup import attachment_service, config_service, dict_service, task_service, visibility
+from app.domestic_followup import (
+    attachment_service, config_service, dict_service, recording_service, task_service, visibility,
+)
 from app.domestic_followup.constants import (
     DICT_CATEGORY, DICT_CHANNEL, DICT_OBSTACLE, DICT_RESULT, DICT_STATE_CHANGE, DISPOSITIONS, NEGATIVE_RESULT_CODES,
     NEXT_STEP_BASES, RECEIPT_OK_TEXT, TRACKED_KINDS, URGENT,
@@ -284,13 +286,14 @@ def direct_save(db: Session, current_user: dict, payload: DirectSaveIn) -> tuple
     existing = _by_request(db, payload.request_id, user_id)
     if existing:
         return existing, []
-    if not ((payload.raw_text or "").strip() or payload.attachment_ids or payload.items):
+    if not ((payload.raw_text or "").strip() or payload.attachment_ids or payload.items or payload.recording_ids):
         raise ValueError("请填写跟进内容或上传截图")
     try:
         followup, created = _new_followup(db, user_id, payload, ai_status="none")
         if not created:
             return followup, []
         attachments = attachment_service.bind(db, user_id, followup.id, payload.attachment_ids)
+        recording_service.bind(db, user_id, followup.id, payload.recording_ids)
         _apply_and_confirm(db, current_user, followup, payload)
         db.commit()
     except Exception:
@@ -305,7 +308,7 @@ def create_draft(db: Session, current_user: dict, payload: DraftCreateIn) -> tup
     existing = _by_request(db, payload.request_id, user_id)
     if existing:
         return existing, False
-    if not ((payload.raw_text or "").strip() or payload.attachment_ids):
+    if not ((payload.raw_text or "").strip() or payload.attachment_ids or payload.recording_ids):
         raise ValueError("请填写跟进内容或上传截图")
     try:
         if payload.prep_id:
@@ -341,6 +344,7 @@ def create_draft(db: Session, current_user: dict, payload: DraftCreateIn) -> tup
         for name in OUTCOME_FIELDS:
             setattr(followup, name, getattr(payload, name))
         attachment_service.bind(db, user_id, followup.id, payload.attachment_ids)
+        recording_service.bind(db, user_id, followup.id, payload.recording_ids)
         db.commit()
     except Exception:
         db.rollback()
@@ -393,6 +397,7 @@ def serialize(db: Session, followup: Followup, *, with_items: bool = True) -> di
         "warnings": getattr(followup, "_confirmation_warnings", []),
         "created_at": followup.created_at.isoformat() if followup.created_at else None,
         "attachments": attachment_service.list_for(db, [followup.id]).get(followup.id, []),
+        "recordings": recording_service.list_for(db, [followup.id]).get(followup.id, []),
     }
     if with_items:
         items = (db.query(DomesticFollowupItem).filter(DomesticFollowupItem.followup_id == followup.id,

@@ -34,6 +34,11 @@
         <h3>截图</h3>
         <FollowupAttachmentPreview :attachments="record.attachments" />
       </section>
+      <section v-if="record.recordings?.length || canAddRecording">
+        <h3>通话录音</h3>
+        <FollowupRecordingPanel :recordings="record.recordings || []" :editable="canAddRecording" :followup-id="record.id"
+                                :allow-organize="mayEditFollowup(auth.user, record)" />
+      </section>
       <div class="record-actions">
         <GlassButton v-if="mayEditFollowup(auth.user, record)" v-permission="'domestic_followup:write'" variant="primary" left-icon="EditPen" @click="$emit('edit', record.id)">修改记录</GlassButton>
         <GlassButton variant="outline" @click="$emit('history', record.id)">修改记录历史</GlassButton>
@@ -52,10 +57,14 @@ import { mayEditFollowup } from '../followupEdit'
 import FollowupGuideFields from './FollowupGuideFields.vue'
 import FollowupFactGroups from './FollowupFactGroups.vue'
 import FollowupAttachmentPreview from './FollowupAttachmentPreview.vue'
+import FollowupRecordingPanel from './FollowupRecordingPanel.vue'
+import { computed } from 'vue'
 
-defineProps({ record: { type: Object, default: null } })
+const props = defineProps({ record: { type: Object, default: null } })
 defineEmits(['close', 'timeline', 'edit', 'history'])
 const auth = useAuthStore()
+// 已确认记录补传录音：与修改记录同口径（本人录入或超管）
+const canAddRecording = computed(() => Boolean(props.record?.can_edit) && (props.record?.recordings?.length || 0) < 3)
 const ITEM_STATUS = { open: '未处理', handling: '处理中', resolved: '已解决', closed_no_action: '无需处理' }
 const evidenceLabels = { customer: '客户明确说', assessment: '我的判断' }
 const dispositionLabels = { waiting_customer: '等待客户', paused: '暂停', closed: '关闭' }

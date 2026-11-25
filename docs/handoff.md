@@ -1,3 +1,11 @@
+## 2026-11-25 内贸跟进录音转写与 AI 整理（Accio，未提交未部署）
+
+- 分支 `accio/followup-recording`（worktree `commission-system-accio-followup-recording`），设计见会话交付的《方舟-跟进录音转写与AI整理-功能设计》。录入跟进与已确认记录详情可上传录音（≤200MB、每条 ≤3 段），录音写共享 COS `domestic/audio/`；写不进 COS 直接报错，不落本地。
+- 办公室实例 `ASR_WORKER_ENABLED=true` 时启动 `recording_worker` 线程：领取 queued → 局域网 ASR（`ASR_BASE_URL`，Bearer `ASR_API_KEY`）→ txt 写 `domestic/transcripts/` 并回读核对 → 删除原音频。ASR 离线或 401/403 只回队不计次；其他失败最多 3 次。北京保持默认 false。
+- AI 整理只读转写，结果写录音行 `organize_*`，不改跟进记录；引用逐字核对，对不上的客户原话降为待确认。新 preset `domestic_followup_audio_organize`（启动自动创建）。
+- 迁移 `281_followup_recordings`（新表，滚动安全）；Nginx `followup-recording-*.conf` 与 `deploy.bat --followup-recording-routing-only`。
+- 待办：授权后合并、部署；办公室 `.env` 配 ASR 三项；ASR 防火墙仅放行 `192.168.100.3`；用真实录音做端到端验收。
+
 ## 2026-11-25 单产品库存同步保存失败（Codex，待部署）
 
 - 北京生产版本 `106c6dfed1` 对产品 `86457595956461`（Super Double Drawn Genius Weft / 22 / #62 / 20g）记录三次 HTTP 503，该产品无成功的手动同步审计。用实际账号只读核验，MySQL 8.0.30 拒绝产品、SKU 和库存表的排他锁读取，也拒绝库存 UPDATE/INSERT。审计表及镜像表均存在并使用 InnoDB。

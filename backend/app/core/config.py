@@ -347,6 +347,12 @@ class Settings(BaseSettings):
 
     # ── 内贸订单（明细图文要求的参考图）────────────────────
     DOMESTIC_STORAGE_ROOT: str = "D:\\WORKSOURCE\\domestic"
+    # ── 内贸跟进录音转写（仅办公室实例开启 worker；ASR 在局域网）──
+    ASR_WORKER_ENABLED: bool = False
+    ASR_BASE_URL: str = ""
+    ASR_API_KEY: str = ""
+    ASR_TIMEOUT_SECONDS: int = 3600
+    ASR_MAX_ATTEMPTS: int = 3
 
     # ── 发货检验（验货照片）────────────────────────────────
     SHIPPING_INSPECTION_STORAGE_ROOT: str = str(_BACKEND_DIR.parent / "uploads" / "shipping-inspection")

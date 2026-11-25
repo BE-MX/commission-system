@@ -74,6 +74,37 @@ def test_factory_inbound_routes_whole_private_prefix_to_office(region):
         routing.render(config(region) + "\nlocation /api/factory-inbound/ {}", source, region, "factory-inbound")
 
 
+@pytest.mark.parametrize("region", ["cloud", "office"])
+def test_followup_recording_route_is_exact_and_idempotent(region):
+    source = (DEPLOY / "nginx" / f"followup-recording-{region}.conf").read_text()
+    candidate = routing.render(config(region), source, region, "followup-recording")
+    assert routing.render(candidate, source, region, "followup-recording") == candidate
+    pattern = re.search(r"location ~ (.+) \{", source).group(1)
+    assert re.match(pattern, "/api/domestic-followup/recordings")
+    for path in ("/api/domestic-followup/recordings/5", "/api/domestic-followup/recordings/5/transcript.txt",
+                 "/api/domestic-followup/attachments", "/api/domestic-followup/recordings-x"):
+        assert not re.match(pattern, path)
+    with pytest.raises(ValueError, match="Conflicting"):
+        routing.render(config(region) + "\nlocation /api/domestic-followup/recordings {}", source, region,
+                       "followup-recording")
+
+
+def test_followup_recording_cloud_streams_200mb_to_beijing_backend():
+    source = (DEPLOY / "nginx/followup-recording-cloud.conf").read_text()
+    assert "client_max_body_size 201m;" in source
+    assert "proxy_pass http://127.0.0.1:8001;" in source
+    for directive in ("proxy_request_buffering off;", "proxy_next_upstream off;",
+                      "proxy_set_header Authorization $http_authorization;", "private, no-store"):
+        assert directive in source
+
+
+def test_followup_recording_frp_entry_refuses_before_tunnel():
+    source = (DEPLOY / "nginx/followup-recording-office.conf").read_text()
+    assert "return 413" in source
+    assert "proxy_pass" not in source
+    assert "client_max_body_size 1k;" in source
+
+
 def test_whatsapp_preserves_independent_translation_route():
     source = (DEPLOY / 'nginx/whatsapp-cloud.conf').read_text()
     original = config('cloud') + '\nlocation /api/whatsapp-translation/ { proxy_pass http://127.0.0.1:8001; }'

@@ -200,7 +200,7 @@ def update(db, user, record_id, payload):
             return row, []
         if payload.version != row.version:
             raise followup_service.ConflictError("记录已被修改，请重新载入最新版本；当前填写内容已保留")
-        if not ((payload.raw_text or "").strip() or payload.items or payload.attachment_ids):
+        if not ((payload.raw_text or "").strip() or payload.items or payload.attachment_ids or payload.recording_ids):
             raise ValueError("请保留跟进内容或截图")
         customer = db.get(DomesticCustomer, row.customer_id)
         if customer is None or customer.status != 1:
@@ -230,6 +230,8 @@ def update(db, user, record_id, payload):
             if name in payload.model_fields_set:
                 setattr(row, name, getattr(payload, name))
         pending = _attachments(db, row, payload.attachment_ids, visibility.uid(user))
+        from app.domestic_followup import recording_service
+        recording_service.reconcile_on_edit(db, row.id, payload.recording_ids, visibility.uid(user))
         edit_item_service.reconcile(db, row, customer, incoming, existing, tasks, visibility.uid(user), old_date)
         if not row.evidence_kind:
             natures = {item.nature for item in incoming if item.kind == "content"}

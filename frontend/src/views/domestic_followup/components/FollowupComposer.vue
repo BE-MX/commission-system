@@ -70,6 +70,12 @@
               </button>
             </div>
           </div>
+          <el-form-item label="通话录音（可选）" class="recording-field">
+            <FollowupRecordingPanel :recordings="c.recordings.value" editable :allow-organize="false"
+                                    @uploaded="r => c.recordings.value.some(x => x.id === r.id) || c.recordings.value.push(r)"
+                                    @update="rows => c.recordings.value = rows"
+                                    @remove="r => c.recordings.value = c.recordings.value.filter(x => x.id !== r.id)" />
+          </el-form-item>
         </div>
         <section v-if="c.openActionTasks.value.length" class="action-tasks">
           <h3>顺便完成 <span>该客户由我承办的行动待办</span></h3>
@@ -115,6 +121,8 @@
         <pre>{{ c.form.value.raw_text }}</pre>
       </details>
       <FollowupAttachmentPreview v-if="c.visible.value && c.attachments.value.length" :attachments="c.attachments.value" />
+      <FollowupRecordingPanel v-if="c.visible.value && c.recordings.value.length" :recordings="c.recordings.value"
+                              @update="rows => c.recordings.value = rows" />
       <el-form label-position="top">
         <div v-if="c.form.value.prep_id && c.form.value.prep" class="prep-context-bar">
           <el-tag effect="plain">{{ c.form.value.prep.template_code }}</el-tag><strong>本次目标：{{ c.form.value.prep.goal }}</strong>
@@ -241,6 +249,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
 import AppUpload from '@/components/AppUpload.vue'
+import FollowupRecordingPanel from './FollowupRecordingPanel.vue'
 import { currentBeijingDate, formatCalendarDate } from '@/utils/datetime'
 import { confirmAction, isFeedbackCancelled } from '@/utils/feedback'
 import { nextBasisHint, taskDueLabel, weekdayLabel } from '../followupDraft'
@@ -316,7 +325,7 @@ function toggleState(value) {
 
 async function beforeClose(done) {
   const step = c.step.value
-  const dirty = step === 'input' && (c.form.value.raw_text.trim() || c.attachments.value.length)
+  const dirty = step === 'input' && (c.form.value.raw_text.trim() || c.attachments.value.length || c.recordings.value.length)
   if (!dirty && !(step === 'review' && c.reviewDirty())) return done()
   try {
     if (step === 'review') await confirmAction('改动还没保存，草稿会保留在『我的草稿』，确定关闭？', '关闭核对')

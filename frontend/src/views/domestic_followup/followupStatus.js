@@ -11,3 +11,8 @@ export const ITEM_KIND_STATUS = statusDictionary([
 ])
 
 export const SEVERITY_STATUS = statusDictionary([['紧急', '紧急', 'danger'], ['一般', '一般', 'info']])
+
+export const RECORDING_STATUS = statusDictionary([
+  ['queued', '排队转写', 'info'], ['running', '转写中', 'primary'], ['done', '已转写', 'success'],
+  ['failed', '转写失败', 'danger'],
+])

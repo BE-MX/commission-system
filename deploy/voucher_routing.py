@@ -21,7 +21,7 @@ def execute(prepare_only, feature="voucher"):
 
     with publish.deployment_lock():
         journal = {"status": "preparing", "completed": []}
-        if feature not in {"voucher", "shipping-video", "receipt", "whatsapp", "factory-inbound"}:
+        if feature not in {"voucher", "shipping-video", "receipt", "whatsapp", "factory-inbound", "followup-recording"}:
             raise ValueError("Unknown routing feature")
         record = publish.STATE / f"{feature}-routing.json"
         publish.atomic_json(record, journal)

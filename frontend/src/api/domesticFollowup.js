@@ -56,6 +56,21 @@ export const followupApi = {
     const res = await client.get(`/attachments/${id}/file`, { ...quiet, responseType: 'blob' })
     return URL.createObjectURL(res.data)
   },
+  // 录音最大 200MB：单独放宽超时并回报进度；转写在办公室异步完成，前端只轮询状态
+  uploadRecording(file, { followupId, hotwords, onProgress } = {}) {
+    const form = new FormData()
+    form.append('file', file)
+    if (followupId) form.append('followup_id', followupId)
+    if (hotwords) form.append('hotwords', hotwords)
+    return client.post('/recordings', form, {
+      ...quiet, timeout: 15 * 60 * 1000, headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: e => onProgress?.(e.total ? Math.round(e.loaded * 100 / e.total) : 0),
+    }).then(data)
+  },
+  recording: id => get(`/recordings/${id}`),
+  retryRecording: id => post(`/recordings/${id}/retry`, {}),
+  organizeRecording: id => post(`/recordings/${id}/organize`, {}),
+  downloadTranscript: id => client.get(`/recordings/${id}/transcript.txt`, { ...quiet, responseType: 'blob' }),
   directSave: body => post('/followups', body),
   followups: (params, options) => get('/followups', params, options),
   followupAuthors: (params, options) => get('/followups/authors', params, options),

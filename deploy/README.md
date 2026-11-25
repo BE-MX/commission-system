@@ -1,5 +1,9 @@
 # 统一部署入口
 
+## 内贸跟进录音上传
+
+录音上传端点 `POST /api/domestic-followup/recordings` 业务上限 200 MiB，代理放宽到 201m 留 multipart 开销。北京 `ark-cloud.conf` 两个主域 server 直接转发本机 `127.0.0.1:8001`，录音写共享 COS；办公室 `.work`（frp 隧道入口）对该端点直接回 413，避免大文件压垮共享隧道（见 runbook Q9）。内网用户经 `lan.leshine.cloud`（Caddy 未设请求体上限）直达办公室 8001。仅精确匹配上传端点，`/recordings/{id}`、`transcript.txt` 等读取接口仍走通用 `/api/` 规则。取得路由变更授权后，用 `deploy.bat --followup-recording-routing-only --prepare-only` 核对两端候选，激活去掉 `--prepare-only`。
+
 ## 工厂到货拍照核对
 
 P1 的图片保存在办公室 `CommissionSystem` 的 `FACTORY_INBOUND_STORAGE_ROOT`，默认 `D:/WORKSOURCE/factory-inbound`。为该账号授予私有目录读写权限。功能默认关闭，授权发布后将 `FACTORY_INBOUND_ENABLED=true` 仅配置到办公室实例。迁移由常规发布流程执行。
