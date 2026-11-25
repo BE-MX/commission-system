@@ -40,5 +40,11 @@ defineEmits(['update:modelValue', 'closed'])
 </style>
 
 <style>
-.el-drawer.detail-drawer { max-width: calc(100vw - 24px); }
+.el-drawer.detail-drawer {
+  max-width: calc(100vw - 24px);
+  transition: transform var(--motion-sheet) var(--ease-drawer), opacity var(--motion-fast) ease;
+}
+.el-drawer-fade-leave-active .el-drawer.detail-drawer {
+  transition: transform 240ms var(--ease-out-strong), opacity var(--motion-fast) ease;
+}
 </style>

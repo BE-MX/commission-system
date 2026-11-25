@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   generateOrderAiBrief,
@@ -34,7 +34,16 @@ export function applyRouteQuery(query, filters, activeTab) {
   if (colors.length) filters.colors = colors
 }
 
+function deepLinkSignature(query) {
+  const tab = DEEP_LINK_TABS.has(String(query?.tab || '')) ? String(query.tab) : ''
+  const models = queryList(query?.models)
+  const colors = queryList(query?.colors)
+  if (!tab && !models.length && !colors.length) return ''
+  return JSON.stringify({ tab, models, colors })
+}
+
 export function useOrderIntelligence() {
+  const route = useRoute()
   const activeTab = ref('overview')
   const peopleDimension = ref('user')
   const aiLoading = ref(false)
@@ -50,6 +59,7 @@ export function useOrderIntelligence() {
   const copy = value => JSON.parse(JSON.stringify(value))
   const initialFilters = copy(filters)
   applyRouteQuery(useRoute()?.query || {}, filters, activeTab)
+  let lastDeepLink = deepLinkSignature(route?.query)
   const appliedFilters = ref(copy(filters))
   const hasPendingAnalysis = computed(() => JSON.stringify(filters) !== JSON.stringify(appliedFilters.value))
   const readConfig = context => ({ signal: context.signal, suppressToast: true })
@@ -208,6 +218,19 @@ export function useOrderIntelligence() {
       return
     }
     generateBrief()
+  }
+
+  // KeepAlive 缓存后，从产品风向标再次深链跳入时同步新的页签与产品筛选并重新查询
+  if (route) {
+    watch(() => route.fullPath, () => {
+      if (route.path !== '/invoice/order-intelligence') return
+      const next = deepLinkSignature(route.query)
+      if (!next || next === lastDeepLink) return
+      lastDeepLink = next
+      Object.assign(filters, copy(initialFilters))
+      applyRouteQuery(route.query || {}, filters, activeTab)
+      applyAnalysis()
+    })
   }
 
   onMounted(() => { restoreActiveBrief(); loadPage() })

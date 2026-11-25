@@ -11,9 +11,9 @@
           <h3>月度销量可信度</h3>
           <p>按件数计：确切重量占比 ≥ {{ thresholdText }} 才算可信月，参与趋势结论；其余月份只作估算。确认映射是「采纳克重假设」，不会让估算月变可信。</p>
         </div>
-        <GlassButton left-icon="Refresh" :variant="coverageStale ? 'primary' : undefined" :loading="coverageLoading" @click="loadCoverage">{{ coverageStale ? '映射已变更，重新计算' : '重新计算' }}</GlassButton>
+        <GlassButton left-icon="Refresh" :loading="coverageLoading" @click="loadCoverage">重新计算</GlassButton>
       </div>
-      <ListPageStatus :error="coverageError" :loading="coverageLoading" :has-data="months.length > 0" @retry="loadCoverage" />
+      <ListPageStatus :error="coverageError" :loading="coverageLoading && !months.length" :has-data="months.length > 0" @retry="loadCoverage" />
       <ol v-if="months.length" class="coverage-months">
         <li v-for="m in months" :key="m.month" :class="m.credible ? 'is-credible' : 'is-estimate'" :title="monthTitle(m)">
           <span class="coverage-month">{{ m.month.slice(2) }}</span>
@@ -33,11 +33,14 @@
       </div>
 
       <div class="action-bar">
-        <GlassButton v-permission="'product_sales:admin'" variant="primary" left-icon="Check" :disabled="!selectedReady.length" :loading="saving" @click="confirmSelected">
+        <GlassButton v-if="dirtyReady.length" v-permission="'product_sales:admin'" variant="primary" left-icon="Check" :loading="saving" @click="saveRows(dirtyReady, 'confirmed')">
+          确认已改（{{ dirtyReady.length }}）
+        </GlassButton>
+        <GlassButton v-permission="'product_sales:admin'" :variant="dirtyReady.length ? 'secondary' : 'primary'" left-icon="Check" :disabled="!selectedReady.length" :loading="saving" @click="confirmSelected">
           确认所选（{{ selectedReady.length }}）
         </GlassButton>
         <GlassButton v-permission="'product_sales:admin'" left-icon="MagicStick" :loading="refreshing" @click="guarded(refreshSuggestions)">扫描新品名</GlassButton>
-        <span class="action-hint">按涉及件数从多到少排序；选型号会自动带出该型号的常用克重。<template v-if="dirtyCount">有 {{ dirtyCount }} 行修改未保存。</template></span>
+        <span class="action-hint">按涉及件数降序；选型号自动带出常用克重。<template v-if="dirtyCount">有 {{ dirtyCount }} 行修改未保存。</template></span>
       </div>
 
       <ListPageStatus v-if="hasData" :error="errorMessage" :loading="loading" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
@@ -45,12 +48,12 @@
         <template #empty><ListPageStatus :error="errorMessage" :loading="loading" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" description="暂无待处理品名，点「扫描新品名」从订单中生成" />
         </ListPageStatus></template>
-        <el-table-column type="selection" min-width="44" :selectable="row => row.status !== 'ignored'" />
-        <el-table-column prop="product_name" label="订单品名" min-width="240" show-overflow-tooltip />
-        <el-table-column label="涉及件数" min-width="110" align="right">
+        <el-table-column type="selection" min-width="44" :selectable="isReady" />
+        <el-table-column prop="product_name" label="订单品名" min-width="240" sortable show-overflow-tooltip />
+        <el-table-column prop="quantity_total" label="涉及件数" min-width="110" align="right" sortable>
           <template #default="{ row }">{{ formatNumber(row.quantity_total) }}<span class="cell-sub"> / {{ row.line_count }} 行</span></template>
         </el-table-column>
-        <el-table-column prop="last_seen_date" label="最近出现" min-width="110" />
+        <el-table-column prop="last_seen_date" label="最近出现" min-width="110" sortable />
         <el-table-column label="型号" min-width="220">
           <template #default="{ row }">
             <el-select v-model="row.model" filterable allow-create default-first-option clearable placeholder="选择或输入型号" class="cell-input" :disabled="row.status === 'ignored'" @change="value => onModelChange(row, value)">
@@ -72,7 +75,7 @@
         <el-table-column class-name="table-action-column" label="操作" min-width="200" fixed="right">
           <template #default="{ row }">
             <GlassButton v-permission="'product_sales:admin'" variant="link" left-icon="Check" :disabled="!isReady(row)" @click="saveRows([row], 'confirmed')">确认</GlassButton>
-            <GlassButton v-if="row.status !== 'ignored'" v-permission="'product_sales:admin'" variant="link" link-tone="warning" left-icon="Hide" @click="saveRows([row], 'ignored')">非发制品</GlassButton>
+            <GlassButton v-if="row.status !== 'ignored'" v-permission="'product_sales:admin'" variant="link" link-tone="warning" left-icon="Hide" @click="markIgnored(row)">非发制品</GlassButton>
             <GlassButton v-else v-permission="'product_sales:admin'" variant="link" left-icon="RefreshLeft" @click="saveRows([row], 'suggested')">恢复</GlassButton>
           </template>
         </el-table-column>
@@ -87,7 +90,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 
 import { getSalesCoverage, listCurrentModels, listNameMappings, refreshNameMappings, saveNameMappings } from '@/api/productSales'
 import { useListPage } from '@/composables/useListPage'
@@ -145,6 +149,8 @@ async function guarded(action) {
 }
 
 const isReady = row => row.status !== 'ignored' && !!(row.model || '').trim() && Number(row.unit_grams) > 0
+const isDirtyRow = row => editKey(baseline.value.get(row.id) || {}) !== editKey(row)
+const dirtyReady = computed(() => dirtyRows.value.filter(isReady))
 const selectedReady = computed(() => selection.value.filter(isReady))
 
 function onModelChange(row, value) {
@@ -152,14 +158,26 @@ function onModelChange(row, value) {
   if (grams) row.unit_grams = grams
 }
 
+async function markIgnored(row) {
+  if (isDirtyRow(row)) {
+    try {
+      await confirmAction('该行刚填写的型号或克重尚未保存，标为非发制品会舍弃本次修改。', '确认标为非发制品', {
+        type: 'warning', confirmButtonText: '标为非发制品', cancelButtonText: '取消',
+      })
+    } catch { return }
+  }
+  return saveRows([row], 'ignored')
+}
+
 async function saveRows(rows, status) {
+  if (!rows.length) return
   saving.value = true
   try {
     await saveNameMappings(rows.map(row => ({
       id: row.id, status, model: (row.model || '').trim() || null, unit_grams: row.unit_grams ?? null,
     })))
     msgSuccessText(status === 'confirmed' ? `已确认 ${rows.length} 条` : '已更新')
-    // 只更新保存过的行，不重新拉列表，其他行未保存的修改得以保留；计数与可信度按需刷新。
+    // 只更新保存过的行，不重新拉列表，其他行未保存的修改得以保留；可信度后台自动重算。
     rows.forEach((row) => {
       if (row.status !== status) {
         statusCounts.value[row.status] = Math.max(0, (statusCounts.value[row.status] || 1) - 1)
@@ -174,7 +192,7 @@ async function saveRows(rows, status) {
       row.status = status
       baseline.value.set(row.id, snapshot(row))
     })
-    coverageStale.value = true
+    loadCoverage()
   } catch { /* handled by interceptor */ } finally {
     saving.value = false
   }
@@ -201,7 +219,6 @@ const months = ref([])
 const threshold = ref(0.9)
 const coverageLoading = ref(false)
 const coverageError = ref('')
-const coverageStale = ref(false)
 const thresholdText = computed(() => percent(threshold.value))
 
 async function loadCoverage() {
@@ -211,7 +228,6 @@ async function loadCoverage() {
     const data = await getSalesCoverage({}, { suppressToast: true })
     months.value = data.months || []
     threshold.value = data.credible_share_threshold ?? 0.9
-    coverageStale.value = false
   } catch (error) {
     coverageError.value = toErrorMessage(error)
   } finally {
@@ -219,15 +235,28 @@ async function loadCoverage() {
   }
 }
 
+function onBeforeUnload(event) {
+  if (!dirtyCount.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onBeforeRouteLeave(async () => await confirmDiscard())
+
 const percent = value => `${Math.round((Number(value) || 0) * 100)}%`
 const formatNumber = value => formatMoney(value, 0)
 const monthTitle = m => `${m.month}：${formatNumber(m.quantity)} 件，确切 ${percent(m.credible_share)}，合计 ${formatMoney(m.kg, 1)} kg（含估算）`
 
 onMounted(async () => {
+  window.addEventListener('beforeunload', onBeforeUnload)
   loadCoverage()
   try {
     modelOptions.value = await listCurrentModels({ suppressToast: true })
   } catch { modelOptions.value = [] }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', onBeforeUnload)
 })
 </script>
 

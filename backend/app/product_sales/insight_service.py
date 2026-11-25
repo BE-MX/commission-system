@@ -88,16 +88,15 @@ def _explain_locked(db: Session, evidence: dict, grade: str, window_days: int, a
     if valid:
         cooldown_until = valid.created_at + timedelta(minutes=REFRESH_COOLDOWN_MINUTES)
         if not refresh:
-            return _serialize(valid, reused=True)
+            return _serialize(valid, reused=True, now=now)
         if cooldown_until > now:
-            return {**_serialize(valid, reused=True),
-                    "cooldown_until": cooldown_until.isoformat(sep=" ", timespec="seconds")}
+            return _serialize(valid, reused=True, now=now)
 
     db.commit()  # 结束本次读取的事务；chat() 自己会写调用日志并在等待模型期间重新持有连接（facade 现状）
     content, source = _call_ai(db, evidence, caller_user_id)
     if source != "ai" and valid:
         # 重新分析失败时保留上一份仍有效的 AI 分析，不用信息更少的规则摘要替换
-        return {**_serialize(valid, reused=True), "refresh_failed": True}
+        return {**_serialize(valid, reused=True, now=now), "refresh_failed": True}
     if source != "ai":
         return {"content": content, "source": source, "reused": False, "comparable": evidence["comparable"],
                 "created_at": now.isoformat(sep=" ", timespec="seconds"), "expires_at": None}
@@ -118,14 +117,14 @@ def _explain_locked(db: Session, evidence: dict, grade: str, window_days: int, a
         db.rollback()
         winner = db.query(ProductSalesAiInsight).filter(ProductSalesAiInsight.cache_key == cache_key).one_or_none()
         if winner:
-            return _serialize(winner, reused=True)
+            return _serialize(winner, reused=True, now=now)
         raise
     except Exception as exc:
         db.rollback()
         logger.warning("product_sales grade insight save failed: %s", exc)
         print(f"[product_sales] grade insight save failed: {exc}", flush=True)
         raise
-    return _serialize(row, reused=False)
+    return _serialize(row, reused=False, now=now)
 
 
 def _call_ai(db: Session, evidence: dict, caller_user_id: int | None) -> tuple[str, str]:
@@ -163,15 +162,21 @@ def _call_ai(db: Session, evidence: dict, caller_user_id: int | None) -> tuple[s
 
 def latest_grade_insight(db: Session, grade: str, window_days: int, as_of: str, persistent_version: tuple) -> dict | None:
     """页面打开时直接展示 24 小时内已生成的分析，不触发模型。"""
+    now = beijing_now()
     row = db.query(ProductSalesAiInsight).filter(
         ProductSalesAiInsight.cache_key == _cache_key(grade, window_days, as_of, persistent_version),
     ).one_or_none()
-    if row is None or row.expires_at <= beijing_now():
+    if row is None or row.expires_at <= now:
         return None
-    return _serialize(row, reused=True)
+    return _serialize(row, reused=True, now=now)
 
 
-def _serialize(row: ProductSalesAiInsight, reused: bool) -> dict:
+def _serialize(row: ProductSalesAiInsight, reused: bool, now=None) -> dict:
+    cooldown_until = None
+    if row.created_at is not None and now is not None:
+        until = row.created_at + timedelta(minutes=REFRESH_COOLDOWN_MINUTES)
+        if until > now:
+            cooldown_until = until.isoformat(sep=" ", timespec="seconds")
     return {
         "summary_kg": ((row.evidence or {}).get("summary") or {}).get("kg"),
         "content": row.content,
@@ -180,4 +185,5 @@ def _serialize(row: ProductSalesAiInsight, reused: bool) -> dict:
         "comparable": bool((row.evidence or {}).get("comparable")),
         "created_at": row.created_at.isoformat(sep=" ", timespec="seconds"),
         "expires_at": row.expires_at.isoformat(sep=" ", timespec="seconds") if row.expires_at else None,
+        "cooldown_until": cooldown_until,
     }

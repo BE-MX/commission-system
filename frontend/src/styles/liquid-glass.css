@@ -104,3 +104,24 @@
     transform: none;
   }
 }
+
+/* 表格融入玻璃面板（DESIGN.md 表格融入玻璃规范） */
+.lg-table-panel .el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.55);
+  --el-table-row-hover-bg-color: var(--color-gold-soft);
+  background: transparent;
+}
+.lg-table-panel .el-table-fixed-column--left,
+.lg-table-panel .el-table-fixed-column--right {
+  background-color: rgba(249, 244, 234, 0.97);
+}
+.lg-table-panel th.el-table-fixed-column--left,
+.lg-table-panel th.el-table-fixed-column--right {
+  background-color: rgba(246, 239, 226, 0.98);
+}
+.lg-table-panel .el-table__body tr:hover > td.el-table-fixed-column--left,
+.lg-table-panel .el-table__body tr:hover > td.el-table-fixed-column--right {
+  background-color: rgba(253, 244, 220, 0.98);
+}

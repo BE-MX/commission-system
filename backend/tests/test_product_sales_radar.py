@@ -263,7 +263,12 @@ def test_rules_fallback_is_not_cached_but_ai_result_is_shared(db, lines, monkeyp
     insight_service.explain_grade(db, "B1", 90, VERSION, (0, None), 7, refresh=True)
     assert len(calls) == 5 and db.query(ProductSalesAiInsight).count() == 2
     latest = insight_service.latest_grade_insight(db, "B1", 90, TODAY.isoformat(), (0, None))
-    assert latest["content"] == "**总体**" and latest["reused"] is True
+    assert latest["content"] == "**总体**" and latest["reused"] is True and latest["cooldown_until"]
+    row = db.query(ProductSalesAiInsight).filter(ProductSalesAiInsight.window_days == 90).one()
+    row.created_at = row.created_at - timedelta(minutes=10)
+    db.commit()
+    latest_ready = insight_service.latest_grade_insight(db, "B1", 90, TODAY.isoformat(), (0, None))
+    assert latest_ready["cooldown_until"] is None
     assert insight_service.latest_grade_insight(db, "B3", 90, TODAY.isoformat(), (0, None)) is None
 
 

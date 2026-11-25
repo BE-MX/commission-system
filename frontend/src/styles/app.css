@@ -7,6 +7,11 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  /* 保留加载图标的旋转反馈，避免「减少动态效果」模式下加载按钮看似卡死 */
+  .el-icon.is-loading {
+    animation-duration: 2s !important;
+    animation-iteration-count: infinite !important;
+  }
 }
 
 html, body, #app {
@@ -521,6 +526,11 @@ body {
 
 /* Radio button group */
 .el-radio-group .el-radio-button__inner { border-radius: 8px !important; }
+
+/* Tabs active indicator: unified motion tokens */
+.el-tabs__active-bar {
+  transition: transform var(--motion-base) var(--ease-in-out-strong), width var(--motion-base) var(--ease-in-out-strong) !important;
+}
 
 /* Statistic */
 .el-statistic__head { font-size: 12px; color: var(--text-muted); font-family: var(--font-display); }
