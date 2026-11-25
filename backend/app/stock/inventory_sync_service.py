@@ -1,6 +1,8 @@
 """Explicit, audited single-product refresh of the OKKI inventory mirror."""
 import logging
+from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation
+from hashlib import sha256
 from time import monotonic
 
 import httpx
@@ -33,16 +35,18 @@ def _capture(db, product_id, *, lock=False):
     if get_settings().TRANSACTION_MODE == 'local' or str(product_id) in legacy_excluded_products(db):
         raise HTTPException(409, '本地库存产品不能同步小满库存')
     schema = get_settings().BUSINESS_DB_NAME
-    suffix = ' FOR UPDATE' if lock and db.bind.dialect.name == 'mysql' else ''
+    locking = lock and db.get_bind().dialect.name == 'mysql'
+    catalog_lock = ' FOR SHARE' if locking else ''
+    inventory_lock = ' FOR UPDATE' if locking else ''
     product = db.execute(text(f'SELECT product_id FROM `{schema}`.okki_products '
-        'WHERE product_id=:pid AND disable_flag=0' + suffix), {'pid': product_id}).first()
+        'WHERE product_id=:pid AND disable_flag=0' + catalog_lock), {'pid': product_id}).first()
     if not product:
         raise HTTPException(404, '产品不存在或已停用')
     rows = [dict(r) for r in db.execute(text(f'SELECT {", ".join(FIELDS)} FROM `{schema}`.okki_inventory '
-        'WHERE product_id=:pid ORDER BY sku_id, warehouse_id' + suffix).columns(synced_at=DateTime()),
+        'WHERE product_id=:pid ORDER BY sku_id, warehouse_id' + inventory_lock).columns(synced_at=DateTime()),
         {'pid': product_id}).mappings()]
     skus = {int(r[0]) for r in db.execute(text(f'SELECT sku_id FROM `{schema}`.okki_product_skus '
-        'WHERE product_id=:pid' + suffix), {'pid': product_id})}
+        'WHERE product_id=:pid' + catalog_lock), {'pid': product_id})}
     skus.update(int(r['sku_id']) for r in rows)
     if not skus:
         raise HTTPException(409, '产品尚无小满 SKU 映射，请先同步产品资料')
@@ -129,20 +133,63 @@ def _apply(db, product_id, old_rows, new_rows, observed_at):
                 f'VALUES ({", ".join(":" + field for field in FIELDS)})'), params)
 
 
+@contextmanager
+def _lock_initial_sync(db, product_id, *, has_inventory):
+    bind = db.get_bind()
+    if has_inventory or bind.dialect.name != 'mysql':
+        yield
+        return
+
+    # Under READ COMMITTED an empty inventory range has no rows to lock.
+    identity = f'{get_settings().BUSINESS_DB_NAME}:{product_id}'
+    params = {'name': f'ark_stock_sync:{sha256(identity.encode()).hexdigest()[:40]}'}
+    original_bind = db.bind
+    with bind.connect() as connection:
+        try:
+            acquired = connection.scalar(text('SELECT GET_LOCK(:name, 0)'), params)
+        except SQLAlchemyError:
+            connection.invalidate()
+            raise
+        if acquired == 0:
+            raise HTTPException(409, '该产品正在同步库存，请刷新列表后重试')
+        if acquired != 1:
+            raise SQLAlchemyError('Initial inventory sync lock unavailable')
+        try:
+            # GET_LOCK survives rollback. The Session can start and own the write transaction
+            # on this same connection, while the outer checkout keeps the lock through commit.
+            connection.rollback()
+            db.bind = connection
+            yield
+        finally:
+            try:
+                db.rollback()
+            finally:
+                db.bind = original_bind
+                try:
+                    if connection.scalar(text('SELECT RELEASE_LOCK(:name)'), params) != 1:
+                        raise SQLAlchemyError('Initial inventory sync lock no longer owned')
+                except SQLAlchemyError as error:
+                    connection.invalidate()
+                    logger.warning('Product inventory sync lock release failed product=%s error=%s',
+                                   product_id, type(error).__name__)
+                    print(f'[stock-sync] product={product_id} lock release failed ({type(error).__name__})', flush=True)
+
+
 def sync_product_inventory(db, product_id, user):
     try:
         actor = _authorize(db, user)
         expected = _capture(db, product_id)
         db.rollback()  # No transaction or row locks across the provider request.
         rows, observed_at = _fetch(product_id, expected[0])
-        _authorize(db, user)
-        current = _capture(db, product_id, lock=True)
-        if current != expected:
-            raise HTTPException(409, '产品映射或库存已被其他同步更新，请刷新后重试')
-        _apply(db, product_id, current[1], rows, observed_at)
-        db.add(InventorySyncLog(product_id=product_id, created_by=actor,
-            observed_at=observed_at, before_data=_snapshot(current[1]), after_data=_snapshot(rows)))
-        db.commit()
+        with _lock_initial_sync(db, product_id, has_inventory=bool(expected[1])):
+            _authorize(db, user)
+            current = _capture(db, product_id, lock=True)
+            if current != expected:
+                raise HTTPException(409, '产品映射或库存已被其他同步更新，请刷新后重试')
+            _apply(db, product_id, current[1], rows, observed_at)
+            db.add(InventorySyncLog(product_id=product_id, created_by=actor,
+                observed_at=observed_at, before_data=_snapshot(current[1]), after_data=_snapshot(rows)))
+            db.commit()
         return {'product_id': product_id, 'inventory_rows': len(rows), 'synced_at': observed_at.isoformat()}
     except HTTPException:
         db.rollback()

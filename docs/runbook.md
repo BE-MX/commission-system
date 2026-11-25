@@ -218,8 +218,8 @@ OPERATIONS_ALERT_TIMEOUT_SECONDS=10
 
 生产数据库账号边界：
 
-- `ark_app` 是办公室和北京后端的唯一运行账号；对 `commission_db.*` 仅授予 `SELECT, INSERT, UPDATE, DELETE`。
-- 方舟登录、报表、采购节、库存和订单分析会跨库读取 `lsordertest`；`ark_app` 对 `lsordertest.*` 授予 `SELECT`。写例外遵守 CLAUDE.md 的指定入口：回款日期修复仅 `okki_receipts.collection_date` 列级 UPDATE；客户手动同步仅 `customer_info.owner_user_ids` 列级 UPDATE，缺行仅允许插入 ID/名称/国家/负责人。库存同步权限按其发布记录核验；不得授予业务库全表写入或 DDL。
+- 后端规范运行账号为 `ark_app`，对 `commission_db.*` 授予 `SELECT, INSERT, UPDATE, DELETE`。
+- 方舟登录、报表、采购节、库存和订单分析会跨库读取 `lsordertest`，`ark_app` 对其授予 `SELECT`。写例外遵守 CLAUDE.md 的指定入口与下述列级授权。
 - `root` 只用于受控 Alembic/维护窗口，不能写入生产 `.env` 或用于 NSSM 日常运行。
 
 首次创建或修复运行账号时，用 DBA 账号执行并用 `SHOW GRANTS FOR 'ark_app'@'%';` 核验：
@@ -233,6 +233,16 @@ GRANT INSERT (company_id, company_name, country_name, owner_user_ids) ON lsorder
 ```
 
 客户归属同步发布要求（262）：上述客户表授权仅在获得目标环境发布授权后由 DBA 执行；审计迁移由 `deploy/deploy.bat` 统一执行。先核验业务库 `customer_info` 使用 InnoDB、`company_id` 唯一索引存在、其他必填列有默认值，确保最小插入与跨库事务成立。2026-11-13 本次只读核验结构符合，但 `ark_app` 尚只有业务库 SELECT 与回款日期 UPDATE，未执行客户授权。应用写权限或审计表缺失时接口应返回 503，不能忽略错误只写 overlay。上线验收需使用实际运行账号，确认一次同步后原表为数字 JSON 数组、当前负责人可选、旧负责人不可选、审计完整；禁止开发机迁移/测试写共享库。回滚代码应保留审计及正确客户数据，按审计逐条核对后才可恢复具体值，不批量清空或删除。
+
+单产品库存同步发布要求（253）：通过受管入口部署库存同步修复后，由 DBA 按目标环境授权向实际使用的 `ark_app` 账号授予下列列级权限。产品和 SKU 资料只需 `SELECT`，共享锁要求 MySQL 8.0.22 或更新版本。同步镜像和审计表都应使用 InnoDB。
+
+```sql
+GRANT UPDATE (enable_count, real_count, disable_flag, synced_at),
+      INSERT (sku_id, warehouse_id, product_id, enable_count, real_count, disable_flag, synced_at)
+ON lsordertest.okki_inventory TO 'ark_app'@'%';
+```
+
+用实际后端账号检查授权及 `EXPLAIN UPDATE`、`EXPLAIN INSERT`，再从故障入口同步指定产品，核对列表库存、小满返回仓库和 `ark_inventory_sync_logs` 中的同次审计。若要撤销本次授权，按原账号与列撤销新增的两项权限，已确认的库存和审计保留。
 
 后端心跳 claim 示例（值为 SHA-256，不是明文 token）：
 
