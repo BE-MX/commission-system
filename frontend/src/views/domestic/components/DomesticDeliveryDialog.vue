@@ -173,32 +173,63 @@
       <p v-if="receipt.existing">{{ receipt.source === 'recharge' ? '充值流水' : '收款申请' }} #{{ receipt.existing.id }} · 原金额 {{ money(receipt.existing.amount) }}</p>
       <p>填写各批次累计核销金额；可跨批次，也可保留未分配金额。</p>
       <p v-if="!openBatches.length">暂无待核销批次，资金保留在原流水中。</p>
-      <el-table :data="allocationBatches" row-key="id" border class="list-table density-compact" max-height="280" v-sticky-scrollbar>
-        <el-table-column prop="shipment_no" label="发货批次" min-width="235" sortable />
-        <el-table-column prop="unpaid_amount" label="待核销金额" min-width="110" align="right" sortable><template #default="{ row }">{{ money(row.unpaid_amount) }}</template></el-table-column>
-        <el-table-column :label="receipt.existing ? '累计核销' : '本次核销'" min-width="155" :sortable="false"><template #default="{ row }"><input type="number" class="delivery-money" :value="receipt.allocations[row.id] || 0" :min="previousAllocation(row.id)" :max="row.unpaid_amount + previousAllocation(row.id)" step="0.01" :aria-label="`${row.shipment_no} 核销金额`" :disabled="saving" @change="event => { setAllocation(row, Number(event.target.value)); event.target.value = receipt.allocations[row.id] || 0 }" /></template></el-table-column>
+      <div class="delivery-toolbar">
+        <GlassButton variant="secondary" left-icon="Check" :disabled="saving || !allocationRows.some(canFillAllocation)"
+          @click="fillAllAllocations(allocationRows)">一键核销</GlassButton>
+        <GlassButton variant="secondary" left-icon="Close" :disabled="saving || allocationTotal <= 0"
+          @click="clearAllAllocations">一键清空</GlassButton>
+        <span>按列表顺序填入，最多使用本笔可核销金额。清空会撤掉本次填写的金额。</span>
+      </div>
+      <el-table :data="allocationRows" row-key="id" border class="list-table density-compact" max-height="280"
+        v-sticky-scrollbar @sort-change="allocationSort = $event">
+        <el-table-column prop="shipment_no" label="发货批次" min-width="235" sortable="custom" />
+        <el-table-column prop="unpaid_amount" label="待核销金额" min-width="170" align="right" sortable="custom">
+          <template #default="{ row }">
+            <div class="delivery-allocation-cell delivery-allocation-due">
+              {{ money(row.unpaid_amount) }}
+              <GlassButton v-if="row.unpaid_amount > 0" variant="link" left-icon="Check"
+                :aria-label="`核销 ${row.shipment_no}`" :disabled="saving || !canFillAllocation(row)"
+                @click="fillAllocation(row)">核销</GlassButton>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="receipt.existing ? '累计核销' : '本次核销'" min-width="190" :sortable="false">
+          <template #default="{ row }">
+            <div class="delivery-allocation-cell">
+              <input type="number" class="delivery-money" :value="receipt.allocations[row.id] || 0"
+                :min="previousAllocation(row.id)" :max="row.unpaid_amount + previousAllocation(row.id)" step="0.01"
+                :aria-label="`${row.shipment_no} 核销金额`" :disabled="saving"
+                @change="event => { setAllocation(row, Number(event.target.value)); event.target.value = receipt.allocations[row.id] || 0 }" />
+              <GlassButton v-if="receipt.allocations[row.id] > previousAllocation(row.id)" variant="link" left-icon="Close"
+                :aria-label="`清空 ${row.shipment_no}`" :disabled="saving" @click="clearAllocation(row.id)">清空</GlassButton>
+            </div>
+          </template>
+        </el-table-column>
       </el-table>
     </el-form>
-    <template #footer><span>核销 {{ money(allocationTotal) }} · 剩余 {{ money(receipt.amount - allocationTotal) }}</span><GlassButton variant="primary" left-icon="Check" :loading="saving" :disabled="!!receipt.existing && allocationTotal <= 0" @click="confirmReceipt">{{ receipt.existing ? '保存核销' : '提交收款审核' }}</GlassButton></template>
+    <template #footer><span>核销 {{ money(allocationTotal) }} · 剩余 {{ money(allocationRemaining) }}</span><GlassButton variant="primary" left-icon="Check" :loading="saving" :disabled="allocationRemaining < 0 || (!!receipt.existing && allocationTotal <= 0)" @click="confirmReceipt">{{ receipt.existing ? '保存核销' : '提交收款审核' }}</GlassButton></template>
   </el-dialog>
 </template>
 
 <script setup>
-import { watch, computed } from 'vue'
+import { watch, computed, ref } from 'vue'
 import AppUpload from '@/components/AppUpload.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatMoney } from '@/utils/money'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { downloadBlob } from '@/utils/download'
+import { sortTableRows } from '@/utils/tableSort'
 import { deliveryFundingGap } from '../deliverySelection'
 import { useDomesticDelivery } from '../composables/useDomesticDelivery'
 const emit = defineEmits(['changed'])
 const auth = useAuthStore()
 const { visible, loading, saving, error, customers, customerId, customer, batches, receipts, recharges, summary, tab,
   keyword, selected, onlySelected, page, pageSize, sort, shipment, units, receive, receipt, totals, filtered, pageRows,
-  openBatches, allocationBatches, allocationTotal, unitOptions, open, searchCustomers, close, changeCustomer, reload, setQuantity, setUnitPrice, batchUnitPrice, toggle, openUnits,
-  confirmUnits, scanUnit, submitShipment, cancelBatch, openReceive, confirmReceive, openReceipt, selectVoucher, setAllocation, confirmReceipt } = useDomesticDelivery(emit)
+  openBatches, allocationBatches, allocationTotal, allocationRemaining, previousAllocation, unitOptions,
+  open, searchCustomers, close, changeCustomer, reload, setQuantity, setUnitPrice, batchUnitPrice, toggle, openUnits,
+  confirmUnits, scanUnit, submitShipment, cancelBatch, openReceive, confirmReceive, openReceipt, selectVoucher, setAllocation,
+  canFillAllocation, fillAllocation, clearAllocation, fillAllAllocations, clearAllAllocations, confirmReceipt } = useDomesticDelivery(emit)
 const money = value => Number.isFinite(Number(value ?? 0)) ? formatMoney(Number(value ?? 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) : '待填写有效单价'
 const canFunds = computed(() => summary.value.scope === 'customer' && (customer.value?.can_operate_funds ?? (customer.value?.owner_user_id === auth.user?.id || (auth.user?.roles || []).includes('super_admin'))))
 const hasUnallocatedFunds = computed(() => Number(summary.value.unallocated_recharges || 0) + Number(summary.value.unallocated_receipts || 0) > 0)
@@ -207,7 +238,8 @@ const coverageLabel = computed(() => {
   if (gap == null) return ''
   return gap > 0 ? `按总额还差 ${money(gap)}` : gap < 0 ? `按总额余 ${money(-gap)}` : '金额相抵'
 })
-const previousAllocation = id => receipt.existing?.allocations.find(row => row.shipment_id === id)?.amount || 0
+const allocationSort = ref({ prop: '', order: '' })
+const allocationRows = computed(() => sortTableRows(allocationBatches.value, allocationSort.value.prop, allocationSort.value.order))
 const statusLabel = { pending: '待审核', approved: '已通过', rejected: '已驳回', withdrawn: '已撤回' }
 watch([keyword, onlySelected, pageSize], () => { page.value = 1 })
 function sortTable({ prop, order }) { Object.assign(sort, { prop, order }); page.value = 1 }
@@ -237,6 +269,8 @@ defineExpose({ open })
 .delivery-check { width: 16px; height: 16px; vertical-align: middle; accent-color: var(--color-primary); }
 .delivery-unit-options { display: flex; flex-wrap: wrap; gap: 8px 16px; max-height: 50vh; overflow: auto; margin-top: 16px; }
 .delivery-receipt-fields { display: flex; gap: 24px; flex-wrap: wrap; }
+.delivery-allocation-cell { display: flex; align-items: center; gap: 4px; }
+.delivery-allocation-due { justify-content: flex-end; }
 @media (pointer: coarse) {
   .delivery-picker { --table-cell-padding-compact: 10px; }
   .delivery-quantity, .delivery-check, .delivery-money { min-height: 44px; }

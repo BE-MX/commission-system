@@ -5,6 +5,9 @@ import { currentBeijingDate, currentBeijingDateTime } from '@/utils/datetime'
 import { msgSuccessText, msgWarning, confirmAction } from '@/utils/feedback'
 import { deliveryTotal, deliveryPayload, filterDeliveryRows, deliveryUnitPrice } from '../deliverySelection'
 
+const MAX_ALLOCATIONS = 200
+const cents = amount => Math.round(Number(amount || 0) * 100)
+
 export function useDomesticDelivery(emit) {
   const visible = ref(false), loading = ref(false), saving = ref(false), error = ref('')
   const customers = ref([]), customerId = ref(null), candidates = ref([]), batches = ref([]), receipts = ref([]), recharges = ref([])
@@ -30,8 +33,16 @@ export function useDomesticDelivery(emit) {
   })
   const pageRows = computed(() => filtered.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
   const openBatches = computed(() => batches.value.filter(row => !row.cancelled_at && row.unpaid_amount > 0))
-  const allocationBatches = computed(() => batches.value.filter(row => !row.cancelled_at && (row.unpaid_amount > 0 || receipt.existing?.allocations.some(a => a.shipment_id === row.id))))
-  const allocationTotal = computed(() => Object.entries(receipt.allocations).reduce((sum, [id, value]) => sum + Math.round((Number(value || 0) - (receipt.existing?.allocations.find(row => row.shipment_id === Number(id))?.amount || 0)) * 100), 0) / 100)
+  const previousAllocations = computed(() => new Map(receipt.existing?.allocations.map(row => [row.shipment_id, row.amount])))
+  const previousAllocation = id => previousAllocations.value.get(id) || 0
+  const allocationBatches = computed(() => batches.value.filter(row => !row.cancelled_at && (row.unpaid_amount > 0 || previousAllocations.value.has(row.id))))
+  const addedCents = id => cents(receipt.allocations[id]) - cents(previousAllocation(id))
+  const allocationChanges = computed(() => Object.entries(receipt.allocations)
+    .filter(([id]) => addedCents(Number(id)) > 0)
+    .map(([id, amount]) => ({ shipment_id: Number(id), amount })))
+  const allocatedCents = computed(() => allocationChanges.value.reduce((sum, row) => sum + addedCents(row.shipment_id), 0))
+  const allocationTotal = computed(() => allocatedCents.value / 100)
+  const allocationRemaining = computed(() => (cents(receipt.amount) - allocatedCents.value) / 100)
   const unitOptions = computed(() => (units.row?.units || []).filter(row => row.code.toLowerCase().includes(units.keyword.toLowerCase())))
 
   async function open(initialCustomer = null) {
@@ -169,9 +180,32 @@ export function useDomesticDelivery(emit) {
       date: currentBeijingDate(), remark: '', file: null, files: [], request_id: newRequestId(), allocations, existing, source, customer_id: customerId.value })
   }
   function setAllocation(row, value) {
-    const before = receipt.existing?.allocations.find(a => a.shipment_id === row.id)?.amount || 0
-    if (!Number.isFinite(value) || value < before || value > row.unpaid_amount + before) return msgWarning('核销金额超出可核销范围')
-    receipt.allocations[row.id] = Math.round(value * 100) / 100
+    const before = cents(previousAllocation(row.id))
+    const target = cents(value)
+    if (!Number.isFinite(value) || target < before || target > before + cents(row.unpaid_amount)) return msgWarning('核销金额超出可核销范围')
+    receipt.allocations[row.id] = target / 100
+  }
+  function canFillAllocation(row) {
+    const added = addedCents(row.id)
+    return !row.cancelled_at && allocationRemaining.value > 0 && added < cents(row.unpaid_amount)
+      && (added > 0 || allocationChanges.value.length < MAX_ALLOCATIONS)
+  }
+  function fillAllocation(row) {
+    if (!canFillAllocation(row)) return
+    const target = Math.min(cents(row.unpaid_amount), addedCents(row.id) + cents(allocationRemaining.value))
+    receipt.allocations[row.id] = (cents(previousAllocation(row.id)) + target) / 100
+  }
+  function clearAllocation(id) {
+    receipt.allocations[id] = previousAllocation(id)
+  }
+  function fillAllAllocations(rows) {
+    for (const row of rows) {
+      if (allocationRemaining.value <= 0) break
+      fillAllocation(row)
+    }
+  }
+  function clearAllAllocations() {
+    for (const row of allocationChanges.value) clearAllocation(row.shipment_id)
   }
   async function selectVoucher(file) {
     receipt.file = file
@@ -182,8 +216,8 @@ export function useDomesticDelivery(emit) {
     if (!(receipt.amount > 0) || allocationTotal.value > receipt.amount) return msgWarning('请核对收款及核销金额')
     if (!receipt.existing && (!receipt.file || !receipt.files.length)) return msgWarning('请上传转账凭证')
     if (receipt.existing && allocationTotal.value <= 0) return msgWarning('请填写本次新增核销金额')
-    const allocations = Object.entries(receipt.allocations).filter(([id, amount]) => amount > (receipt.existing?.allocations.find(row => row.shipment_id === Number(id))?.amount || 0))
-      .map(([id, amount]) => ({ shipment_id: Number(id), amount }))
+    const allocations = allocationChanges.value
+    if (allocations.length > MAX_ALLOCATIONS) return msgWarning(`每次最多核销 ${MAX_ALLOCATIONS} 个批次，请分次保存`)
     if (receipt.existing && !allocations.length) return msgWarning('请选择要核销的批次')
     saving.value = true
     try {
@@ -197,6 +231,8 @@ export function useDomesticDelivery(emit) {
   }
   return { visible, loading, saving, error, customers, customerId, customer, candidates, batches, receipts, recharges, summary, tab,
     keyword, selected, onlySelected, page, pageSize, sort, shipment, units, receive, receipt, totals, filtered, pageRows,
-    openBatches, allocationBatches, allocationTotal, unitOptions, open, searchCustomers, close, changeCustomer, reload, setQuantity, setUnitPrice, batchUnitPrice, toggle, openUnits,
-    confirmUnits, scanUnit, submitShipment, cancelBatch, openReceive, confirmReceive, openReceipt, selectVoucher, setAllocation, confirmReceipt }
+    openBatches, allocationBatches, allocationTotal, allocationRemaining, previousAllocation, unitOptions,
+    open, searchCustomers, close, changeCustomer, reload, setQuantity, setUnitPrice, batchUnitPrice, toggle, openUnits,
+    confirmUnits, scanUnit, submitShipment, cancelBatch, openReceive, confirmReceive, openReceipt, selectVoucher, setAllocation,
+    canFillAllocation, fillAllocation, clearAllocation, fillAllAllocations, clearAllAllocations, confirmReceipt }
 }

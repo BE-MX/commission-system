@@ -114,3 +114,49 @@ test('more than 200 historical allocations send only the changed cumulative targ
   await state.confirmReceipt()
   assert.deepEqual(writes, [[7, 9, [{ shipment_id: 300, amount: 30 }]]])
 })
+
+test('allocation shortcuts fill the outstanding amount and clear only draft changes', async () => {
+  const writes = []
+  const state = harness({ allocateDomesticRecharge: async (...args) => writes.push(args), msgSuccessText() {},
+    getShipmentCandidates: async () => ({ data: [] }), getCustomerDelivery: async () => ({ data: { scope: 'customer' } }) })
+  state.visible.value = true
+  state.customerId.value = 7
+  state.summary.value = { scope: 'customer' }
+  const rows = [{ id: 1, unpaid_amount: 10.25 }, { id: 2, unpaid_amount: 6.40 }, { id: 3, unpaid_amount: 13 }]
+  state.batches.value = rows
+  state.openReceipt(null, { id: 9, amount: 22.50, unallocated_amount: 17.50, allocations: [{ shipment_id: 1, amount: 5 }] }, 'recharge')
+
+  state.fillAllocation(rows[0])
+  assert.equal(state.receipt.allocations[1], 15.25)
+  state.fillAllocation(rows[1])
+  assert.equal(state.receipt.allocations[2], 6.40)
+  state.clearAllocation(2)
+  assert.equal(state.receipt.allocations[2], 0)
+
+  state.fillAllAllocations([rows[0], rows[2], rows[1]])
+  assert.deepEqual({ ...state.receipt.allocations }, { 1: 15.25, 2: 0, 3: 7.25 })
+  assert.equal(state.allocationRemaining.value, 0)
+  state.clearAllAllocations()
+  assert.deepEqual({ ...state.receipt.allocations }, { 1: 5, 2: 0, 3: 0 })
+  await state.confirmReceipt()
+  assert.deepEqual(writes, [])
+
+  state.fillAllocation(rows[1])
+  await state.confirmReceipt()
+  assert.deepEqual(writes, [[7, 9, [{ shipment_id: 2, amount: 6.40 }]]])
+})
+
+test('bulk allocation respects the request limit and preserves manually entered amounts when topping up', () => {
+  const state = harness()
+  state.customerId.value = 7
+  state.summary.value = { scope: 'customer' }
+  const rows = Array.from({ length: 201 }, (_, index) => ({ id: index + 1, unpaid_amount: 0.30 }))
+  state.batches.value = rows
+  state.openReceipt(null, { id: 9, amount: 100, unallocated_amount: 100, allocations: [] }, 'recharge')
+  state.setAllocation(rows[200], 0.10)
+  state.fillAllAllocations(rows)
+  assert.equal(state.allocationTotal.value, 60)
+  assert.equal(state.allocationRemaining.value, 40)
+  assert.equal(state.receipt.allocations[200], 0)
+  assert.equal(state.receipt.allocations[201], 0.30)
+})
