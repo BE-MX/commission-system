@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone, timedelta
 
-from sqlalchemy import func, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
@@ -13,7 +13,7 @@ from app.production.models import (
     Process,
     UserProcessBinding,
 )
-from app.production.report_service import verify_qr_data, init_order_product_progress
+from app.production.report_service import _sync_order_status, verify_qr_data, init_order_product_progress
 from app.stock.models import ProductionOrderItem, ProductionOrder
 
 _BJ_TZ = timezone(timedelta(hours=8))
@@ -248,27 +248,41 @@ def scan_product(db: Session, order_product_id: int, sign: str, current_user: Ar
     return {"can_submit": True, "block_reason": None, "product": product_info, "next_process": next_process_info, "all_processes": all_processes}
 
 
+def _lock_legacy_report(db, item):
+    # 与订单编辑共用订单 → 明细 → 工序的锁顺序，锁后读取当前记录。
+    order = db.scalar(select(ProductionOrder).where(ProductionOrder.id == item.order_id)
+                      .with_for_update().execution_options(populate_existing=True))
+    item = db.scalar(select(ProductionOrderItem).where(ProductionOrderItem.id == item.id)
+                     .with_for_update().execution_options(populate_existing=True))
+    if (order is None or order.deleted_flag or order.transaction_mode != "legacy"
+            or item is None or item.local_sku_id is not None):
+        return None, None, []
+    steps = db.scalars(select(OrderProductProcessProgress).where(
+        OrderProductProcessProgress.order_product_id == item.id,
+    ).order_by(OrderProductProcessProgress.step_order).with_for_update()
+        .execution_options(populate_existing=True)).all()
+    return order, item, steps
+
+
 def submit_report(db: Session, progress_id: int, order_product_id: int, current_user: ArkUser) -> dict:
     """提交报工"""
     item = db.get(ProductionOrderItem, order_product_id)
-    if item is not None and item.local_sku_id is not None:
+    if item is None:
+        return {"success": False, "message": "订单产品不存在，请重新扫描工序卡"}
+    if item.local_sku_id is not None:
         from app.production.local_report_service import submit
         return submit(db, progress_id, order_product_id, current_user)
-    # Step 1: 幂等检查
-    progress = db.query(OrderProductProcessProgress).get(progress_id)
-    if not progress:
-        return {"success": False, "message": "工序进度记录不存在"}
 
+    order, item, steps = _lock_legacy_report(db, item)
+    progress = next((step for step in steps if step.id == progress_id), None)
+    if progress is None:
+        return {"success": False, "message": "工序进度记录不存在，请重新扫描工序卡"}
+    proc = db.get(Process, progress.process_id)
     if progress.status == 1:
-        # 已完成 — 幂等返回
-        proc = db.query(Process).get(progress.process_id)
         return {"success": True, "message": f"「{proc.name if proc else '未知'}」工序已完成", "all_done": False}
+    if order.status == 1 or item.status in (1, 2):
+        return {"success": False, "message": "生产订单或明细已结束，不能继续报工"}
 
-    # Step 2: 安全校验
-    if progress.order_product_id != order_product_id:
-        return {"success": False, "message": "参数不匹配"}
-
-    # Step 3: 权限校验
     binding = db.query(UserProcessBinding).filter(
         UserProcessBinding.user_id == current_user.id,
         UserProcessBinding.process_id == progress.process_id,
@@ -276,72 +290,39 @@ def submit_report(db: Session, progress_id: int, order_product_id: int, current_
     if not binding:
         return {"success": False, "message": "您未被分配此工序"}
 
-    # Step 4: 检查是否是当前应完成的工序
-    earliest_pending = (
-        db.query(OrderProductProcessProgress)
-        .filter(
-            OrderProductProcessProgress.order_product_id == order_product_id,
-            OrderProductProcessProgress.status == 0,
-        )
-        .order_by(OrderProductProcessProgress.step_order.asc())
-        .first()
-    )
-    if earliest_pending and earliest_pending.id != progress_id:
-        proc = db.query(Process).get(earliest_pending.process_id)
+    pending = [step for step in steps if step.status == 0]
+    if not pending:
+        return {"success": False, "message": "该产品没有待报工的工序"}
+    if pending[0].id != progress_id:
+        first = db.get(Process, pending[0].process_id)
         return {
             "success": False,
-            "message": f"当前应完成的是「{proc.name if proc else '未知'}」，请先完成上一道工序",
+            "message": f"当前应完成的是「{first.name if first else '未知'}」，请先完成上一道工序",
         }
 
-    # Step 5: 执行报工
     progress.status = 1
     progress.completed_at = _bj_now()
     progress.completed_by_user_id = current_user.id
     progress.completed_by_wx_id = current_user.wx_id
+
+    all_done = len(pending) == 1
+    next_proc = None
+    if all_done:
+        item.status = 2
+        item.updated_at = _bj_now()
+        _sync_order_status(db, item.order_id)
+    else:
+        next_proc = db.get(Process, pending[1].process_id)
     db.flush()
 
-    # Step 6: 检查全部完成
-    remaining = db.query(func.count()).filter(
-        OrderProductProcessProgress.order_product_id == order_product_id,
-        OrderProductProcessProgress.status == 0,
-    ).scalar()
-
-    all_done = remaining == 0
-    current_proc = db.query(Process).get(progress.process_id)
-
-    if all_done:
-        item = db.query(ProductionOrderItem).get(order_product_id)
-        if item:
-            item.status = 2
-            item.updated_at = _bj_now()
-            from app.production.report_service import _sync_order_status
-            _sync_order_status(db, item.order_id)
-
-    # 查下一道工序名
-    next_proc_name = None
-    if not all_done:
-        next_pending = (
-            db.query(OrderProductProcessProgress)
-            .filter(
-                OrderProductProcessProgress.order_product_id == order_product_id,
-                OrderProductProcessProgress.status == 0,
-            )
-            .order_by(OrderProductProcessProgress.step_order.asc())
-            .first()
-        )
-        if next_pending:
-            np = db.query(Process).get(next_pending.process_id)
-            next_proc_name = np.name if np else None
-
-    msg = f"「{current_proc.name if current_proc else '未知'}」工序报工成功"
+    msg = f"「{proc.name if proc else '未知'}」工序报工成功"
     if all_done:
         msg += "，该产品所有工序已完成！"
-
     return {
         "success": True,
         "message": msg,
         "all_done": all_done,
-        "next_process": next_proc_name,
+        "next_process": next_proc.name if next_proc else None,
     }
 
 
@@ -634,9 +615,16 @@ def revoke_report(db: Session, progress_id: int, current_user: ArkUser) -> dict:
     if not progress:
         return {"success": False, "message": "工序进度记录不存在"}
     item = db.get(ProductionOrderItem, progress.order_product_id)
-    if item is not None and item.local_sku_id is not None:
+    if item is None:
+        return {"success": False, "message": "工序进度记录不存在"}
+    if item.local_sku_id is not None:
         from app.production.local_report_service import revoke
         return revoke(db, progress_id, current_user)
+
+    _, item, steps = _lock_legacy_report(db, item)
+    progress = next((step for step in steps if step.id == progress_id), None)
+    if progress is None:
+        return {"success": False, "message": "工序进度记录不存在"}
 
     if progress.status != 1:
         return {"success": False, "message": "该工序未完成，无需撤销"}
@@ -646,16 +634,7 @@ def revoke_report(db: Session, progress_id: int, current_user: ArkUser) -> dict:
         return {"success": False, "message": "只能撤销自己的报工记录"}
 
     # 检查：只能撤销最后一道已完成的工序（不能跳过中间工序撤销）
-    later_done = (
-        db.query(func.count())
-        .filter(
-            OrderProductProcessProgress.order_product_id == progress.order_product_id,
-            OrderProductProcessProgress.step_order > progress.step_order,
-            OrderProductProcessProgress.status == 1,
-        )
-        .scalar()
-    )
-    if later_done > 0:
+    if any(step.step_order > progress.step_order and step.status == 1 for step in steps):
         return {"success": False, "message": "已有后续工序完成，无法撤销此工序"}
 
     # 恢复工序状态
@@ -666,11 +645,9 @@ def revoke_report(db: Session, progress_id: int, current_user: ArkUser) -> dict:
     db.flush()
 
     # 如果明细之前因为全部完成改为 status=2，需要恢复为进行中
-    item = db.query(ProductionOrderItem).get(progress.order_product_id)
-    if item and item.status == 2:
+    if item.status == 2:
         item.status = 0
         item.updated_at = _bj_now()
-        from app.production.report_service import _sync_order_status
         _sync_order_status(db, item.order_id)
 
     proc = db.query(Process).get(progress.process_id)

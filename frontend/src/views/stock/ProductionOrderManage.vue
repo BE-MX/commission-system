@@ -95,7 +95,7 @@
               <template #default="{ row }">
                 <div class="table-actions">
                   <GlassButton variant="link" left-icon="View" @click="viewOrderDetail(row)">详情</GlassButton>
-                  <GlassButton variant="link" left-icon="Edit" @click="editOrder(row)">编辑</GlassButton>
+                  <GlassButton v-permission="'production:write'" variant="link" left-icon="Edit" @click="editOrder(row)">编辑</GlassButton>
                   <el-dropdown trigger="click" @command="(cmd) => handlePrintCommand(cmd, row)">
                     <GlassButton variant="link" left-icon="Printer">打印</GlassButton>
                     <template #dropdown>
@@ -293,28 +293,11 @@
       </div>
     </DetailDrawer>
 
-    <!-- 编辑订单弹窗 -->
-    <el-dialog v-model="editOrderDialogVisible" title="编辑生产订单" width="480px">
-      <el-form label-position="top" :model="editOrderForm">
-        <el-form-item label="生产批次号">
-          <el-input v-model="editOrderForm.batch_no" placeholder="批次号" maxlength="64" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="editOrderForm.remark" type="textarea" :rows="2" maxlength="500" show-word-limit />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-radio-group v-model="editOrderForm.status">
-            <el-radio :label="0">已提交</el-radio>
-            <el-radio :label="1">已终止</el-radio>
-            <el-radio :label="2">已完成</el-radio>
-          </el-radio-group>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="editOrderDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmEditOrder" :loading="editOrderLoading">保存</el-button>
-      </template>
-    </el-dialog>
+    <ProductionOrderEditDialog
+      v-model="editOrderDialogVisible"
+      :order-id="editingOrderId"
+      @saved="refreshEditedOrder"
+    />
 
     <!-- 编辑明细弹窗 -->
     <el-dialog v-model="editItemDialogVisible" title="编辑明细" width="480px">
@@ -442,9 +425,10 @@ import { useTableSort } from '@/composables/useTableSort'
 import { formatBeijingDateTime, formatBeijingShortDateTime } from '@/utils/datetime'
 import StimulsoftViewer from '@/components/StimulsoftViewer.vue'
 import TableTools from '@/components/TableTools.vue'
+import ProductionOrderEditDialog from './components/ProductionOrderEditDialog.vue'
 import { useProductionOrderTables } from './composables/useProductionOrderTables'
 import {
-  getProductionOrders, getProductionOrderDetail, updateProductionOrder,
+  getProductionOrders, getProductionOrderDetail,
   deleteProductionOrder, getProductionOrderItems, updateProductionOrderItem,
   updateProductionItemStatus, updateProductionItemReceived, deleteProductionOrderItem,
   resetOrderProcess,
@@ -537,32 +521,19 @@ async function viewOrderDetail(row) {
 
 // ── 编辑订单 ────────────────────────────
 const editOrderDialogVisible = ref(false)
-const editOrderLoading = ref(false)
-const editOrderForm = reactive({ id: null, batch_no: '', remark: '', status: 0 })
+const editingOrderId = ref(null)
 
 function editOrder(row) {
-  editOrderForm.id = row.id
-  editOrderForm.batch_no = row.batch_no
-  editOrderForm.remark = row.remark || ''
-  editOrderForm.status = row.status
+  editingOrderId.value = row.id
   editOrderDialogVisible.value = true
 }
 
-async function confirmEditOrder() {
-  editOrderLoading.value = true
-  try {
-    await updateProductionOrder(editOrderForm.id, {
-      batch_no: editOrderForm.batch_no,
-      remark: editOrderForm.remark,
-      status: editOrderForm.status,
-    })
-    msgSuccessText('已更新')
-    editOrderDialogVisible.value = false
-    orderState.refreshUpdate()
-  } catch (e) {
-    msgError(e?.response?.data?.message || '更新失败', e)
-  } finally {
-    editOrderLoading.value = false
+function refreshEditedOrder(orderId) {
+  orderState.refreshUpdate()
+  if (activeTab.value === 'item') itemState.refreshUpdate()
+  if (detailDialogVisible.value && currentOrder.value?.id === orderId) {
+    expandedProgressId.value = null
+    orderDetailResource.load(orderId)
   }
 }
 

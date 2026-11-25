@@ -566,7 +566,7 @@ def update_production_order(
     db: Session = Depends(get_db),
     user: dict = Depends(require_permission("production:write")),
 ):
-    """编辑生产订单(含状态变更,级联同步明细)"""
+    """编辑生产订单、修改或追加已提交订单的产品明细"""
     user_id = _get_user_id(user)
     try:
         ok = service.update_order(
@@ -576,9 +576,12 @@ def update_production_order(
             status=req.status,
             operator_id=user_id,
             operator_name=user.get("username", ""),
+            item_updates=req.item_updates,
+            new_items=req.new_items,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     if not ok:
         raise HTTPException(status_code=404, detail="生产订单不存在")

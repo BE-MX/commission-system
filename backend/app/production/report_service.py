@@ -72,7 +72,9 @@ def verify_qr_data(qr_data: str) -> tuple[bool, int]:
 
 # ── 进度初始化 ────────────────────────────────────────────
 
-def init_order_product_progress(db: Session, order_product_id: int, force: bool = False, *, _native_new=False) -> dict:
+def init_order_product_progress(
+    db: Session, order_product_id: int, force: bool = False, *, _native_new=False, allow_unconfigured=False,
+) -> dict | None:
     """初始化订单产品的工序进度"""
     item = db.query(ProductionOrderItem).get(order_product_id)
     if not item:
@@ -89,6 +91,8 @@ def init_order_product_progress(db: Session, order_product_id: int, force: bool 
 
     route_id = _route_id(db, item)
     if not route_id:
+        if allow_unconfigured:
+            return None
         raise ValueError("该产品未绑定工序路线，无法初始化进度")
 
     steps = (
@@ -98,6 +102,8 @@ def init_order_product_progress(db: Session, order_product_id: int, force: bool 
         .all()
     )
     if not steps:
+        if allow_unconfigured:
+            return None
         raise ValueError("工序路线中没有配置任何工序")
 
     existing = db.query(OrderProductProcessProgress).filter(
@@ -328,13 +334,10 @@ def handle_production_report(db: Session, qr_data: str, wx_id: str) -> dict:
 
 def _sync_order_status(db: Session, order_id: int) -> None:
     """如果所有明细都是同一完成状态，同步到订单"""
-    items = db.query(ProductionOrderItem).filter(
-        ProductionOrderItem.order_id == order_id,
-    ).all()
-    if not items:
-        return
-    statuses = {i.status for i in items}
-    order = db.query(ProductionOrder).get(order_id)
+    db.flush()
+    statuses = set(db.scalars(select(ProductionOrderItem.status)
+        .where(ProductionOrderItem.order_id == order_id).with_for_update()))
+    order = db.get(ProductionOrder, order_id)
     if not order:
         return
     if statuses == {2}:

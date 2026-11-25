@@ -11,15 +11,16 @@
 import logging
 from functools import wraps
 from datetime import date
-from app.core.time import beijing_today
+from app.core.time import beijing_now, beijing_today
 from typing import Any, Optional
 
 from app.core.config import get_settings
 
-from sqlalchemy import text, select
+from sqlalchemy import Date, DateTime, text, select
 from sqlalchemy.orm import Session
 
 from app.stock.models import ProductionOrder, ProductionOrderItem, ProductionAuditLog
+from app.stock.schemas import OrderItemAddition, OrderItemChange
 
 logger = logging.getLogger("stock.production_order")
 
@@ -305,7 +306,7 @@ def get_order_detail(db: Session, order_id: int) -> Optional[dict]:
             FROM ark_production_orders o
             LEFT JOIN ark_users u ON u.id = o.created_by
             WHERE o.id = :id AND o.deleted_flag = 0
-        """),
+        """).columns(created_at=DateTime(), updated_at=DateTime()),
         {"id": order_id},
     ).mappings().first()
 
@@ -318,7 +319,7 @@ def get_order_detail(db: Session, order_id: int) -> Optional[dict]:
             SELECT * FROM ark_production_order_items
             WHERE order_id = :order_id
             ORDER BY id
-        """),
+        """).columns(expected_delivery_date=Date(), created_at=DateTime()),
         {"order_id": order_id},
     ).mappings().all()
 
@@ -343,8 +344,18 @@ def get_order_detail(db: Session, order_id: int) -> Optional[dict]:
             "created_at": i["created_at"].isoformat() if i["created_at"] else None,
         })
 
+    from app.semifinished.models import SemifinishedOrder
+
+    items_editable = (
+        order["status"] == 0 and order["transaction_mode"] == "legacy"
+        and get_settings().TRANSACTION_MODE != "local"
+    )
     return {
         "id": order["id"],
+        "items_editable": items_editable,
+        "has_linked_semifinished_order": items_editable and bool(db.scalar(select(SemifinishedOrder.id).where(
+            SemifinishedOrder.production_order_id == order_id,
+        ).limit(1))),
         "order_no": order["order_no"],
         "batch_no": order["batch_no"],
         "remark": order["remark"],
@@ -368,8 +379,11 @@ def update_order(
     status: Optional[int] = None,
     operator_id: int = 0,
     operator_name: str = "",
+    *,
+    item_updates: list[OrderItemChange] | None = None,
+    new_items: list[OrderItemAddition] | None = None,
 ) -> bool:
-    """编辑生产订单,支持状态变更(级联同步明细状态)"""
+    """编辑生产订单及明细，支持级联同步状态。"""
     order = db.execute(select(ProductionOrder.__table__).where(
         ProductionOrder.id == order_id, ProductionOrder.deleted_flag == 0,
     ).with_for_update()).mappings().first()
@@ -403,10 +417,17 @@ def update_order(
         updates.append("status = :status")
         params["status"] = status
 
-    if not updates:
+    if item_updates or new_items:
+        from app.stock.production_order_edit_service import apply_item_changes
+
+        if old_status != 0 or order["transaction_mode"] != "legacy":
+            raise ValueError("只有已提交的旧流程生产订单可以编辑产品明细")
+        apply_item_changes(db, order_id, item_updates or [], new_items or [], operator_id, operator_name)
+    elif not updates:
         return True
 
-    updates.append("updated_at = NOW()")
+    updates.append("updated_at = :updated_at")
+    params["updated_at"] = beijing_now()
     if operator_id:
         updates.append("updated_by = :updated_by")
         params["updated_by"] = operator_id
@@ -563,6 +584,13 @@ def get_order_item_list(
     return {"total": int(total), "items": items}
 
 
+def validate_order_qty(db, item_id, received_qty, order_qty):
+    if order_qty < received_qty:
+        raise ValueError("生产下单数量不能小于已入库数量")
+    if order_qty < received_qty + _pending_inbound_qty(db, [item_id]):
+        raise ValueError("生产下单数量不足以保留待回写的工厂到货预占")
+
+
 @_legacy_only("item_id")
 def update_order_item(
     db: Session,
@@ -584,10 +612,7 @@ def update_order_item(
     params: dict[str, Any] = {"id": item_id}
 
     if order_qty is not None:
-        if order_qty < item["received_qty"]:
-            raise ValueError("生产下单数量不能小于已入库数量")
-        if order_qty < item["received_qty"] + _pending_inbound_qty(db, [item_id]):
-            raise ValueError("生产下单数量不足以保留待回写的工厂到货预占")
+        validate_order_qty(db, item_id, item["received_qty"], order_qty)
         updates.append("order_qty = :order_qty")
         params["order_qty"] = order_qty
 

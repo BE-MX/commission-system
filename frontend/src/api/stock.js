@@ -103,8 +103,8 @@ export function getProductionOrderDetail(orderId, config = {}) {
   return stockApi.get(`/production/orders/${orderId}`, { showLoading: false, ...config })
 }
 
-export function updateProductionOrder(orderId, payload) {
-  return stockApi.put(`/production/orders/${orderId}`, payload, { loadingText: '更新中...' })
+export function updateProductionOrder(orderId, payload, config = {}) {
+  return stockApi.put(`/production/orders/${orderId}`, payload, { loadingText: '更新中...', ...config })
 }
 
 export function deleteProductionOrder(orderId) {

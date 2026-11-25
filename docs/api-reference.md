@@ -1049,8 +1049,8 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
     - `POST /production/stock-status` — 查询备货状态（返回 `has_urgent` / `in_progress` / 明细列表，用于销量备货一览/安全库存设置表的状态列）
     - `POST /production/orders` — 从购物车批量生成生产订单（`cart_ids` + `expected_delivery_date` + `is_urgent`，订单号 `PO{YYYYMMDD}-{NNN}`）
     - `GET /production/orders` — 订单列表（分页+搜索，含明细聚合）
-    - `GET /production/orders/{order_id}` — 订单详情（含全部明细）
-    - `PUT /production/orders/{order_id}` — 更新订单（状态/备注，级联更新明细状态）
+    - `GET /production/orders/{order_id}` — 订单详情，含全部明细、明细可编辑标记 `items_editable` 和关联半成品订单标记 `has_linked_semifinished_order`。
+    - `PUT /production/orders/{order_id}` — 更新批次号、备注和状态。已提交的旧流程订单可同时传 `item_updates`（`item_id`、`expected_order_qty`、`order_qty`、可选 `product_id`）和 `new_items`（`product_id`、`order_qty`）。型号按有效产品 ID 选择，同一产品不能重复追加。更换型号会为该行生成新工序卡身份，已报工、入库或有待回写到货预占的明细不能更换型号。订单与明细同事务保存。
     - `DELETE /production/orders/{order_id}` — 软删订单（级联软删明细）
     - `GET /production/order-items` — 明细列表（独立查询，支持按订单/产品/状态筛选）
     - `PUT /production/order-items/{item_id}` — 更新明细（数量/备注/加急/交期）
@@ -1071,7 +1071,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `POST /process-routes/{id}/steps` — 保存路线步骤（全量覆盖，需 `production:admin`）
   - `GET /process-routes/{id}/steps` — 获取路线步骤
   - `GET /active-routes` — 启用中路线列表（选择器用）
-  - `GET /products` — 产品列表（分页+筛选，从 lsordertest 跨库查，需 `production:read`）
+  - `GET /products` — 产品列表，支持按名称、编号或型号搜索，返回字符串形式的 `product_id_text` 供选品提交。需 `production:read` 或 `production_product:read`。
   - `GET /products/filter-options` — 产品筛选项
   - `GET /products/{id}/process-route` — 获取产品路线绑定
   - `POST /products/{id}/process-route` — 绑定/更换/解绑路线（需 `production:write`）

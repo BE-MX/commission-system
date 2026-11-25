@@ -41,7 +41,7 @@ def list_products(
     if not show_disabled:
         where_clauses.append("p.disable_flag = 0")
     if keyword:
-        where_clauses.append("(p.name LIKE :kw OR p.product_no LIKE :kw)")
+        where_clauses.append("(p.name LIKE :kw OR p.product_no LIKE :kw OR p.model LIKE :kw)")
         params["kw"] = f"%{keyword}%"
     if model:
         where_clauses.append("p.model = :model")
@@ -86,6 +86,7 @@ def list_products(
     for r in rows:
         items.append({
             "product_id": r.product_id,
+            "product_id_text": str(r.product_id),
             "product_no": r.product_no,
             "name": r.name,
             "model": r.model,
