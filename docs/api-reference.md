@@ -2983,6 +2983,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | GET | `/tasks` | 跟进任务列表：`scope=mine/visible`、`status`、`task_type`、`customer_id`、`due=today/upcoming/all`，分页。 |
 | GET | `/tasks/summary` | 任务计数卡（按类型），工作台首屏用。 |
 | POST | `/tasks/{task_id}/snooze` | 顺延任务到期日（`days`），记一次顺延次数。 |
+| DELETE | `/tasks/{task_id}` | 有跟进写权限的待办操作人可移除约定跟进、收货回访、异常或意见待办。任务记为已取消，保留关联的业务记录；行动待办通过下方带理由的取消接口移除。 |
 | POST | `/tasks/{task_id}/receipt-ok` | 收货回访任务一键「已联系，一切正常」，直接生成一条确认记录，本次结果为“有效沟通”；该字典值停用时提示使用「记跟进」选择当前可用结果，任务不关闭；`request_id` 幂等。 |
 | GET | `/items` | 异常/意见条目看板：`status`、`kind`（issue/suggestion）、`category`、`customer_id`、`mine`，分页。 |
 | POST | `/items/{item_id}/resolve` | 处理条目（关闭时校验操作人是当前处理人）。 |
