@@ -24,6 +24,7 @@ def test_prices_default_to_standard_then_override_checkout_fingerprint(priced_ca
     assert result["items"][0]["standard_price"] == "30.0000"
     assert result["items"][0]["weight"] == items[0].standard_json["weight"]
     assert result["items"][0]["unit_price"] is None
+    assert set(result["items"][0]) >= {"grade", "color_type"}
     service.update_prices(ctx.db, 1, ctx.access.public_id, ctx.access.row_version, prices(items[0]))
     ctx.db.commit()
     after = pricing.resolve(ctx.db, ctx.access, items[0], "USD")
@@ -32,6 +33,19 @@ def test_prices_default_to_standard_then_override_checkout_fingerprint(priced_ca
     service.update_prices(ctx.db, 1, ctx.access.public_id, ctx.access.row_version, prices(items[0], None))
     ctx.db.commit()
     assert pricing.resolve(ctx.db, ctx.access, items[0], "USD").amount == before.amount
+
+
+@pytest.mark.parametrize("model,grade", [("B3天才发帘（帘宽12“）", "B3"), ("B1 平型接发", "B1"), ("b1铁丝", "B1"),
+    ("50%幅度天才发帘（帘宽24“）", "50%幅度"), ("Hair Glue", None), (None, None)])
+def test_product_grade_from_internal_model(model, grade):
+    assert service.product_grade(model) == grade
+
+
+@pytest.mark.parametrize("color,kind", [("#1", "单色"), ("#1B", "单色"), ("#1006", "单色"), ("#P4/18", "P色"),
+    ("#P1B/2B", "P色"), ("#4T60", "T色"), ("#5AT62", "T色"), ("#2TP2/6", "TP色"), ("#5ATP9A/1001", "TP色"),
+    ("#4TP8/18&#2TP2/8", "TP色"), ("Rose Golden", "其他"), ("", "其他"), (None, "其他")])
+def test_color_type_from_color_code(color, kind):
+    assert service.color_type(color) == kind
 
 
 @pytest.mark.parametrize("actor,version,status", [(2,1,404),(3,1,403),(1,0,409)])

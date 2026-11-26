@@ -2930,7 +2930,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 
 ### 2026-10-28 客户门户资料与价格维护
 
-员工接口 `/api/portal/admin/v1/customers/{id}/delivery` 与 `/prices` 支持 GET/PUT。GET需 portal_access:read，PUT需 portal_access:admin及当前客户范围；PUT使用 If-Match。地址body为 `{delivery: {...}}`，版本来自客户资料 delivery_version；价格body为 `{items:[{item_id,unit_price}]}`，USD四位小数、null恢复规则，版本来自customer access。批价原子保存并使有效报价过期。网络未知结果先GET核对，不自动重发。
+员工接口 `/api/portal/admin/v1/customers/{id}/delivery` 与 `/prices` 支持 GET/PUT。GET需 portal_access:read，PUT需 portal_access:admin及当前客户范围；PUT使用 If-Match。地址body为 `{delivery: {...}}`，版本来自客户资料 delivery_version；价格 GET 每项另带 `grade`（取自内部型号开头的 B1/B3/50%幅度，配件为 null）与 `color_type`（单色/P色/T色/TP色，非 # 编码的命名色为其他），供页面按等级、颜色类型筛选；价格body为 `{items:[{item_id,unit_price}]}`，USD四位小数、null恢复规则，版本来自customer access。批价原子保存并使有效报价过期。网络未知结果先GET核对，不自动重发。
 
 客户 `/api/portal/v1/delivery-profile` 现在读取/更新同客户共享地址；checkout delivery可省略，已填字段仍校验。订单GET增加英文 processing_status、dispatch_recorded 和客户安全 shipments详情。验货单绑定物流接口使用当前权限/范围及edit_version + shipment_version；物流关联仅递增shipment_version，不改变验货版本。详见 shipping_inspection/router.py。
 
