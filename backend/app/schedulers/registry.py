@@ -469,6 +469,17 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
             max_instances=1, coalesce=True)
         scheduler.add_job(worker_job, trigger="interval", minutes=1,
             id="client_desk_worker", replace_existing=True, max_instances=1, coalesce=True)
+        if settings.CLIENT_DESK_UNLINKED_ENABLED and settings.CLIENT_DESK_UNLINKED_TM_ENABLED:
+            from app.schedulers.client_desk import unlinked_scan_job, unlinked_worker_job, unlinked_weekly_job
+            scheduler.add_job(unlinked_scan_job, trigger="cron", hour=6, minute=45,
+                timezone="Asia/Shanghai", id="client_desk_unlinked_scan", replace_existing=True,
+                max_instances=1, coalesce=True)
+            scheduler.add_job(unlinked_worker_job, trigger="interval", minutes=2,
+                id="client_desk_unlinked_worker", replace_existing=True, max_instances=1, coalesce=True)
+            if settings.CLIENT_DESK_UNLINKED_WEEKLY_REPORT_ENABLED:
+                scheduler.add_job(unlinked_weekly_job, trigger="cron", day_of_week="mon", hour=8, minute=25,
+                    timezone="Asia/Shanghai", id="client_desk_unlinked_weekly", replace_existing=True,
+                    max_instances=1, coalesce=True)
         if settings.CLIENT_DESK_REPORT_ENABLED:
             scheduler.add_job(report_job, trigger="cron", hour=8, minute=40,
                 timezone="Asia/Shanghai", id="client_desk_report", replace_existing=True,

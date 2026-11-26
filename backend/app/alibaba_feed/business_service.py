@@ -13,17 +13,20 @@ from .pilot_service import active_pilot
 logger = logging.getLogger(__name__)
 
 
-def require_actor(db, user, action="read"):
+def require_actor(db, user, action="read", *, unlinked=False):
     pilot = active_pilot(db)
     if pilot is None:
         raise HTTPException(503, "阿里业务资料尚未启用")
     uid = private_scope.user_id(user)
-    if uid != pilot.user_id:
+    if uid != pilot.user_id or (unlinked and not pilot.unlinked_ai_allowed):
         raise HTTPException(403, "当前账号未加入 TM 资料试点")
     active = db.query(ArkUser.id).filter(ArkUser.id == uid, ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None)).with_for_update().first()
     roles = {r[0] for r in db.query(ArkRole.name).join(ArkUserRole, ArkUserRole.role_id == ArkRole.id).filter(ArkUserRole.user_id == uid).with_for_update().all()}
     permissions = {r[0] for r in db.query(ArkPermission.code).join(ArkRolePermission, ArkRolePermission.permission_id == ArkPermission.id).join(ArkUserRole, ArkUserRole.role_id == ArkRolePermission.role_id).filter(ArkUserRole.user_id == uid).with_for_update().all()}
-    if active is None or ("super_admin" not in roles and f"client_desk:{action}" not in permissions):
+    required = {f"client_desk:{action}"}
+    if unlinked:
+        required.add("client_desk:read")
+    if active is None or ("super_admin" not in roles and not required.issubset(permissions)):
         raise HTTPException(403, "当前账号无资料权限")
     return uid, pilot.source_id
 
@@ -192,7 +195,12 @@ def _commit(db):
         raise
 
 
-def create_link(db, user, request):
+def current_link_payload(db, user, uid, source_id, item_id, company_id):
+    _, _, link, _ = _access(db, user, uid, source_id, item_id, company_id=company_id)
+    return _link_payload(link)
+
+
+def create_link(db, user, request, *, commit=True):
     uid, source_id = require_actor(db, user, "write")
     source, item = _source_item(db, uid, source_id, request.item_id)
     private_scope.assert_company_access(db, user, request.company_id)
@@ -220,8 +228,11 @@ def create_link(db, user, request):
         request_hash=request_hash, created_by=uid, updated_by=uid)
     db.add(link)
     try:
-        _commit(db)
+        db.flush()
+        if commit:
+            _commit(db)
     except IntegrityError as exc:
+        db.rollback()
         raise HTTPException(409, "关联已更新，请刷新后重试") from exc
     db.refresh(link)
     return {**_link_payload(link), "replayed": False}
@@ -243,6 +254,10 @@ def delete_link(db, user, link_id, expected_version):
         link.deleted_at = beijing_now()
         link.updated_by = uid
         link.version += 1
+        if link.client_request_id.startswith("ul-"):
+            from app.client_desk.unlinked.worker import release_deleted_link
+
+            release_deleted_link(db, link)
         _commit(db)
     return {"id": link.id, "deleted": True, "version": link.version}
 
@@ -302,3 +317,22 @@ def dependencies_valid(db, user, company_id, dependencies):
         return current["dependencies"] == dependencies
     except (HTTPException, FeedError, KeyError, TypeError, ValueError):
         return False
+
+
+def unlinked_lead_item(db, uid, source_id, item_id):
+    """Authority gate for private-sea B track (unlinked leads).
+
+    Unlike `_access(ai=True)`, this does not require a customer link: the
+    buyer may not exist in OKKI yet. It still requires live consent, the owner
+    binding, a successful detail scrape, and no link to any customer.
+    Raises HTTPException 404 on any failure, so callers see no existence signal.
+    """
+    source, item = _source_item(db, uid, source_id, item_id)
+    if _link(db, uid, item) is not None:
+        _missing()
+    # The caller must hold the current B-track pilot grant via require_actor.
+    if (item.outcome == "quarantined"
+            or item.snapshot.get("detail_scraped") is not True
+            or item.snapshot.get("scrape_status") != "success"):
+        _missing()
+    return source, item

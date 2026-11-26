@@ -48,6 +48,8 @@ class AlibabaFeedPilot(Base):
     user_id = Column(Integer().with_variant(INTEGER(unsigned=True), "mysql"),
                      ForeignKey("ark_users.id", ondelete="SET NULL"), nullable=True, comment="试点方舟业务员")
     enabled = Column(Boolean, nullable=False, default=False, server_default="0", comment="管理员手动启用状态")
+    unlinked_ai_allowed = Column(Boolean, nullable=False, default=False, server_default="0",
+                                 comment="允许试点未绑定线索使用模型分析")
     version = Column(Integer, nullable=False, default=1, server_default="1", comment="试点配置并发版本")
 
 

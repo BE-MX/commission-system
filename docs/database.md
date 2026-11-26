@@ -66,6 +66,10 @@ P2 迁移 `275_factory_inbound_batch` 增加 `ark_factory_inbound_batches` 与 `
 
 逐条事务先核对 batch 租约，再锁来源串行推进版本。冻结迁移核验已有结构后支持半完成 DDL 续建，差异拒绝；不 stamp/downgrade 掩盖问题。详细实现和隔离迁移证据见[P1 实现说明](requirements/2026-11-05-alibaba-feed-integration/implementation.md)，生产迁移仅由指定发布入口执行。
 
+## 私海助理 B 轨（282_client_desk_unlinked）
+
+接 `281_followup_recordings`。为 `ark_alibaba_feed_pilot` 增加默认关闭的 `unlinked_ai_allowed`，试点配置版本用于区分撤权与再授权。新增 `ark_client_desk_unlinked_threads`、`ark_client_desk_unlinked_runs`、`ark_client_desk_unlinked_reviews`，分别保存线索状态和水位、日分析与消息证据指纹、周报与依赖的日分析 ID。写入时间为北京时间，用户外键为 MySQL INT UNSIGNED。回退仅在线执行，并要求三张表都为空。
+
 ## 私海助理（250_client_desk，本地实现，待发布）
 
 新增 `ark_client_desk_states`（本人×客户人工状态与 AI 画像）、`ark_client_desk_followups`（手工跟进）、`ark_client_desk_suggestions`（全量候选、分析租约、独立质量反馈/行动事实及早报发送状态）、`ark_client_desk_wa_links`（手工会话关联与忽略）。客户键 BIGINT，用户外键与 ark_users 一致；会话关联用 generated active_slot 保证仅一条有效版本。公司等级复用发票 profile，业务镜像只读。

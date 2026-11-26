@@ -192,3 +192,93 @@ class ClientDeskWaLink(Audit, Base):
         ),
         Index("ix_client_desk_link_company", "company_id", "active_slot"),
     )
+
+
+class ClientDeskUnlinkedThread(Audit, Base):
+    """B 轨（未绑定线索）会话状态；status 取 active/prospect/linked/ignored。"""
+
+    __tablename__ = "ark_client_desk_unlinked_threads"
+    user_id = Column(USER, ForeignKey("ark_users.id"), nullable=False, comment="归属业务员")
+    channel = Column(String(24), nullable=False, comment="渠道：alibaba_tm / whatsapp")
+    source_account_uid = Column(String(64), nullable=False, comment="来源账号标识")
+    thread_key = Column(String(160), nullable=False, comment="逻辑会话标识")
+    item_id = Column(BigInteger, nullable=True, comment="当前合格快照记录ID")
+    display_name = Column(String(160), comment="买家或联系人展示名")
+    country_code = Column(String(8), comment="买家国家代码")
+    last_message_at = Column(DateTime, comment="最近有效消息北京时间")
+    last_direction = Column(String(16), comment="最近消息方向 inbound/outbound/unknown")
+    seen_watermark = Column(JSON, comment="已观察到的最新入站水位 [顺序, 修订]")
+    done_watermark = Column(JSON, comment="已分析或已处理的水位 [顺序, 修订]")
+    handled_at = Column(DateTime, comment="最近一次已在其他渠道处理的北京时间")
+    next_followup_date = Column(Date, comment="潜客下次跟进日")
+    next_followup_remark = Column(Text, comment="潜客跟进说明（承诺事项）")
+    linked_company_id = Column(BigInteger, comment="绑定的 OKKI 公司，仅留痕")
+    source_dependencies = Column(JSON, comment="最近一次授权与映射依赖")
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "channel", "source_account_uid", "thread_key",
+            name="uq_client_desk_unlinked_thread",
+        ),
+        Index("ix_client_desk_unlinked_user_status", "user_id", "status", "last_message_at"),
+    )
+
+
+class ClientDeskUnlinkedRun(Audit, Base):
+    """B 轨每日轻分析与队列记录；同时是异步执行的租约载体。"""
+
+    __tablename__ = "ark_client_desk_unlinked_runs"
+    thread_id = Column(BigInteger, ForeignKey("ark_client_desk_unlinked_threads.id"), nullable=False, comment="线索ID")
+    user_id = Column(USER, ForeignKey("ark_users.id"), nullable=False, comment="归属业务员")
+    biz_date = Column(Date, nullable=False, comment="运行当天北京业务日")
+    trigger_type = Column(String(16), nullable=False, comment="daily 例行 / manual 手动")
+    run_seq = Column(Integer, nullable=False, default=0, comment="同日同类序号")
+    lease_token = Column(String(64), comment="租约令牌")
+    lease_expires_at = Column(DateTime, comment="租约到期北京时间")
+    call_started_at = Column(DateTime, comment="模型调用开始北京时间")
+    attempts = Column(Integer, nullable=False, default=0, comment="调用次数")
+    protocol_version = Column(String(32), comment="协议版本")
+    pack_hash = Column(String(64), comment="资料包哈希")
+    watermark = Column(JSON, comment="本次分析所基于的入站水位")
+    source_dependencies = Column(JSON, comment="运行时授权依赖")
+    token_usage = Column(JSON, comment="token 用量")
+    error_code = Column(String(64), comment="无正文错误码")
+    is_business_lead = Column(Boolean, comment="是否外贸业务线索")
+    intent_stage = Column(String(32), comment="意向阶段代码")
+    urgency = Column(String(16), comment="紧急度 high/medium/low")
+    one_line_summary = Column(String(200), comment="一句话前情")
+    missing_or_next_action = Column(Text, comment="遗漏问题与下一步")
+    breakthrough_angle = Column(String(200), comment="沟通突破点")
+    draft_message = Column(Text, comment="草稿")
+    extracted_clues = Column(JSON, comment="提取的线索")
+    cites = Column(JSON, comment="引用键")
+    needs_review = Column(Boolean, nullable=False, default=False, comment="含报价交期需核对")
+    __table_args__ = (
+        UniqueConstraint("thread_id", "biz_date", "trigger_type", "run_seq", name="uq_client_desk_unlinked_run"),
+        Index("ix_client_desk_unlinked_run_queue", "status", "lease_expires_at"),
+        Index("ix_client_desk_unlinked_run_user_date", "user_id", "biz_date"),
+    )
+
+
+class ClientDeskUnlinkedReview(Audit, Base):
+    """B 轨每周集中梳理报告，每人每周一份。"""
+
+    __tablename__ = "ark_client_desk_unlinked_reviews"
+    user_id = Column(USER, ForeignKey("ark_users.id"), nullable=False, comment="归属业务员")
+    week_start_date = Column(Date, nullable=False, comment="北京周一日期")
+    window_start = Column(DateTime, nullable=False, comment="覆盖窗口开始北京时间")
+    window_end = Column(DateTime, nullable=False, comment="覆盖窗口结束北京时间")
+    lease_token = Column(String(64), comment="租约令牌")
+    lease_expires_at = Column(DateTime, comment="租约到期北京时间")
+    attempts = Column(Integer, nullable=False, default=0, comment="调用次数")
+    included_thread_ids = Column(JSON, comment="纳入汇总的线索ID")
+    source_dependencies = Column(JSON, comment="纳入线索的授权依赖")
+    token_usage = Column(JSON, comment="token 用量")
+    error_code = Column(String(64), comment="无正文错误码")
+    overview_md = Column(Text, comment="本周总览")
+    missed_tasks = Column(JSON, comment="遗漏任务")
+    breakthrough_leads = Column(JSON, comment="突破点")
+    likely_existing_customers = Column(JSON, comment="疑似老客")
+    cleanup_candidates = Column(JSON, comment="可清理项")
+    __table_args__ = (
+        UniqueConstraint("user_id", "week_start_date", name="uq_client_desk_unlinked_review_week"),
+    )

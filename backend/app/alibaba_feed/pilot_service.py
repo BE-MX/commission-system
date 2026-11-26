@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import ArkPermission, ArkRole, ArkRolePermission, ArkUser, ArkUserRole
 from app.auth.service import get_live_user_authorization
+from app.core.config import get_settings
 from app.core.time import beijing_now
 from app.integration.models import IntegrationApp
 
@@ -39,6 +40,7 @@ class PilotActivation(BaseModel):
     expected_version: int = Field(gt=0, strict=True)
     enabled: StrictBool
     consent_confirmed: StrictBool = False
+    unlinked_ai_allowed: StrictBool | None = None
 
 
 def read_pilot(db: Session, *, write=False):
@@ -97,6 +99,7 @@ def _payload(db, pilot):
     alias = next((name for name, user_id in (source.owner_aliases or {}).items()
                   if user_id == pilot.user_id), "") if source else ""
     return {"version": pilot.version, "enabled": pilot.enabled, "user_id": pilot.user_id,
+            "unlinked_ai_allowed": pilot.unlinked_ai_allowed,
             "owner_alias": alias, "source": source_payload(source) if source else None}
 
 
@@ -176,9 +179,35 @@ def save_configuration(db, request: PilotConfiguration, *, actor_id: int):
     return result
 
 
+def _sync_new_unlinked_grant(db, pilot):
+    settings = get_settings()
+    if not (settings.CLIENT_DESK_UNLINKED_ENABLED and settings.CLIENT_DESK_UNLINKED_TM_ENABLED):
+        return
+    from app.client_desk.unlinked.worker import enqueue_daily, sync_threads
+
+    db.flush()
+    sync_threads(db, pilot.user_id, pilot.source_id)
+    enqueue_daily(db, pilot.user_id, pilot.source_id, quota=settings.CLIENT_DESK_UNLINKED_DAILY_QUOTA)
+
+
 def set_activation(db, request: PilotActivation):
     pilot = _draft(db, request.expected_version)
+    if request.unlinked_ai_allowed and not (request.enabled and request.consent_confirmed):
+        raise FeedError(422, "PILOT_UNLINKED_AI_CONSENT_REQUIRED")
+    unlinked_ai_allowed = request.enabled and (
+        pilot.unlinked_ai_allowed if request.unlinked_ai_allowed is None else request.unlinked_ai_allowed
+    )
     if pilot.enabled == request.enabled:
+        if pilot.unlinked_ai_allowed != unlinked_ai_allowed:
+            if unlinked_ai_allowed:
+                _ensure_user(db, pilot.user_id)
+            pilot.unlinked_ai_allowed = unlinked_ai_allowed
+            pilot.version += 1
+            if unlinked_ai_allowed:
+                _sync_new_unlinked_grant(db, pilot)
+            result = _payload(db, pilot)
+            _commit(db)
+            return result
         return _payload(db, pilot)
     binding = db.query(AlibabaFeedSource.integration_app_id).filter_by(id=pilot.source_id).first()
     if request.enabled:
@@ -192,7 +221,10 @@ def set_activation(db, request: PilotActivation):
     if source is not None:
         _set_source_policy(source, enabled=request.enabled)
     pilot.enabled = request.enabled
+    pilot.unlinked_ai_allowed = unlinked_ai_allowed
     pilot.version += 1
+    if unlinked_ai_allowed:
+        _sync_new_unlinked_grant(db, pilot)
     result = _payload(db, pilot)
     _commit(db)
     return result
