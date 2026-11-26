@@ -1,13 +1,15 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="编辑生产订单"
+    class="po-edit-dialog"
+    :title="detail.data.value ? `编辑生产订单 · ${detail.data.value.order_no}` : '编辑生产订单'"
     width="760px"
-    class="production-order-edit-dialog"
-    align-center
+    top="4vh"
+    :fullscreen="isNarrow"
     :close-on-click-modal="false"
     :close-on-press-escape="!saving"
     :show-close="!saving"
+    :before-close="confirmClose"
   >
     <ListPageStatus
       :loading="detail.loading.value"
@@ -16,92 +18,136 @@
       :has-data="Boolean(detail.data.value)"
       @retry="loadOrder"
     />
-    <el-form
-      v-if="detail.data.value"
-      class="order-edit-form"
-      label-position="top"
-      :model="form"
-      :disabled="saving"
-    >
-      <div class="order-header-fields">
-        <div class="order-fields">
-          <el-form-item label="生产批次号">
-            <el-input v-model="form.batch_no" maxlength="64" />
-          </el-form-item>
-          <el-form-item label="状态">
-            <el-radio-group v-model="form.status">
-              <el-radio :value="0">已提交</el-radio>
-              <el-radio :value="1">已终止</el-radio>
-              <el-radio :value="2">已完成</el-radio>
-            </el-radio-group>
-          </el-form-item>
-        </div>
-        <el-form-item label="备注">
-          <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" show-word-limit />
+    <el-form v-if="detail.data.value" label-position="top" :model="form" :disabled="saving" class="po-edit">
+      <div class="order-fields">
+        <el-form-item label="生产批次号">
+          <el-input v-model="form.batch_no" maxlength="64" />
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-radio-group v-model="form.status">
+            <el-radio-button :value="0">已提交</el-radio-button>
+            <el-radio-button :value="1">已终止</el-radio-button>
+            <el-radio-button :value="2">已完成</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="备注" class="remark-field">
+          <el-input v-model="form.remark" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" maxlength="500" />
         </el-form-item>
       </div>
-      <section v-if="detail.data.value.items_editable" class="order-items" aria-labelledby="production-order-items-title">
-        <div class="item-heading">
-          <h3 id="production-order-items-title">产品明细</h3>
-          <GlassButton variant="secondary" left-icon="Plus" :disabled="saving" @click="addLine">添加产品</GlassButton>
+
+      <section class="items" aria-label="产品明细">
+        <div class="items-toolbar">
+          <div class="items-title">
+            <h3>产品明细</h3>
+            <span class="items-summary">{{ lines.length }} 款 · 共 {{ totalQty }} 件</span>
+            <span v-if="changedCount" class="changed-badge">已修改 {{ changedCount }} 款</span>
+          </div>
+          <div class="items-actions">
+            <el-input
+              v-model="keyword"
+              class="items-search"
+              clearable
+              placeholder="搜索颜色、长度、系列"
+              aria-label="搜索产品明细"
+              prefix-icon="Search"
+            />
+            <el-checkbox v-if="changedCount" v-model="onlyChanged">只看已修改</el-checkbox>
+            <GlassButton v-if="itemsEditable" variant="secondary" left-icon="Plus" :disabled="saving" @click="addLine">添加产品</GlassButton>
+          </div>
         </div>
+        <p v-if="!itemsEditable" class="items-note">当前订单状态下产品明细只能查看，不能修改。</p>
         <el-alert
-          v-if="detail.data.value.has_linked_semifinished_order"
+          v-else-if="detail.data.value.has_linked_semifinished_order"
           title="该生产单已关联半成品采购单。修改产品明细后，请核对半成品需求。"
-          class="order-items-warning"
           type="warning"
           :closable="false"
           show-icon
         />
-        <div ref="itemsScroll" class="order-items-scroll" role="region" aria-label="产品明细列表" tabindex="0">
-          <p v-if="!lines.length" class="items-empty">暂无产品明细</p>
-          <div v-for="line in lines" :key="line.key" class="item-row">
-            <el-form-item label="产品型号" required>
-              <ProductionOrderProductSelect
-                v-if="line.editable && !line.receivedQty"
-                v-model="line.product"
-                :aria-label="line.productLabel ? '更换产品型号' : '选择新增产品型号'"
-                :placeholder="line.productLabel || '搜索型号、名称或产品编号'"
-              />
-              <div v-else class="item-name">{{ line.productLabel }}</div>
-            </el-form-item>
-            <el-form-item label="下单数量" required>
-              <el-input-number
-                v-model="line.quantity"
-                :min="Math.max(1, line.receivedQty)"
-                :max="999999"
-                :precision="0"
-                controls-position="right"
-                :disabled="!line.editable"
-                aria-label="下单数量"
-              />
-            </el-form-item>
-            <GlassButton
-              v-if="line.id === null"
-              class="remove-item"
-              variant="link"
-              link-tone="danger"
-              left-icon="Delete"
-              :disabled="saving"
-              @click="removeLine(line)"
-            >移除</GlassButton>
-            <GlassButton
-              v-else-if="line.editable && !line.receivedQty"
-              v-permission="'production:admin'"
-              class="remove-item"
-              variant="link"
-              link-tone="danger"
-              left-icon="Delete"
-              :disabled="saving"
-              @click="removeLine(line)"
-            >删除</GlassButton>
+
+        <div class="items-table" role="table" aria-label="产品明细列表" tabindex="0">
+          <div class="items-head" role="row">
+            <span role="columnheader">颜色</span>
+            <span role="columnheader">长度(寸)</span>
+            <span role="columnheader">克重</span>
+            <span role="columnheader" class="num">已入库</span>
+            <span role="columnheader">下单数量</span>
+            <span role="columnheader" class="sr-only">操作</span>
+          </div>
+          <div v-if="!groups.length" class="items-empty" role="row"><span role="cell">没有符合条件的产品</span></div>
+          <div v-for="group in groups" :key="group.key" class="item-group" role="rowgroup">
+            <div class="group-head" role="row">
+              <span class="group-series" role="rowheader">{{ group.series }}</span>
+              <span v-if="group.model" class="group-model" role="cell">{{ group.model }}</span>
+              <span class="group-count" role="cell">{{ group.lines.length }} 款</span>
+            </div>
+            <div
+              v-for="line in group.lines"
+              :key="line.key"
+              class="item-row"
+              :class="{ 'is-changed': isChanged(line), 'is-deleted': line.deleted, 'is-locked': !canChangeQty(line) }"
+              role="row"
+            >
+              <div v-if="line.picking" class="item-picker" role="cell" aria-colspan="3">
+                <ProductionOrderProductSelect
+                  v-model="line.product"
+                  :aria-label="line.id === null ? '选择新增产品型号' : '更换产品型号'"
+                  :placeholder="line.originalName ? `把 ${line.originalName.color || line.originalName.raw} 换成…（搜索型号、名称或编号）` : '搜索型号、名称或产品编号'"
+                  autofocus
+                  @update:model-value="value => { if (value) line.picking = false }"
+                />
+              </div>
+              <template v-else>
+                <div class="item-color" role="cell" :title="currentName(line).raw">
+                  <strong>{{ currentName(line).color || currentName(line).raw }}</strong>
+                  <span v-if="line.deleted" class="item-deleted-tag">待删除</span>
+                  <span v-else-if="line.product && line.originalName" class="item-was">原 {{ line.originalName.color || line.originalName.raw }}</span>
+                </div>
+                <span class="item-spec" role="cell"><span class="cell-label">长度</span>{{ currentName(line).length || '—' }}</span>
+                <span class="item-spec" role="cell"><span class="cell-label">克重</span>{{ currentName(line).weight || '—' }}</span>
+              </template>
+              <span class="item-received num" role="cell"><span class="cell-label">已入库</span>{{ line.receivedQty || '—' }}</span>
+              <div class="item-qty" role="cell">
+                <el-input-number
+                  v-model="line.quantity"
+                  size="small"
+                  :min="Math.max(1, line.receivedQty)"
+                  :max="999999"
+                  :precision="0"
+                  controls-position="right"
+                  :disabled="!canChangeQty(line) || line.deleted"
+                  :aria-label="`${lineName(line)} 下单数量`"
+                />
+                <span v-if="line.id !== null && !line.deleted && line.quantity !== line.originalQuantity" class="item-was">原 {{ line.originalQuantity }}</span>
+              </div>
+              <div class="item-ops" role="cell">
+                <span v-if="!line.editable" class="item-locked">{{ ITEM_STATUS_LABELS[line.status] || '不可修改' }}</span>
+                <template v-else-if="line.picking">
+                  <GlassButton v-if="line.id !== null" variant="link" :disabled="saving" :aria-label="`取消更换 ${lineName(line)}`" @click="line.picking = false">取消</GlassButton>
+                </template>
+                <template v-else-if="!line.deleted">
+                  <GlassButton v-if="canChangeProduct(line)" variant="link" :disabled="saving" :aria-label="`更换 ${lineName(line)}`" @click="line.picking = true">更换</GlassButton>
+                  <GlassButton
+                    v-if="line.id !== null && canChangeProduct(line) && !isChanged(line)"
+                    v-permission="'production:admin'"
+                    variant="link"
+                    link-tone="danger"
+                    :disabled="saving"
+                    :aria-label="`删除 ${lineName(line)}`"
+                    @click="line.deleted = true"
+                  >删除</GlassButton>
+                </template>
+                <GlassButton v-if="line.id !== null && isChanged(line)" variant="link" :disabled="saving" :aria-label="`撤销 ${lineName(line)} 的修改`" @click="revertLine(line)">撤销</GlassButton>
+                <GlassButton v-if="line.id === null" variant="link" link-tone="danger" :disabled="saving" @click="removeLine(line)">移除</GlassButton>
+              </div>
+            </div>
           </div>
         </div>
       </section>
     </el-form>
     <template #footer>
       <div class="dialog-footer">
-        <el-button :disabled="saving" @click="visible = false">取消</el-button>
+        <span class="footer-summary">{{ changeSummary }}</span>
+        <el-button :disabled="saving" @click="confirmClose(() => { visible = false })">取消</el-button>
         <el-button type="primary" :loading="saving" :disabled="!detail.data.value" @click="save">保存</el-button>
       </div>
     </template>
@@ -109,12 +155,14 @@
 </template>
 
 <script setup>
-import { nextTick, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import ListPageStatus from '@/components/ListPageStatus.vue'
 import { getProductionOrderDetail, updateProductionOrder } from '@/api/stock'
 import { useAsyncResource } from '@/composables/useAsyncResource'
 import { errorMessage } from '@/utils/errors'
-import { msgError, msgSuccessText, msgWarning } from '@/utils/feedback'
+import { confirmAction, msgError, msgSuccessText, msgWarning } from '@/utils/feedback'
+import { parseProductName } from '@/utils/productName'
+import { buildEditPayload, isLineChanged as isChanged, payloadChangesItems } from '../composables/productionOrderEditPayload'
 import ProductionOrderProductSelect from './ProductionOrderProductSelect.vue'
 
 const visible = defineModel({ type: Boolean, default: false })
@@ -122,83 +170,160 @@ const props = defineProps({ orderId: { type: Number, default: null } })
 const emit = defineEmits(['saved'])
 const form = reactive({ batch_no: '', status: 0, remark: '' })
 const lines = ref([])
-const deletedItems = ref([])
-const itemsScroll = ref(null)
 const saving = ref(false)
+const keyword = ref('')
+const onlyChanged = ref(false)
 let newKey = 0
+const ITEM_STATUS_LABELS = { 1: '已终止', 2: '已完成' }
+
+const narrowQuery = typeof window !== 'undefined' ? window.matchMedia('(max-width: 640px)') : null
+const isNarrow = ref(Boolean(narrowQuery?.matches))
+const syncNarrow = event => { isNarrow.value = event.matches }
+narrowQuery?.addEventListener('change', syncNarrow)
+onBeforeUnmount(() => narrowQuery?.removeEventListener('change', syncNarrow))
 
 const detail = useAsyncResource(async (id, { signal }) => {
   const response = await getProductionOrderDetail(id, { signal, suppressToast: true })
   return response.data
 })
 
+const itemsEditable = computed(() => Boolean(detail.data.value?.items_editable))
+const totalQty = computed(() => lines.value.reduce((sum, line) => sum + (line.deleted ? 0 : Number(line.quantity) || 0), 0))
+const changedCount = computed(() => (itemsEditable.value ? lines.value.filter(isChanged).length : 0))
+const formChanged = computed(() => {
+  const order = detail.data.value
+  return Boolean(order) && (form.batch_no !== order.batch_no || form.status !== order.status || form.remark !== (order.remark || ''))
+})
+const changeSummary = computed(() => {
+  const added = lines.value.filter(line => line.id === null).length
+  const deleted = lines.value.filter(line => line.deleted).length
+  const edited = changedCount.value - added - deleted
+  const parts = []
+  if (edited) parts.push(`修改 ${edited} 款`)
+  if (added) parts.push(`新增 ${added} 款`)
+  if (deleted) parts.push(`删除 ${deleted} 款`)
+  if (formChanged.value) parts.push('订单信息有改动')
+  return parts.length ? `待保存：${parts.join('，')}` : ''
+})
+
+const groups = computed(() => {
+  const term = keyword.value.trim().toLowerCase()
+  const map = new Map()
+  for (const line of lines.value) {
+    // 新增行始终可见，避免选型号的输入框被搜索或筛选藏起来
+    if (line.id !== null && onlyChanged.value && !isChanged(line)) continue
+    if (line.id !== null && term && !searchText(line).includes(term)) continue
+    const key = line.id === null ? 'new' : `${line.groupSeries}|${line.groupModel}`
+    if (!map.has(key)) {
+      map.set(key, line.id === null
+        ? { key, series: '新增产品', model: '', lines: [] }
+        : { key, series: line.groupSeries, model: line.groupModel, lines: [] })
+    }
+    map.get(key).lines.push(line)
+  }
+  const list = [...map.values()]
+  const added = list.findIndex(group => group.key === 'new')
+  if (added > 0) list.unshift(...list.splice(added, 1))
+  return list
+})
+
+function currentName(line) {
+  return line.product ? parseProductName(line.product.name) : (line.originalName || parseProductName(''))
+}
+
+function lineName(line) {
+  const name = currentName(line)
+  return [name.color || name.raw, name.length && `${name.length} 寸`, name.weight].filter(Boolean).join(' ')
+}
+
+function searchText(line) {
+  return [line.originalName?.raw, currentName(line).raw, line.groupModel, line.product?.model, line.product?.product_no]
+    .filter(Boolean).join(' ').toLowerCase()
+}
+
+function canChangeQty(line) {
+  return itemsEditable.value && line.editable
+}
+
+function canChangeProduct(line) {
+  return canChangeQty(line) && !line.receivedQty
+}
+
 async function loadOrder() {
+  keyword.value = ''
+  onlyChanged.value = false
   if (!await detail.load(props.orderId, { clear: true })) return
   const order = detail.data.value
   Object.assign(form, { batch_no: order.batch_no, remark: order.remark || '', status: order.status })
-  deletedItems.value = []
-  lines.value = order.items.map(item => ({
-    key: item.id,
-    id: item.id,
-    editable: item.status === 0,
-    product: null,
-    productLabel: [item.model, item.product_name].filter(Boolean).join(' · '),
-    quantity: item.order_qty,
-    originalQuantity: item.order_qty,
-    receivedQty: item.received_qty,
-  }))
+  lines.value = order.items.map(item => {
+    const originalName = parseProductName(item.product_name)
+    return {
+      key: item.id,
+      id: item.id,
+      status: item.status,
+      editable: item.status === 0,
+      deleted: false,
+      product: null,
+      picking: false,
+      originalName,
+      groupSeries: originalName.color ? originalName.series : '其他产品',
+      groupModel: item.model || '',
+      quantity: item.order_qty,
+      originalQuantity: item.order_qty,
+      receivedQty: item.received_qty,
+    }
+  })
 }
+
+watch(changedCount, count => { if (!count) onlyChanged.value = false })
 
 watch([visible, () => props.orderId], ([opened]) => {
   if (opened) loadOrder()
   else detail.clear()
 })
 
-async function addLine() {
+function addLine() {
+  keyword.value = ''
+  onlyChanged.value = false
   lines.value.unshift({
-    key: 'new-' + ++newKey, id: null, editable: true,
-    product: null, productLabel: '', quantity: 1, receivedQty: 0,
+    key: 'new-' + ++newKey, id: null, status: 0, editable: true, deleted: false, product: null, picking: true,
+    originalName: null, groupSeries: '', groupModel: '', quantity: 1, originalQuantity: 1, receivedQty: 0,
   })
-  await nextTick()
-  if (itemsScroll.value) itemsScroll.value.scrollTop = 0
 }
 
 function removeLine(line) {
-  if (line.id !== null) {
-    deletedItems.value.push({ item_id: line.id, expected_order_qty: line.originalQuantity })
-  }
   lines.value = lines.value.filter(entry => entry !== line)
+}
+
+function revertLine(line) {
+  line.deleted = false
+  line.product = null
+  line.picking = false
+  line.quantity = line.originalQuantity
+}
+
+async function confirmClose(done) {
+  if (saving.value) return
+  if (changedCount.value || formChanged.value) {
+    try {
+      await confirmAction('有未保存的修改，关闭后将丢失。', '放弃修改？', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑', type: 'warning' })
+    } catch {
+      return
+    }
+  }
+  done()
 }
 
 async function save() {
   const order = detail.data.value
   if (saving.value || !order) return
-  const payload = { item_updates: [], new_items: [] }
-  if (form.batch_no !== order.batch_no) payload.batch_no = form.batch_no
-  if (form.status !== order.status) payload.status = form.status
-  if (form.remark !== (order.remark || '')) payload.remark = form.remark
-  if (order.items_editable) {
-    if (deletedItems.value.length) payload.deleted_items = deletedItems.value
-    for (const line of lines.value) {
-      if (line.id !== null && !line.product && line.quantity === line.originalQuantity) continue
-      if (line.id === null && !line.product) return msgWarning('请选择新增产品的型号')
-      if (!Number.isInteger(line.quantity) || line.quantity < Math.max(1, line.receivedQty) || line.quantity > 999999) {
-        return msgWarning('请填写有效的下单数量')
-      }
-      const productId = line.product?.product_id_text
-      if (line.id === null) payload.new_items.push({ product_id: productId, order_qty: line.quantity })
-      else payload.item_updates.push({
-        item_id: line.id, expected_order_qty: line.originalQuantity,
-        order_qty: line.quantity, ...(productId ? { product_id: productId } : {}),
-      })
-    }
-  }
+  const { payload, error } = buildEditPayload(order, form, lines.value)
+  if (error) return showInvalid(error)
 
   saving.value = true
   try {
     await updateProductionOrder(order.id, payload, { suppressToast: true })
-    const itemsChanged = payload.item_updates.length || payload.new_items.length || payload.deleted_items?.length
-    msgSuccessText(itemsChanged ? '已保存。已发出的生产单或工序卡请重新打印。' : '已更新')
+    msgSuccessText(payloadChangesItems(payload) ? '已保存。已发出的生产单或工序卡请重新打印。' : '已更新')
     visible.value = false
     emit('saved', order.id)
   } catch (error) {
@@ -207,82 +332,23 @@ async function save() {
     saving.value = false
   }
 }
+
+function showInvalid(message) {
+  keyword.value = ''
+  onlyChanged.value = false
+  msgWarning(message)
+}
 </script>
 
-<style scoped>
-:global(.production-order-edit-dialog > .el-dialog__body) {
-  display: flex;
-  flex-direction: column;
-}
+<style scoped src="./ProductionOrderEditDialog.css"></style>
 
-.order-edit-form, .order-items {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.order-header-fields, .item-heading, .order-items-warning {
-  flex-shrink: 0;
-}
-
-.order-items-scroll {
-  max-height: min(48dvh, 440px);
-  min-height: 80px;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  scrollbar-gutter: stable;
-  padding: 0 6px 0 2px;
-}
-
-.items-empty {
-  margin: 12px 0;
-  color: var(--text-secondary);
-}
-
-.order-fields, .item-row {
-  display: grid;
-  gap: 12px;
-}
-
-.order-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-
-.item-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.item-heading h3 { margin: 0; font-size: 15px; }
-
-.item-row {
-  grid-template-columns: minmax(0, 1fr) 128px auto;
-  align-items: end;
-  padding-top: 12px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.item-row .el-form-item { min-width: 0; margin-bottom: 12px; }
-.item-row .el-input-number { width: 100%; }
-.item-name { overflow-wrap: anywhere; }
-.remove-item { margin-bottom: 12px; }
-
-@media (max-height: 700px) {
-  :global(.production-order-edit-dialog > .el-dialog__body) { padding-block: 12px; }
-  .order-header-fields .el-form-item { margin-bottom: 8px; }
-}
-
-@media (max-width: 600px) {
-  .order-fields { grid-template-columns: minmax(0, 1fr); gap: 0; }
-  .item-row { grid-template-columns: minmax(0, 128px) auto; gap: 0 12px; }
-  .item-row .el-form-item:first-child { grid-column: 1 / -1; }
-  .remove-item { justify-self: start; }
-}
-
-@media (min-width: 360px) and (max-width: 600px) and (max-height: 700px) {
-  .item-row { grid-template-columns: minmax(0, 1fr) 96px auto; gap: 0 8px; padding-top: 8px; }
-  .item-row .el-form-item:first-child { grid-column: auto; }
-  .item-row .el-form-item, .remove-item { margin-bottom: 8px; }
+<style>
+.po-edit-dialog .el-dialog__body { padding-top: 8px; }
+@media (max-width: 640px) {
+  .po-edit-dialog.is-fullscreen .el-dialog__body { padding: 8px 16px; }
+  /* 全屏时只滚动内容区，保存按钮常驻底部，不必滑过几百行明细 */
+  .po-edit-dialog.is-fullscreen { display: flex; flex-direction: column; overflow: hidden; }
+  .po-edit-dialog.is-fullscreen .el-dialog__body { flex: 1; min-height: 0; overflow-y: auto; }
+  .po-edit-dialog.is-fullscreen .el-dialog__footer { border-top: 1px solid var(--border-color); }
 }
 </style>
