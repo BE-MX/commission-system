@@ -73,6 +73,10 @@ def _change(item, qty, product_id=None):
     return change
 
 
+def _deletion(item):
+    return {"item_id": item.id, "expected_order_qty": item.order_qty}
+
+
 def test_order_edit_replaces_qty_and_appends_in_one_save(db, order_editor):
     client, order, (replace, resize, keep), _ = order_editor
     route, process = _progress_route(db, "Old route")
@@ -121,9 +125,11 @@ def test_order_edit_replaces_qty_and_appends_in_one_save(db, order_editor):
     assert len(client.get(url).json()["data"]["items"]) == 4
 
 
+@pytest.mark.parametrize("operation", ["replace", "delete"])
 @pytest.mark.parametrize("reason", ["received", "historical_receipt", "reported", "pending", "completed", "opening"])
-def test_model_change_rejects_active_references_and_leaves_order_unchanged(db, order_editor, reason):
-    client, order, (item, _, _), _ = order_editor
+def test_removing_original_product_rejects_active_references(db, order_editor, reason, operation):
+    client, order, (item, _, _), user = order_editor
+    user["permissions"].append("production:admin")
     if reason == "received":
         item.received_qty = 1
     if reason == "historical_receipt":
@@ -150,10 +156,12 @@ def test_model_change_rejects_active_references_and_leaves_order_unchanged(db, o
     if reason == "opening":
         order.transaction_mode = "opening"
     db.commit()
-    response = client.put(f"{ROOT}/{order.id}", json={
-        "remark": "must roll back", "item_updates": [_change(item, 7, REPLACEMENT_ID)],
-        "new_items": [{"product_id": "22", "order_qty": 4}],
-    })
+    payload = {"remark": "must roll back", "new_items": [{"product_id": "22", "order_qty": 4}]}
+    if operation == "delete":
+        payload["deleted_items"] = [_deletion(item)]
+    else:
+        payload["item_updates"] = [_change(item, 7, REPLACEMENT_ID)]
+    response = client.put(f"{ROOT}/{order.id}", json=payload)
     assert response.status_code == 400, response.text
     assert order.remark is None and item.product_id == 11
     assert db.scalar(select(ProductionOrderItem.id).where(ProductionOrderItem.product_id == 22)) is None
@@ -205,3 +213,52 @@ def test_submitted_mini_report_cannot_be_discarded_by_model_change(db, order_edi
     assert response.status_code == 400 and "已有工序报工" in response.json()["detail"]
     assert item.status == 0
     assert first_step.status == 1 and next_step.status == 0
+
+
+def test_order_edit_deletes_and_adds_products_in_one_save(db, order_editor):
+    client, order, (removed, resize, keep), user = order_editor
+    user["permissions"].append("production:admin")
+    route, process = _progress_route(db, "Pending route")
+    removed.product_id = 22
+    removed_id = removed.id
+    db.add(OrderProductProcessProgress(order_product_id=removed_id, process_id=process.id,
+                                       route_id=route.id, step_order=1, status=0))
+    db.commit()
+    url = f"{ROOT}/{order.id}"
+    response = client.put(url, json={
+        "deleted_items": [_deletion(removed)],
+        "item_updates": [_change(resize, 9)],
+        "new_items": [{"product_id": "22", "order_qty": 4}],
+    })
+    assert response.status_code == 200, response.text
+    detail = client.get(url).json()["data"]
+    assert {item["product_id"]: item["order_qty"] for item in detail["items"]} == {
+        resize.product_id: 9, keep.product_id: keep.order_qty, 22: 4,
+    }
+    assert all(item["id"] != removed_id for item in detail["items"])
+    assert db.get(ProductionOrderItem, removed_id) is None
+    assert db.scalar(select(OrderProductProcessProgress.id).where(
+        OrderProductProcessProgress.order_product_id == removed_id,
+    )) is None
+    log = db.scalar(select(ProductionAuditLog).where(ProductionAuditLog.action == "delete"))
+    assert log.item_id == removed_id and log.snapshot["before"]["product_id"] == 22
+    assert log.operator_id == 12
+
+
+def test_order_delete_requires_admin_and_rejects_stale_or_conflicting_changes(db, order_editor):
+    client, order, (item, _, _), user = order_editor
+    url = f"{ROOT}/{order.id}"
+    payload = {"deleted_items": [_deletion(item)], "remark": "must roll back"}
+    response = client.put(url, json=payload)
+    assert response.status_code == 403 and "production:admin" in response.json()["detail"]
+
+    user["permissions"].append("production:admin")
+    stale = {**payload, "deleted_items": [{**_deletion(item), "expected_order_qty": 4}]}
+    response = client.put(url, json=stale)
+    assert response.status_code == 400 and "明细已变化" in response.json()["detail"]
+    response = client.put(url, json={**payload, "item_updates": [_change(item, 9)]})
+    assert response.status_code == 400 and "只能修改或删除一次" in response.json()["detail"]
+    response = client.put(url, json={**payload, "new_items": [{"product_id": "23", "order_qty": 4}]})
+    assert response.status_code == 400 and "已停用" in response.json()["detail"]
+    assert order.remark is None and item.order_qty == 5
+    assert db.scalar(select(ProductionAuditLog.id)) is None

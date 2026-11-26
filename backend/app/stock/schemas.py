@@ -83,9 +83,12 @@ class OrderCreateRequest(BaseModel):
     request_key: str | None = Field(default=None, min_length=1, max_length=64)
 
 
-class OrderItemChange(BaseModel):
+class OrderItemEditTarget(BaseModel):
     item_id: int = Field(gt=0)
     expected_order_qty: int
+
+
+class OrderItemChange(OrderItemEditTarget):
     order_qty: int = Field(gt=0, le=999999)
     product_id: int | None = Field(None, gt=0, le=2**63 - 1)
 
@@ -102,6 +105,7 @@ class OrderUpdateRequest(BaseModel):
     status: Optional[int] = Field(None, ge=0, le=2)
     item_updates: list[OrderItemChange] = Field(default_factory=list)
     new_items: list[OrderItemAddition] = Field(default_factory=list)
+    deleted_items: list[OrderItemEditTarget] = Field(default_factory=list)
 
 
 class OrderItemUpdateRequest(BaseModel):
