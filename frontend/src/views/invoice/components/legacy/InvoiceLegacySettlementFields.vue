@@ -59,17 +59,16 @@
           controls-position="right"
           @change="onHandlingFeeInput"
         />
-        <div v-if="handlingHint" class="handling-hint">{{ handlingHint }}</div>
+        <InvoiceHandlingFeeHint :form="form" :total="total" :on-recalculate="onRecalculateHandlingFee" />
       </el-form-item>
     </div>
   </section>
 </template>
 
 <script setup>
-import { formatMoney } from '../../../../utils/money.js'
-
+import InvoiceHandlingFeeHint from '../InvoiceHandlingFeeHint.vue'
 import { computed } from 'vue'
-import { alibabaOrderRequired, channelsForPayment, computeHandlingFee, handlingFeeRate } from '../../composables/invoiceSettlement'
+import { alibabaOrderRequired, channelsForPayment } from '../../composables/invoiceSettlement'
 
 // 旧版下单抽屉的结算区（HEAD 版原样保留，过渡期使用）
 const props = defineProps({
@@ -87,25 +86,10 @@ const props = defineProps({
   money: { type: Function, required: true },
   onPaymentMethodChange: { type: Function, default: () => {} },
   onHandlingFeeInput: { type: Function, default: () => {} },
+  onRecalculateHandlingFee: { type: Function, required: true },
 })
 // 只列出当前付款方式可选的渠道；未选付款方式时列出全部
 const channelOptions = computed(() => channelsForPayment(props.form.internal_payment_method) || props.expressChannels)
-
-// 手续费提示：比例方式显示自动费率；当前值与费率×基数不符时（如编辑单改了产品、
-// 或手动改过）给出重算引导；报关提示手填，其余留空
-const handlingHint = computed(() => {
-  const method = props.form.internal_payment_method
-  const rate = handlingFeeRate(method)
-  if (rate == null) return method && method.includes('报关') ? '报关：手动填写手续费' : ''
-  const pct = `${(rate * 100).toFixed(0)}%`
-  // 基数（订单总金额，不含手续费）= 应付合计(total) − 手续费
-  const base = Number(props.total || 0) - Number(props.form.surcharge_amount || 0)
-  const expected = computeHandlingFee(rate, base)
-  if (Math.abs(Number(props.form.surcharge_amount || 0) - expected) > 0.005) {
-    return `与 ${pct}（应 ${formatMoney(expected)}）不符，重选付款方式可重算`
-  }
-  return `${method} ${pct} 自动（可手改）`
-})
 </script>
 
 <style scoped>
@@ -121,7 +105,6 @@ const handlingHint = computed(() => {
 .calculated-amount :deep(.el-input__inner), .negative-field :deep(input) { font-variant-numeric: tabular-nums; }
 .negative-field :deep(input) { color: var(--color-danger); }
 .amount-note { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
-.handling-hint { margin-top: 2px; color: var(--text-muted); font-size: 11px; line-height: 1.3; }
 .balance-field :deep(.el-input-group__append) { padding: 0 10px; color: var(--text-secondary); font-size: 11px; white-space: nowrap; }
 @media (max-width: 1100px) { .head-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px) { .head-grid { grid-template-columns: 1fr; } .span-1, .span-2 { grid-column: 1 / -1; } }

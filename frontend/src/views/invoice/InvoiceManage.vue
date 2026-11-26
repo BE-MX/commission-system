@@ -387,6 +387,7 @@
                 :money="money"
                 :on-payment-method-change="onPaymentMethodChange"
                 :on-handling-fee-input="markHandlingFeeTouched"
+                :on-recalculate-handling-fee="editor.recalculateHandlingFee"
                 :on-total-discount-change="applyTotalDiscount"
               />
 

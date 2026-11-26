@@ -39,6 +39,18 @@ const settlementFields = readFileSync(
   new URL('../src/views/invoice/components/InvoiceSettlementFields.vue', import.meta.url),
   'utf8',
 )
+const handlingFeeHint = readFileSync(
+  new URL('../src/views/invoice/components/InvoiceHandlingFeeHint.vue', import.meta.url),
+  'utf8',
+)
+const legacySettlementFields = readFileSync(
+  new URL('../src/views/invoice/components/legacy/InvoiceLegacySettlementFields.vue', import.meta.url),
+  'utf8',
+)
+const legacyDrawer = readFileSync(
+  new URL('../src/views/invoice/components/legacy/InvoiceLegacyDrawer.vue', import.meta.url),
+  'utf8',
+)
 const summaryCard = readFileSync(
   new URL('../src/views/invoice/components/InvoiceSummaryCard.vue', import.meta.url),
   'utf8',
@@ -216,10 +228,20 @@ test('switching to a manual/no-rate method clears the stale auto handling fee', 
   assert.match(invoiceEditor, /if \(rate == null\) \{\s*\n\s*\/\/[^\n]*\n\s*form\.surcharge_amount = 0/)
 })
 
-test('handling hint warns when the fee no longer matches the rate x base', () => {
-  // P2-1：编辑单改产品/手改后手续费与费率不符时给重算引导
-  assert.match(settlementFields, /重选付款方式可重算/)
-  assert.match(settlementFields, /computeHandlingFee/)
+test('both settlement layouts offer a dedicated handling fee recalculation button', () => {
+  for (const fields of [settlementFields, legacySettlementFields]) {
+    assert.match(fields, /<InvoiceHandlingFeeHint[^>]*:on-recalculate="onRecalculateHandlingFee"/)
+    assert.doesNotMatch(fields, /重选付款方式可重算/)
+  }
+  for (const view of [invoiceView, legacyDrawer]) {
+    assert.match(view, /:on-recalculate-handling-fee="editor\.recalculateHandlingFee"/)
+  }
+  assert.match(handlingFeeHint, /<el-button v-if="needsRecalculation"[^>]*native-type="button"[^>]*@click="onRecalculate">按费率重算/)
+  assert.match(handlingFeeHint, /computeHandlingFee\(rate\.value, base\)/)
+  assert.match(handlingFeeHint, /if \(rate\.value == null\) return null/)
+  assert.match(handlingFeeHint, /expectedFee\.value != null[\s\S]*Math\.abs\(Number\(props\.form\.surcharge_amount \|\| 0\) - expectedFee\.value\) > 0\.005/)
+  assert.match(handlingFeeHint, /if \(needsRecalculation\.value\)/)
+  assert.doesNotMatch(handlingFeeHint, /重选付款方式可重算|onPaymentMethodChange|express_channel/)
 })
 
 test('footer marks the handling fee as Ark-only', () => {

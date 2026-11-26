@@ -270,7 +270,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   // 手续费自动计算（2026-07-24）：选付款方式（PayPal 5% / 信保便捷发货 3% / TT 0）
   // 或订单总金额变化时，按 费率×基数 自动填手续费；报关/未选=不自动、用户手填；
-  // 用户手改过手续费后不再自动覆盖，直到重新选付款方式。
+  // 用户手改后保留约定金额，直到更换付款方式或点击「按费率重算」。
   // 「上次订单成交日期」参考，仅展示（新成交时为空）。
   const lastOrderDate = ref('')
   let handlingFeeTouched = false
@@ -279,10 +279,15 @@ export function useInvoiceEditor({ onSaved } = {}) {
     handlingFeeTouched = true
   }
 
-  function autofillHandlingFee() {
+  const suggestedHandlingFee = computed(() => {
     const rate = handlingFeeRate(form.internal_payment_method)
-    if (rate == null) return // 报关/未选：不自动算，保留用户手填值
-    form.surcharge_amount = computeHandlingFee(rate, formBaseAmount.value)
+    return rate == null ? null : computeHandlingFee(rate, formBaseAmount.value)
+  })
+
+  function recalculateHandlingFee() {
+    if (suggestedHandlingFee.value == null) return
+    handlingFeeTouched = false
+    form.surcharge_amount = suggestedHandlingFee.value
   }
 
   // 换付款方式时修正快递渠道（同承运商自动切换，对不上清空），提示挂在渠道下方；
@@ -307,14 +312,13 @@ export function useInvoiceEditor({ onSaved } = {}) {
       form.surcharge_amount = 0
       return
     }
-    autofillHandlingFee()
+    recalculateHandlingFee()
   }
 
-  // 基数变化：已选比例方式且用户未手改时跟随重算。编辑既有单 touched 起始为 true，
-  // 不会在加载明细时冲掉存值；新建时付款方式为空、autofill 天然是 no-op
+  // 手填金额保留，按费率计费的订单随商品、包装和运费一起更新。
   watch(formBaseAmount, () => {
     if (handlingFeeTouched) return
-    autofillHandlingFee()
+    recalculateHandlingFee()
   })
 
   watch([formTotal, () => form.internal_received], ([total, prepayment]) => {
@@ -383,8 +387,6 @@ export function useInvoiceEditor({ onSaved } = {}) {
     okkiFlagsTouched.newDeal = Boolean(data.id)
     okkiFlagsTouched.freeShipping = Boolean(data.id)
     okkiFlagsTouched.firstReturn = Boolean(data.id)
-    // 编辑既有单：手续费视为已确认，加载明细/基数变化不自动覆盖存值
-    handlingFeeTouched = Boolean(data.id)
     lastOrderDate.value = ''
     Object.assign(form, emptyInvoiceForm(), {
       ...data,
@@ -407,6 +409,11 @@ export function useInvoiceEditor({ onSaved } = {}) {
       item_groups_version: data.item_groups_version || null,
     })
     itemGroups.resetItemGroups(data)
+    // 旧单只存金额。加载完整明细后按分比较，保留与当时报价费率不符的约定金额。
+    handlingFeeTouched = Boolean(data.id) && (
+      suggestedHandlingFee.value == null ||
+      toMoneyCents(form.surcharge_amount) !== toMoneyCents(suggestedHandlingFee.value)
+    )
     savedSignature.value = currentSignature()
     savedBusinessSignature.value = currentBusinessSignature()
     loadedOrderSignature.value = invoiceOrderSignature(currentPayload())
@@ -1155,6 +1162,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     markCustomerGradeTouched,
     markOkkiFlagTouched,
     onPaymentMethodChange,
+    recalculateHandlingFee,
     markHandlingFeeTouched,
   }
 }

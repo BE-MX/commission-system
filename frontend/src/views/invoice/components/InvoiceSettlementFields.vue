@@ -42,7 +42,7 @@
           controls-position="right"
           @change="onHandlingFeeInput"
         />
-        <div v-if="handlingHint" class="handling-hint">{{ handlingHint }}</div>
+        <InvoiceHandlingFeeHint :form="form" :total="total" :on-recalculate="onRecalculateHandlingFee" />
       </el-form-item>
       <!-- 总折扣：默认=产品行折扣合计；手改后均分到产品行，余数计入最后一行 -->
       <el-form-item label="折扣" class="c2">
@@ -60,10 +60,9 @@
 </template>
 
 <script setup>
-import { formatMoney } from '../../../utils/money.js'
-
+import InvoiceHandlingFeeHint from './InvoiceHandlingFeeHint.vue'
 import { computed, watch } from 'vue'
-import { computeHandlingFee, handlingFeeRate, alibabaOrderRequired, paymentMethodGroupsFor } from '../composables/invoiceSettlement'
+import { alibabaOrderRequired, paymentMethodGroupsFor } from '../composables/invoiceSettlement'
 
 const props = defineProps({
   form: { type: Object, required: true },
@@ -74,6 +73,7 @@ const props = defineProps({
   money: { type: Function, required: true },
   onPaymentMethodChange: { type: Function, default: () => {} },
   onHandlingFeeInput: { type: Function, default: () => {} },
+  onRecalculateHandlingFee: { type: Function, required: true },
   onTotalDiscountChange: { type: Function, default: () => {} },
 })
 
@@ -81,22 +81,6 @@ const props = defineProps({
 const paymentGroups = computed(() => paymentMethodGroupsFor(props.form.express_channel))
 
 watch(() => props.form.order_type, type => { if (type === 'presale') props.form.shipping_fee = 0 }, { immediate: true })
-
-// 手续费提示：比例方式显示自动费率；当前值与费率×基数不符时（如编辑单改了产品、
-// 或手动改过）给出重算引导；报关提示手填，其余留空
-const handlingHint = computed(() => {
-  const method = props.form.internal_payment_method
-  const rate = handlingFeeRate(method)
-  if (rate == null) return method && method.includes('报关') ? '报关：手动填写手续费' : ''
-  const pct = `${(rate * 100).toFixed(0)}%`
-  // 基数（订单总金额，不含手续费）= 应付合计(total) − 手续费
-  const base = Number(props.total || 0) - Number(props.form.surcharge_amount || 0)
-  const expected = computeHandlingFee(rate, base)
-  if (Math.abs(Number(props.form.surcharge_amount || 0) - expected) > 0.005) {
-    return `与 ${pct}（应 ${formatMoney(expected)}）不符，重选付款方式可重算`
-  }
-  return `${method} ${pct} 自动（可手改）`
-})
 </script>
 
 <style scoped>
@@ -114,6 +98,5 @@ const handlingHint = computed(() => {
 .readonly-value { display: flex; align-items: center; min-height: 36px; color: var(--text-primary); font-weight: 500; font-variant-numeric: tabular-nums; }
 .readonly-note { margin: 0 0 12px; color: var(--text-muted); font-size: 11px; line-height: 1.4; }
 .field-hint { margin-top: 2px; color: var(--text-muted); font-size: 11px; line-height: 1.3; }
-.handling-hint { margin-top: 2px; color: var(--text-muted); font-size: 11px; line-height: 1.3; }
 @media (max-width: 560px) { .sgrid { grid-template-columns: 1fr; } }
 </style>
