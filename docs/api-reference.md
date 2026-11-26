@@ -1050,7 +1050,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
     - `POST /production/orders` — 从购物车批量生成生产订单（`cart_ids` + `expected_delivery_date` + `is_urgent`，订单号 `PO{YYYYMMDD}-{NNN}`）
     - `GET /production/orders` — 订单列表（分页+搜索，含明细聚合）
     - `GET /production/orders/{order_id}` — 订单详情，含全部明细、明细可编辑标记 `items_editable` 和关联半成品订单标记 `has_linked_semifinished_order`。
-    - `PUT /production/orders/{order_id}` — 更新批次号、备注和状态。已提交的旧流程订单可同时传 `item_updates`（`item_id`、`expected_order_qty`、`order_qty`、可选 `product_id`）和 `new_items`（`product_id`、`order_qty`）。型号按有效产品 ID 选择，同一产品不能重复追加。更换型号会为该行生成新工序卡身份，已报工、入库或有待回写到货预占的明细不能更换型号。订单与明细同事务保存。
+    - `PUT /production/orders/{order_id}` — 更新批次号、备注和状态。已提交的旧流程订单可同时传 `item_updates`（`item_id`、`expected_order_qty`、`order_qty`、可选 `product_id`）、`new_items`（`product_id`、`order_qty`）和 `deleted_items`（`item_id`、`expected_order_qty`）。删除还需 `production:admin`，已报工、入库或有待回写到货预占的明细不能删除。型号按有效产品 ID 选择，同一产品不能重复追加。更换型号会为该行生成新工序卡身份，已报工、入库或有待回写到货预占的明细不能更换型号。订单与明细同事务保存。
     - `DELETE /production/orders/{order_id}` — 软删订单（级联软删明细）
     - `GET /production/order-items` — 明细列表（独立查询，支持按订单/产品/状态筛选）
     - `PUT /production/order-items/{item_id}` — 更新明细（数量/备注/加急/交期）
@@ -2983,6 +2983,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | GET | `/tasks` | 跟进任务列表：`scope=mine/visible`、`status`、`task_type`、`customer_id`、`due=today/upcoming/all`，分页。 |
 | GET | `/tasks/summary` | 任务计数卡（按类型），工作台首屏用。 |
 | POST | `/tasks/{task_id}/snooze` | 顺延任务到期日（`days`），记一次顺延次数。 |
+| DELETE | `/tasks/{task_id}` | 有跟进写权限的待办操作人可移除约定跟进、收货回访、异常或意见待办。任务记为已取消，保留关联的业务记录；行动待办通过下方带理由的取消接口移除。 |
 | POST | `/tasks/{task_id}/receipt-ok` | 收货回访任务一键「已联系，一切正常」，直接生成一条确认记录，本次结果为“有效沟通”；该字典值停用时提示使用「记跟进」选择当前可用结果，任务不关闭；`request_id` 幂等。 |
 | GET | `/items` | 异常/意见条目看板：`status`、`kind`（issue/suggestion）、`category`、`customer_id`、`mine`，分页。 |
 | POST | `/items/{item_id}/resolve` | 处理条目（关闭时校验操作人是当前处理人）。 |

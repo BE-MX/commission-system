@@ -10,7 +10,7 @@ from app.production.models import OrderProductProcessProgress
 from app.production.report_service import init_order_product_progress
 from app.stock.models import ProductionAuditLog, ProductionOrderItem
 from app.stock.production_order_service import _require_no_pending_inbound, _write_audit, validate_order_qty
-from app.stock.schemas import OrderItemAddition, OrderItemChange
+from app.stock.schemas import OrderItemAddition, OrderItemChange, OrderItemEditTarget
 
 
 def _product_snapshots(db, product_ids):
@@ -37,9 +37,9 @@ def _product_snapshots(db, product_ids):
     return snapshots
 
 
-def _check_model_replacement(db, item):
+def _require_unstarted_item(db, item, operation):
     if item.received_qty:
-        raise ValueError(f"「{item.product_name}」已有入库记录，不能更换型号")
+        raise ValueError(f"「{item.product_name}」已有入库记录，不能{operation}")
     # 旧入口允许更正入库数量。更正为零后也不能重用已经入库过的产品身份。
     receipts = db.execute(select(ProductionAuditLog.action, ProductionAuditLog.snapshot).where(
         ProductionAuditLog.order_id == item.order_id, ProductionAuditLog.item_id == item.id,
@@ -47,14 +47,30 @@ def _check_model_replacement(db, item):
     ).with_for_update()).all()
     if any(action == "factory_inbound_received" or (snapshot or {}).get("old_received")
            or (snapshot or {}).get("new_received") for action, snapshot in receipts):
-        raise ValueError(f"「{item.product_name}」已有入库记录，不能更换型号")
+        raise ValueError(f"「{item.product_name}」已有入库记录，不能{operation}")
     _require_no_pending_inbound(db, [item.id])
     reported = db.scalar(select(OrderProductProcessProgress.id).where(
         OrderProductProcessProgress.order_product_id == item.id,
         OrderProductProcessProgress.status == 1,
     ).limit(1).with_for_update())
     if reported is not None:
-        raise ValueError(f"「{item.product_name}」已有工序报工，不能更换型号")
+        raise ValueError(f"「{item.product_name}」已有工序报工，不能{operation}")
+
+
+def _get_editable_item(by_id, target):
+    item = by_id.get(target.item_id)
+    if item is None or item.order_qty != target.expected_order_qty:
+        raise ValueError("生产明细已变化，请重新打开订单后再编辑")
+    if item.status != 0 or item.local_sku_id is not None:
+        raise ValueError("只能修改已提交的旧流程生产明细")
+    return item
+
+
+def _delete_unstarted_item(db, item):
+    db.execute(delete(OrderProductProcessProgress).where(
+        OrderProductProcessProgress.order_product_id == item.id,
+    ))
+    db.delete(item)
 
 
 def _common_value(items, field, default):
@@ -72,6 +88,7 @@ def apply_item_changes(
     order_id: int,
     item_updates: list[OrderItemChange],
     new_items: list[OrderItemAddition],
+    deleted_items: list[OrderItemEditTarget],
     operator_id: int,
     operator_name: str,
 ) -> None:
@@ -83,17 +100,21 @@ def apply_item_changes(
     product_counts = Counter(item.product_id for item in items)
     replacements = []
     quantity_updates = []
-    if len({change.item_id for change in item_updates}) != len(item_updates):
-        raise ValueError("同一条生产明细只能修改一次")
+    targets = [change.item_id for change in item_updates + deleted_items]
+    if len(set(targets)) != len(targets):
+        raise ValueError("同一条生产明细只能修改或删除一次")
+
+    removals = []
+    for deletion in deleted_items:
+        item = _get_editable_item(by_id, deletion)
+        _require_unstarted_item(db, item, "删除")
+        product_counts[item.product_id] -= 1
+        removals.append(item)
 
     for change in item_updates:
-        item = by_id.get(change.item_id)
-        if item is None or item.order_qty != change.expected_order_qty:
-            raise ValueError("生产明细已变化，请重新打开订单后再编辑")
-        if item.status != 0 or item.local_sku_id is not None:
-            raise ValueError("只能修改已提交的旧流程生产明细")
+        item = _get_editable_item(by_id, change)
         if change.product_id is not None and change.product_id != item.product_id:
-            _check_model_replacement(db, item)
+            _require_unstarted_item(db, item, "更换型号")
             product_counts[item.product_id] -= 1
             replacements.append((item, change))
         elif change.order_qty != item.order_qty:
@@ -130,13 +151,14 @@ def apply_item_changes(
         additions.append((old, new))
     db.flush()
 
+    for item in removals:
+        audit(item, "delete", {"before": _snapshot(item)})
+        _delete_unstarted_item(db, item)
+
     for old, new in additions:
         if old is not None:
             # 二维码以明细 ID 签名。换型号须分配新 ID，让旧纸卡无法对新型号报工。
-            db.execute(delete(OrderProductProcessProgress).where(
-                OrderProductProcessProgress.order_product_id == old.id,
-            ))
-            db.delete(old)
+            _delete_unstarted_item(db, old)
             audit(new, "replace_product", {"previous_item_id": old.id,
                                            "before": _snapshot(old), "after": _snapshot(new)})
         else:

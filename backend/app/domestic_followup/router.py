@@ -282,6 +282,14 @@ def complete_action(task_id: int, payload: ActionCompleteIn, db: Session = Depen
     return ok(task_service.serialize_tasks(db, [task], beijing_today())[0], message="行动待办已完成")
 
 
+@router.delete("/tasks/{task_id}")
+def delete_task(task_id: int, db: Session = Depends(get_db), user=Depends(_require_write)):
+    with _errors(db):
+        task = task_service.delete_task(db, user, task_id)
+        db.commit()
+    return ok({"id": task.id, "status": task.status}, message="待办已删除")
+
+
 @router.put("/tasks/{task_id}")
 def update_action(task_id: int, payload: ActionUpdateIn, db: Session = Depends(get_db), user=Depends(_require_write)):
     with _errors(db):

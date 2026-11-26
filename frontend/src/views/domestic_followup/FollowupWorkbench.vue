@@ -40,9 +40,9 @@
           <ListPageStatus :error="w.error.value" :has-data="w.loaded.value" :loading="w.loading.value" :paged="false" @retry="w.loadTasks" />
           <div v-loading="w.loading.value" class="wb-cards">
             <FollowupTaskCard v-for="t in w.filtered.value.due" :key="t.id" :task="t" :on-receipt-ok="w.receiptOk"
-                              @record="recordFromTask" @prep="prepareFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" @changed="afterEdit" />
+                              @record="recordFromTask" @prep="prepareFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" @action="openTaskAction" />
             <el-empty v-if="!w.loading.value && !w.error.value && !w.filtered.value.due.length"
-                      class="wb-empty" :description="w.typeFilter.value ? '当前分类暂无待办' : '今天的跟进都完成了'">
+                      class="wb-empty" :description="w.typeFilter.value ? '当前分类暂无待办' : '今天没有待处理的跟进'">
               <GlassButton v-if="w.typeFilter.value" variant="outline" @click="w.typeFilter.value = ''">查看全部待办</GlassButton>
             </el-empty>
           </div>
@@ -50,7 +50,7 @@
             <el-collapse-item name="upcoming" :title="`即将到期（${w.filtered.value.upcoming.length}）`">
               <div class="wb-cards">
                 <FollowupTaskCard v-for="t in w.filtered.value.upcoming" :key="t.id" :task="t" :on-receipt-ok="w.receiptOk"
-                                  @record="recordFromTask" @prep="prepareFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" @changed="afterEdit" />
+                                  @record="recordFromTask" @prep="prepareFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" @action="openTaskAction" />
               </div>
             </el-collapse-item>
           </el-collapse>
@@ -101,6 +101,7 @@
       </el-tabs>
     </div>
 
+    <FollowupActionDialogs ref="actionDialogs" @saved="afterEdit" />
     <FollowupComposer :composer="composer" />
     <FollowupPrepDrawer :controller="prep" />
     <CustomerTimelineDrawer ref="timelineRef" @record="(customer, historical_only) => composer.open({ customer, historical_only })"
@@ -136,6 +137,7 @@ import FollowupConfigDialog from './components/FollowupConfigDialog.vue'
 import FollowupComposer from './components/FollowupComposer.vue'
 import FollowupPrepDrawer from './components/FollowupPrepDrawer.vue'
 import FollowupTaskCard from './components/FollowupTaskCard.vue'
+import FollowupActionDialogs from './components/FollowupActionDialogs.vue'
 import FollowupOverview from './components/FollowupOverview.vue'
 import CustomerOverview from './components/CustomerOverview.vue'
 import QuickProspectDialog from './components/QuickProspectDialog.vue'
@@ -177,6 +179,10 @@ const statsRef = ref(null)
 const editorRef = ref(null), historyRef = ref(null), issuesRef = ref(null), myRecordDetail = ref(null)
 const potentialOnly = ref(false)
 const upcomingOpen = ref([])  // 「即将到期」默认折叠；点计数卡展开/收起
+const actionDialogs = ref(null)
+function openTaskAction(mode, task) {
+  actionDialogs.value.open(mode, task)
+}
 const w = useFollowupWorkbench(potentialOnly)
 const composer = useFollowupComposer({
   onSaved: () => {

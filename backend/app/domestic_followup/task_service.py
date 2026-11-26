@@ -21,6 +21,47 @@ logger = logging.getLogger("commission")
 Task = DomesticFollowupTask
 CLOSABLE_BY_FOLLOWUP = ("plan", "receipt")
 WRITE_PERMISSION = "domestic_followup:write"
+CLOSE_TASK_DELETED = "待办已删除"
+
+
+def _locked_task_actor(db: Session, current_user: dict, task_id: int) -> Task:
+    from app.domestic_followup import collaboration_access
+
+    customer_id = db.scalar(select(Task.customer_id).where(Task.id == task_id))
+    if customer_id is not None:
+        collaboration_access.lock_customer(db, customer_id)
+    task = db.query(Task).filter(Task.id == task_id).populate_existing().with_for_update().first()
+    if task is None:
+        raise LookupError("待办不存在")
+    ensure_task_actor(db, current_user, task, lock=True)
+    return task
+
+
+def _sync_development_plan(db: Session, task: Task) -> None:
+    if task.task_type == "plan" and task.purpose == "development":
+        from app.domestic_followup import collaboration_access, record_access
+
+        responsibility = collaboration_access.responsibility_for(db, task.customer_id, lock=True)
+        if record_access.sync_development_date(db, responsibility):
+            responsibility.version += 1
+        db.flush()
+
+
+def delete_task(db: Session, current_user: dict, task_id: int) -> Task:
+    """移出未完成待办，保留来源、唯一键及关闭审计；行动须另行填写取消理由。"""
+    task = _locked_task_actor(db, current_user, task_id)
+    if task.task_type == "action":
+        raise ValueError("行动待办请填写取消理由后取消")
+    if task.task_type not in ("plan", "receipt", "issue", "suggestion"):
+        raise ValueError("该类型待办不能删除")
+    if task.status == "cancelled" and task.closed_reason == CLOSE_TASK_DELETED:
+        return task
+    if task.status != "todo":
+        raise ValueError("该待办已结束")
+    close_task(task, "cancelled", CLOSE_TASK_DELETED, user_id=visibility.uid(current_user))
+    db.flush()
+    _sync_development_plan(db, task)
+    return task
 
 
 def upsert_task(db: Session, *, source_key: str, task_type: str, customer_id: int, assignee_user_id: int,
@@ -169,6 +210,7 @@ def close_tasks_for_followup(db: Session, current_user: dict, customer_id: int, 
         db.query(Task)
         .filter(Task.id.in_(ids), Task.customer_id == customer_id, Task.status == "todo",
                 Task.task_type.in_(CLOSABLE_BY_FOLLOWUP))
+        .populate_existing()
         .with_for_update()
         .all()
     )
@@ -203,27 +245,13 @@ def ensure_task_actor(db: Session, current_user: dict, task: Task, *, lock: bool
 def snooze(db: Session, current_user: dict, task_id: int, *, days: int = 1, today: date | None = None) -> Task:
     if not 1 <= days <= 7:
         raise ValueError("顺延天数需在 1~7 天")
-    from app.domestic_followup.collaboration_access import lock_customer
-
-    customer_id = db.scalar(select(Task.customer_id).where(Task.id == task_id))
-    if customer_id is not None:
-        lock_customer(db, customer_id)
-    task = db.query(Task).filter(Task.id == task_id).populate_existing().with_for_update().first()
-    if task is None:
-        raise LookupError("待办不存在")
-    ensure_task_actor(db, current_user, task, lock=True)
+    task = _locked_task_actor(db, current_user, task_id)
     if task.status != "todo":
         raise ValueError("该待办已结束")
     task.due_date = max(task.due_date, today or beijing_today()) + timedelta(days=days)
     task.snooze_count += 1
     db.flush()
-    if task.task_type == "plan" and task.purpose == "development":
-        from app.domestic_followup.collaboration_access import responsibility_for
-        from app.domestic_followup.record_access import sync_development_date
-
-        responsibility = responsibility_for(db, task.customer_id, lock=True)
-        if sync_development_date(db, responsibility):
-            responsibility.version += 1
+    _sync_development_plan(db, task)
     return task
 
 
@@ -257,7 +285,8 @@ def transfer_item(db: Session, current_user: dict, item_id: int, to_user_id: int
     previous = item.handler_user_id
     item.handler_user_id = target.id
     item.status = "handling"
-    for task in db.query(Task).filter(Task.source_item_id == item.id, Task.status == "todo").all():
+    for task in (db.query(Task).filter(Task.source_item_id == item.id, Task.status == "todo")
+                 .populate_existing().with_for_update().all()):
         task.assignee_user_id = target.id
         task.payload = {**(task.payload or {}), "transferred_from": previous, "transfer_note": (note or "")[:200]}
     db.flush()
@@ -276,7 +305,8 @@ def resolve_item(db: Session, current_user: dict, item_id: int, *, status: str, 
     item.resolution = (resolution or "").strip()[:500] or None
     item.resolved_at = beijing_now()
     item.resolved_by_followup_id = followup_id
-    for task in db.query(Task).filter(Task.source_item_id == item.id, Task.status == "todo").all():
+    for task in (db.query(Task).filter(Task.source_item_id == item.id, Task.status == "todo")
+                 .populate_existing().with_for_update().all()):
         close_task(task, "done", CLOSE_ITEM_RESOLVED, followup_id=followup_id, user_id=visibility.uid(current_user))
     db.flush()
     return item

@@ -20,7 +20,7 @@ from sqlalchemy import Date, DateTime, text, select
 from sqlalchemy.orm import Session
 
 from app.stock.models import ProductionOrder, ProductionOrderItem, ProductionAuditLog
-from app.stock.schemas import OrderItemAddition, OrderItemChange
+from app.stock.schemas import OrderItemAddition, OrderItemChange, OrderItemEditTarget
 
 logger = logging.getLogger("stock.production_order")
 
@@ -382,6 +382,7 @@ def update_order(
     *,
     item_updates: list[OrderItemChange] | None = None,
     new_items: list[OrderItemAddition] | None = None,
+    deleted_items: list[OrderItemEditTarget] | None = None,
 ) -> bool:
     """编辑生产订单及明细，支持级联同步状态。"""
     order = db.execute(select(ProductionOrder.__table__).where(
@@ -417,12 +418,14 @@ def update_order(
         updates.append("status = :status")
         params["status"] = status
 
-    if item_updates or new_items:
+    if item_updates or new_items or deleted_items:
         from app.stock.production_order_edit_service import apply_item_changes
 
         if old_status != 0 or order["transaction_mode"] != "legacy":
             raise ValueError("只有已提交的旧流程生产订单可以编辑产品明细")
-        apply_item_changes(db, order_id, item_updates or [], new_items or [], operator_id, operator_name)
+        apply_item_changes(
+            db, order_id, item_updates or [], new_items or [], deleted_items or [], operator_id, operator_name,
+        )
     elif not updates:
         return True
 

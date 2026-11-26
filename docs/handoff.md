@@ -1,3 +1,7 @@
+## 2026-11-26 客户跟进待办删除（Codex，本地待发布）
+
+- `codex/followup-todo-delete` 在「待办」的已到期和即将到期卡片上增加删除。确认后从列表和待办计数中移除，保留来源、处理人及关闭时间。行动待办仍需填写理由。无需数据库迁移。
+
 ## 2026-11-25 内贸跟进录音转写与 AI 整理（Accio，未提交未部署）
 
 - 分支 `accio/followup-recording`（worktree `commission-system-accio-followup-recording`），设计见会话交付的《方舟-跟进录音转写与AI整理-功能设计》。录入跟进与已确认记录详情可上传录音（≤200MB、每条 ≤3 段），录音写共享 COS `domestic/audio/`；写不进 COS 直接报错，不落本地。

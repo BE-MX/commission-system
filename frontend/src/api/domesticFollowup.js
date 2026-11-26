@@ -83,6 +83,7 @@ export const followupApi = {
   confirmDraft: (id, body) => post(`/drafts/${id}/confirm`, body),
   discardDraft: id => client.delete(`/drafts/${id}`, quiet).then(data),
   tasks: params => get('/tasks', params),
+  deleteTask: id => client.delete(`/tasks/${id}`, quiet).then(data),
   summary: params => get('/tasks/summary', params),
   snooze: (id, days) => post(`/tasks/${id}/snooze`, { days }),
   completeAction: (id, body) => post(`/tasks/${id}/complete`, body),

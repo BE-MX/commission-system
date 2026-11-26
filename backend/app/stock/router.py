@@ -566,7 +566,9 @@ def update_production_order(
     db: Session = Depends(get_db),
     user: dict = Depends(require_permission("production:write")),
 ):
-    """编辑生产订单、修改或追加已提交订单的产品明细"""
+    """编辑生产订单及已提交订单的产品明细"""
+    if req.deleted_items:
+        require_permission("production:admin")(user)
     user_id = _get_user_id(user)
     try:
         ok = service.update_order(
@@ -578,6 +580,7 @@ def update_production_order(
             operator_name=user.get("username", ""),
             item_updates=req.item_updates,
             new_items=req.new_items,
+            deleted_items=req.deleted_items,
         )
     except ValueError as e:
         db.rollback()
