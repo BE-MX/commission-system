@@ -14,7 +14,7 @@
           {{ item.label }} <small v-if="item.count != null">{{ item.count }}</small>
         </button>
       </div>
-      <template v-if="view !== 'unlinked'">
+      <template v-if="isBoard">
         <el-input v-model="board.keyword.value" clearable placeholder="搜索客户、联系人或国家" aria-label="搜索本人私海" :prefix-icon="Search" />
         <div class="controls">
           <template v-if="view === 'all'">
@@ -43,7 +43,7 @@
       </template>
     </section>
 
-    <section v-if="view !== 'unlinked'" class="board" aria-live="polite">
+    <section v-if="isBoard" class="board" aria-live="polite">
       <p v-if="board.loading.value" class="muted center" role="status">正在读取我的私海…</p>
       <div v-else-if="board.error.value" class="empty-state"><h3>暂时无法读取</h3><p>{{ board.error.value }}</p><el-button @click="board.load">重试</el-button></div>
       <div v-else-if="!board.lanes.value.length" class="empty-state">
@@ -54,7 +54,8 @@
       <BoardLane v-for="lane in board.lanes.value" v-else :key="dimension + ':' + lane.key" :lane="lane" :dimension="dimension" :sub-dimension="view === 'all' ? board.subBy.value : ''" :open="board.isLaneOpen(lane.key)" :selected-id="desk.selected.value" :options="board.options.value" @toggle="board.toggleLane" @open="openCustomer" />
     </section>
 
-    <UnlinkedConversations v-else :desk="desk" />
+    <UnlinkedConversations v-else-if="view === 'unlinked'" :desk="desk" />
+    <UnlinkedLeads v-else />
 
     <CustomerDrawer :desk="desk" :open="drawerOpen" @close="closeDrawer" @copy="dialogs?.copyDraft()" @whatsapp="dialogs?.openWa()" />
     <DetailDrawer v-model="desk.evidenceOpen.value" :title="desk.evidence.value ? `${timelineType(desk.evidence.value)}详情` : '记录详情'">
@@ -81,6 +82,7 @@ import CustomerDrawer from './CustomerDrawer.vue'
 import DeskDialogs from './DeskDialogs.vue'
 import TimelineEventDetails from './TimelineEventDetails.vue'
 import UnlinkedConversations from './UnlinkedConversations.vue'
+import UnlinkedLeads from './UnlinkedLeads.vue'
 
 const route = useRoute()
 const board = useBoard()
@@ -91,7 +93,9 @@ const tabs = computed(() => [
   { key: 'todo', label: '今日建议', count: board.todoCount.value },
   { key: 'all', label: '全部客户', count: null },
   { key: 'unlinked', label: '未关联会话', count: null },
+  { key: 'leads', label: '未绑定线索', count: null },
 ])
+const isBoard = computed(() => view.value === 'todo' || view.value === 'all')
 const tagLabel = code => board.cards.value.flatMap(c => c.tags || []).find(t => t.code === code)?.label || code
 
 function switchView(key) {
@@ -102,7 +106,7 @@ function switchView(key) {
 function openCustomer(card) { drawerOpen.value = true; void desk.select(card, false) }
 function closeDrawer() { drawerOpen.value = false; desk.closeDetail() }
 // The legacy page opened a customer from ?company_id=; keep deep links working.
-watch(() => desk.selected.value, value => { if (value && view.value !== 'unlinked') drawerOpen.value = true })
+watch(() => desk.selected.value, value => { if (value && isBoard.value) drawerOpen.value = true })
 onMounted(async () => {
   await Promise.all([board.load(), desk.init()])
 })

@@ -67,6 +67,12 @@
 
 JWT 管理入口 POST `/api/alibaba-feed/sources`、PATCH `/api/alibaba-feed/sources/{source_uid}` 实时要求 `alibaba_feed:admin`，后者必需 `expected_version`。来源默认关闭，P1 不放行私海、CRM 或模型。字段、恢复、错误和验收见[实现说明](requirements/2026-11-05-alibaba-feed-integration/implementation.md)；本次未部署，不代表线上已开放。
 
+## 私海助理 B 轨（TM 未绑定线索）
+
+阿里来源管理 `POST /api/alibaba-feed/pilot/activation` 接收可选的 `unlinked_ai_allowed`。已启用的试点以当前 `expected_version` 更新，授权时还需 `consent_confirmed: true`。撤权或停用试点立即阻止 B 轨读取和运行。现有 A 轨来源授权独立。
+
+`/api/client-desk/unlinked` 读取使用 GET `/threads?view=active|prospect` 和 `/weekly-reviews`。写入使用 POST `/threads/{id}/handled`、`ignore`、`restore`、`prospect`、`bind`、`analyze` 及 `/weekly-reviews/generate`。仅试点本人，实时校验业务员和来源。写入要求当前读写权限，跟进需日期和说明，绑定复用 TM 关联及私海校验。生成周报返回 `id`、`week_start_date`、`status`，报告正文从列表读取。
+
 ## 私海助理（2026-11-04，本地实现，默认关闭）
 
 入口 `/api/client-desk`，普通读写接口使用 `client_desk:read/write`，同时校验试点名单、本人 OKKI 私海和当前来源授权。`read_all` 仅预留，不扩展查询范围。

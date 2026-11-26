@@ -49,6 +49,12 @@
           <GlassButton v-else :disabled="locked" :loading="busy === 'activation'" @click="setEnabled(false)">停用试点</GlassButton>
         </div>
       </el-form>
+      <div v-if="pilot.enabled" class="pilot-actions">
+        <span>未绑定线索 AI 分析 {{ pilot.unlinked_ai_allowed ? '已授权' : '未授权' }}</span>
+        <GlassButton :disabled="locked" :loading="busy === 'unlinked-ai'" @click="setUnlinkedAi(!pilot.unlinked_ai_allowed)">
+          {{ pilot.unlinked_ai_allowed ? '撤回授权' : '授权分析' }}
+        </GlassButton>
+      </div>
     </template>
     <el-dialog :model-value="!!issuedToken" title="AW 专用凭据" width="480px" @update:model-value="visible => { if (!visible) issuedToken = '' }" destroy-on-close>
       <p>Token 仅显示一次。请将它保存到 AW 的凭据环境变量。</p>
@@ -191,6 +197,31 @@ async function setEnabled(enabled) {
     if (current !== authority) return
     applyState(data)
     msgSuccessText(enabled ? '试点已启用' : '试点已停用')
+  } catch (failure) {
+    if (current === authority && !isFeedbackCancelled(failure)) reportFailure(failure)
+  } finally {
+    if (current === authority) busy.value = ''
+  }
+}
+
+async function setUnlinkedAi(allowed) {
+  if (locked.value || !pilot.value?.enabled || !auth.hasPermission('alibaba_feed:admin')) return
+  const current = authority
+  const version = pilot.value.version
+  busy.value = 'unlinked-ai'
+  error.value = ''
+  try {
+    if (allowed) {
+      await confirmAction('确认该店铺允许将未绑定线索的近期有效消息交给方舟配置的模型分析。',
+        '授权未绑定线索分析', { confirmButtonText: '确认授权', cancelButtonText: '取消', type: 'warning' })
+    }
+    if (current !== authority) return
+    const data = await api.activatePilot({
+      enabled: true, expected_version: version, consent_confirmed: allowed, unlinked_ai_allowed: allowed,
+    })
+    if (current !== authority) return
+    applyState(data)
+    msgSuccessText(allowed ? '已授权未绑定线索分析' : '已撤回未绑定线索分析授权')
   } catch (failure) {
     if (current === authority && !isFeedbackCancelled(failure)) reportFailure(failure)
   } finally {

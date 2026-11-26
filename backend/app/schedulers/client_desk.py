@@ -54,3 +54,32 @@ async def report_job():
                 db.rollback()
                 logger.warning("Morning report failed for user %s: %s", user, type(exc).__name__)
                 print(f"[CLIENT_DESK] Morning report failed for user {user}: {type(exc).__name__}", flush=True)
+
+
+def _unlinked_enabled():
+    settings = get_settings()
+    return settings.CLIENT_DESK_UNLINKED_ENABLED and settings.CLIENT_DESK_UNLINKED_TM_ENABLED
+
+
+def unlinked_scan_job():
+    if not _unlinked_enabled():
+        return
+    from app.client_desk.unlinked.worker import scan_for_pilot
+
+    scan_for_pilot(SessionLocal, get_settings().CLIENT_DESK_UNLINKED_DAILY_QUOTA)
+
+
+def unlinked_worker_job():
+    if not _unlinked_enabled():
+        return
+    from app.client_desk.unlinked.worker import drain_queue
+
+    drain_queue(SessionLocal, limit=10)
+
+
+def unlinked_weekly_job():
+    if not _unlinked_enabled() or not get_settings().CLIENT_DESK_UNLINKED_WEEKLY_REPORT_ENABLED:
+        return
+    from app.client_desk.unlinked.worker import weekly_for_pilot
+
+    weekly_for_pilot(SessionLocal)

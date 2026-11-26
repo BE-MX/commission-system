@@ -72,6 +72,8 @@ def state_dto(row):
                 "updated_by",
                 "last_touch_at",
                 "last_touch_channel",
+                "recheck_date",
+                "recheck_condition",
             )
         }
         if row
@@ -80,6 +82,8 @@ def state_dto(row):
             "next_followup_date": None,
             "next_followup_remark": None,
             "manual_version": 0,
+            "recheck_date": None,
+            "recheck_condition": None,
         }
     )
 

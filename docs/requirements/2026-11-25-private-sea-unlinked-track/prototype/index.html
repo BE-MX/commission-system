@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>未绑定线索 · 私海助理 B 轨原型（示例数据）</title>
+<style>
+  :root { --ink:#1d2430; --mute:#6b7485; --line:#e4e7ee; --bg:#f6f7fa; --card:#fff; --brand:#2456d6; --warn:#b85c00; --ok:#1d7a4a; --tm:#7a3fd6; --wa:#1f8f5a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color:var(--ink); background:var(--bg); }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:14px 24px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; }
+  .tag { font-size:12px; color:var(--mute); background:var(--bg); border:1px solid var(--line); border-radius:999px; padding:2px 10px; }
+  .tabs { display:flex; gap:6px; margin-left:auto; }
+  .tab { border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 12px; cursor:pointer; color:var(--mute); }
+  .tab.on { color:#fff; background:var(--brand); border-color:var(--brand); }
+  .tab .n { margin-left:4px; font-size:12px; opacity:.85; }
+  main { padding:20px 24px; max-width:1100px; margin:0 auto; }
+  .bar { display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+  .chip { border:1px solid var(--line); background:#fff; border-radius:999px; padding:3px 12px; cursor:pointer; font-size:13px; color:var(--mute); }
+  .chip.on { border-color:var(--brand); color:var(--brand); background:#eef3ff; }
+  .split { font-size:12px; color:var(--mute); margin-left:auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+  .row1 { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .name { font-weight:600; font-size:15px; }
+  .badge { font-size:12px; border-radius:6px; padding:1px 7px; color:#fff; }
+  .b-tm { background:var(--tm); } .b-wa { background:var(--wa); }
+  .clock { font-size:12px; color:var(--mute); border:1px dashed var(--line); border-radius:6px; padding:0 6px; }
+  .clock.off { color:var(--warn); border-color:#f3d4b0; }
+  .muted { color:var(--mute); font-size:12px; }
+  .label { font-size:12px; color:var(--mute); margin-top:8px; }
+  .body { margin-top:2px; }
+  .match { margin-top:10px; background:#eef8f2; border:1px solid #bfe6d0; border-radius:8px; padding:8px 10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .match.done { background:#f2f4f8; border-color:var(--line); color:var(--mute); }
+  .draft { margin-top:10px; background:#fafbfd; border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px; white-space:pre-wrap; }
+  .warn { color:var(--warn); font-size:12px; }
+  .actions { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  button { font:inherit; border:1px solid var(--line); background:#fff; border-radius:8px; padding:5px 11px; cursor:pointer; color:var(--ink); }
+  button.primary { background:var(--brand); border-color:var(--brand); color:#fff; }
+  button.ghost { color:var(--mute); }
+  .followup { margin-top:10px; display:none; gap:8px; align-items:center; flex-wrap:wrap; }
+  .followup.show { display:flex; }
+  .followup input, .followup textarea { font:inherit; border:1px solid var(--line); border-radius:6px; padding:4px 8px; }
+  .followup textarea { width:320px; min-height:34px; }
+  .empty { text-align:center; color:var(--mute); padding:40px 0; }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#1d2430; color:#fff; padding:8px 14px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .toast.show { opacity:1; }
+  .week h2 { font-size:14px; margin:18px 0 8px; }
+  .week .item { background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px; display:flex; gap:10px; align-items:flex-start; }
+  .week .item > div:first-child { flex:1; }
+  .overview { background:#fff; border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:6px; }
+  .notice { font-size:12px; color:var(--mute); margin-top:14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>我的私海 · 未绑定线索</h1>
+  <span class="tag">示例数据 · 无后端</span>
+  <nav class="tabs">
+    <button class="tab on" data-view="board">待处理线索<span class="n" id="n-board"></span></button>
+    <button class="tab" data-view="prospect">未建档潜客<span class="n" id="n-prospect"></span></button>
+    <button class="tab" data-view="week">每周梳理</button>
+  </nav>
+</header>
+<main>
+  <div id="board-view">
+    <div class="bar">
+      <span class="chip on" data-ch="all">全部渠道</span>
+      <span class="chip" data-ch="tm">阿里 TM</span>
+      <span class="chip" data-ch="wa">WhatsApp</span>
+      <span class="split">今日新增 · 北京时间 <span id="today"></span> · 每日 06:45 自动分析</span>
+    </div>
+    <div id="board-list"></div>
+  </div>
+  <div id="prospect-view" hidden>
+    <div class="bar"><span class="split">按下次跟进日期排序；每条都有承诺事项</span></div>
+    <div id="prospect-list"></div>
+  </div>
+  <div id="week-view" hidden class="week">
+    <div class="overview" id="week-overview"></div>
+    <div id="week-lists"></div>
+    <p class="notice">周梳理每周一 08:25 生成，仅汇总过去 7 天的每日摘要，不读取原始聊天。</p>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+// ---- 示例数据（全部虚构，仅用于原型） ----
+const LEADS = [
+  { id: 1, ch: 'tm', name: 'Sample Buyer A', company: 'Glow Studio (示例)', country: 'US', tz: 'America/New_York',
+    lastIn: '14 小时前', stage: '报价中', summary: '询 22 寸 #60 天才片 50 片价格与到货周期，疑似稳定沙龙采购',
+    next: '客户昨天追问运费与交期，我方未答复；先确认现货再回报价', angle: '更在意色差与交期，可先发同批实拍图降低顾虑',
+    draft: 'Hi Sarah, thanks for your patience! For 22" #60, lead time is [交期] and shipping is around [运费]...',
+    match: null, review: true, status: 'active', fu: null, fuRemark: null, handled: false },
+  { id: 2, ch: 'wa', name: 'Sample Contact B', company: '未关联会话', country: 'UK', tz: 'Europe/London',
+    lastIn: '2 小时前', stage: '沟通中', summary: '问小批量样品是否能发，关心起订量',
+    next: '回复起订量与样品政策', angle: '起订量顾虑，可推 2 束试色样品',
+    draft: 'Hi, thanks for reaching out. Our MOQ for samples is [数量], shipping [时效]...',
+    match: { name: 'Velvet Crown', company_id: '589012', hint: '号码后 7 位命中；6 单 $8,420', level: 'strong' }, status: 'active', fu: null, fuRemark: null, handled: false },
+  { id: 3, ch: 'tm', name: 'Sample Buyer C', company: 'Aurelia Hair (示例)', country: 'FR', tz: 'Europe/Paris',
+    lastIn: '3 天前', stage: '新询盘', summary: '泛询发质与颜色样本，未回复',
+    next: '先确认对方是否真有采购需求', angle: '未知，建议先发目录', draft: 'Bonjour, [目录链接] ...',
+    match: null, status: 'active', fu: null, fuRemark: null, handled: false },
+  { id: 4, ch: 'tm', name: 'Sample Buyer D', company: '货代对账（示例）', country: 'CN', tz: 'Asia/Shanghai',
+    lastIn: '1 天前', stage: '非客户', summary: '货代对账沟通，非买家', next: '—', angle: '—', draft: '',
+    match: null, status: 'active', fu: null, fuRemark: null, handled: false, cleanup: true },
+  { id: 5, ch: 'wa', name: 'Sample Prospect E', company: '未关联会话', country: 'AE', tz: 'Asia/Dubai',
+    lastIn: '5 小时前', stage: '沟通中', summary: '询问 22" 报价，已答应周五前发实拍视频',
+    next: '周五前发实拍视频（承诺）', angle: '价格敏感，可强调批量折扣的条件',
+    draft: 'Hi, the video will be sent by [日期]. Price for 22" is [价格]...', match: null, status: 'prospect',
+    fu: '2026-11-27', fuRemark: '周五前发实拍视频', handled: false },
+];
+
+const WEEK = {
+  overview: '本周未绑定联系人 14 位（TM 9、WA 5）。3 位存在未闭环承诺；2 位疑似私海老客，建议优先绑定。',
+  missed: [
+    { id: 1, title: '未回复 22 寸 #60 运费与交期', evidence: '11-23 客户追问后 48 小时未回', action: '今天先确认现货并回一条带实拍图的报价' },
+  ],
+  breakthrough: [
+    { id: 3, concern: '担心起订量高与色差', angle: '推小批量样品试单方案降低首单门槛' },
+  ],
+  likely: [
+    { id: 2, why: '提到上次买的 20 寸贴发补货，号码后 7 位命中私海客户', company: 'Velvet Crown · 6 单 $8,420' },
+  ],
+  cleanup: [
+    { id: 4, reason: '货代对账，非买家客户' },
+  ],
+};
+
+// ---- 工具 ----
+const $ = (s) => document.querySelector(s);
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 1800); }
+function localClock(tz) {
+  const now = new Date();
+  const hm = new Intl.DateTimeFormat('zh-CN', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
+  const h = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false }).format(now), 10);
+  const working = h >= 9 && h < 18;
+  return { text: `当地 ${hm} · ${working ? '工作时段' : '非工作时段'}`, off: !working };
+}
+function beijingToday() {
+  const d = new Date(Date.now() + 8 * 3600 * 1000);
+  return `${d.getUTCMonth() + 1}.${d.getUTCDate()}`;
+}
+$('#today').textContent = beijingToday();
+
+// ---- 视图 ----
+let view = 'board', chan = 'all';
+function setView(v) {
+  view = v;
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+  $('#board-view').hidden = v !== 'board';
+  $('#prospect-view').hidden = v !== 'prospect';
+  $('#week-view').hidden = v !== 'week';
+  render();
+}
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => setView(b.dataset.view));
+document.querySelectorAll('.chip').forEach(c => c.onclick = () => {
+  chan = c.dataset.ch;
+  document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c));
+  render();
+});
+
+// ---- 动作 ----
+function act(id, kind) {
+  const l = LEADS.find(x => x.id === id);
+  if (!l) return;
+  if (kind === 'bind') { l.status = 'linked'; toast(`已绑定至 ${l.match ? l.match.name : '客户'}，已接入订单与背调上下文`); }
+  if (kind === 'handled') { l.handled = true; toast('已记为其他渠道处理，直到出现新入站消息前不再分析'); }
+  if (kind === 'ignore') { l.status = 'ignored'; l.draft = ''; l.summary = '（已清空）'; l.next = ''; l.angle = ''; toast('已标为不是客户，摘要已清空'); }
+  if (kind === 'prospect-open') { const box = document.getElementById('fu-' + id); if (box) box.classList.toggle('show'); return render(); }
+  if (kind === 'prospect-save') {
+    const date = document.getElementById('fud-' + id).value;
+    const remark = document.getElementById('fur-' + id).value.trim();
+    if (!date) { toast('请选择下次跟进日期'); return; }
+    if (!remark) { toast('请填写跟进说明（承诺事项），否则到期只剩日期'); return; }
+    l.status = 'prospect'; l.fu = date; l.fuRemark = remark; toast('已转为未建档潜客，并设置跟进');
+  }
+  render();
+}
+function copyDraft(id) { const l = LEADS.find(x => x.id === id); navigator.clipboard?.writeText(l.draft); toast('草稿已复制（占位符需先核对）'); }
+
+// ---- 渲染 ----
+function card(l) {
+  const badge = `<span class="badge ${l.ch === 'tm' ? 'b-tm' : 'b-wa'}">${l.ch === 'tm' ? 'TM 询盘' : 'WhatsApp'}</span>`;
+  const c = localClock(l.tz);
+  const matchBlock = l.match
+    ? `<div class="match ${l.status === 'linked' ? 'done' : ''}"><span>疑似私海客户：<b>${l.match.name}</b>（${l.match.hint}）</span>
+         <button class="primary" onclick="act(${l.id},'bind')">确认绑定</button></div>` : '';
+  const fuBlock = l.status === 'prospect'
+    ? `<div class="muted">下次跟进 ${l.fu} · 承诺：${l.fuRemark}</div>` : '';
+  const warn = l.stage === '非客户' ? '' : (l.review ? '<div class="warn">含报价或交期，发送前请核对占位符</div>' : '');
+  const draftBlock = l.draft ? `<div class="draft">${l.draft}</div>` : '';
+  return `<section class="card">
+    <div class="row1">${badge}<span class="name">${l.name}</span><span class="muted">${l.company} · ${l.country}</span>
+      <span class="clock ${c.off ? 'off' : ''}">${c.text}</span><span class="muted">最后入站 ${l.lastIn}</span></div>
+    <div class="label">一句话前情</div><div class="body">${l.summary}</div>
+    <div class="label">遗漏与下一步</div><div class="body">${l.next}</div>
+    <div class="label">沟通突破点</div><div class="body">${l.angle}</div>
+    ${matchBlock}${fuBlock}${draftBlock}${warn}
+    <div class="actions">
+      ${l.match && l.status !== 'linked' ? '' : `<button onclick="act(${l.id},'prospect-open')">未建档先跟踪</button>`}
+      <button onclick="act(${l.id},'handled')">已在其他渠道处理</button>
+      <button class="ghost" onclick="act(${l.id},'ignore')">不是客户</button>
+      ${l.draft ? `<button class="ghost" onclick="copyDraft(${l.id})">复制草稿</button>` : ''}
+    </div>
+    <div class="followup" id="fu-${l.id}">
+      <input type="date" id="fud-${l.id}" aria-label="下次跟进日期">
+      <textarea id="fur-${l.id}" placeholder="跟进说明（必填），例如：周五前发实拍视频"></textarea>
+      <button class="primary" onclick="act(${l.id},'prospect-save')">保存</button>
+    </div>
+  </section>`;
+}
+
+function render() {
+  const active = LEADS.filter(l => l.status === 'active' && !l.handled && !l.cleanup);
+  const board = active.filter(l => chan === 'all' || l.ch === chan);
+  const prospects = LEADS.filter(l => l.status === 'prospect');
+  $('#n-board').textContent = active.length;
+  $('#n-prospect').textContent = prospects.length;
+  $('#board-list').innerHTML = board.length ? board.map(card).join('') : '<div class="empty">今天没有需要处理的未绑定线索</div>';
+  const pl = [...prospects].sort((a, b) => (a.fu || '').localeCompare(b.fu || ''));
+  $('#prospect-list').innerHTML = pl.length ? pl.map(card).join('') : '<div class="empty">暂无未建档潜客</div>';
+  renderWeek();
+}
+
+function renderWeek() {
+  const name = (id) => (LEADS.find(x => x.id === id) || {}).name || '—';
+  $('#week-overview').innerHTML = `<b>本周总览</b><div class="body">${WEEK.overview}</div>`;
+  const sec = (title, items, fn) => items.length ? `<h2>${title}（${items.length}）</h2>` + items.map(fn).join('') : '';
+  $('#week-lists').innerHTML =
+    sec('遗漏任务', WEEK.missed, m => `<div class="item"><div><b>${m.title}</b><div class="muted">依据：${m.evidence}</div><div class="body">建议：${m.action}</div></div>
+      <div><button onclick="toast('已打开该线索')">打开线索</button></div></div>`) +
+    sec('高意向未建档潜客：突破点', WEEK.breakthrough, b => `<div class="item"><div><b>${name(b.id)}</b><div class="muted">顾虑：${b.concern}</div><div class="body">切入：${b.angle}</div></div></div>`) +
+    sec('疑似老客：建议优先绑定', WEEK.likely, k => `<div class="item"><div><b>${name(k.id)}</b><div class="muted">${k.why}</div><div class="body">匹配：${k.company}</div></div>
+      <div><button class="primary" onclick="toast('已确认绑定（示例）')">确认绑定</button></div></div>`) +
+    sec('可批量清理（非客户）', WEEK.cleanup, c => `<div class="item"><div><b>${name(c.id)}</b><div class="muted">${c.reason}</div></div>
+      <div><button class="ghost" onclick="toast('已标为不是客户（示例）')">不是客户</button></div></div>`);
+}
+
+render();
+</script>
+</body>
+</html>

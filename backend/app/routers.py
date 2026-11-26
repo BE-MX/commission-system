@@ -207,6 +207,8 @@ def register_routers(app: FastAPI) -> None:
     from app.client_desk.report_router import router as client_desk_report_router
     app.include_router(client_desk_router, prefix="/api/client-desk", tags=["我的私海"])
     app.include_router(client_desk_report_router, prefix="/api/client-desk", tags=["私海早报"])
+    from app.client_desk.unlinked.router import router as client_desk_unlinked_router
+    app.include_router(client_desk_unlinked_router, prefix="/api/client-desk/unlinked", tags=["私海未绑定线索"])
     from app.alibaba_feed.router import router as alibaba_feed_router
     from app.alibaba_feed.source_router import router as alibaba_feed_source_router
     app.include_router(alibaba_feed_router, prefix="/api/alibaba-feed/v1", tags=["阿里 Feed 接收"])
