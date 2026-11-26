@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { invoiceReceiptSyncGuidance } from '../src/views/invoice/composables/invoiceReceiptState.js'
+import { emptyInvoiceForm } from '../src/views/invoice/composables/invoiceEditorState.js'
 
 // Execute the actual editor handler with isolated API/UI dependencies.
 const source = readFileSync(new URL('../src/views/invoice/composables/useInvoiceEditor.js', import.meta.url), 'utf8')
@@ -14,9 +15,15 @@ function fixture({ dirty = false, groups = false, outcome = 'success', remoteSta
     items: [], receipt_draft: { eligible: false, amount: 0, status: 'draft' } }
   const hasUnsavedChanges = { value: dirty }, submitting = { value: false }
   const dependencies = { form, invoiceIsLocal: () => false, msgWarning: message => warnings.push(message),
+    validateRequiredFields: () => true,
     saveAndSyncSubmitting: submitting, hasOnlyGroupChanges: () => groups, hasUnsavedChanges,
     confirmAction: async () => calls.push('confirm'), isFeedbackCancelled: error => error === 'cancel',
-    saveDraft: async options => { calls.push(['save', options.linked]); hasUnsavedChanges.value = false; return { ...form } },
+    saveDraft: async options => {
+      calls.push(['save', options.linked])
+      hasUnsavedChanges.value = false
+      form.id ??= 1917
+      return { ...form }
+    },
     lastSaveType: { value: groups ? 'groups' : 'business' }, msgSuccessText: () => calls.push('no-sync'),
     linked: { run: async () => { calls.push('linked'); return { status: 'done' } } },
     showSyncCompletion: () => calls.push('complete'), showIssues: () => {},
@@ -66,8 +73,32 @@ test('already synchronized clean invoices never push again from the shared foote
   assert.deepEqual(f.calls, ['no-sync'])
 })
 
-test('uncertain results, linked tasks and blocked presale edits retain recovery guards', async () => {
-  for (const patch of [{ sync_status: 'sync_uncertain' }, { linked_sync_id: 'existing' }, { presale_edit_blocked_reason: '先处理原批次' }]) {
+test('a saved uncertain invoice blocks saving and sending even with unsaved edits', async () => {
+  const f = fixture({ dirty: true })
+  f.form.sync_status = 'sync_uncertain'
+  await f.run()
+  assert.deepEqual(f.calls, [])
+  assert.match(f.warnings[0], /处理待核对/)
+})
+
+test('a new invoice after an uncertain one saves and syncs with its own ID', async () => {
+  const f = fixture()
+  Object.assign(f.form, { status: 'sync_uncertain', sync_status: 'sync_uncertain', linked_sync_id: 'old-task',
+    xiaoman_order_no: 'old-order', synced_at: '2026-11-25', sync_error: 'old error' })
+  Object.assign(f.form, emptyInvoiceForm())
+  assert.equal(f.form.id, null)
+  assert.equal(f.form.status, 'draft')
+  assert.equal(f.form.sync_status, 'not_synced')
+  for (const key of ['xiaoman_order_id', 'xiaoman_order_no', 'linked_sync_id', 'synced_at', 'sync_error']) {
+    assert.equal(f.form[key], null, key)
+  }
+  await f.run()
+  assert.deepEqual(f.warnings, [])
+  assert.deepEqual(f.calls, [['save', false], ['sync', 1917], 'list', 'read', 'complete'])
+})
+
+test('linked tasks and blocked presale edits retain recovery guards', async () => {
+  for (const patch of [{ linked_sync_id: 'existing' }, { presale_edit_blocked_reason: '先处理原批次' }]) {
     const f = fixture()
     Object.assign(f.form, patch)
     await f.run()

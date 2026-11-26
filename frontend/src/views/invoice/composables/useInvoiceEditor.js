@@ -973,7 +973,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     if (invoiceIsLocal(form)) { msgWarning('方舟独立订单请保存后在订单履约中确认，不发送小满'); return }
     if (!productsReadyToSave()) return
     if (form.receipt_sync_refresh_required) { msgWarning('同步状态未能刷新，请关闭并重新打开订单，核对结果后再操作'); return }
-    if (form.sync_status === 'sync_uncertain') { msgWarning('请先返回订单列表“处理待核对”，核对原同步结果后再操作'); return }
+    if (form.id && form.sync_status === 'sync_uncertain') { msgWarning('请先返回订单列表“处理待核对”，核对原同步结果后再操作'); return }
     if (form.linked_sync_id) { msgWarning('请先处理未结束的关联同步任务'); return }
     if (form.presale_edit_blocked_reason) { msgWarning(form.presale_edit_blocked_reason); return }
     if (saveAndSyncSubmitting.value) {

@@ -50,6 +50,8 @@ export function emptyInvoiceForm() {
     local_deposit_amount: 0, local_deposit_charge: 0, commercial_source: 'unknown', is_private_order: false,
     local_customer_id: null, transaction_route: 'legacy', authority_epoch: null, commerce_status: 'draft', shadow_status: null,
     id: null, invoice_no: '', order_type: 'stock', sales_user_id: null, customer_id: '', customer_name: '',
+    status: 'draft', sync_status: 'not_synced', sync_error: null, synced_at: null,
+    xiaoman_order_id: null, xiaoman_order_no: null, linked_sync_id: null,
     customer_grade: null,
     contact_name: '', contact_phone: '', contact_email: '', delivery_address: '',
     sales_user_name: '', sales_phone: '', sales_email: '',
