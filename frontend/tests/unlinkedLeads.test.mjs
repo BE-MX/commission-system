@@ -59,6 +59,15 @@ test('thread card with no analysis yet shows a neutral pending state and no draf
   assert.equal(card.followup, null)
 })
 
+test('WhatsApp threads carry their own channel label, masked number and scan schedule', () => {
+  const tm = threadCard({ id: 1, channel: 'tm', status: 'active', run: null })
+  const wa = threadCard({ id: 2, channel: 'whatsapp', display_name: 'Maria', company_hint: '+447****1234', status: 'active', run: null })
+  assert.equal(wa.channelLabel, 'WhatsApp')
+  assert.equal(wa.hint, '+447****1234')
+  assert.match(tm.pendingHint, /06:45/)
+  assert.match(wa.pendingHint, /每小时/)
+})
+
 test('thread card flags drafts that need price or lead-time review and maps the weak match', () => {
   const card = threadCard({
     id: 8, channel: 'tm', display_name: 'Buyer B', company_hint: '', status: 'active',

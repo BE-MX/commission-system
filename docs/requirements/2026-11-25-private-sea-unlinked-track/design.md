@@ -306,7 +306,7 @@ flowchart LR
 - `CLIENT_DESK_INTERNAL_WA_NUMBERS`（内部号清单）
 - `CLIENT_DESK_UNLINKED_TM_ENABLED`（默认 False，见 U-D5）
 
-调度：`client_desk_unlinked_scan` 每日 06:45；`client_desk_unlinked_worker` 每 2 分钟，并发 2；`client_desk_unlinked_weekly` 每周一 08:25。
+调度：`client_desk_unlinked_scan`（TM）每日 06:45；`client_desk_unlinked_wa_scan`（WhatsApp）每天 7–22 点每小时第 15 分；`client_desk_unlinked_worker` 每 2 分钟，并发 2；`client_desk_unlinked_weekly` 每周一 08:25。
 
 ---
 

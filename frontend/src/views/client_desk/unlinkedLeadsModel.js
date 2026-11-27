@@ -1,7 +1,9 @@
 // Pure logic for the unlinked-leads (B track) view: clock, form validation, card and review mapping. No Vue, no I/O.
 
 export const WORK_HOURS = { start: 9, end: 18 }
-export const LEAD_CHANNEL_LABELS = { tm: 'TM 询盘' }
+export const LEAD_CHANNEL_LABELS = { tm: 'TM 询盘', whatsapp: 'WhatsApp' }
+// When each channel's scan runs, shown while a card has no analysis yet.
+export const SCAN_HINTS = { tm: '系统每天 06:45 扫描新入站消息。', whatsapp: '系统每天 7:15–22:15 每小时扫描新入站消息。' }
 export const URGENCY_LABELS = { high: '高', medium: '中', low: '低' }
 export const IGNORE_CONFIRM_TEXT = '标记为「不是客户」后，该线索的分析内容（前情、草稿等）会被清空，确定继续吗？'
 
@@ -68,6 +70,7 @@ export function threadCard(thread, now = new Date()) {
     lastAt: thread.last_message_at || null,
     clock: localClock(thread.local_timezone, now),
     analysisPending: !run,
+    pendingHint: `尚未生成分析。${SCAN_HINTS[thread.channel] || ''}`,
     analysisStale: Boolean(thread.analysis_stale),
     summary: run?.one_line_summary || '',
     nextAction: run?.missing_or_next_action || '',

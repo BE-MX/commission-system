@@ -4,7 +4,7 @@ import { msgError, msgSuccessText, confirmAction, isFeedbackCancelled } from '@/
 import { errorText, latestRequestGate } from './deskController'
 import { IGNORE_CONFIRM_TEXT, latestReview, reviewSections, sameThread, sortProspects, threadCard, validateProspectForm } from './unlinkedLeadsModel'
 
-// Unlinked-leads (B track) state. Channel is fixed to TM for now; WhatsApp filters are intentionally not exposed.
+// Unlinked-leads (B track) state. TM and WhatsApp threads arrive in one list; each card carries its channel label.
 export function useUnlinkedLeads() {
   const subView = ref('pending')
   const threads = ref([])
@@ -30,7 +30,7 @@ export function useUnlinkedLeads() {
     loading.value = true; error.value = ''
     try {
       const view = subView.value === 'prospect' ? 'prospect' : 'active'
-      const data = await api.unlinkedThreads({ channel: 'tm', view })
+      const data = await api.unlinkedThreads({ view })
       if (!threadGate.current(token)) return
       threads.value = data.items || []
     } catch (e) {

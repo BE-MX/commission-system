@@ -15,7 +15,7 @@
         <p class="muted pending">之前的分析依据已更新。收到新的买家消息后会重新分析。</p>
         <el-button v-permission="'client_desk:write'" :disabled="leads.busyId.value === card.id" @click="leads.analyze(card.id)">重新分析</el-button>
       </div>
-      <p v-else-if="card.analysisPending" class="muted pending">尚未生成分析。系统每天 06:45 扫描新入站消息。</p>
+      <p v-else-if="card.analysisPending" class="muted pending">{{ card.pendingHint }}</p>
       <template v-else>
         <div class="label">一句话前情</div><p class="body">{{ card.summary || '暂无' }}</p>
         <div class="label">遗漏与下一步</div><p class="body">{{ card.nextAction || '暂无' }}</p>

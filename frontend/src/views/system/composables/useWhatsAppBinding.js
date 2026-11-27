@@ -1,4 +1,4 @@
-import { onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { createWhatsAppBindSession, getWhatsAppBindSession, updateWhatsAppConsent, listWhatsAppReaderCandidates } from '@/api/whatsapp'
 import { msgSuccessText, msgWarning } from '@/utils/feedback'
 
@@ -7,6 +7,9 @@ export function useWhatsAppBinding(loadAccounts) {
   const bindingAccount = ref(null), companyAccount = ref(false), shareCRM = ref(false)
   const consentDialogVisible = ref(false), consentAccount = ref(null), consentBusy = ref(false)
   const consentForm = ref({}), readerCandidates = ref([])
+  // Unlinked chats reach the model only on top of consent, CRM sharing and AI egress.
+  const unlinkedAiAvailable = computed(() => Boolean(consentForm.value.enabled && consentForm.value.crm_shared && consentForm.value.ai_egress_allowed))
+  watch(unlinkedAiAvailable, ok => { if (!ok) consentForm.value.unlinked_ai_allowed = false })
   let poll, generation = 0, disposed = false, failures = 0
   function clearTimer() { clearTimeout(poll); poll = null }
   function stop() { generation++; clearTimer(); bindDialogVisible.value = false; consentDialogVisible.value = false; bindSession.value = null }
@@ -70,6 +73,7 @@ export function useWhatsAppBinding(loadAccounts) {
     consentAccount.value = account
     consentForm.value = { enabled: account.consent_state === 'active', company_account: false,
       crm_shared: Boolean(account.crm_shared), ai_egress_allowed: Boolean(account.ai_egress_allowed),
+      unlinked_ai_allowed: Boolean(account.unlinked_ai_allowed),
       reader_user_ids: [...(account.reader_user_ids || [])] }
     readerCandidates.value = []
     consentDialogVisible.value = true
@@ -85,6 +89,6 @@ export function useWhatsAppBinding(loadAccounts) {
     } finally { consentBusy.value = false }
   }
   return { bindDialogVisible, bindSession, bindBusy, bindingAccount, companyAccount, shareCRM,
-    consentDialogVisible, consentAccount, consentForm, consentBusy, readerCandidates,
+    consentDialogVisible, consentAccount, consentForm, consentBusy, readerCandidates, unlinkedAiAvailable,
     openBind, create, refresh, openConsent, searchReaders, saveConsent, stop }
 }

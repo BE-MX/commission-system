@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     # 私海 B 轨（未绑定线索）：默认全关；TM 独立于 ALIBABA_FEED_AUTOMATION_ENABLED（U-D5）
     CLIENT_DESK_UNLINKED_ENABLED: bool = False
     CLIENT_DESK_UNLINKED_TM_ENABLED: bool = False
+    CLIENT_DESK_UNLINKED_WA_ENABLED: bool = False
     CLIENT_DESK_UNLINKED_PRESET_NAME: str = "client_desk_unlinked"
     CLIENT_DESK_UNLINKED_DAILY_QUOTA: Annotated[int, Field(ge=0, le=100)] = 20
     CLIENT_DESK_UNLINKED_WEEKLY_REPORT_ENABLED: bool = False

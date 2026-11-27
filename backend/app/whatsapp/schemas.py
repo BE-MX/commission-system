@@ -18,6 +18,7 @@ class ConsentUpdate(BaseModel):
     company_account: bool = False
     crm_shared: bool = False
     ai_egress_allowed: bool = False
+    unlinked_ai_allowed: bool = False
     reader_user_ids: list[int] = Field(default_factory=list, max_length=100)
 
 

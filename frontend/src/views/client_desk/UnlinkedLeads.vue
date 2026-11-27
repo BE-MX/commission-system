@@ -4,7 +4,6 @@
       <div class="tabs" role="tablist" aria-label="未绑定线索视图">
         <button v-for="item in subTabs" :key="item.key" type="button" role="tab" class="chip board-focus" :aria-selected="leads.subView.value === item.key" :class="{ on: leads.subView.value === item.key }" @click="leads.setSubView(item.key)">{{ item.label }}</button>
       </div>
-      <span class="muted">渠道：TM 询盘</span>
     </div>
 
     <template v-if="leads.subView.value !== 'review'">

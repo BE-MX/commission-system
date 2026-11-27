@@ -469,11 +469,21 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
             max_instances=1, coalesce=True)
         scheduler.add_job(worker_job, trigger="interval", minutes=1,
             id="client_desk_worker", replace_existing=True, max_instances=1, coalesce=True)
-        if settings.CLIENT_DESK_UNLINKED_ENABLED and settings.CLIENT_DESK_UNLINKED_TM_ENABLED:
-            from app.schedulers.client_desk import unlinked_scan_job, unlinked_worker_job, unlinked_weekly_job
-            scheduler.add_job(unlinked_scan_job, trigger="cron", hour=6, minute=45,
-                timezone="Asia/Shanghai", id="client_desk_unlinked_scan", replace_existing=True,
-                max_instances=1, coalesce=True)
+        unlinked_tm = settings.CLIENT_DESK_UNLINKED_ENABLED and settings.CLIENT_DESK_UNLINKED_TM_ENABLED
+        unlinked_wa = settings.CLIENT_DESK_UNLINKED_ENABLED and settings.CLIENT_DESK_UNLINKED_WA_ENABLED
+        if unlinked_tm or unlinked_wa:
+            from app.schedulers.client_desk import (
+                unlinked_scan_job, unlinked_wa_scan_job, unlinked_worker_job, unlinked_weekly_job,
+            )
+            if unlinked_tm:
+                scheduler.add_job(unlinked_scan_job, trigger="cron", hour=6, minute=45,
+                    timezone="Asia/Shanghai", id="client_desk_unlinked_scan", replace_existing=True,
+                    max_instances=1, coalesce=True)
+            if unlinked_wa:
+                # WhatsApp chats arrive all day; scan hourly in working hours within the daily quota.
+                scheduler.add_job(unlinked_wa_scan_job, trigger="cron", hour="7-22", minute=15,
+                    timezone="Asia/Shanghai", id="client_desk_unlinked_wa_scan", replace_existing=True,
+                    max_instances=1, coalesce=True)
             scheduler.add_job(unlinked_worker_job, trigger="interval", minutes=2,
                 id="client_desk_unlinked_worker", replace_existing=True, max_instances=1, coalesce=True)
             if settings.CLIENT_DESK_UNLINKED_WEEKLY_REPORT_ENABLED:

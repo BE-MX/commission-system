@@ -106,6 +106,7 @@ def bind(db, actor: dict, *, account_uid: str | None, company_account: bool, crm
     account.consent_state = 'active'
     account.crm_shared = crm_shared
     account.ai_egress_allowed = False
+    account.unlinked_ai_allowed = False
     account.status = 'binding'
     account.connector_status = 'initializing'
     db.query(WhatsAppBodyGrant).filter_by(account_uid=account.account_uid).delete()
@@ -147,7 +148,8 @@ def resume_collection(db, uid: str, actor: dict):
     return _upsert_account(db, payload, account.ark_user_id)
 
 
-def update_consent(db, uid: str, actor: dict, *, crm_shared: bool, reader_user_ids: list[int], enabled: bool, ai_egress_allowed: bool = False):
+def update_consent(db, uid: str, actor: dict, *, crm_shared: bool, reader_user_ids: list[int], enabled: bool, ai_egress_allowed: bool = False,
+                   unlinked_ai_allowed: bool = False):
     from app.whatsapp.service import _audit
     account = owned_account(db, uid, actor)
     for user_id in reader_user_ids:
@@ -156,6 +158,8 @@ def update_consent(db, uid: str, actor: dict, *, crm_shared: bool, reader_user_i
     account.consent_state = 'active' if enabled else 'paused'
     account.crm_shared = bool(crm_shared and enabled)
     account.ai_egress_allowed = bool(ai_egress_allowed and enabled)
+    # Unlinked chats may only be read by the model when every narrower grant is also on.
+    account.unlinked_ai_allowed = bool(unlinked_ai_allowed and account.crm_shared and account.ai_egress_allowed)
     if not enabled:
         account.status = 'paused'
     db.query(WhatsAppBodyGrant).filter_by(account_uid=uid).delete()
@@ -166,7 +170,8 @@ def update_consent(db, uid: str, actor: dict, *, crm_shared: bool, reader_user_i
         if account.status == 'paused':
             account.status = 'active'
     _audit(db, action='update_consent', result='success', ark_user_id=int(actor['sub']), account_uid=uid,
-           detail=f'consent_version={account.consent_version},enabled={enabled},readers={len(reader_user_ids)}')
+           detail=f'consent_version={account.consent_version},enabled={enabled},readers={len(reader_user_ids)},'
+           f'unlinked_ai={account.unlinked_ai_allowed}')
     db.commit()
     # Changing consent fences the old worker. The explicit owner operation can
     # adopt the new version while keeping registered encrypted credentials.
@@ -191,6 +196,7 @@ def revoke(db, uid: str, actor: dict):
     account.status = 'revoking'
     account.crm_shared = False
     account.ai_egress_allowed = False
+    account.unlinked_ai_allowed = False
     for session in db.query(WhatsAppBindSession).filter_by(account_uid=uid).filter(
             WhatsAppBindSession.status.in_(('pending', 'binding'))).all():
         close_binding(session, 'revoking')

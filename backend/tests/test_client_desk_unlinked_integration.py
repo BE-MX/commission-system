@@ -13,7 +13,7 @@ from app.alibaba_feed.worker import process_next_batch
 from app.auth.models import ArkPermission, ArkRolePermission
 from app.client_desk import private_scope
 from app.client_desk.models import ClientDeskUnlinkedReview, ClientDeskUnlinkedRun, ClientDeskUnlinkedThread
-from app.client_desk.unlinked import service, worker
+from app.client_desk.unlinked import service, wa, worker
 from tests.test_alibaba_feed_auth import feed  # noqa: F401
 from tests.test_alibaba_feed_business import business  # noqa: F401
 from tests.test_alibaba_feed_pilot import collector, jwt, payload, pilot_api, raw  # noqa: F401
@@ -28,7 +28,7 @@ def create_b_tables(db):
 def test_pilot_can_authorize_b_track_without_a_track_source_flags(pilot_api, monkeypatch):
     client, db, issued, draft, _, _ = pilot_api
     create_b_tables(db)
-    monkeypatch.setattr(service, "get_settings", _settings)
+    monkeypatch.setattr(wa, "get_settings", _settings)
     monkeypatch.setattr(pilot_service, "get_settings", _settings)
     monkeypatch.setattr(worker, "get_settings", _settings)
     monkeypatch.setattr(worker, "prepare_text_chat", lambda *args, **kwargs: SimpleNamespace(
@@ -87,7 +87,8 @@ def test_pilot_can_authorize_b_track_without_a_track_source_flags(pilot_api, mon
 def authorized_track(business, monkeypatch):
     client, db, headers, _, _ = business
     create_b_tables(db)
-    monkeypatch.setattr(service, "get_settings", _settings)
+    monkeypatch.setattr(wa, "get_settings", _settings)
+    monkeypatch.setattr(worker, "get_settings", _settings)
     pilot = db.get(AlibabaFeedPilot, 1)
     pilot.unlinked_ai_allowed = True
     db.commit()

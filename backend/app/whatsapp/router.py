@@ -252,6 +252,7 @@ def _account_data(item, ark_user=None, last_message_pull_at=None, can_read_body=
         "consent_state": item.consent_state,
         "crm_shared": item.crm_shared,
         "ai_egress_allowed": item.ai_egress_allowed,
+        "unlinked_ai_allowed": bool(item.unlinked_ai_allowed),
         "can_read_body": can_read_body,
         "reader_user_ids": reader_user_ids or [],
         "connection_state": (item.raw_payload or {}).get('connection_state') or item.connector_status,
@@ -326,7 +327,8 @@ def update_consent(account_uid: str, body: ConsentUpdate, db: Session = Depends(
         raise HTTPException(status_code=400, detail='请确认公司业务号全部会话采集范围')
     try:
         account = lifecycle.update_consent(db, account_uid, current_user, enabled=body.enabled,
-            crm_shared=body.crm_shared, reader_user_ids=body.reader_user_ids, ai_egress_allowed=body.ai_egress_allowed)
+            crm_shared=body.crm_shared, reader_user_ids=body.reader_user_ids, ai_egress_allowed=body.ai_egress_allowed,
+            unlinked_ai_allowed=body.unlinked_ai_allowed)
         db.commit()
         return _ok(_account_data(account), '授权已更新')
     except PermissionError as exc:

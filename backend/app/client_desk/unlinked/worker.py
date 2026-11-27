@@ -26,7 +26,7 @@ from app.client_desk.models import ClientDeskUnlinkedReview, ClientDeskUnlinkedR
 from app.core.config import get_settings
 from app.core.time import beijing_now, beijing_today
 
-from . import core
+from . import core, wa
 
 logger = logging.getLogger("commission.client_desk.unlinked")
 
@@ -83,6 +83,26 @@ def authorized_item(db, uid, source_id, thread):
     if deps != _current_deps(db, source_id):
         return None
     return item
+
+
+def tm_enabled():
+    cfg = get_settings()
+    return bool(cfg.CLIENT_DESK_UNLINKED_ENABLED and cfg.CLIENT_DESK_UNLINKED_TM_ENABLED)
+
+
+def thread_source(db, uid, thread, source_id, action="read"):
+    """Channel-neutral authority check: the live source handle for a thread, or None."""
+    if thread.channel == wa.CHANNEL:
+        return wa.authorized_conversation(db, uid, thread, action)
+    if source_id is None or not tm_enabled():
+        return None
+    return authorized_item(db, uid, source_id, thread)
+
+
+def run_evidence_current(db, thread, handle, run):
+    if thread.channel == wa.CHANNEL:
+        return wa.evidence_current(db, thread, run, handle)
+    return evidence_current(db, thread, handle, run)
 
 
 # ---------- thread sync ----------
@@ -299,18 +319,20 @@ def _pending(thread):
     return core.has_newer_inbound(thread.seen_watermark, thread.done_watermark)
 
 
-def enqueue_daily(db, uid, source_id, *, quota, day=None):
-    """Queue one daily run per pending, still-authorized thread, up to the rep's daily quota."""
+def enqueue_daily(db, uid, source_id, *, quota, day=None, channel=CHANNEL):
+    """Queue one daily run per pending, still-authorized thread, up to the rep's daily quota per channel."""
     day = day or beijing_today()
     used = (db.query(func.count(ClientDeskUnlinkedRun.id))
+            .join(ClientDeskUnlinkedThread, ClientDeskUnlinkedThread.id == ClientDeskUnlinkedRun.thread_id)
             .filter(ClientDeskUnlinkedRun.user_id == uid, ClientDeskUnlinkedRun.biz_date == day,
-                    ClientDeskUnlinkedRun.trigger_type == "daily").scalar() or 0)
+                    ClientDeskUnlinkedRun.trigger_type == "daily",
+                    ClientDeskUnlinkedThread.channel == channel).scalar() or 0)
     room = max(0, quota - used)
     if room == 0:
         return 0
     threads = (db.query(ClientDeskUnlinkedThread)
                .filter(ClientDeskUnlinkedThread.user_id == uid,
-                       ClientDeskUnlinkedThread.channel == CHANNEL,
+                       ClientDeskUnlinkedThread.channel == channel,
                        ClientDeskUnlinkedThread.status.in_(ACTIVE_STATES),
                        ClientDeskUnlinkedThread.seen_watermark.isnot(None))
                .all())
@@ -321,7 +343,7 @@ def enqueue_daily(db, uid, source_id, *, quota, day=None):
     for thread in pending:
         if queued >= room:
             break
-        if authorized_item(db, uid, source_id, thread) is None:
+        if thread_source(db, uid, thread, source_id) is None:
             continue  # unauthorised threads never spend the quota
         if (db.query(ClientDeskUnlinkedRun.id)
                 .filter_by(thread_id=thread.id, biz_date=day, trigger_type="daily", run_seq=0).first()):
@@ -391,8 +413,7 @@ def _claim(db, now, limit):
 
 def drain_queue(session_factory, limit=10):
     """Process queued runs. Each run is independent; one failure never stops the batch."""
-    cfg = get_settings()
-    if not (cfg.CLIENT_DESK_UNLINKED_ENABLED and cfg.CLIENT_DESK_UNLINKED_TM_ENABLED):
+    if not (tm_enabled() or wa.enabled()):
         return 0
     with session_factory() as db:
         now = beijing_now()
@@ -440,6 +461,10 @@ def analyze_run(db, run_id, token):
     if run is None:
         return None
     thread = db.query(ClientDeskUnlinkedThread).filter_by(id=run.thread_id).first()
+    if thread is not None and thread.channel == wa.CHANNEL:
+        return wa.analyze_run(db, run, token, thread)
+    if not tm_enabled():
+        return _finish(db, run, token, "skipped_gate", "not_eligible")
     action = "write" if run.trigger_type == "manual" else "read"
     scope = _pilot_scope(db, action)
     if thread is None or scope is None or thread.status not in ACTIVE_STATES or thread.item_id is None:
@@ -511,6 +536,13 @@ def analyze_run(db, run_id, token):
         # The lease was recovered or the run was wiped; that path owns the row now.
         db.rollback()
         return None
+    apply_result(thread, run, result, response)
+    db.commit()
+    return run
+
+
+def apply_result(thread, run, result, response):
+    """Store a validated result on the run and advance the thread's processed watermark."""
     run.token_usage = {"input": response.get("tokens_prompt") or 0,
                        "output": response.get("tokens_completion") or 0}
     run.is_business_lead = result["is_business_lead"]
@@ -532,8 +564,6 @@ def analyze_run(db, run_id, token):
     if mine is not None and (prior is None or mine > prior):
         thread.done_watermark = list(mine)
         thread.handled_at = None  # new inbound content is news to the rep again
-    db.commit()
-    return run
 
 
 # ---------- weekly review ----------
@@ -546,30 +576,44 @@ def window_for_previous_week(today):
 def weekly_live_threads(db, uid, source_id, run_ids):
     live = set()
     for tid, run_id in run_ids.items():
-        thread = (db.query(ClientDeskUnlinkedThread).filter_by(id=int(tid), user_id=uid, channel=CHANNEL)
+        thread = (db.query(ClientDeskUnlinkedThread).filter_by(id=int(tid), user_id=uid)
                   .populate_existing().first())
         if thread is None or thread.status not in ACTIVE_STATES:
             continue
-        item = authorized_item(db, uid, source_id, thread)
+        item = thread_source(db, uid, thread, source_id)
         if item is None:
             continue
         run = (db.query(ClientDeskUnlinkedRun)
                .filter_by(id=run_id, thread_id=thread.id, user_id=uid, status="succeeded")
                .populate_existing().first())
-        if run is not None and evidence_current(db, thread, item, run):
+        if run is not None and run_evidence_current(db, thread, item, run):
             live.add(tid)
     return live
+
+
+def _weekly_scope_or_none(db, uid, action="read"):
+    tm = _pilot_scope(db, action) if tm_enabled() else None
+    source_id = tm[1] if tm is not None and tm[0] == uid else None
+    wa_ok = wa.user_enabled(db, uid, action)
+    return None if source_id is None and not wa_ok else (source_id, wa_ok)
+
+
+def weekly_scope(db, uid, action="read"):
+    """(TM source id or None, WhatsApp allowed) for one rep; 403 when neither channel is open."""
+    scope = _weekly_scope_or_none(db, uid, action)
+    if scope is None:
+        raise HTTPException(403, "当前账号未开通未绑定线索")
+    return scope
 
 
 def generate_weekly(db, uid, *, today=None, action="read"):
     """Summarise the previous full Beijing week from daily summaries only (Reduce step)."""
     cfg = get_settings()
     today = today or beijing_today()
-    scope = _pilot_scope(db, action)
-    if scope is None or scope[0] != uid:
-        raise HTTPException(403, "当前账号未开通未绑定线索")
-    source_id = scope[1]
-    lock_source(db, source_id)
+    scope = weekly_scope(db, uid, action)
+    source_id = scope[0]
+    if source_id is not None:
+        lock_source(db, source_id)
     start, end = window_for_previous_week(today)
 
     review = (db.query(ClientDeskUnlinkedReview)
@@ -604,8 +648,8 @@ def generate_weekly(db, uid, *, today=None, action="read"):
     for run, thread in latest.values():
         if len(run_ids) >= core.MAX_WEEKLY_THREADS:
             break
-        item = authorized_item(db, uid, source_id, thread)
-        if item is None or not evidence_current(db, thread, item, run):
+        item = thread_source(db, uid, thread, source_id)
+        if item is None or not run_evidence_current(db, thread, item, run):
             continue
         tid = str(thread.id)
         match = core.weak_match(thread.display_name, companies)
@@ -666,8 +710,8 @@ def generate_weekly(db, uid, *, today=None, action="read"):
 
     # Only the winner of the lease may publish. Preserve the original input set
     # for the overview decision even if an ignore action removed stored entries.
-    scope_current = _pilot_scope(db, action) == scope
-    if scope_current:
+    scope_current = _weekly_scope_or_none(db, uid, action) == scope
+    if scope_current and source_id is not None:
         lock_source(db, source_id)
     review = (db.query(ClientDeskUnlinkedReview).filter_by(id=review_id)
               .populate_existing().with_for_update().one())
@@ -715,24 +759,33 @@ def generate_weekly(db, uid, *, today=None, action="read"):
 
 # ---------- scheduled entries ----------
 
-def weekly_for_pilot(session_factory, today=None):
-    with session_factory() as db:
-        scope = _pilot_scope(db)
-        if scope is None:
-            return None
-        try:
-            return generate_weekly(db, scope[0], today=today).status
-        except HTTPException as exc:
-            db.rollback()
-            return f"skipped_{exc.status_code}"
-        except Exception as exc:  # noqa: BLE001
-            db.rollback()
-            logger.warning("Unlinked weekly failed: %s", type(exc).__name__)
-            print(f"[CLIENT_DESK_UNLINKED] weekly failed: {type(exc).__name__}", flush=True)
-            return "internal_error"
+def weekly_for_reps(session_factory, today=None):
+    """One weekly review per rep with an open channel (TM pilot and WhatsApp holders). Returns {uid: status}."""
+    uids = set(wa.owners(session_factory))
+    if tm_enabled():
+        with session_factory() as db:
+            scope = _pilot_scope(db)
+        if scope is not None:
+            uids.add(scope[0])
+    results = {}
+    for uid in sorted(uids):
+        with session_factory() as db:
+            try:
+                results[uid] = generate_weekly(db, uid, today=today).status
+            except HTTPException as exc:
+                db.rollback()
+                results[uid] = f"skipped_{exc.status_code}"
+            except Exception as exc:  # noqa: BLE001
+                db.rollback()
+                logger.warning("Unlinked weekly failed: %s", type(exc).__name__)
+                print(f"[CLIENT_DESK_UNLINKED] weekly failed: {type(exc).__name__}", flush=True)
+                results[uid] = "internal_error"
+    return results
 
 
 def scan_for_pilot(session_factory, quota):
+    if not tm_enabled():
+        return 0
     with session_factory() as db:
         scope = _pilot_scope(db)
         if scope is None:

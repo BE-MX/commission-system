@@ -1,25 +1,31 @@
-"""User actions on B-track threads. Every action is scoped to the caller's own threads."""
+"""User actions on B-track threads. Every action is scoped to the caller's own threads.
+
+Two channels share these actions: TM (the Alibaba pilot) and WhatsApp (numbers whose
+holder allowed the unlinked AI pass). Each action re-checks the thread's own channel.
+"""
 
 from datetime import date as Date
+from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi import HTTPException
 
 from app.alibaba_feed import business_service as feed
 from app.alibaba_feed.business_schemas import LinkCreate
+from app.client_desk import link_service
 from app.client_desk.models import ClientDeskUnlinkedReview, ClientDeskUnlinkedRun, ClientDeskUnlinkedThread
-from app.core.config import get_settings
+from app.client_desk.private_scope import user_id
 from app.core.time import beijing_now
 
-from . import core, worker
+from . import core, wa, worker
 
 CHANNEL = worker.CHANNEL
 OPEN = ("active", "prospect")
+CHANNEL_KEYS = {worker.CHANNEL: "tm", wa.CHANNEL: "whatsapp"}
 
 
 def _require_enabled():
-    cfg = get_settings()
-    if not (cfg.CLIENT_DESK_UNLINKED_ENABLED and cfg.CLIENT_DESK_UNLINKED_TM_ENABLED):
+    if not (worker.tm_enabled() or wa.enabled()):
         raise HTTPException(503, "未绑定线索尚未启用")
 
 
@@ -27,8 +33,30 @@ def _pilot_for(db, user, action="read"):
     return feed.require_actor(db, user, action, unlinked=True)
 
 
-def _thread(db, uid, thread_id, *, lock=False):
-    query = db.query(ClientDeskUnlinkedThread).filter_by(id=thread_id, user_id=uid, channel=CHANNEL)
+def _scopes(db, user, action="read"):
+    """Return (uid, TM source id or None, WhatsApp open) for the caller; raise when no channel is open."""
+    _require_enabled()
+    uid = user_id(user)
+    source_id, tm_error = None, None
+    if worker.tm_enabled():
+        try:
+            _, source_id = _pilot_for(db, user, action)
+        except HTTPException as exc:
+            tm_error = exc
+    wa_ok = wa.user_enabled(db, uid, action)
+    if source_id is None and not wa_ok:
+        raise tm_error or HTTPException(403, "当前账号未开通未绑定线索")
+    return uid, source_id, wa_ok
+
+
+def _channels(source_id, wa_ok):
+    return ([CHANNEL] if source_id is not None else []) + ([wa.CHANNEL] if wa_ok else [])
+
+
+def _thread(db, uid, thread_id, *, lock=False, channels=(CHANNEL,)):
+    query = (db.query(ClientDeskUnlinkedThread)
+             .filter(ClientDeskUnlinkedThread.id == thread_id, ClientDeskUnlinkedThread.user_id == uid,
+                     ClientDeskUnlinkedThread.channel.in_(channels)))
     if lock:
         query = query.populate_existing().with_for_update()
     row = query.first()
@@ -37,15 +65,31 @@ def _thread(db, uid, thread_id, *, lock=False):
     return row
 
 
-def _action_thread(db, user, thread_id):
-    _require_enabled()
-    uid, source_id = _pilot_for(db, user, "write")
-    worker.lock_source(db, source_id)
-    thread = _thread(db, uid, thread_id, lock=True)
-    item = worker.authorized_item(db, uid, source_id, thread)
-    if item is None:
+def _channel_of(db, uid, thread_id):
+    row = db.query(ClientDeskUnlinkedThread.channel).filter_by(id=thread_id, user_id=uid).first()
+    if row is None:
         raise HTTPException(404, "线索不存在或已失效")
-    return uid, thread, item
+    return row[0]
+
+
+def _action_thread(db, user, thread_id, *, allow_link=()):
+    uid, source_id, wa_ok = _scopes(db, user, "write")
+    channel = _channel_of(db, uid, thread_id)
+    if channel == wa.CHANNEL and wa_ok:
+        thread = _thread(db, uid, thread_id, channels=(wa.CHANNEL,))
+        # Same lock order as the worker: account, then thread, then conversation.
+        wa.lock_account(db, thread.source_account_uid)
+        thread = _thread(db, uid, thread_id, lock=True, channels=(wa.CHANNEL,))
+        handle = wa.authorized_conversation(db, uid, thread, "write", lock=True, allow_link=allow_link)
+    elif channel == CHANNEL and source_id is not None:
+        worker.lock_source(db, source_id)
+        thread = _thread(db, uid, thread_id, lock=True)
+        handle = worker.authorized_item(db, uid, source_id, thread)
+    else:
+        raise HTTPException(404, "线索不存在或已失效")
+    if handle is None:
+        raise HTTPException(404, "线索不存在或已失效")
+    return uid, thread, handle
 
 
 def _latest_run(db, thread_id):
@@ -68,10 +112,10 @@ def _run_payload(run):
     }
 
 
-def _payload(thread, *, match=None, run=None, analysis_stale=False):
+def _payload(thread, *, match=None, run=None, analysis_stale=False, company_hint=None):
     return {
-        "id": thread.id, "channel": "tm", "display_name": thread.display_name,
-        "company_hint": None, "status": thread.status,
+        "id": thread.id, "channel": CHANNEL_KEYS.get(thread.channel, thread.channel),
+        "display_name": thread.display_name, "company_hint": company_hint, "status": thread.status,
         "last_message_at": thread.last_message_at.isoformat() if thread.last_message_at else None,
         "last_direction": thread.last_direction,
         "handled_at": thread.handled_at.isoformat() if thread.handled_at else None,
@@ -86,10 +130,10 @@ def _payload(thread, *, match=None, run=None, analysis_stale=False):
 
 
 def list_threads(db, user, view="active"):
-    _require_enabled()
-    uid, source_id = _pilot_for(db, user)
+    uid, source_id, wa_ok = _scopes(db, user)
     rows = (db.query(ClientDeskUnlinkedThread)
-            .filter(ClientDeskUnlinkedThread.user_id == uid, ClientDeskUnlinkedThread.channel == CHANNEL)
+            .filter(ClientDeskUnlinkedThread.user_id == uid,
+                    ClientDeskUnlinkedThread.channel.in_(_channels(source_id, wa_ok)))
             .all())
     if view == "prospect":
         items = [t for t in rows if t.status == "prospect"]
@@ -102,18 +146,19 @@ def list_threads(db, user, view="active"):
     out = []
     companies = None
     for thread in items:
-        item = worker.authorized_item(db, uid, source_id, thread)
+        item = worker.thread_source(db, uid, thread, source_id)
         if item is None:
             continue
         run = _latest_run(db, thread.id)
         stale = run is not None and (
-            run.status in ("stale", "discarded_stale") or not worker.evidence_current(db, thread, item, run)
+            run.status in ("stale", "discarded_stale") or not worker.run_evidence_current(db, thread, item, run)
         )
         if companies is None:
             companies = worker.matchable_companies(db, user)
         out.append(_payload(
             thread, match=core.weak_match(thread.display_name, companies),
             run=None if stale else run, analysis_stale=stale,
+            company_hint=wa.masked_phone(item[1]) if thread.channel == wa.CHANNEL else None,
         ))
     return {"items": out, "total": len(out)}
 
@@ -130,9 +175,28 @@ def handled(db, user, thread_id):
 
 
 def ignore(db, user, thread_id):
-    uid, thread, _ = _action_thread(db, user, thread_id)
+    uid, thread, handle = _action_thread(db, user, thread_id)
     if thread.status == "linked":
         raise HTTPException(409, "已绑定客户的线索不能标为非客户")
+    wipe_thread(db, uid, thread)
+    if thread.channel == wa.CHANNEL:
+        # Same record as 「不是客户」 on the unlinked-conversations page; save_link commits the whole change.
+        _save_wa_link(db, user, handle, "ignored")
+    else:
+        db.commit()
+    return _payload(thread)
+
+
+def _save_wa_link(db, user, handle, link_type, company_id=None):
+    account, conv = handle
+    return link_service.save_link(db, user, SimpleNamespace(
+        account_uid=account.account_uid, conversation_uid=conv.conversation_uid,
+        company_id=company_id, link_type=link_type, expected_link_id=None,
+    ))
+
+
+def wipe_thread(db, uid, thread):
+    """Mark a thread as not a customer and clear every stored output about it. Does not commit."""
     thread.status = "ignored"
     thread.display_name = None
     thread.country_code = None
@@ -165,8 +229,6 @@ def ignore(db, user, thread_id):
                 tid: rid for tid, rid in (deps.get("run_ids") or {}).items() if tid != str(thread.id)
             },
         }
-    db.commit()
-    return _payload(thread)
 
 
 def _drop(items, thread_id):
@@ -175,14 +237,22 @@ def _drop(items, thread_id):
 
 def restore(db, user, thread_id):
     """Undo 'not a customer'. Cleared analysis is not brought back; a new analysis is needed."""
-    _, thread, item = _action_thread(db, user, thread_id)
+    _, thread, item = _action_thread(db, user, thread_id, allow_link=("ignored",))
     if thread.status != "ignored":
         raise HTTPException(409, "该线索不是非客户状态")
     thread.status = "active"
-    buyer = item.snapshot.get("buyer") or {}
-    thread.display_name = str(buyer.get("name") or "")[:160] or None
-    thread.country_code = str(buyer.get("country") or "")[:8] or None
     thread.done_watermark = None
+    if thread.channel == wa.CHANNEL:
+        account, conv = item
+        thread.display_name = wa.display_name(conv)
+        link = wa.active_link(db, account.account_uid, conv.conversation_uid)
+        if link is not None and link.link_type == "ignored":
+            link_service.delete_link(db, user, link.id)  # commits the restore too
+            return _payload(thread)
+    else:
+        buyer = item.snapshot.get("buyer") or {}
+        thread.display_name = str(buyer.get("name") or "")[:160] or None
+        thread.country_code = str(buyer.get("country") or "")[:8] or None
     db.commit()
     return _payload(thread)
 
@@ -202,9 +272,12 @@ def set_prospect(db, user, thread_id, next_followup_date, next_followup_remark):
 
 
 def bind(db, user, thread_id, company_id):
-    """Explicit confirmation only. Delegates to the feed link service, which re-checks scope."""
-    _require_enabled()
-    uid, source_id = _pilot_for(db, user, "write")
+    """Explicit confirmation only. Delegates to the channel's link service, which re-checks scope."""
+    uid, source_id, _ = _scopes(db, user, "write")
+    if _channel_of(db, uid, thread_id) == wa.CHANNEL:
+        return _bind_wa(db, user, thread_id, company_id)
+    if source_id is None:
+        raise HTTPException(404, "线索不存在或已失效")
     worker.lock_source(db, source_id)
     thread = _thread(db, uid, thread_id, lock=True)
     if thread.status == "linked" and thread.linked_company_id == int(company_id):
@@ -225,6 +298,17 @@ def bind(db, user, thread_id, company_id):
     return {**_payload(thread), "link": created}
 
 
+def _bind_wa(db, user, thread_id, company_id):
+    _, thread, handle = _action_thread(db, user, thread_id)
+    if thread.status not in OPEN:
+        raise HTTPException(409, "该线索当前不可绑定")
+    thread.status = "linked"
+    thread.linked_company_id = int(company_id)
+    # save_link checks the company is in the caller's private sea, then commits both rows.
+    link = _save_wa_link(db, user, handle, "linked", str(company_id))
+    return {**_payload(thread), "link": link}
+
+
 def request_analysis(db, user, thread_id):
     uid, thread, _ = _action_thread(db, user, thread_id)
     if thread.status not in OPEN:
@@ -235,8 +319,7 @@ def request_analysis(db, user, thread_id):
 
 
 def list_reviews(db, user, limit=4):
-    _require_enabled()
-    uid, source_id = _pilot_for(db, user)
+    uid, source_id, _ = _scopes(db, user)
     rows = (db.query(ClientDeskUnlinkedReview)
             .filter(ClientDeskUnlinkedReview.user_id == uid)
             .order_by(ClientDeskUnlinkedReview.week_start_date.desc()).limit(limit).all())
@@ -261,7 +344,6 @@ def list_reviews(db, user, limit=4):
 
 
 def generate_review(db, user):
-    _require_enabled()
-    uid, _ = _pilot_for(db, user, "write")
+    uid, _, _ = _scopes(db, user, "write")
     review = worker.generate_weekly(db, uid, action="write")
     return {"id": review.id, "week_start_date": review.week_start_date.isoformat(), "status": review.status}

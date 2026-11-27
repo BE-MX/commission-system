@@ -39,6 +39,7 @@ class WhatsAppAccount(Base):
     consent_state = Column(String(20), nullable=False, default="pending", server_default="pending", comment="授权 pending/active/paused/revoked")
     crm_shared = Column(Boolean, nullable=False, default=False, server_default="0", comment="持有人明确允许客户域共享")
     ai_egress_allowed = Column(Boolean, nullable=False, default=False, server_default="0", comment="持有人允许已有供应商分析外发")
+    unlinked_ai_allowed = Column(Boolean, nullable=False, default=False, server_default="0", comment="持有人明确允许对未绑定活跃单聊做线索初筛")
     connector_status = Column(String(60), nullable=True, comment="连接器侧状态原文")
     last_sync_at = Column(DateTime, nullable=True, comment="最近同步时间")
     last_message_at = Column(DateTime, nullable=True, comment="最近消息时间")

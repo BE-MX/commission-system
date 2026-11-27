@@ -12,7 +12,7 @@ async function bindingFixture() {
   })
   const responseFor = () => ({ data: { bind_session_uid: 'synthetic-bind', status: response } })
   const imports = {
-    vue: { ref: value => ({ value }), watch: () => {}, onUnmounted: () => {} },
+    vue: { ref: value => ({ value }), computed: fn => ({ get value() { return fn() } }), watch: () => {}, onUnmounted: () => {} },
     '@/api/whatsapp': {
       createWhatsAppBindSession: async () => responseFor(),
       getWhatsAppBindSession: async () => { requests++; return responseFor() },
@@ -44,3 +44,13 @@ for (const status of ['paused', 'blocked', 'revoking', 'revoke_pending', 'revoke
     assert.equal(fixture.timers.size, 0, 'stopped binding must not keep querying/auditing')
   })
 }
+
+test('unlinked chat AI switch is only available on top of consent, CRM sharing and AI egress', async () => {
+  const { binding } = await bindingFixture()
+  binding.consentForm.value = { enabled: true, crm_shared: true, ai_egress_allowed: false, unlinked_ai_allowed: false }
+  assert.equal(binding.unlinkedAiAvailable.value, false)
+  binding.consentForm.value = { enabled: true, crm_shared: true, ai_egress_allowed: true, unlinked_ai_allowed: false }
+  assert.equal(binding.unlinkedAiAvailable.value, true)
+  binding.consentForm.value = { enabled: false, crm_shared: true, ai_egress_allowed: true, unlinked_ai_allowed: true }
+  assert.equal(binding.unlinkedAiAvailable.value, false)
+})

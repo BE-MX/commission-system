@@ -58,7 +58,9 @@ async def report_job():
 
 def _unlinked_enabled():
     settings = get_settings()
-    return settings.CLIENT_DESK_UNLINKED_ENABLED and settings.CLIENT_DESK_UNLINKED_TM_ENABLED
+    return settings.CLIENT_DESK_UNLINKED_ENABLED and (
+        settings.CLIENT_DESK_UNLINKED_TM_ENABLED or settings.CLIENT_DESK_UNLINKED_WA_ENABLED
+    )
 
 
 def unlinked_scan_job():
@@ -67,6 +69,14 @@ def unlinked_scan_job():
     from app.client_desk.unlinked.worker import scan_for_pilot
 
     scan_for_pilot(SessionLocal, get_settings().CLIENT_DESK_UNLINKED_DAILY_QUOTA)
+
+
+def unlinked_wa_scan_job():
+    if not _unlinked_enabled():
+        return
+    from app.client_desk.unlinked.wa import scan
+
+    scan(SessionLocal, get_settings().CLIENT_DESK_UNLINKED_DAILY_QUOTA)
 
 
 def unlinked_worker_job():
@@ -80,6 +90,6 @@ def unlinked_worker_job():
 def unlinked_weekly_job():
     if not _unlinked_enabled() or not get_settings().CLIENT_DESK_UNLINKED_WEEKLY_REPORT_ENABLED:
         return
-    from app.client_desk.unlinked.worker import weekly_for_pilot
+    from app.client_desk.unlinked.worker import weekly_for_reps
 
-    weekly_for_pilot(SessionLocal)
+    weekly_for_reps(SessionLocal)

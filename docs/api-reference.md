@@ -71,7 +71,7 @@ JWT 管理入口 POST `/api/alibaba-feed/sources`、PATCH `/api/alibaba-feed/sou
 
 阿里来源管理 `POST /api/alibaba-feed/pilot/activation` 接收可选的 `unlinked_ai_allowed`。已启用的试点以当前 `expected_version` 更新，授权时还需 `consent_confirmed: true`。撤权或停用试点立即阻止 B 轨读取和运行。现有 A 轨来源授权独立。
 
-`/api/client-desk/unlinked` 读取使用 GET `/threads?view=active|prospect` 和 `/weekly-reviews`。写入使用 POST `/threads/{id}/handled`、`ignore`、`restore`、`prospect`、`bind`、`analyze` 及 `/weekly-reviews/generate`。仅试点本人，实时校验业务员和来源。写入要求当前读写权限，跟进需日期和说明，绑定复用 TM 关联及私海校验。生成周报返回 `id`、`week_start_date`、`status`，报告正文从列表读取。
+`/api/client-desk/unlinked` 读取使用 GET `/threads?view=active|prospect` 和 `/weekly-reviews`。写入使用 POST `/threads/{id}/handled`、`ignore`、`restore`、`prospect`、`bind`、`analyze` 及 `/weekly-reviews/generate`。一个列表同时返回 TM（`channel: "tm"`，仅试点本人）和 WhatsApp（`channel: "whatsapp"`，仅号码持有人本人、账号已开 `unlinked_ai_allowed`，`company_hint` 为脱敏号码）的线索，实时校验业务员和来源。WhatsApp 的「不是客户」「绑定」写入同一条私海会话关联（与未关联会话页互通），「恢复」撤销该忽略关联。写入要求当前读写权限，跟进需日期和说明，绑定复用 TM 关联及私海校验。生成周报返回 `id`、`week_start_date`、`status`，报告正文从列表读取。
 
 ## 私海助理（2026-11-04，本地实现，默认关闭）
 
@@ -186,7 +186,7 @@ GET `/reports/handoff` 仅公开无敏感内容壳。POST `/reports/redeem` 需�
 既有 `/api/whatsapp/accounts`、`sync/pull`、`conversations`、`messages` 路径及分页信封保留；`sync/pull` 仍同步返回本批 `pulled`，messages 的 `next_cursor` 保持 null，不代表全部历史完成。账号结果增加 provider、connection_state、sync_state、history_state、consent_state、consent_version、can_read_body、crm_shared、ai_egress_allowed、revoke_state。管理员元数据范围不授予正文；员工状态与角色权限实时查库。
 
 - `POST /api/whatsapp/bind-sessions`：`{account_uid?,company_account:true,crm_shared:false}`；仅持有人可确认。传原 account_uid 保留客户绑定、会话与消息，新增接入代次。二维码临时返回，不写业务库。
-- `PUT /api/whatsapp/accounts/{uid}/consent`：`{enabled,company_account,crm_shared,ai_egress_allowed,reader_user_ids}`；独立设置原文、客户共享和已有 AI 外发。授权版本变化使旧 Worker/任务失效；读者仍需相应功能权限。
+- `PUT /api/whatsapp/accounts/{uid}/consent`：`{enabled,company_account,crm_shared,ai_egress_allowed,unlinked_ai_allowed,reader_user_ids}`；独立设置原文、客户共享和已有 AI 外发。`unlinked_ai_allowed` 只在采集、客户共享和 AI 外发都开启时生效，账号结果同名字段返回。授权版本变化使旧 Worker/任务失效；读者仍需相应功能权限。
 - `GET /api/whatsapp/accounts/{uid}/reader-candidates?q=`：持有人按姓名搜索具备阅读权限的员工。
 - `POST /api/whatsapp/accounts/{uid}/revoke`：先停止采集/访问，再尝试设备注销；请求完成不是远端确认。revoke_pending/remote_unconfirmed 提示手机核对。
 - `POST /api/whatsapp/accounts/{uid}/revoke-confirmation`：`{phone_device_removed:true}`；仅持有人可在待核对阶段确认，审计 owner_confirmed 与协议 ACK 分开。

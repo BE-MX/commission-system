@@ -66,6 +66,10 @@ P2 迁移 `275_factory_inbound_batch` 增加 `ark_factory_inbound_batches` 与 `
 
 逐条事务先核对 batch 租约，再锁来源串行推进版本。冻结迁移核验已有结构后支持半完成 DDL 续建，差异拒绝；不 stamp/downgrade 掩盖问题。详细实现和隔离迁移证据见[P1 实现说明](requirements/2026-11-05-alibaba-feed-integration/implementation.md)，生产迁移仅由指定发布入口执行。
 
+## 私海助理 B 轨 WhatsApp（283_wa_unlinked_ai）
+
+接 `282_client_desk_unlinked`。`ark_whatsapp_accounts` 增加 `unlinked_ai_allowed`（布尔，默认 0）：号码持有人明确允许 AI 整理还没关联客户的单聊。只有授权采集、客户工作台共享和 AI 外发同时开启时才能为 1；重新扫码关联、撤销或关闭授权都会把它清回 0。WhatsApp 线索复用 B 轨三张表，`channel='whatsapp'`，`source_account_uid` 为账号 `account_uid`，`thread_key` 为 `conversation_uid`，水位为最新入站消息的 `[id, source_revision]`。
+
 ## 私海助理 B 轨（282_client_desk_unlinked）
 
 接 `281_followup_recordings`。为 `ark_alibaba_feed_pilot` 增加默认关闭的 `unlinked_ai_allowed`，试点配置版本用于区分撤权与再授权。新增 `ark_client_desk_unlinked_threads`、`ark_client_desk_unlinked_runs`、`ark_client_desk_unlinked_reviews`，分别保存线索状态和水位、日分析与消息证据指纹、周报与依赖的日分析 ID。写入时间为北京时间，用户外键为 MySQL INT UNSIGNED。回退仅在线执行，并要求三张表都为空。

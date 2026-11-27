@@ -25,7 +25,7 @@ from app.alibaba_feed.models import (
     AlibabaFeedMessage,
     AlibabaFeedSource,
 )
-from app.client_desk.unlinked import core, service, worker
+from app.client_desk.unlinked import core, service, wa, worker
 
 TABLES = [
     ClientDeskUnlinkedThread.__table__,
@@ -43,6 +43,7 @@ def _settings(**over):
     base = dict(
         CLIENT_DESK_UNLINKED_ENABLED=True,
         CLIENT_DESK_UNLINKED_TM_ENABLED=True,
+        CLIENT_DESK_UNLINKED_WA_ENABLED=False,
         CLIENT_DESK_UNLINKED_PRESET_NAME="client_desk_unlinked",
         CLIENT_DESK_UNLINKED_DAILY_QUOTA=20,
         CLIENT_DESK_UNLINKED_WEEKLY_REPORT_ENABLED=True,
@@ -59,7 +60,7 @@ def env(tmp_path, monkeypatch):
         table.create(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     cfg = _settings()
-    monkeypatch.setattr(service, "get_settings", lambda: cfg)
+    monkeypatch.setattr(wa, "get_settings", lambda: cfg)
     monkeypatch.setattr(worker, "get_settings", lambda: cfg)
     monkeypatch.setattr(service, "_pilot_for", lambda db, user, action="read": (private_scope.user_id(user), 1))
     monkeypatch.setattr(worker, "_current_deps", lambda db, source_id: DEPS)

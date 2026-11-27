@@ -202,6 +202,8 @@
         <el-checkbox v-if="consentForm.enabled" v-model="consentForm.company_account">确认公司专用业务号允许全部会话（包含群聊）</el-checkbox>
         <el-checkbox v-model="consentForm.crm_shared" :disabled="!consentForm.enabled">允许客户工作台共享已绑定会话</el-checkbox>
         <el-checkbox v-model="consentForm.ai_egress_allowed" :disabled="!consentForm.enabled">允许主动调用已有 AI 供应商生成聊天摘要与跟进建议</el-checkbox>
+        <el-checkbox v-model="consentForm.unlinked_ai_allowed" :disabled="!unlinkedAiAvailable">允许 AI 自动整理还没关联客户的单聊</el-checkbox>
+        <p>需先开启客户工作台共享和 AI 分析。整理结果只有号码持有人能在私海助理「未绑定线索」里看到；公私混用的号码请保持关闭。</p>
         <label for="whatsapp-readers">正文可见员工（持有人始终可见）</label>
         <el-select id="whatsapp-readers" v-model="consentForm.reader_user_ids" multiple filterable remote :remote-method="searchReaders" :disabled="!consentForm.enabled" placeholder="搜索员工姓名" aria-label="正文可见员工">
           <el-option v-for="user in readerCandidates" :key="user.id" :label="`${user.name} · ${user.id}`" :value="user.id" />
@@ -267,7 +269,7 @@ const messagesResource = useAsyncResource(async (params, { signal, isCurrent }) 
 const accounts = accountsResource.data, conversations = conversationsResource.data, messages = messagesResource.data
 const loading = accountsResource.loading, conversationLoading = conversationsResource.loading, messageLoading = messagesResource.loading
 const { bindDialogVisible, bindSession, bindBusy, bindingAccount, companyAccount, shareCRM,
-  consentDialogVisible, consentForm, consentBusy, readerCandidates, openBind,
+  consentDialogVisible, consentForm, consentBusy, readerCandidates, unlinkedAiAvailable, openBind,
   create: createBinding, refresh: refreshBinding, openConsent, searchReaders, saveConsent, stop: stopBinding } = useWhatsAppBinding(loadAccounts)
 const selectedAccount = ref(null)
 const selectedConversation = ref(null)
