@@ -1,5 +1,4 @@
 """Customer-owned delivery and grant prices; never write the business mirror."""
-import re
 from copy import deepcopy
 from decimal import Decimal
 from sqlalchemy import select
@@ -9,6 +8,7 @@ from app.portal.domain import require_version
 from app.portal.errors import reject
 from app.portal.models import CatalogGrant, Quote
 from app.portal.catalog_access_service import granted_items
+from app.portal.product_traits import ColorTypes, facets, traits
 
 
 def delivery_view(db, access, account=None):
@@ -55,31 +55,12 @@ def update_delivery(db, actor_id, public_id, expected, body):
     return result
 
 
-def product_grade(model):
-    """等级取自内部型号开头：B1/B3…，或「50%幅度」；配件等无等级返回 None。"""
-    text = str(model or "").strip().upper()
-    match = re.match(r"(B\d+)", text) or re.match(r"(\d+%幅度)", text)
-    return match.group(1) if match else None
-
-
-def color_type(color):
-    """按颜色编码判断：含 TP 为 TP色，#P 开头为 P色，含 T 为 T色，其余编码为单色；非 # 编码的命名色归其他。"""
-    code = str(color or "").strip().upper()
-    if not code.startswith("#"):
-        return "其他"
-    if "TP" in code:
-        return "TP色"
-    if code.startswith("#P"):
-        return "P色"
-    return "T色" if "T" in code else "单色"
-
-
 def price_view(db, access):
     from app.portal.browse_pricing import BrowsePrices
     rows = granted_items(db, access)
     browse = BrowsePrices(db, access, rows)
     grants = {g.catalog_item_id: g for g in db.scalars(select(CatalogGrant).where(CatalogGrant.access_id == access.id))}
-    items = []
+    items, colors = [], ColorTypes(db)
     for row in rows:
         if row.product_kind == "hair":
             standard = browse.resolve(row.standard_json).get("standard_price")
@@ -90,11 +71,11 @@ def price_view(db, access):
         price = grants[row.id].unit_price
         items.append({"id": row.public_id, "model_name": row.display_name, "color_name": row.color_name,
             "length": row.standard_json.get("length"), "weight": row.standard_json.get("weight"), "sale_unit": row.sale_unit,
-            "grade": product_grade(row.standard_json.get("model")),
-            "color_type": color_type(row.standard_json.get("color") or row.color_name),
+            **traits(row, colors),
             "standard_price": format(standard, ".4f") if standard is not None else None,
             "unit_price": format(price, ".4f") if price is not None else None})
-    return {"row_version": access.row_version, "items": items, "currency": "USD"}
+    return {"row_version": access.row_version, "items": items, "currency": "USD",
+            "facets": facets([{"grade": item["grade"], "color_type": item["color_type"]} for item in items])}
 
 
 def get_prices(db, actor_id, public_id):

@@ -2,19 +2,17 @@
 import { computed, ref, onBeforeUnmount, watch } from 'vue'
 import { portalAdminApi } from '@/api/portal'
 import { useAuthStore } from '@/stores/auth'
+import PortalProductFilters from './PortalProductFilters.vue'
 const props = defineProps({ access: Object, section: String })
 const emit = defineEmits(['close', 'changed'])
 const auth = useAuthStore(), data = ref(null), delivery = ref({}), rows = ref([]), selected = ref([]), batch = ref(''), busy = ref(false), uncertain = ref(false), error = ref('')
-const emptyFilters = () => ({ color: '', length: '', weight: '', grade: '', colorType: '' })
+const emptyFilters = () => ({ color: '', length: '', weight: '', grade: '', color_type: '' })
 const filters = ref(emptyFilters())
-const COLOR_TYPES = ['单色', 'P色', 'T色', 'TP色', '其他']
-const gradeOptions = computed(() => [...new Set(rows.value.map(row => row.grade).filter(Boolean))].sort())
-const colorTypeOptions = computed(() => COLOR_TYPES.filter(type => rows.value.some(row => row.color_type === type)))
 const filtering = computed(() => Object.values(filters.value).some(value => String(value ?? '').trim()))
 // 克重输入 20 与 20g 视为同一规格
 const normWeight = value => String(value ?? '').trim().toLowerCase().replace(/\s+/g, '').replace(/g$/, '')
 const visibleRows = computed(() => {
-  const { color, length, weight, grade, colorType } = filters.value
+  const { color, length, weight, grade, color_type: colorType } = filters.value
   const colorTerm = color.trim().toLowerCase(), lengthTerm = length.trim(), weightTerm = normWeight(weight)
   return rows.value.filter(row => (!colorTerm || String(row.color_name ?? '').toLowerCase().includes(colorTerm))
     && (!lengthTerm || String(row.length ?? '').trim() === lengthTerm)
@@ -74,13 +72,7 @@ watch(() => [props.access.id, props.section], () => { uncertain.value = false; l
       <template v-if="data && section === 'prices'">
         <div class="batch-price"><el-input v-model="batch" aria-label="批量单价" placeholder="USD 单价" :disabled="busy || uncertain" /><GlassButton :disabled="!selected.length || busy || uncertain" @click="applyBatch">应用到所选 {{ selected.length }} 项</GlassButton></div>
         <p>未设置专属价时显示标准价供填写；清空单价可恢复现有客户定价规则。</p>
-        <div class="price-filters">
-          <el-input v-model="filters.color" aria-label="颜色" placeholder="颜色" clearable />
-          <el-input v-model="filters.length" aria-label="长度" placeholder="长度" clearable />
-          <el-input v-model="filters.weight" aria-label="克重" placeholder="克重" clearable />
-          <el-select v-model="filters.grade" aria-label="等级" placeholder="等级" clearable><el-option v-for="grade in gradeOptions" :key="grade" :label="grade" :value="grade" /></el-select>
-          <el-select v-model="filters.colorType" aria-label="颜色类型" placeholder="颜色类型" clearable><el-option v-for="type in colorTypeOptions" :key="type" :label="type" :value="type" /></el-select>
-        </div>
+        <PortalProductFilters class="price-filters" :filters="filters" :facets="data.facets" />
         <p v-if="selected.length && filtering">已选 {{ selected.length }} 项，其中当前结果可见 {{ visibleSelectedCount }} 项。</p>
         <el-table :data="visibleRows" border class="list-table" v-sticky-scrollbar max-height="440">
           <el-table-column min-width="55"><template #header><el-checkbox class="price-select" :model-value="visibleRows.length > 0 && visibleSelectedCount === visibleRows.length" :indeterminate="visibleSelectedCount > 0 && visibleSelectedCount < visibleRows.length" :disabled="busy || uncertain || !visibleRows.length" aria-label="选择当前筛选结果" @change="selectVisible" /></template><template #default="{ row }"><el-checkbox v-model="selected" class="price-select" :value="row.id" :disabled="busy || uncertain" :aria-label="`选择 ${row.model_name} ${row.color_name} ${row.length} ${row.weight ?? ''} ${row.sale_unit ?? ''}`"><span aria-hidden="true"></span></el-checkbox></template></el-table-column>
@@ -96,8 +88,7 @@ watch(() => [props.access.id, props.section], () => { uncertain.value = false; l
 <style scoped>
 .batch-price { display: flex; gap: 12px; margin: 16px 0; }
 .batch-price .el-input { max-width: 180px; }
-.price-filters { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
-@media (max-width: 640px) { .price-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.price-filters { margin-bottom: 12px; }
 .product-name, .product-spec { white-space: normal; overflow-wrap: anywhere; }
 .product-spec { color: var(--text-secondary); }
 .price-select { margin-right: 0; }
@@ -108,6 +99,4 @@ p { color: var(--text-secondary); }
 .portal-customer-settings { max-width: calc(100vw - 24px); }
 .portal-customer-settings .el-dialog__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .portal-customer-settings .el-dialog__footer button { margin-left: 0; }
-/* 与共享筛选栏同法：Element Plus 下拉框内部最小 32px，统一到组件高度 */
-.portal-customer-settings .price-filters .el-input__wrapper, .portal-customer-settings .price-filters .el-select__wrapper { box-sizing: border-box; min-height: var(--el-component-size); height: var(--el-component-size); }
 </style>

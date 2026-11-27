@@ -31,6 +31,7 @@ assert not (Path(__file__).resolve().parents[2] / '.env').exists(), "Use an isol
 
 from app.core.database import Base  # noqa: E402
 from app.auth import models as auth_models  # noqa: E402,F401
+from app.catalog import models as catalog_models  # noqa: E402,F401  (FK target of invoice/std price SKU columns)
 from app.customer import models as customer_models  # noqa: E402,F401
 from app.invoice import models as invoice_models  # noqa: E402,F401
 from app.portal import models  # noqa: E402,F401
@@ -42,11 +43,11 @@ def portal_metadata():
     # Only FK targets are needed for model/constraint tests. Domain integration
     # tests add the real upstream schema; this fixture does not claim to test it.
     for table in ("ark_users", "ark_customer_accounts", "ark_customer_external_identities",
-                  "ark_customer_assignments", "ark_invoices"):
+                  "ark_customer_assignments", "ark_invoices", "ark_catalog_skus"):
         Table(table, metadata, Column("id", BigInteger().with_variant(Integer(), "sqlite"), primary_key=True))
     invoice_stub = metadata.tables["ark_invoices"]
     from sqlalchemy import String, DateTime
-    for name in ("customer_id", "contact_name", "contact_phone", "delivery_address"):
+    for name in ("customer_id", "contact_name", "contact_phone", "delivery_address", "status"):
         invoice_stub.append_column(Column(name, String(500)))
     invoice_stub.append_column(Column("created_at", DateTime))
     invoice_models.CustomerProfile.__table__.to_metadata(metadata)

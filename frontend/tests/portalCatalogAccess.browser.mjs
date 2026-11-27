@@ -9,7 +9,7 @@ const id = '11111111-1111-4111-8111-111111111111'
 const old = { id: '22222222-2222-4222-8222-222222222222', model_name: 'Withdrawn Model', color_name: 'Black', length: '20', weight: '100', sale_unit: 'pack', status: 'disabled' }
 const fresh = { ...old, id: '33333333-3333-4333-8333-333333333333', model_name: 'Published Model', status: 'published' }
 let items = [old], version = 1, mode = 'success', permissions = ['portal_access:read', 'portal_access:admin']
-const calls = [], errors = []
+const calls = [], errors = [], catalogQueries = []
 const access = () => ({ id, company_display_name: 'Synthetic Catalog Buyer', canonical_customer_id: '12', sales_user_id: '5', status: 'draft', row_version: version, capabilities: { can_view_price: false, can_order: false }, catalog_version: version, mapping_version: 0, catalog_item_ids: items.map(x => x.id), accounts: { items: [], total: 0 } })
 page.on('pageerror', e => errors.push(e.message))
 await context.addInitScript(() => { localStorage.setItem('ark_access_token', 'synthetic-test-only'); sessionStorage.setItem('leshine_welcome_shown_session', '1') })
@@ -26,7 +26,7 @@ await context.route('**/api/**', async route => {
       items = [old, fresh].filter(x => body.catalog_item_ids.includes(x.id)); version++
       if (mode === 'lost') return route.abort('failed')
       data = { ...access(), items }
-    } else if (path.endsWith('/onboarding/catalog')) data = { items: [fresh], total: 1 }
+    } else if (path.endsWith('/onboarding/catalog')) { catalogQueries.push(Object.fromEntries(new URL(req.url()).searchParams)); data = { items: [fresh], total: 1, facets: { grades: ['B1', 'B3'], color_types: ['单色', 'TP色'] } } }
     else if (path.endsWith(`/customers/${id}/catalog`)) {
       if (mode === 'scope') return route.fulfill({ status: 404, json: { code: 404, message: '记录不存在或不在当前授权范围内。', data: { error_code: 'RESOURCE_NOT_FOUND' } } })
       data = { ...access(), items }
@@ -38,7 +38,7 @@ await context.route('**/api/**', async route => {
 })
 const dialog = () => page.locator('.portal-catalog-access:visible')
 async function open() {
-  await page.goto('http://127.0.0.1:3211/portal/customers')
+  await page.goto((process.env.PORTAL_ADMIN_ORIGIN || 'http://127.0.0.1:3211') + '/portal/customers')
   await page.getByRole('button', { name: '管理', exact: true }).click()
   await page.getByRole('button', { name: '管理商品授权', exact: true }).click()
   await dialog().getByText('Published Model', { exact: true }).waitFor()
@@ -49,6 +49,19 @@ async function confirm() {
 }
 try {
   await open()
+  const gradeSelect = dialog().locator('.portal-product-filters .el-select').nth(0)
+  await gradeSelect.click(); await page.getByRole('option', { name: 'B1', exact: true }).click()
+  await gradeSelect.hover(); await gradeSelect.locator('.el-select__clear').click()
+  assert.equal(await dialog().getByText('筛选条件已修改，请先点「搜索商品」再全选。', { exact: true }).count(), 0, 'Clearing back to empty is not a pending change')
+  await dialog().getByRole('textbox', { name: '长度', exact: true }).fill('20')
+  await dialog().getByRole('textbox', { name: '克重', exact: true }).fill('100g')
+  for (const [nth, option] of [[0, 'B3'], [1, 'TP色']]) { await dialog().locator('.portal-product-filters .el-select').nth(nth).click(); await page.getByRole('option', { name: option, exact: true }).click() }
+  await dialog().getByText('筛选条件已修改，请先点「搜索商品」再全选。', { exact: true }).waitFor()
+  await dialog().getByRole('button', { name: '搜索商品', exact: true }).click()
+  await dialog().getByRole('button', { name: '全选筛选结果（1）', exact: true }).waitFor()
+  assert.deepEqual(catalogQueries.at(-1), { page: '1', page_size: '20', length: '20', weight: '100g', grade: 'B3', color_type: 'TP色' })
+  const heights = await dialog().locator('.portal-product-filters > *').evaluateAll(els => els.map(el => Math.round(el.getBoundingClientRect().height)))
+  assert.equal(new Set(heights).size, 1, String(heights))
   await dialog().getByText('查看已选规格（1）', { exact: true }).click()
   await dialog().getByText(/Withdrawn Model.*已下架/).waitFor()
   await dialog().locator('.catalog-picker .el-checkbox').click()

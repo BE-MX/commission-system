@@ -133,7 +133,7 @@ export const portalAdminApi = {
     return response.data
   },
   async onboardingCatalog(params, signal) {
-    const response = await portalAdminClient.get('/onboarding/catalog', { params: { ...params, keyword: params.keyword || undefined }, signal, showLoading: false, suppressToast: true })
+    const response = await portalAdminClient.get('/onboarding/catalog', { params: Object.fromEntries(Object.entries(params).filter(([, value]) => String(value ?? '').trim())), signal, showLoading: false, suppressToast: true })
     return response.data
   },
   async copyCustomer(id, key, body) {

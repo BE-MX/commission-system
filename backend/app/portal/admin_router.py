@@ -103,10 +103,13 @@ def onboarding_status(customer_id: int, actor=Depends(_require_portal_employee),
 
 @router.get("/onboarding/catalog")
 def onboarding_catalog(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-                       keyword: str | None = Query(None, max_length=100),
+                       color: str | None = Query(None, max_length=64), length: str | None = Query(None, max_length=32),
+                       weight: str | None = Query(None, max_length=32), grade: str | None = Query(None, max_length=32),
+                       color_type: str | None = Query(None, max_length=16),
                        actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
     from app.portal.onboarding_service import catalog_options
-    data = catalog_options(db, actor, page=page, page_size=page_size, keyword=keyword)
+    filters = dict(color=color, length=length, weight=weight, grade=grade, color_type=color_type)
+    data = catalog_options(db, actor, filters=filters, page=page, page_size=page_size)
     db.commit()
     return ok(data)
 

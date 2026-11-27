@@ -2567,7 +2567,7 @@ current_invoice按员工白名单读取当前发票商业抬头/商品/金额/�
 
 - GET `/api/portal/admin/v1/onboarding/customers`：当前有效主负责人范围的开通候选；keyword/page/page_size，返回 ready、blocked_reasons、当前身份和 binding_fingerprint。
 - GET `/api/portal/admin/v1/onboarding/customers/{canonical_customer_id}`：重新查询单客户开通条件及可读 existing_access，用于未知创建结果恢复；不代表原命令回执。
-- GET `/api/portal/admin/v1/onboarding/catalog`：当前站点已发布规格选项；keyword/page/page_size，只返回安全规格投影。
+- GET `/api/portal/admin/v1/onboarding/catalog`：当前站点已发布规格选项（开通客户与商品授权共用）；筛选参数 color（模糊）/length、weight（精确，克重 20 与 20g 等同）/grade/color_type 与 page/page_size，只返回安全规格投影，每项带 `grade`、`color_type`，`facets` 给出全部已发布商品中出现的等级与颜色类型。
 - 三个 GET 要求当前 portal_access:admin，员工数据范围仍独立核对。POST `/customers` 新增必填 binding_fingerprint（64位十六进制），屏障内比较当前身份/归属；旧选择409，越权404。创建 draft，无启用、邀请或发信副作用；后续由已有访问与账号管理完成。
 
 
@@ -2930,7 +2930,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 
 ### 2026-10-28 客户门户资料与价格维护
 
-员工接口 `/api/portal/admin/v1/customers/{id}/delivery` 与 `/prices` 支持 GET/PUT。GET需 portal_access:read，PUT需 portal_access:admin及当前客户范围；PUT使用 If-Match。地址body为 `{delivery: {...}}`，版本来自客户资料 delivery_version；价格 GET 每项另带 `grade`（取自内部型号开头的 B1/B3/50%幅度，配件为 null）与 `color_type`（单色/P色/T色/TP色，非 # 编码的命名色为其他），供页面按等级、颜色类型筛选；价格body为 `{items:[{item_id,unit_price}]}`，USD四位小数、null恢复规则，版本来自customer access。批价原子保存并使有效报价过期。网络未知结果先GET核对，不自动重发。
+员工接口 `/api/portal/admin/v1/customers/{id}/delivery` 与 `/prices` 支持 GET/PUT。GET需 portal_access:read，PUT需 portal_access:admin及当前客户范围；PUT使用 If-Match。地址body为 `{delivery: {...}}`，版本来自客户资料 delivery_version；价格 GET 每项另带 `grade`（取自内部型号开头的 B1/B3/50%幅度，配件为 null）与 `color_type`（单色/P色/T色/TP色，以价格矩阵登记的颜色类型为准、未登记按色号推断，都不成立为其他），并返回 `facets`，供页面按等级、颜色类型筛选；价格body为 `{items:[{item_id,unit_price}]}`，USD四位小数、null恢复规则，版本来自customer access。批价原子保存并使有效报价过期。网络未知结果先GET核对，不自动重发。
 
 客户 `/api/portal/v1/delivery-profile` 现在读取/更新同客户共享地址；checkout delivery可省略，已填字段仍校验。订单GET增加英文 processing_status、dispatch_recorded 和客户安全 shipments详情。验货单绑定物流接口使用当前权限/范围及edit_version + shipment_version；物流关联仅递增shipment_version，不改变验货版本。详见 shipping_inspection/router.py。
 

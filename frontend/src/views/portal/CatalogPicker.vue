@@ -1,10 +1,11 @@
 <script setup>
-import { nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useListPage } from '@/composables/useListPage'
 import { portalAdminApi } from '@/api/portal'
+import PortalProductFilters from './PortalProductFilters.vue'
 const props = defineProps({ modelValue: { type: Array, required: true }, disabled: Boolean, title: { type: String, default: '初始商品授权' } })
 const emit = defineEmits(['update:modelValue', 'denied'])
-const error = ref(''), errorSummary = ref(null)
+const error = ref(''), errorSummary = ref(null), facets = ref({})
 let controller, sequence = 0, disposed = false, errorSequence = 0
 async function showError(value) {
   const current = ++errorSequence
@@ -17,9 +18,12 @@ const { list, total, page, pageSize, loading, searchForm, appliedSearchForm, has
   controller?.abort(); controller = new AbortController(); list.value = []; total.value = 0; error.value = ''
   try {
     const result = await portalAdminApi.onboardingCatalog(params, controller.signal)
-    return !disposed && current === sequence ? result : { items: [], total: 0 }
+    if (disposed || current !== sequence) return { items: [], total: 0 }
+    facets.value = result.facets || {}
+    return result
   } catch (e) { if (!disposed && current === sequence) { if ([401, 403, 404].includes(e?.response?.status)) emit('denied', e.response.status); void showError(e?.response?.data?.message || '商品选项读取失败。') }; return { items: [], total: 0 } }
-}, { searchForm: { keyword: '' } })
+}, { searchForm: { color: '', length: '', weight: '', grade: '', color_type: '' } })
+const filtered = computed(() => Object.values(appliedSearchForm.value).some(value => String(value ?? '').trim()))
 function selected(id) { return props.modelValue.some(item => item.id === id) }
 const MAX_SELECTED = 5000, BATCH = 100
 const selectingAll = ref(false)
@@ -31,24 +35,24 @@ function toggle(item, checked) {
     emit('update:modelValue', [...props.modelValue, { ...item }])
   } else if (!checked) emit('update:modelValue', props.modelValue.filter(row => row.id !== item.id))
 }
-// Pages through every published item matching the current keyword, so the
+// Pages through every published item matching the applied filters, so the
 // selection never depends on the visible page size.
 async function selectAll() {
   if (props.disabled || selectingAll.value) return
   selectingAll.value = true; error.value = ''
   selectAllController?.abort(); selectAllController = new AbortController()
-  const keyword = appliedSearchForm.value.keyword, found = []
+  const filters = { ...appliedSearchForm.value }, found = []
   try {
     for (let current = 1; ; current++) {
-      const result = await portalAdminApi.onboardingCatalog({ page: current, page_size: BATCH, keyword }, selectAllController.signal)
+      const result = await portalAdminApi.onboardingCatalog({ ...filters, page: current, page_size: BATCH }, selectAllController.signal)
       if (disposed) return
       found.push(...result.items)
-      if (found.length > MAX_SELECTED) { void showError(`匹配商品超过 ${MAX_SELECTED} 个，请先缩小搜索范围。`); return }
+      if (found.length > MAX_SELECTED) { void showError(`匹配商品超过 ${MAX_SELECTED} 个，请先缩小筛选范围。`); return }
       if (!result.items.length || found.length >= result.total) break
     }
     const known = new Set(props.modelValue.map(item => item.id))
     const merged = [...props.modelValue, ...found.filter(item => !known.has(item.id)).map(item => ({ ...item }))]
-    if (merged.length > MAX_SELECTED) { void showError(`合并后超过 ${MAX_SELECTED} 个商品规格，请先缩小搜索范围。`); return }
+    if (merged.length > MAX_SELECTED) { void showError(`合并后超过 ${MAX_SELECTED} 个商品规格，请先缩小筛选范围。`); return }
     emit('update:modelValue', merged)
   } catch (e) {
     if (disposed || e?.name === 'CanceledError') return
@@ -64,8 +68,8 @@ onBeforeUnmount(() => { disposed = true; sequence++; errorSequence++; controller
   <section class="catalog-picker" :aria-busy="loading || undefined">
     <h3>{{ title }} · 已选 {{ modelValue.length }} 项</h3>
     <p>仅选择已发布的标准规格。客户不会自动获得整个目录，已下架的历史授权只能保留或移除。</p>
-    <div class="picker-search"><el-input v-model="searchForm.keyword" :disabled="disabled" aria-label="搜索可授权商品" maxlength="100" placeholder="标准型号或颜色" @keyup.enter="handleSearch" /><GlassButton :disabled="disabled || loading" @click="handleSearch">搜索商品</GlassButton><GlassButton :disabled="disabled || loading" @click="fetchList">刷新商品</GlassButton></div>
-    <div class="picker-bulk"><GlassButton variant="primary" :loading="selectingAll" :disabled="disabled || loading || hasPendingSearch || !total" @click="selectAll">{{ appliedSearchForm.keyword ? `全选搜索结果（${total}）` : `全选全部商品（${total}）` }}</GlassButton><GlassButton :disabled="disabled || selectingAll || !modelValue.length" @click="clearAll">清空已选</GlassButton><span>{{ hasPendingSearch ? '搜索条件已修改，请先点「搜索商品」再全选。' : '全选会按当前搜索结果选中所有已发布商品，不限于当前页。' }}</span></div>
+    <div class="picker-search"><PortalProductFilters class="picker-filters" :filters="searchForm" :facets="facets" :disabled="disabled" @submit="handleSearch" /><GlassButton :disabled="disabled || loading" @click="handleSearch">搜索商品</GlassButton><GlassButton :disabled="disabled || loading" @click="fetchList">刷新商品</GlassButton></div>
+    <div class="picker-bulk"><GlassButton variant="primary" :loading="selectingAll" :disabled="disabled || loading || hasPendingSearch || !total" @click="selectAll">{{ filtered ? `全选筛选结果（${total}）` : `全选全部商品（${total}）` }}</GlassButton><GlassButton :disabled="disabled || selectingAll || !modelValue.length" @click="clearAll">清空已选</GlassButton><span>{{ hasPendingSearch ? '筛选条件已修改，请先点「搜索商品」再全选。' : '全选会按当前筛选结果选中所有已发布商品，不限于当前页。' }}</span></div>
     <p v-if="loading" role="status">正在读取可授权商品…</p>
     <el-alert v-if="error" ref="errorSummary" tabindex="-1" :title="error" type="error" :closable="false" />
     <el-table :scrollbar-tabindex="0" v-loading="loading" :data="list" border class="list-table" v-sticky-scrollbar><template #empty><el-empty :image-size="72" description="没有匹配的已发布商品，请先完成站点商品配置" /></template>
@@ -80,7 +84,7 @@ onBeforeUnmount(() => { disposed = true; sequence++; errorSequence++; controller
 
 <style scoped>
 .picker-search { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
-.picker-search .el-input { flex: 1; min-width: 160px; }
+.picker-filters { flex: 1 1 100%; }
 .picker-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
 .picker-bulk span { color: var(--text-secondary); font-size: 13px; }
 .el-alert { margin-bottom: 12px; }

@@ -30,7 +30,7 @@ await context.route('**/api/**', async route => {
       exists = true; data = access
     } else if (path.endsWith('/onboarding/customers')) data = { items: [ready, blocked], total: 2 }
     else if (path.includes('/onboarding/customers/')) data = { ...ready, existing_access: exists ? { id: accessId, status: 'draft' } : null }
-    else if (path.endsWith('/onboarding/catalog')) data = { items: url.searchParams.get('keyword') ? [] : [product], total: url.searchParams.get('keyword') ? 0 : 1 }
+    else if (path.endsWith('/onboarding/catalog')) data = { items: url.searchParams.get('color') ? [] : [product], total: url.searchParams.get('color') ? 0 : 1 }
     else if (path.endsWith(`/customers/${accessId}`)) data = access
     else if (path.endsWith('/customers')) data = { items: exists ? [access] : [], total: exists ? 1 : 0 }
   }
@@ -38,7 +38,7 @@ await context.route('**/api/**', async route => {
 })
 const dialog = () => page.locator('.portal-onboarding-dialog:visible')
 async function open() {
-  await page.goto('http://127.0.0.1:3211/portal/customers')
+  await page.goto((process.env.PORTAL_ADMIN_ORIGIN || 'http://127.0.0.1:3211') + '/portal/customers')
   await page.getByRole('button', { name: '开通客户门户', exact: true }).click()
   await dialog().getByText('Missing Identity Buyer', { exact: true }).waitFor()
   const unavailable = dialog().getByRole('row').filter({ hasText: 'Missing Identity Buyer' })
@@ -50,7 +50,7 @@ async function confirm() { await dialog().locator('.el-checkbox').filter({ hasTe
 try {
   await open()
   await dialog().locator('.catalog-picker .el-checkbox').click()
-  await dialog().getByRole('textbox', { name: '搜索可授权商品' }).fill('no match')
+  await dialog().getByRole('textbox', { name: '颜色', exact: true }).fill('no match')
   await dialog().getByRole('button', { name: '搜索商品', exact: true }).click()
   await dialog().getByText('初始商品授权 · 已选 1 项', { exact: true }).waitFor()
   await dialog().locator('.el-checkbox').filter({ hasText: '允许查看价格' }).click()
@@ -71,7 +71,7 @@ try {
   await dialog().getByRole('button', { name: '创建授权草稿', exact: true }).click()
   await dialog().getByRole('button', { name: '重试原内容', exact: true }).waitFor()
   assert.equal(await dialog().getByRole('button', { name: '关闭', exact: true }).isDisabled(), true)
-  assert.equal(await dialog().getByRole('textbox', { name: '搜索可授权商品' }).isDisabled(), true)
+  assert.equal(await dialog().getByRole('textbox', { name: '颜色', exact: true }).isDisabled(), true)
   assert.equal(await dialog().getByRole('checkbox', { name: '允许下单及确认交易条件' }).isDisabled(), true)
   await dialog().getByRole('button', { name: '查询已有授权', exact: true }).click()
   await dialog().getByText('尚未查到已有授权，不能据此判断先前请求未执行。结果未知时请仅重试原内容。', { exact: true }).waitFor()

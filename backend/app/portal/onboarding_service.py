@@ -7,7 +7,9 @@ from app.customer.logical_customer_service import logical_subject_matches_custom
 from app.customer.models import CustomerAccount, CustomerAssignment, CustomerExternalIdentity
 from app.portal import admin_service as admin
 from app.portal.errors import reject
+from app.portal import product_traits
 from app.portal.models import CatalogItem, CustomerAccess
+from app.portal.product_traits import ColorTypes, traits
 
 
 def customer_query(actor):
@@ -120,16 +122,18 @@ def validate_creation(db, actor, site, body):
         reject("IDENTITY_REVIEW_REQUIRED", "外部身份已存在门户绑定，请由管理员复核。")
 
 
-def catalog_options(db, actor_id, *, keyword=None, page=1, page_size=20):
+def catalog_options(db, actor_id, *, filters=None, page=1, page_size=20):
+    """已发布商品按颜色/长度/克重/等级/颜色类型筛选；等级与颜色类型需推导，全量取出后在内存过滤（站点商品仅千级）。"""
     admin.begin(db, actor_id)
     site = admin.site_for_admin(db)
-    query = select(CatalogItem).where(CatalogItem.site_id == site.id, CatalogItem.status == "published")
-    if keyword:
-        query = query.where(or_(CatalogItem.display_name.contains(keyword, autoescape=True),
-                               CatalogItem.color_name.contains(keyword, autoescape=True)))
-    total = db.scalar(select(func.count()).select_from(query.subquery()))
-    rows = db.scalars(query.order_by(CatalogItem.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
+    rows = db.scalars(select(CatalogItem).where(CatalogItem.site_id == site.id, CatalogItem.status == "published")
+                      .order_by(CatalogItem.id.desc())).all()
+    colors = ColorTypes(db)
+    described = [(row, traits(row, colors)) for row in rows]
+    matched = [(row, info) for row, info in described if product_traits.matches(row, info, **(filters or {}))]
+    start = (page - 1) * page_size
     return {"items": [{"id": row.public_id, "model_name": row.display_name, "color_name": row.color_name,
         "length": (row.standard_json or {}).get("length"), "weight": (row.standard_json or {}).get("weight"),
-        "sale_unit": row.sale_unit, "product_kind": row.product_kind} for row in rows],
-        "total": total, "page": page, "page_size": page_size}
+        "sale_unit": row.sale_unit, "product_kind": row.product_kind, **info} for row, info in matched[start:start + page_size]],
+        "total": len(matched), "page": page, "page_size": page_size,
+        "facets": product_traits.facets([info for _, info in described])}

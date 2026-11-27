@@ -5,7 +5,8 @@ import pytest
 from sqlalchemy import select
 from pydantic import ValidationError
 from test_catalog import priced_catalog, catalog, managed, portal_metadata, auth_context
-from app.portal import customer_settings_service as service, pricing
+from types import SimpleNamespace
+from app.portal import customer_settings_service as service, pricing, product_traits
 from app.portal.models import CatalogGrant, AuthorityBarrier
 from app.portal.order_service import next_request_number
 from app.portal.schemas import CustomerPricesInput, DeliveryProfileInput
@@ -38,14 +39,28 @@ def test_prices_default_to_standard_then_override_checkout_fingerprint(priced_ca
 @pytest.mark.parametrize("model,grade", [("B3天才发帘（帘宽12“）", "B3"), ("B1 平型接发", "B1"), ("b1铁丝", "B1"),
     ("50%幅度天才发帘（帘宽24“）", "50%幅度"), ("Hair Glue", None), (None, None)])
 def test_product_grade_from_internal_model(model, grade):
-    assert service.product_grade(model) == grade
+    assert product_traits.product_grade(model) == grade
+
+
+class _Registered:
+    def execute(self, _query):
+        return SimpleNamespace(all=lambda: [("cookies cream", "balayage"), ("#P8/24", "solid")])
 
 
 @pytest.mark.parametrize("color,kind", [("#1", "单色"), ("#1B", "单色"), ("#1006", "单色"), ("#P4/18", "P色"),
-    ("#P1B/2B", "P色"), ("#4T60", "T色"), ("#5AT62", "T色"), ("#2TP2/6", "TP色"), ("#5ATP9A/1001", "TP色"),
-    ("#4TP8/18&#2TP2/8", "TP色"), ("Rose Golden", "其他"), ("", "其他"), (None, "其他")])
-def test_color_type_from_color_code(color, kind):
-    assert service.color_type(color) == kind
+    ("#4T60", "T色"), ("#5AT62", "T色"), ("#2TP2/6", "TP色"), ("#5ATP9A/1001", "TP色"),
+    ("Cookies Cream", "TP色"), ("#p8/24", "单色"), ("Rose Golden", "其他"), ("", "其他"), (None, "其他")])
+def test_color_type_uses_price_matrix_registration_then_inference(color, kind):
+    assert product_traits.ColorTypes(_Registered()).label(color) == kind
+
+
+def test_filters_match_exact_length_weight_and_partial_color():
+    row = SimpleNamespace(color_name="#4TP8/18", standard_json={"length": "18", "weight": "20g"})
+    info = {"grade": "B3", "color_type": "TP色"}
+    assert product_traits.matches(row, info, color="tp8", length="18", weight="20", grade="B3", color_type="TP色")
+    assert not product_traits.matches(row, info, length="1")
+    assert not product_traits.matches(row, info, weight="200g")
+    assert not product_traits.matches(row, info, grade="B1")
 
 
 @pytest.mark.parametrize("actor,version,status", [(2,1,404),(3,1,403),(1,0,409)])

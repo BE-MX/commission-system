@@ -37,7 +37,7 @@ for (const width of [1440,390]) {
       reads.push({n,section})
       if(delay&&n===1&&section==='delivery'){delay=false;delayed=true;await gate;try{return await send({delivery:delivery(1),row_version:5})}catch{return}}
       if(section==='delivery')return send({delivery:saved[n],row_version:versions[n]})
-      return send({row_version:3,items:[{id:id(3),model_name:'Standard Double Drawn Genius Weft',color_name:'#1',length:'16',weight:'20g',sale_unit:'piece',grade:'B3',color_type:'单色',standard_price:'17.2200',unit_price:null},{id:id(4),model_name:'Standard Double Drawn Genius Weft',color_name:'#4',length:'16',weight:'20g',sale_unit:'piece',grade:'B3',color_type:'单色',standard_price:'17.2200',unit_price:'15.5000'},{id:id(5),model_name:'Standard Double Drawn Genius Weft',color_name:'#P6/8',length:'18',weight:'20g',sale_unit:'piece',grade:'B1',color_type:'P色',standard_price:'17.2200',unit_price:null}]})
+      return send({row_version:3,facets:{grades:['B1','B3'],color_types:['单色','P色']},items:[{id:id(3),model_name:'Standard Double Drawn Genius Weft',color_name:'#1',length:'16',weight:'20g',sale_unit:'piece',grade:'B3',color_type:'单色',standard_price:'17.2200',unit_price:null},{id:id(4),model_name:'Standard Double Drawn Genius Weft',color_name:'#4',length:'16',weight:'20g',sale_unit:'piece',grade:'B3',color_type:'单色',standard_price:'17.2200',unit_price:'15.5000'},{id:id(5),model_name:'Standard Double Drawn Genius Weft',color_name:'#P6/8',length:'18',weight:'20g',sale_unit:'piece',grade:'B1',color_type:'P色',standard_price:'17.2200',unit_price:null}]})
     }
     return send({})
   })

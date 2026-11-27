@@ -1,5 +1,6 @@
 from datetime import timedelta
 import pytest
+from app.invoice.models import PriceColorType
 from sqlalchemy import func, select
 from test_admin_service import managed, portal_metadata
 from test_auth_service import auth_context
@@ -115,6 +116,7 @@ def test_effective_identity_owner_overrides_storage_owner(onboarding, portal_met
 
 def test_catalog_options_show_published_safe_fields_only(onboarding):
     ctx = onboarding
+    PriceColorType.__table__.create(ctx.db.get_bind())
     for status in ['published', 'draft', 'disabled']:
         ctx.db.add(CatalogItem(site_id=ctx.site.id, product_kind='hair', source_namespace='okki:test',
             product_id=status, sku_id=status, standard_fingerprint='a'*64, standard_json={'length':'20in','weight':'20g'},
@@ -122,9 +124,36 @@ def test_catalog_options_show_published_safe_fields_only(onboarding):
     ctx.db.commit()
     result = service.catalog_options(ctx.db, 1)
     assert result['total'] == 1
-    assert set(result['items'][0]) == {'id','model_name','color_name','length','weight','sale_unit','product_kind'}
-    assert service.catalog_options(ctx.db, 1, keyword='%')['total'] == 0
+    assert set(result['items'][0]) == {'id','model_name','color_name','length','weight','sale_unit','product_kind','grade','color_type'}
+    assert result['facets'] == {'grades': [], 'color_types': ['其他']}
+    assert service.catalog_options(ctx.db, 1, filters={'color': '%'})['total'] == 0
+    assert service.catalog_options(ctx.db, 1, filters={'color': 'bla', 'length': '20in', 'weight': '20'})['total'] == 1
+    assert service.catalog_options(ctx.db, 1, filters={'length': '20'})['total'] == 0
+    assert service.catalog_options(ctx.db, 1, filters={'grade': 'B1'})['total'] == 0
     with pytest.raises(PortalError): service.catalog_options(ctx.db, 3)
+
+
+def test_catalog_options_filter_grade_color_type_and_paginate(onboarding):
+    ctx = onboarding
+    PriceColorType.__table__.create(ctx.db.get_bind())
+    ctx.db.add(PriceColorType(color_code='rose golden', color_type='balayage'))
+    specs = [('B3天才发帘', '#1', '16'), ('B3天才发帘', '#4T60', '18'), ('B1平型接发', '#2TP2/6', '18'),
+             ('B10铁丝', 'Rose Golden', '20'), ('50%幅度贴发', '#P4/18', '20')]
+    for index, (model, color, length) in enumerate(specs):
+        ctx.db.add(CatalogItem(site_id=ctx.site.id, product_kind='hair', source_namespace='okki:test',
+            product_id=f'p{index}', sku_id=f's{index}', standard_fingerprint='a'*64,
+            standard_json={'model': model, 'color': color, 'length': length, 'weight': '20g'},
+            display_name='Weft', color_name=color, status='published', inventory_unit='g', sale_unit='pack', conversion_factor='20'))
+    ctx.db.commit()
+    result = service.catalog_options(ctx.db, 1, page_size=2)
+    assert result['total'] == 5 and len(result['items']) == 2
+    assert result['facets'] == {'grades': ['B1', 'B3', 'B10', '50%幅度'], 'color_types': ['单色', 'P色', 'T色', 'TP色']}
+    b3 = service.catalog_options(ctx.db, 1, filters={'grade': 'B3'})
+    assert sorted(item['color_name'] for item in b3['items']) == ['#1', '#4T60']
+    tp = service.catalog_options(ctx.db, 1, filters={'color_type': 'TP色'})
+    assert sorted(item['color_name'] for item in tp['items']) == ['#2TP2/6', 'Rose Golden']
+    page2 = service.catalog_options(ctx.db, 1, filters={'length': '18'}, page=2, page_size=1)
+    assert page2['total'] == 2 and len(page2['items']) == 1
 
 
 def test_selected_identity_value_changed_in_place_requires_reselection(onboarding, portal_metadata):

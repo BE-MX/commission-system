@@ -344,7 +344,7 @@ current_invoice按员工白名单读取当前发票商业抬头/商品/金额/�
 
 ## 客户开通候选与选择证据（2026-10-03 接入增量）
 
-新增 GET `/onboarding/customers`、GET `/onboarding/customers/{canonical_customer_id}`、GET `/onboarding/catalog`，前缀为 `/api/portal/admin/v1`，均要求当前 `portal_access:admin`。客户查询限定当前有效 primary 主负责人，非 super_admin 仅本人；不使用公海读取范围。列表支持 keyword、page、page_size（最多100），名称按字面包含、客户编码精确查询。单客户编号使用十进制字符串并限制 signed BIGINT 范围。
+新增 GET `/onboarding/customers`、GET `/onboarding/customers/{canonical_customer_id}`、GET `/onboarding/catalog`，前缀为 `/api/portal/admin/v1`，均要求当前 `portal_access:admin`。客户查询限定当前有效 primary 主负责人，非 super_admin 仅本人；不使用公海读取范围。列表支持 keyword、page、page_size（最多100），名称按字面包含、客户编码精确查询。（2026-11-27 起 `/onboarding/catalog` 不再用 keyword，改为 color/length/weight/grade/color_type 筛选，见 `docs/api-reference.md`。）单客户编号使用十进制字符串并限制 signed BIGINT 范围。
 
 候选返回 canonical_customer_id、assignment_id、sales_user_id/name、公司显示名/编码、唯一已验证 OKKI 公司 identity_id/value、binding_fingerprint、ready、blocked_reasons、existing_access。外部身份解析服从方舟逻辑归属，含 identity 与 source_record 归属覆盖；只接受配置来源下 active/verified/strong/one_to_one 的公司身份。缺失、多义、争议、非法外部值及已有授权均不可新建。已有授权不在当前可读快照时不返回 access ID。
 
