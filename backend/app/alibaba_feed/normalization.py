@@ -3,6 +3,7 @@
 All writes run inside the worker's batch fence and source lock transaction.
 This module grants no business access or automation capability.
 """
+from .authority_query import authority_query
 from .canonical import digest
 from .models import AlibabaFeedItem, AlibabaFeedMessage, AlibabaFeedSource
 from .validation import timestamp
@@ -154,9 +155,9 @@ def normalize_messages(db, source, item, clock):
     db.flush()
 
 
-def safe_messages(db, item):
+def safe_messages(db, item, *, lock=True):
     """Return only the exact evidence version, never substitute a later body."""
-    source = db.query(AlibabaFeedSource).filter_by(source_account_uid=item.source_account_uid).populate_existing().with_for_update(read=True).one_or_none()
+    source = authority_query(db, AlibabaFeedSource, lock=lock, shared=True).filter_by(source_account_uid=item.source_account_uid).one_or_none()
     if source is None:
         return []
     messages = item.snapshot.get("messages", [])
@@ -167,13 +168,15 @@ def safe_messages(db, item):
     if set(item.issues or []) & CONFLICTS:
         return []
     # Same-revision complete-set conflicts invalidate every reference to that view.
-    if any("CONVERSATION_VERSION_CONFLICT" in (peer.issues or []) for peer in
-           conversation_items(db, item).filter_by(conversation_revision=item.conversation_revision).populate_existing().with_for_update(read=True).all()):
+    peers = conversation_items(db, item).filter_by(conversation_revision=item.conversation_revision).populate_existing()
+    if lock:
+        peers = peers.with_for_update(read=True)
+    if any("CONVERSATION_VERSION_CONFLICT" in (peer.issues or []) for peer in peers):
         return []
-    known = {m.message_id: m for m in db.query(AlibabaFeedMessage).filter_by(
+    known = {m.message_id: m for m in authority_query(db, AlibabaFeedMessage, lock=lock, shared=True).filter_by(
         source_account_uid=item.source_account_uid, collection_generation=item.collection_generation,
         conversation_id=item.conversation_id,
-    ).populate_existing().with_for_update(read=True).all()}
+    ).all()}
     result = []
     seen = set()
     for index, message in enumerate(messages):

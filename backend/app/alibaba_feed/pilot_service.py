@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.core.time import beijing_now
 from app.integration.models import IntegrationApp
 
+from .authority_query import authority_query
 from .auth import FEED_SCOPES
 from .errors import FeedError
 from .models import AlibabaFeedPilot, AlibabaFeedSource
@@ -47,8 +48,8 @@ def read_pilot(db: Session, *, write=False):
     return db.query(AlibabaFeedPilot).filter_by(id=1).populate_existing().with_for_update(read=not write).one_or_none()
 
 
-def active_pilot(db: Session):
-    pilot = read_pilot(db)
+def active_pilot(db: Session, *, lock=True):
+    pilot = authority_query(db, AlibabaFeedPilot, lock=lock, shared=True).filter_by(id=1).one_or_none()
     return pilot if pilot and pilot.enabled and pilot.source_id is not None and pilot.user_id is not None else None
 
 

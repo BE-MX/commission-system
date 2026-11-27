@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import event, select
+from sqlalchemy.dialects import mysql
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.alibaba_feed.models import AlibabaFeedItem, AlibabaFeedLink, AlibabaFeedPilot, AlibabaFeedSource
@@ -96,6 +97,42 @@ def authorized_track(business, monkeypatch):
     db.commit()
     thread = db.scalars(select(ClientDeskUnlinkedThread)).one()
     return client, db, headers, thread.id, pilot.source_id
+
+
+def test_unlinked_list_reads_without_conflicting_with_sync(authorized_track):
+    _, db, _, thread_id, _ = authorized_track
+    thread = db.get(ClientDeskUnlinkedThread, thread_id)
+    item = db.get(AlibabaFeedItem, thread.item_id)
+    today = worker.beijing_today()
+    run = ClientDeskUnlinkedRun(
+        thread_id=thread_id, user_id=thread.user_id, biz_date=today, trigger_type="daily",
+        status="succeeded", source_dependencies=worker._evidence_dependencies(thread, worker.safe_messages(db, item)),
+    )
+    db.add(run)
+    db.flush()
+    db.add(ClientDeskUnlinkedReview(
+        user_id=thread.user_id, week_start_date=today, window_start=item.observed_at,
+        window_end=item.observed_at, included_thread_ids=[thread_id],
+        source_dependencies={"run_ids": {str(thread_id): run.id}}, overview_md="Weekly review",
+    ))
+    db.commit()
+    statements = []
+
+    def record_query(state):
+        statements.append(str(state.statement.compile(dialect=mysql.dialect())))
+
+    event.listen(db, "do_orm_execute", record_query)
+    try:
+        card, = service.list_threads(db, USER)["items"]
+        assert card["id"] == thread_id and card["run"]["status"] == "succeeded"
+        review, = service.list_reviews(db, USER)["items"]
+        assert review["overview_md"] == "Weekly review"
+        assert not any("FOR UPDATE" in sql or "LOCK IN SHARE MODE" in sql for sql in statements)
+        statements.clear()
+        service.handled(db, USER, thread_id)
+        assert any("ark_users" in sql and "FOR UPDATE" in sql for sql in statements)
+    finally:
+        event.remove(db, "do_orm_execute", record_query)
 
 
 def test_role_revocation_blocks_b_track_access_and_worker(authorized_track):

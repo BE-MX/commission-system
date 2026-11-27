@@ -29,18 +29,18 @@ def _require_enabled():
         raise HTTPException(503, "未绑定线索尚未启用")
 
 
-def _pilot_for(db, user, action="read"):
-    return feed.require_actor(db, user, action, unlinked=True)
+def _pilot_for(db, user, action="read", *, lock=True):
+    return feed.require_actor(db, user, action, unlinked=True, lock=lock)
 
 
-def _scopes(db, user, action="read"):
+def _scopes(db, user, action="read", *, lock=True):
     """Return (uid, TM source id or None, WhatsApp open) for the caller; raise when no channel is open."""
     _require_enabled()
     uid = user_id(user)
     source_id, tm_error = None, None
     if worker.tm_enabled():
         try:
-            _, source_id = _pilot_for(db, user, action)
+            _, source_id = _pilot_for(db, user, action, lock=lock)
         except HTTPException as exc:
             tm_error = exc
     wa_ok = wa.user_enabled(db, uid, action)
@@ -130,7 +130,7 @@ def _payload(thread, *, match=None, run=None, analysis_stale=False, company_hint
 
 
 def list_threads(db, user, view="active"):
-    uid, source_id, wa_ok = _scopes(db, user)
+    uid, source_id, wa_ok = _scopes(db, user, lock=False)
     rows = (db.query(ClientDeskUnlinkedThread)
             .filter(ClientDeskUnlinkedThread.user_id == uid,
                     ClientDeskUnlinkedThread.channel.in_(_channels(source_id, wa_ok)))
@@ -146,12 +146,12 @@ def list_threads(db, user, view="active"):
     out = []
     companies = None
     for thread in items:
-        item = worker.thread_source(db, uid, thread, source_id)
+        item = worker.thread_source(db, uid, thread, source_id, lock=False)
         if item is None:
             continue
         run = _latest_run(db, thread.id)
         stale = run is not None and (
-            run.status in ("stale", "discarded_stale") or not worker.run_evidence_current(db, thread, item, run)
+            run.status in ("stale", "discarded_stale") or not worker.run_evidence_current(db, thread, item, run, lock=False)
         )
         if companies is None:
             companies = worker.matchable_companies(db, user)
@@ -324,14 +324,14 @@ def request_analysis(db, user, thread_id):
 
 
 def list_reviews(db, user, limit=4):
-    uid, source_id, _ = _scopes(db, user)
+    uid, source_id, _ = _scopes(db, user, lock=False)
     rows = (db.query(ClientDeskUnlinkedReview)
             .filter(ClientDeskUnlinkedReview.user_id == uid)
             .order_by(ClientDeskUnlinkedReview.week_start_date.desc()).limit(limit).all())
     items = []
     for review in rows:
         live = worker.weekly_live_threads(
-            db, uid, source_id, (review.source_dependencies or {}).get("run_ids", {}),
+            db, uid, source_id, (review.source_dependencies or {}).get("run_ids", {}), lock=False,
         )
 
         def keep(entries):

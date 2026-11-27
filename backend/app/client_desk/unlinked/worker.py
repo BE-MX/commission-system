@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.ai.service import chat
 from app.ai.text_snapshot import prepare_text_chat
+from app.alibaba_feed.authority_query import authority_query
 from app.alibaba_feed.business_service import require_actor, unlinked_lead_item
 from app.alibaba_feed.errors import FeedError
 from app.alibaba_feed.models import (
@@ -56,17 +57,17 @@ def lock_source(db, source_id):
     return db.query(AlibabaFeedSource).filter_by(id=source_id).populate_existing().with_for_update().first()
 
 
-def _current_deps(db, source_id):
+def _current_deps(db, source_id, *, lock=True):
     source = db.query(AlibabaFeedSource).filter_by(id=source_id).first()
     if source is None:
         return None
-    pilot_version = db.query(AlibabaFeedPilot.version).filter_by(id=1).with_for_update(read=True).scalar()
+    pilot_version = authority_query(db, AlibabaFeedPilot.version, lock=lock, shared=True).filter_by(id=1).scalar()
     return {"pilot_version": pilot_version, "mapping_version": source.mapping_version,
             "collection_generation": source.collection_generation,
             "consent_version": source.consent_version}
 
 
-def authorized_item(db, uid, source_id, thread):
+def authorized_item(db, uid, source_id, thread, *, lock=True):
     """Return the live feed item if the thread may still be shown or written; otherwise None.
 
     Covers consent, owner binding, the current snapshot, no customer link, and
@@ -76,11 +77,11 @@ def authorized_item(db, uid, source_id, thread):
     if thread.item_id is None:
         return None
     try:
-        _, item = unlinked_lead_item(db, uid, source_id, thread.item_id)
+        _, item = unlinked_lead_item(db, uid, source_id, thread.item_id, lock=lock)
     except (HTTPException, FeedError):
         return None
     deps = thread.source_dependencies or {}
-    if deps != _current_deps(db, source_id):
+    if deps != _current_deps(db, source_id, lock=lock):
         return None
     return item
 
@@ -90,19 +91,19 @@ def tm_enabled():
     return bool(cfg.CLIENT_DESK_UNLINKED_ENABLED and cfg.CLIENT_DESK_UNLINKED_TM_ENABLED)
 
 
-def thread_source(db, uid, thread, source_id, action="read"):
+def thread_source(db, uid, thread, source_id, action="read", *, lock=True):
     """Channel-neutral authority check: the live source handle for a thread, or None."""
     if thread.channel == wa.CHANNEL:
         return wa.authorized_conversation(db, uid, thread, action)
     if source_id is None or not tm_enabled():
         return None
-    return authorized_item(db, uid, source_id, thread)
+    return authorized_item(db, uid, source_id, thread, lock=lock)
 
 
-def run_evidence_current(db, thread, handle, run):
+def run_evidence_current(db, thread, handle, run, *, lock=True):
     if thread.channel == wa.CHANNEL:
         return wa.evidence_current(db, thread, run, handle[0])
-    return evidence_current(db, thread, handle, run)
+    return evidence_current(db, thread, handle, run, lock=lock)
 
 
 # ---------- thread sync ----------
@@ -166,8 +167,8 @@ def _saved_evidence_current(thread, run, messages):
     )
 
 
-def evidence_current(db, thread, item, run):
-    return _saved_evidence_current(thread, run, safe_messages(db, item))
+def evidence_current(db, thread, item, run, *, lock=True):
+    return _saved_evidence_current(thread, run, safe_messages(db, item, lock=lock))
 
 
 def matchable_companies(db, user):
@@ -575,20 +576,20 @@ def window_for_previous_week(today):
     return this_monday - timedelta(days=7), this_monday
 
 
-def weekly_live_threads(db, uid, source_id, run_ids):
+def weekly_live_threads(db, uid, source_id, run_ids, *, lock=True):
     live = set()
     for tid, run_id in run_ids.items():
         thread = (db.query(ClientDeskUnlinkedThread).filter_by(id=int(tid), user_id=uid)
                   .populate_existing().first())
         if thread is None or thread.status not in ACTIVE_STATES:
             continue
-        item = thread_source(db, uid, thread, source_id)
+        item = thread_source(db, uid, thread, source_id, lock=lock)
         if item is None:
             continue
         run = (db.query(ClientDeskUnlinkedRun)
                .filter_by(id=run_id, thread_id=thread.id, user_id=uid, status="succeeded")
                .populate_existing().first())
-        if run is not None and run_evidence_current(db, thread, item, run):
+        if run is not None and run_evidence_current(db, thread, item, run, lock=lock):
             live.add(tid)
     return live
 

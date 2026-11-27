@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from app.auth.models import ArkUser, ArkRole, ArkUserRole, ArkPermission, ArkRolePermission, ArkUserExternalBinding
 from app.client_desk import private_scope
 from app.core.time import beijing_now
+from .authority_query import authority_query
 from .canonical import digest
 from .errors import FeedError
 from .models import AlibabaFeedSource, AlibabaFeedItem, AlibabaFeedLink
@@ -13,16 +14,16 @@ from .pilot_service import active_pilot
 logger = logging.getLogger(__name__)
 
 
-def require_actor(db, user, action="read", *, unlinked=False):
-    pilot = active_pilot(db)
+def require_actor(db, user, action="read", *, unlinked=False, lock=True):
+    pilot = active_pilot(db, lock=lock)
     if pilot is None:
         raise HTTPException(503, "阿里业务资料尚未启用")
     uid = private_scope.user_id(user)
     if uid != pilot.user_id or (unlinked and not pilot.unlinked_ai_allowed):
         raise HTTPException(403, "当前账号未加入 TM 资料试点")
-    active = db.query(ArkUser.id).filter(ArkUser.id == uid, ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None)).with_for_update().first()
-    roles = {r[0] for r in db.query(ArkRole.name).join(ArkUserRole, ArkUserRole.role_id == ArkRole.id).filter(ArkUserRole.user_id == uid).with_for_update().all()}
-    permissions = {r[0] for r in db.query(ArkPermission.code).join(ArkRolePermission, ArkRolePermission.permission_id == ArkPermission.id).join(ArkUserRole, ArkUserRole.role_id == ArkRolePermission.role_id).filter(ArkUserRole.user_id == uid).with_for_update().all()}
+    active = authority_query(db, ArkUser.id, lock=lock).filter(ArkUser.id == uid, ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None)).first()
+    roles = {r[0] for r in authority_query(db, ArkRole.name, lock=lock).join(ArkUserRole, ArkUserRole.role_id == ArkRole.id).filter(ArkUserRole.user_id == uid).all()}
+    permissions = {r[0] for r in authority_query(db, ArkPermission.code, lock=lock).join(ArkRolePermission, ArkRolePermission.permission_id == ArkPermission.id).join(ArkUserRole, ArkUserRole.role_id == ArkRolePermission.role_id).filter(ArkUserRole.user_id == uid).all()}
     required = {f"client_desk:{action}"}
     if unlinked:
         required.add("client_desk:read")
@@ -35,11 +36,11 @@ def _missing():
     raise HTTPException(404, "资料不存在或已失效")
 
 
-def _owner_evidence(db, source, item, uid):
+def _owner_evidence(db, source, item, uid, *, lock=True):
     external_id = item.snapshot.get("assignee_external_user_id")
     if external_id:
-        candidates = db.query(ArkUserExternalBinding).filter_by(provider="alibaba_icbu", external_account_id=external_id,
-            binding_status="active", deleted_at=None).populate_existing().with_for_update().all()
+        candidates = authority_query(db, ArkUserExternalBinding, lock=lock).filter_by(provider="alibaba_icbu", external_account_id=external_id,
+            binding_status="active", deleted_at=None).all()
         # Existing binding columns use legacy case-insensitive collation. Never
         # allow SQL comparison to turn a similar account ID into authorization.
         bindings = [row for row in candidates if row.provider == "alibaba_icbu" and row.external_account_id == external_id]
@@ -53,30 +54,30 @@ def _owner_evidence(db, source, item, uid):
     return {"kind": "source_alias", "mapping_version": source.mapping_version}
 
 
-def _source_item(db, uid, source_id, item_id):
+def _source_item(db, uid, source_id, item_id, *, lock=True):
     # Lock order follows worker source -> item. Current reads avoid ORM and MySQL
     # repeatable-read snapshots after a previous authorization lookup.
     identity = db.query(AlibabaFeedItem.source_account_uid).filter_by(id=item_id).first()
     if identity is None:
         _missing()
-    source = db.query(AlibabaFeedSource).filter_by(id=source_id, source_account_uid=identity[0]).populate_existing().with_for_update().first()
+    source = authority_query(db, AlibabaFeedSource, lock=lock).filter_by(id=source_id, source_account_uid=identity[0]).first()
     if source is None:
         _missing()
-    item = db.query(AlibabaFeedItem).filter_by(id=item_id).populate_existing().with_for_update().first()
+    item = authority_query(db, AlibabaFeedItem, lock=lock).filter_by(id=item_id).first()
     if (item is None or source.consent_state != "authorized" or not source.crm_shared
             or item.collection_generation != source.collection_generation or not item.is_current):
         _missing()
-    _owner_evidence(db, source, item, uid)
+    _owner_evidence(db, source, item, uid, lock=lock)
     if source.legacy_identity_blocked and (item.schema_version == "ark_alibaba_feed_v1" or not item.conversation_id or any(not m.get("message_id") for m in item.snapshot.get("messages", []))):
         from .errors import FeedError
         raise FeedError(404, "LEGACY_IDENTITY_UNRESOLVED")
     return source, item
 
 
-def _link(db, uid, item):
-    return db.query(AlibabaFeedLink).filter_by(user_id=uid, source_account_uid=item.source_account_uid,
+def _link(db, uid, item, *, lock=True):
+    return authority_query(db, AlibabaFeedLink, lock=lock).filter_by(user_id=uid, source_account_uid=item.source_account_uid,
         collection_generation=item.collection_generation, record_type=item.record_type,
-        inquiry_id=item.inquiry_id, deleted_at=None).populate_existing().with_for_update().first()
+        inquiry_id=item.inquiry_id, deleted_at=None).first()
 
 
 def _access(db, user, uid, source_id, item_id, *, company_id=None, ai=False, allow_redacted=False):
@@ -319,7 +320,7 @@ def dependencies_valid(db, user, company_id, dependencies):
         return False
 
 
-def unlinked_lead_item(db, uid, source_id, item_id):
+def unlinked_lead_item(db, uid, source_id, item_id, *, lock=True):
     """Authority gate for private-sea B track (unlinked leads).
 
     Unlike `_access(ai=True)`, this does not require a customer link: the
@@ -327,8 +328,8 @@ def unlinked_lead_item(db, uid, source_id, item_id):
     binding, a successful detail scrape, and no link to any customer.
     Raises HTTPException 404 on any failure, so callers see no existence signal.
     """
-    source, item = _source_item(db, uid, source_id, item_id)
-    if _link(db, uid, item) is not None:
+    source, item = _source_item(db, uid, source_id, item_id, lock=lock)
+    if _link(db, uid, item, lock=lock) is not None:
         _missing()
     # The caller must hold the current B-track pilot grant via require_actor.
     if (item.outcome == "quarantined"

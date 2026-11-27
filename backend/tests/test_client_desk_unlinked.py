@@ -62,11 +62,11 @@ def env(tmp_path, monkeypatch):
     cfg = _settings()
     monkeypatch.setattr(wa, "get_settings", lambda: cfg)
     monkeypatch.setattr(worker, "get_settings", lambda: cfg)
-    monkeypatch.setattr(service, "_pilot_for", lambda db, user, action="read": (private_scope.user_id(user), 1))
-    monkeypatch.setattr(worker, "_current_deps", lambda db, source_id: DEPS)
+    monkeypatch.setattr(service, "_pilot_for", lambda db, user, action="read", *, lock=True: (private_scope.user_id(user), 1))
+    monkeypatch.setattr(worker, "_current_deps", lambda db, source_id, *, lock=True: DEPS)
     # Authority is authorised by default; tests that revoke it override these.
-    monkeypatch.setattr(worker, "unlinked_lead_item", lambda db, uid, sid, iid: (None, _fake_item()))
-    monkeypatch.setattr(worker, "safe_messages", lambda db, item: _messages())
+    monkeypatch.setattr(worker, "unlinked_lead_item", lambda db, uid, sid, iid, *, lock=True: (None, _fake_item()))
+    monkeypatch.setattr(worker, "safe_messages", lambda db, item, *, lock=True: _messages())
     monkeypatch.setattr(worker, "_pilot_scope", lambda db, action="read": (1, 1))
     monkeypatch.setattr(private_scope, "list_private_companies", lambda db, user, **kw: [])
     monkeypatch.setattr(worker, "prepare_text_chat", lambda *a, **kw: SimpleNamespace(
@@ -130,8 +130,8 @@ def _patch_model(env, content, finish="stop", raises=None):
         return {"content": content, "finish_reason": finish, "tokens_prompt": 11, "tokens_completion": 5}
 
     env.monkeypatch.setattr(worker, "chat", fake_chat)
-    env.monkeypatch.setattr(worker, "unlinked_lead_item", lambda db, uid, sid, iid: (None, _fake_item()))
-    env.monkeypatch.setattr(worker, "safe_messages", lambda db, item: _messages())
+    env.monkeypatch.setattr(worker, "unlinked_lead_item", lambda db, uid, sid, iid, *, lock=True: (None, _fake_item()))
+    env.monkeypatch.setattr(worker, "safe_messages", lambda db, item, *, lock=True: _messages())
     return calls
 
 
@@ -303,8 +303,8 @@ def test_thread_ignored_while_in_flight_discards_the_result(env):
         return {"content": json.dumps(GOOD), "finish_reason": "stop"}
 
     env.monkeypatch.setattr(worker, "chat", ignoring_chat)
-    env.monkeypatch.setattr(worker, "unlinked_lead_item", lambda db, uid, sid, iid: (None, _fake_item()))
-    env.monkeypatch.setattr(worker, "safe_messages", lambda db, item: _messages())
+    env.monkeypatch.setattr(worker, "unlinked_lead_item", lambda db, uid, sid, iid, *, lock=True: (None, _fake_item()))
+    env.monkeypatch.setattr(worker, "safe_messages", lambda db, item, *, lock=True: _messages())
     with env.factory() as db:
         _thread(db)
         run = worker.enqueue_manual(db, 1, db.get(ClientDeskUnlinkedThread, 1))
@@ -447,8 +447,8 @@ def test_wiped_run_keeps_its_terminal_state_when_in_flight_finishes(env):
         return {"content": json.dumps(GOOD), "finish_reason": "stop"}
 
     env.monkeypatch.setattr(worker, "chat", ignoring_chat)
-    env.monkeypatch.setattr(worker, "unlinked_lead_item", lambda db, uid, sid, iid: (None, _fake_item()))
-    env.monkeypatch.setattr(worker, "safe_messages", lambda db, item: _messages())
+    env.monkeypatch.setattr(worker, "unlinked_lead_item", lambda db, uid, sid, iid, *, lock=True: (None, _fake_item()))
+    env.monkeypatch.setattr(worker, "safe_messages", lambda db, item, *, lock=True: _messages())
     with env.factory() as db:
         _thread(db)
         run = worker.enqueue_manual(db, 1, db.get(ClientDeskUnlinkedThread, 1))
@@ -464,7 +464,7 @@ def test_wiped_run_keeps_its_terminal_state_when_in_flight_finishes(env):
 def test_authority_revoked_during_model_call_discards_the_result(env):
     calls = {"n": 0}
 
-    def gate(db, uid, sid, iid):
+    def gate(db, uid, sid, iid, *, lock=True):
         calls["n"] += 1
         if calls["n"] >= 2:  # the first gate passes; the write-back gate sees the revocation
             from fastapi import HTTPException
@@ -493,7 +493,7 @@ def test_listing_hides_content_when_authority_has_been_revoked(env):
                                      run_seq=0, status="succeeded", one_line_summary="SECRET", cites=["M-1"],
                                      watermark=[3, 1]))
         db.commit()
-        env.monkeypatch.setattr(worker, "unlinked_lead_item", lambda *a: (_ for _ in ()).throw(
+        env.monkeypatch.setattr(worker, "unlinked_lead_item", lambda *a, lock=True: (_ for _ in ()).throw(
             __import__("fastapi").HTTPException(404, "gone")))
         assert service.list_threads(db, USER, "active")["items"] == []
 
@@ -601,7 +601,7 @@ def test_message_revocation_stales_the_analysed_run_without_a_new_inbound(env):
                                      watermark=[3, 1], source_dependencies={"messages_digest": "stale-digest"}))
         db.commit()
     # The buyer's message was revoked: the message set no longer matches the analysed one.
-    env.monkeypatch.setattr(worker, "safe_messages", lambda db, item: [])
+    env.monkeypatch.setattr(worker, "safe_messages", lambda db, item, *, lock=True: [])
     with env.factory() as db:
         worker.sync_threads(db, 1, 1)
         db.commit()
@@ -632,7 +632,7 @@ def test_link_removal_returns_a_linked_thread_to_the_b_track(env):
 
 
 def test_prospect_is_hidden_and_write_is_rejected_when_feed_authority_is_lost(env):
-    def revoked(*args):
+    def revoked(*args, lock=True):
         raise HTTPException(404, "revoked")
 
     with env.factory() as db:
@@ -654,7 +654,7 @@ def test_withdrawal_during_daily_call_discards_the_result(env):
         return {"content": json.dumps(GOOD), "finish_reason": "stop"}
 
     env.monkeypatch.setattr(worker, "chat", chat)
-    env.monkeypatch.setattr(worker, "safe_messages", lambda db, item: messages)
+    env.monkeypatch.setattr(worker, "safe_messages", lambda db, item, *, lock=True: messages)
     with env.factory() as db:
         thread = _thread(db)
         run_id = worker.enqueue_manual(db, 1, thread).id
@@ -681,7 +681,7 @@ def test_daily_and_weekly_reads_hide_withdrawn_evidence_before_scan(env):
         worker.generate_weekly(db, 1, today=date(2026, 11, 25))
         assert service.list_threads(db, USER)["items"][0]["run"]["one_line_summary"] == "Previous message"
         assert service.list_reviews(db, USER)["items"][0]["overview_md"] == "Previous message"
-        env.monkeypatch.setattr(worker, "safe_messages", lambda db, item: _messages()[:-1])
+        env.monkeypatch.setattr(worker, "safe_messages", lambda db, item, *, lock=True: _messages()[:-1])
         stale = service.list_threads(db, USER)["items"][0]
         assert stale["run"] is None and stale["analysis_stale"]
         review = service.list_reviews(db, USER)["items"][0]
@@ -693,8 +693,8 @@ def test_outbound_only_does_not_reopen_a_handled_thread(env):
     item = _fake_item()
     item.schema_version = "ark_alibaba_feed_v1"
     item.conversation_id = None
-    env.monkeypatch.setattr(worker, "unlinked_lead_item", lambda *args: (None, item))
-    env.monkeypatch.setattr(worker, "safe_messages", lambda db, item: msgs)
+    env.monkeypatch.setattr(worker, "unlinked_lead_item", lambda *args, lock=True: (None, item))
+    env.monkeypatch.setattr(worker, "safe_messages", lambda db, item, *, lock=True: msgs)
     with env.factory() as db:
         db.add(AlibabaFeedSource(id=1, source_account_uid="src", integration_app_id=1, name="s",
                                 consent_state="authorized", crm_shared=True))
