@@ -38,8 +38,11 @@ async function fetchArkStatuses(templateId: string): Promise<StatusResponse | nu
   }
 }
 
-function isOkkiStatus(value: string): value is InventoryStatus {
-  return value === 'normal' || value === 'low_stock' || value === 'restocking';
+function statusForSpec(statuses: Record<string, string>, code: string | undefined, length: number): InventoryStatus {
+  if (!code) return 'restocking';
+  const alternate = code.startsWith('#') ? code.slice(1) : `#${code}`;
+  const status = statuses[`${code}|${length}`] ?? statuses[`${alternate}|${length}`];
+  return status === 'normal' || status === 'low_stock' ? status : 'restocking';
 }
 
 export type ArkInventoryOverlayResult = {
@@ -63,10 +66,7 @@ export async function applyArkInventoryOverlay(
   const codeById = new Map(colorsForTemplate(colors, template).map((color) => [color.id, color.code]));
   let overlaid = 0;
   for (const spec of specs) {
-    const code = codeById.get(spec.colorId);
-    const key = code ? `${code}|${spec.length}` : '';
-    const raw = key ? data.statuses[key] : undefined;
-    const next: InventoryStatus = raw && isOkkiStatus(raw) ? raw : 'restocking';
+    const next = statusForSpec(data.statuses, codeById.get(spec.colorId), spec.length);
     if (spec.status !== next) {
       spec.status = next;
       overlaid += 1;

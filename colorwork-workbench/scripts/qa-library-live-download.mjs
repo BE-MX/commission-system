@@ -64,6 +64,29 @@ const context = { params: Promise.resolve({ id: 'tape-hair-super' }) };
 const payload = { expectedMasterRevision: 3, expectedInventoryRevision: 5, expectedSourceVersionId: 'source-1', specIds: ['spec-1'] };
 const validationRequest = () => new Request('http://localhost/validate', { method: 'POST', body: JSON.stringify(payload) });
 
+test('live inventory matches an optional leading # within the same color and length', async () => {
+  const statuses = {
+    'Cookies Cream|16': 'low_stock',
+    '#Rose Golden|18': 'normal',
+    '#1B|20': 'restocking',
+    '1B|20': 'normal',
+    'AB|22': 'normal',
+  };
+  const { applyArkInventoryOverlay } = load('lib/server/ark-sync.ts', {
+    'cloudflare:workers': { env: { ARK_STATUS_ENDPOINT: 'http://localhost/status', ARK_SYNC_KEY: 'test' } },
+  }, { AbortSignal, fetch: async () => Response.json({ statuses }) });
+  const cases = [
+    ['#Cookies Cream', 16, 'low_stock'], ['Rose Golden', 18, 'normal'],
+    ['#Cookies Cream', 18, 'restocking'], ['#1B', 20, 'restocking'],
+    ['1B', 20, 'normal'], ['A#B', 22, 'restocking'],
+  ];
+  const colors = cases.map(([code]) => ({ id: code, code }));
+  const specs = cases.map(([colorId, length]) => ({ colorId, length, status: 'out_of_stock' }));
+  const result = await applyArkInventoryOverlay('template', colors, { legacyColors: [] }, specs);
+  assert.equal(result.applied, true);
+  assert.deepEqual(specs.map((spec) => spec.status), cases.map(([, , status]) => status));
+});
+
 test('library-only account reads live data and validates exports without gaining inventory writes', async () => {
   const { snapshot, validation, editor, calls } = routes(['library']);
   const response = await snapshot.GET(new Request('http://localhost/inventory'), context);
