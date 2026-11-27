@@ -35,6 +35,10 @@ def invalidate(db, company_ids):
 def save_link(db, user, payload):
     require_enabled(db, user, True)
     require_account(db, user, payload.account_uid, owner_only=True)
+    from app.client_desk.unlinked.wa import apply_link, lock_link_targets
+
+    # Same lock order as the B track (account, thread, conversation) so the two never deadlock.
+    lock_link_targets(db, payload.account_uid, payload.conversation_uid)
     conv = (
         db.query(WhatsAppConversation)
         .filter_by(
@@ -85,8 +89,6 @@ def save_link(db, user, payload):
     )
     db.add(row)
     invalidate(db, [old.company_id if old else None, target])
-    from app.client_desk.unlinked.wa import apply_link
-
     apply_link(db, payload.account_uid, payload.conversation_uid, payload.link_type, target)
     db.commit()
     return link_dto(row)

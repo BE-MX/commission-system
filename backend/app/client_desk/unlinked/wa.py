@@ -264,13 +264,23 @@ def _reconcile_links(db, account):
                 thread.display_name = display_name(conv)
 
 
+def _link_threads(db, account_uid, conversation_uid):
+    return (db.query(ClientDeskUnlinkedThread)
+            .filter_by(channel=CHANNEL, source_account_uid=account_uid, thread_key=conversation_uid)
+            .order_by(ClientDeskUnlinkedThread.id).populate_existing().with_for_update().all())
+
+
+def lock_link_targets(db, account_uid, conversation_uid):
+    """Take the account, then the B-track thread rows, before a desk link write locks the conversation."""
+    lock_account(db, account_uid)
+    _link_threads(db, account_uid, conversation_uid)
+
+
 def apply_link(db, account_uid, conversation_uid, link_type, company_id=None):
     """Called in the same transaction as any desk link write, so marking not-a-customer clears AI output at once."""
     from .service import wipe_thread
 
-    for thread in (db.query(ClientDeskUnlinkedThread)
-                   .filter_by(channel=CHANNEL, source_account_uid=account_uid, thread_key=conversation_uid)
-                   .populate_existing().with_for_update().all()):
+    for thread in _link_threads(db, account_uid, conversation_uid):
         if link_type == "ignored" and thread.status != "ignored":
             wipe_thread(db, thread.user_id, thread)
         elif link_type in ("linked", "imported") and thread.status != "linked":
