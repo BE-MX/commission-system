@@ -85,6 +85,9 @@ def save_link(db, user, payload):
     )
     db.add(row)
     invalidate(db, [old.company_id if old else None, target])
+    from app.client_desk.unlinked.wa import apply_link
+
+    apply_link(db, payload.account_uid, payload.conversation_uid, payload.link_type, target)
     db.commit()
     return link_dto(row)
 

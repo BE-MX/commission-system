@@ -38,7 +38,7 @@
 
 | 项 | 说明 |
 |---|---|
-| 分析预设 `client_desk_unlinked` | 代码通过 `CLIENT_DESK_UNLINKED_PRESET_NAME` 引用，需在 AI 预设后台创建并配置 `max_tokens`（建议 1200），属于生产配置，未做 |
+| 分析预设 `client_desk_unlinked` | 代码通过 `CLIENT_DESK_UNLINKED_PRESET_NAME` 引用，需在 AI 预设后台创建，`max_tokens` 填 3000（取值为预设与调用上限的较小者：日分析 1200、周报 3000；填 1200 会截断周报），不填系统提示词，提供商须在 `CLIENT_DESK_ALLOWED_PROVIDER_IDS` 内。属于生产配置，未做 |
 | 前端细节 | 「恢复」「重新分析」无入口；卡片当地时间依赖后端 `local_timezone`，目前为 null |
 | 设计偏差 | 水位以 JSON 数对存储（设计写为分列）；处理接口为 `POST /prospect`（设计写为 PATCH）；无 `GET /threads/{id}`；TM 线程并发为串行（设计写并发 2）；绑定仅弱匹配（公司名），邮箱强匹配未做 |
 | P0-1 / P0-2 / P1 | 生产预设 1800 → 4000 与发布 11-16 修复未动；埋点未做；P1 露出项未做（A 轨） |

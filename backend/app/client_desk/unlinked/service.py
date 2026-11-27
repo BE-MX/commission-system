@@ -299,6 +299,11 @@ def bind(db, user, thread_id, company_id):
 
 
 def _bind_wa(db, user, thread_id, company_id):
+    current = _thread(db, user_id(user), thread_id, channels=(wa.CHANNEL,))
+    if current.status == "linked" and current.linked_company_id == int(company_id):
+        link = wa.active_link(db, current.source_account_uid, current.thread_key)
+        if link is not None and link.link_type == "linked" and link.company_id == int(company_id):
+            return {**_payload(current), "link": {**link_service.link_dto(link), "replayed": True}}
     _, thread, handle = _action_thread(db, user, thread_id)
     if thread.status not in OPEN:
         raise HTTPException(409, "该线索当前不可绑定")

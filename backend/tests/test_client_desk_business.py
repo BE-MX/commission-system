@@ -12,6 +12,9 @@ from app.client_desk.models import (
     ClientDeskFollowup,
     ClientDeskSuggestion,
     ClientDeskWaLink,
+    ClientDeskUnlinkedReview,
+    ClientDeskUnlinkedRun,
+    ClientDeskUnlinkedThread,
 )
 from app.auth.models import ArkUser
 from app.invoice.models import CustomerProfile, InvoiceCustomerOverlay
@@ -50,6 +53,9 @@ def isolated(monkeypatch):
         ClientDeskFollowup,
         ClientDeskSuggestion,
         ClientDeskWaLink,
+        ClientDeskUnlinkedThread,
+        ClientDeskUnlinkedRun,
+        ClientDeskUnlinkedReview,
         WhatsAppAccount,
         WhatsAppConversation,
         WhatsAppMessage,

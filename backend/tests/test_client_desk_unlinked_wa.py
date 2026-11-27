@@ -61,7 +61,7 @@ def env(tmp_path, monkeypatch):
     cfg = _settings()
     monkeypatch.setattr(wa, "get_settings", lambda: cfg)
     monkeypatch.setattr(worker, "get_settings", lambda: cfg)
-    monkeypatch.setattr(wa, "owner_allowed", lambda db, account, action="read": True)
+    monkeypatch.setattr(wa, "owner_allowed", lambda db, account, action="read", **kw: True)
     monkeypatch.setattr(private_scope, "list_private_companies", lambda db, user, **kw: [])
     monkeypatch.setattr(link_service, "require_enabled", lambda *a, **kw: None)
     monkeypatch.setattr(link_service, "require_account", lambda *a, **kw: None)
@@ -81,17 +81,23 @@ def env(tmp_path, monkeypatch):
     engine.dispose()
 
 
+def _identity(pn, lid):
+    return {"self_identity": {"session_generation": 3, "pn_jid": f"{pn}@s.whatsapp.net", "lid_jid": f"{lid}@lid"}}
+
+
 def _account(db, uid, owner, **over):
     data = dict(account_uid=uid, ark_user_id=owner, provider="baileys", status="active",
                 consent_state="active", crm_shared=True, ai_egress_allowed=True, unlinked_ai_allowed=True,
-                consent_version=2, session_generation=3, phone_number=None)
+                consent_version=2, session_generation=3, phone_number=None,
+                raw_payload=_identity(f"1555000{owner:04d}", f"90000{owner:04d}"))
     data.update(over)
     db.add(WhatsAppAccount(**data))
 
 
 def _chat(db, account_uid, conv_uid, *, phone="447700900123", name="Maria", group=False, minutes=30,
-          direction="in", text="Hi, do you have 22 inch #613 in stock?"):
-    db.add(WhatsAppConversation(account_uid=account_uid, conversation_uid=conv_uid, chat_id=f"{phone}@s.whatsapp.net",
+          direction="in", text="Hi, do you have 22 inch #613 in stock?", chat_id=None):
+    db.add(WhatsAppConversation(account_uid=account_uid, conversation_uid=conv_uid,
+                                chat_id=chat_id or f"{phone}@s.whatsapp.net",
                                 contact_phone=phone, contact_name=name, is_group=group))
     db.add(WhatsAppMessage(account_uid=account_uid, conversation_uid=conv_uid, message_uid=f"m-{conv_uid}",
                            external_message_id=f"e-{conv_uid}", direction=direction, content_text=text,
@@ -105,6 +111,9 @@ def _seed(db):
     _chat(db, "acc-1", "lead")
     _chat(db, "acc-1", "group", phone="447700900124", group=True)
     _chat(db, "acc-1", "colleague", phone="8613800001111")
+    # A colleague whose chat only arrived as a LID, with no phone mapped yet.
+    _chat(db, "acc-1", "colleague-lid", phone=None, name=None, chat_id="900000002@lid")
+    _chat(db, "acc-1", "self", phone="15550000001")
     _chat(db, "acc-1", "linked", phone="447700900125")
     _chat(db, "acc-1", "ignored", phone="447700900126")
     _chat(db, "acc-1", "old", phone="447700900127", minutes=60 * 24 * 3)
@@ -171,17 +180,45 @@ def test_withdrawing_the_switch_hides_threads_and_stops_queued_runs(env):
         assert exc.value.status_code == 403
 
 
-def test_consent_change_marks_earlier_analysis_stale(env):
+def test_consent_change_keeps_threads_but_marks_earlier_analysis_stale(env):
     _scan_and_drain(env)
     with env.factory() as db:
+        thread_id = _lead(db).id
+        service.set_prospect(db, USER, thread_id, wa.beijing_today(), "周五发视频")
         db.query(WhatsAppAccount).filter_by(account_uid="acc-1").update({"consent_version": 3})
         db.commit()
-        # Not shown until the next scan re-reads the chat under the new grant.
-        assert service.list_threads(db, USER)["total"] == 0
-    wa.scan(env.factory, 20)
+        # A quiet prospect stays reachable after an unrelated consent save.
+        item = service.list_threads(db, USER, "prospect")["items"][0]
+        assert item["id"] == thread_id and item["analysis_stale"] and item["run"] is None
+        assert service.handled(db, USER, thread_id)["status"] == "prospect"
+
+
+def test_unverifiable_session_identity_excludes_every_chat(env):
     with env.factory() as db:
-        item = service.list_threads(db, USER)["items"][0]
-    assert item["analysis_stale"] and item["run"] is None
+        db.query(WhatsAppAccount).filter_by(account_uid="acc-1").update({"raw_payload": {}})
+        db.commit()
+    assert _scan_and_drain(env) == 0
+    assert env.calls == []
+
+
+def test_ignored_link_from_the_conversations_page_wipes_output_immediately(env):
+    _scan_and_drain(env)
+    with env.factory() as db:
+        link_service.save_link(db, USER, SimpleNamespace(
+            account_uid="acc-1", conversation_uid="lead", company_id=None, link_type="ignored",
+            expected_link_id=None))
+        assert _lead(db).status == "ignored"
+        run = db.query(ClientDeskUnlinkedRun).one()
+        assert run.status == "wiped" and run.one_line_summary is None
+
+
+def test_repeating_a_bind_replays_the_existing_link(env):
+    _scan_and_drain(env)
+    with env.factory() as db:
+        thread_id = _lead(db).id
+        first = service.bind(db, USER, thread_id, "801")["link"]
+        again = service.bind(db, USER, thread_id, "801")["link"]
+    assert again == {**first, "replayed": True}
 
 
 def test_deleted_message_invalidates_the_analysis(env):

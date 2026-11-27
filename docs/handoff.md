@@ -1,3 +1,9 @@
+## 2026-11-27 私海未绑定线索加入 WhatsApp（Claude，本地分支待发布）
+
+- 分支 `claude/wa-unlinked-ai`（worktree `commission-system-wa-unlinked`），迁移 `283_wa_unlinked_ai` 接生产当前的 `282_client_desk_unlinked`。号码持有人在「WhatsApp 连接 → 授权范围」勾选「允许 AI 自动整理还没关联客户的单聊」，每天 7–22 点每小时扫描一次，和 TM 共用卡片、动作、每人每渠道每天 20 条配额和周报。
+- 生产只读核对（11-27）：`client_desk_unlinked` 预设尚不存在；TM 试点用户 37 的未绑定分析授权为关；活跃 WhatsApp 号为用户 37 与 3，AI 外发均为关。办公室 SSH 本机 2223 转发未监听，生产 `.env` 未读到。
+- 上线顺序：合并发布（含迁移）→ 生产 `.env` 开 `CLIENT_DESK_UNLINKED_ENABLED/TM_ENABLED/WA_ENABLED/WEEKLY_REPORT_ENABLED` → 建预设 `client_desk_unlinked`（DeepSeek 提供商 4、`deepseek-flash`、无系统提示词、`max_tokens` 3000，周报取 3000、日分析取 1200）→ 管理员在 TM 来源配置点「授权分析」→ 持有人勾选 WhatsApp 开关。
+
 ## 2026-11-27 实时库存图色号匹配（本地修复，待发布）
 
 - 分支 `codex/colorwork-stock-color-prefix`。实时预览和下载按同一尺寸兼容色名前导 `#`。核对当日线上 23 套母版和库存，有 8 套共 41 个规格受影响，其中 34 个应正常、7 个应标低库存。20g Genius Weft 的 Regular 和 Super 两套均涉及 Rose Golden 与 Cookies Cream。

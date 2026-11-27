@@ -101,7 +101,7 @@ def thread_source(db, uid, thread, source_id, action="read"):
 
 def run_evidence_current(db, thread, handle, run):
     if thread.channel == wa.CHANNEL:
-        return wa.evidence_current(db, thread, run, handle)
+        return wa.evidence_current(db, thread, run, handle[0])
     return evidence_current(db, thread, handle, run)
 
 
@@ -507,6 +507,8 @@ def analyze_run(db, run_id, token):
             trusted_text_snapshot=snapshot,
         )
     except Exception as exc:  # noqa: BLE001 - outcome unknown; never auto-retry
+        logger.warning("Unlinked run %s model call failed: %s", run_id, type(exc).__name__)
+        print(f"[CLIENT_DESK_UNLINKED] run {run_id} model call failed: {type(exc).__name__}", flush=True)
         return _finish(db, run, token, "ambiguous", f"call_{type(exc).__name__}"[:64])
 
     if response.get("finish_reason") in ("length", "max_tokens"):
@@ -706,6 +708,8 @@ def generate_weekly(db, uid, *, today=None, action="read"):
             trusted_text_snapshot=snapshot,
         )
     except Exception as exc:  # noqa: BLE001
+        logger.warning("Unlinked weekly model call failed: %s", type(exc).__name__)
+        print(f"[CLIENT_DESK_UNLINKED] weekly model call failed: {type(exc).__name__}", flush=True)
         call_error = f"call_{type(exc).__name__}"[:64]
 
     # Only the winner of the lease may publish. Preserve the original input set
