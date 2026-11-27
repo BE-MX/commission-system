@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, onBeforeUnmount, watch } from 'vue'
+import { computed, nextTick, ref, onBeforeUnmount, watch } from 'vue'
 import { portalAdminApi } from '@/api/portal'
 import { useAuthStore } from '@/stores/auth'
 import PortalProductFilters from './PortalProductFilters.vue'
@@ -8,6 +8,7 @@ const emit = defineEmits(['close', 'changed'])
 const auth = useAuthStore(), data = ref(null), delivery = ref({}), rows = ref([]), selected = ref([]), batch = ref(''), busy = ref(false), uncertain = ref(false), error = ref('')
 const emptyFilters = () => ({ color: '', length: '', weight: '', grade: '', color_type: '' })
 const filters = ref(emptyFilters())
+const invalidPrice = ref(null)
 const filtering = computed(() => Object.values(filters.value).some(value => String(value ?? '').trim()))
 // 克重输入 20 与 20g 视为同一规格
 const normWeight = value => String(value ?? '').trim().toLowerCase().replace(/\s+/g, '').replace(/g$/, '')
@@ -33,7 +34,7 @@ onBeforeUnmount(() => { live = false; controller.abort() })
 async function load() {
   const current = ++generation, id = props.access.id, section = props.section
   controller.abort(); controller = new AbortController()
-  busy.value = true; error.value = ''; data.value = null; delivery.value = {}; rows.value = []; selected.value = []; batch.value = ''; filters.value = emptyFilters()
+  busy.value = true; error.value = ''; invalidPrice.value = null; data.value = null; delivery.value = {}; rows.value = []; selected.value = []; batch.value = ''; filters.value = emptyFilters()
   try {
     const result = await portalAdminApi.customerSettings(id, section, controller.signal)
     if (!live || current !== generation) return
@@ -43,14 +44,58 @@ async function load() {
   } catch (e) { if (live && current === generation) { data.value = null; error.value = e?.response?.data?.message || '读取失败，请重试。' } }
   finally { if (live && current === generation) busy.value = false }
 }
-function applyBatch() { for (const row of rows.value) { if (selected.value.includes(row.id)) { row.price = batch.value; row.changed = true } } }
+function markPriceChanged(row) {
+  row.changed = true
+  if (invalidPrice.value?.id === row.id) {
+    invalidPrice.value = null
+    error.value = ''
+  }
+}
+function applyBatch() {
+  const ids = new Set(selected.value)
+  for (const row of rows.value) {
+    if (ids.has(row.id)) {
+      row.price = batch.value
+      markPriceChanged(row)
+    }
+  }
+}
+function parsePrice(raw) {
+  if (raw === '') return { value: null }
+  const text = String(raw).trim().replace(/[０-９．]/g, char => char.normalize('NFKC'))
+  if (/^-\d+(?:\.\d+)?$/.test(text)) return { reason: '单价须大于 0。' }
+  if (!/^\d+(?:\.\d+)?$/.test(text)) return { reason: '请用数字和小数点填写，例如 48.29。' }
+  const [whole, fraction = ''] = text.replace(/^0+(?=\d)/, '').split('.')
+  if (whole.length > 8) return { reason: '单价的整数部分最多 8 位。' }
+  if (fraction.length > 4) return { reason: '单价最多保留 4 位小数。' }
+  if (!/[1-9]/.test(whole + fraction)) return { reason: '单价须大于 0。' }
+  return { value: `${whole}.${fraction.padEnd(4, '0')}` }
+}
+async function showPriceError(row, reason) {
+  if (!visibleRows.value.includes(row)) filters.value = emptyFilters()
+  invalidPrice.value = { id: row.id, reason }
+  const spec = [row.model_name, row.color_name, row.length && `长度 ${row.length}`, row.weight, row.sale_unit].filter(Boolean).join(' · ')
+  const entered = String(row.price).trim() ? `「${row.price}」` : '（只有空格）'
+  error.value = `${spec} 的客户单价${entered}有误。${reason}`
+  await nextTick()
+  document.getElementById(`customer-unit-price-${row.id}`)?.focus()
+}
 async function save() {
   if (busy.value || uncertain.value || !data.value) return
   error.value = ''
-  const changed = rows.value.filter(row => row.changed)
-  if (props.section === 'prices' && !changed.length) { error.value = '请先修改商品单价。'; return }
-  if (changed.some(row => row.price !== '' && (!/^(?:0|[1-9][0-9]{0,7})(?:\.[0-9]{1,4})?$/.test(String(row.price)) || Number(row.price) <= 0))) { error.value = '单价须大于0，最多4位小数。'; return }
-  const body = props.section === 'delivery' ? { delivery: { ...delivery.value, country_code: delivery.value.country_code.toUpperCase() } } : { items: changed.map(row => ({ item_id: row.id, unit_price: row.price === '' ? null : Number(row.price).toFixed(4) })) }
+  let body
+  if (props.section === 'prices') {
+    const items = []
+    for (const row of rows.value.filter(row => row.changed)) {
+      const { value, reason } = parsePrice(row.price)
+      if (reason) return showPriceError(row, reason)
+      items.push({ item_id: row.id, unit_price: value })
+    }
+    if (!items.length) { error.value = '请先修改商品单价。'; return }
+    body = { items }
+  } else {
+    body = { delivery: { ...delivery.value, country_code: delivery.value.country_code.toUpperCase() } }
+  }
   const current = generation, id = props.access.id, section = props.section, version = data.value.row_version
   busy.value = true
   try {
@@ -78,7 +123,15 @@ watch(() => [props.access.id, props.section], () => { uncertain.value = false; l
           <el-table-column min-width="55"><template #header><el-checkbox class="price-select" :model-value="visibleRows.length > 0 && visibleSelectedCount === visibleRows.length" :indeterminate="visibleSelectedCount > 0 && visibleSelectedCount < visibleRows.length" :disabled="busy || uncertain || !visibleRows.length" aria-label="选择当前筛选结果" @change="selectVisible" /></template><template #default="{ row }"><el-checkbox v-model="selected" class="price-select" :value="row.id" :disabled="busy || uncertain" :aria-label="`选择 ${row.model_name} ${row.color_name} ${row.length} ${row.weight ?? ''} ${row.sale_unit ?? ''}`"><span aria-hidden="true"></span></el-checkbox></template></el-table-column>
           <el-table-column label="商品" min-width="260"><template #default="{ row }"><div class="product-name">{{ row.model_name }}</div><div class="product-spec">{{ row.color_name }} · 长度 {{ row.length ?? '—' }}<template v-if="row.weight"> · {{ row.weight }}</template><template v-if="row.sale_unit"> · {{ row.sale_unit }}</template></div></template></el-table-column>
           <el-table-column prop="standard_price" label="标准价 USD" min-width="135" />
-          <el-table-column label="客户单价 USD" min-width="170"><template #default="{ row }"><el-input v-model="row.price" :aria-label="`${row.model_name} ${row.color_name} ${row.length} ${row.weight ?? ''} ${row.sale_unit ?? ''} 客户单价`" :disabled="busy || uncertain" @input="row.changed = true" /></template></el-table-column>
+          <el-table-column label="客户单价 USD" min-width="170">
+            <template #default="{ row }">
+              <el-input :id="`customer-unit-price-${row.id}`" v-model="row.price" inputmode="decimal"
+                :aria-label="`${row.model_name} ${row.color_name} ${row.length} ${row.weight ?? ''} ${row.sale_unit ?? ''} 客户单价`"
+                :aria-invalid="invalidPrice?.id === row.id || undefined" :aria-describedby="invalidPrice?.id === row.id ? 'customer-price-error' : undefined"
+                :disabled="busy || uncertain" @input="markPriceChanged(row)" />
+              <span v-if="invalidPrice?.id === row.id" id="customer-price-error" class="price-error">{{ invalidPrice.reason }}</span>
+            </template>
+          </el-table-column>
         </el-table>
       </template>
     </div>
@@ -91,6 +144,7 @@ watch(() => [props.access.id, props.section], () => { uncertain.value = false; l
 .price-filters { margin-bottom: 12px; }
 .product-name, .product-spec { white-space: normal; overflow-wrap: anywhere; }
 .product-spec { color: var(--text-secondary); }
+.price-error { color: var(--el-color-danger); }
 .price-select { margin-right: 0; }
 p { color: var(--text-secondary); }
 </style>
