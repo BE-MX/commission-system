@@ -1,3 +1,10 @@
+## 2026-11-27 客户查重接口（Claude，已合入并推送 main，未部署）
+
+- 分支 `claude/customer-dedup`。新增 `POST /api/customer-dedup/check`：同事自建获客工具按社媒账号（10 个平台）或邮箱查重，返回已在同事私海（客户名+负责人姓名）、公海、未收录或无法判断四种结论，不返回联系人资料。接入说明见 [customer-dedup-api.md](customer-dedup-api.md)。
+- 鉴权用现有个人 token（`ark_mcp_tokens`）或登录会话，新权限 `customer_dedup:read`（启动 seed 只自动给 admin，业务员角色要在角色管理页手动分配）；每人 30 次/分钟、600 次/天，迁移 `284_customer_dedup_checks` 建审计表。
+- 生产只读核对（11-27）：社媒表 29,205 行，多为完整链接；抽样 298 个账号和 200 个 WhatsApp 号码全部能查回自身，单次约 0.05–0.3 秒，邮箱约 0.5 秒。生产事务隔离级别为 READ-COMMITTED。
+- 上线前：合并 → 随 deploy.bat 发布（含迁移）→ 给相关角色分配权限 → 管理员发放个人 token。北京现有社媒客户 MCP 未改动，文档已指向新接口。
+
 ## 2026-11-27 私海未绑定线索加入 WhatsApp（Claude，已合并推送 main，待部署）
 
 - 分支 `claude/wa-unlinked-ai`（worktree `commission-system-wa-unlinked`），迁移 `283_wa_unlinked_ai` 接生产当前的 `282_client_desk_unlinked`。号码持有人在「WhatsApp 连接 → 授权范围」勾选「允许 AI 自动整理还没关联客户的单聊」，每天 7–22 点每小时扫描一次，和 TM 共用卡片、动作、每人每渠道每天 20 条配额和周报。

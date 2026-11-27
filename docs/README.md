@@ -73,6 +73,7 @@
 | [handoff.md](handoff.md) | 项目状态、已完成功能、待办清单、技术债务 | 项目交接、管理层 |
 | [accio-work-integration-spec.md](accio-work-integration-spec.md) | ACCIO WORK → 方舟 客户机会台集成规范 | ACCIO WORK 开发团队 |
 | [mcp-tracking-integration.md](mcp-tracking-integration.md) | 方舟 MCP 网关接入说明：物流、素材、知识、产品与价格工具（个人 token） | AI 客户端接入者 |
+| [customer-dedup-api.md](customer-dedup-api.md) | 客户查重接口：自建获客工具按社媒账号或邮箱查私海/公海归属，个人 token 鉴权、限频与比对规则 | 自建工具的同事、管理员 |
 | [social-customer-mcp.md](social-customer-mcp.md) | 社媒客户查询 MCP：调用、部署、鉴权与运维完整说明 | AI 客户端接入者、运维、DBA |
 | [codex-social-customer-mcp-auto-setup.md](codex-social-customer-mcp-auto-setup.md) | Windows + macOS Codex 自动接入社媒客户 MCP：安全读取 token 文件、备份并更新配置、重启验收 | Codex 用户、服务管理员 |
 | [expo-kiosk-tablet-setup.md](expo-kiosk-tablet-setup.md) | 展会 kiosk 平板现场配置 | 展会执行、现场支持 |

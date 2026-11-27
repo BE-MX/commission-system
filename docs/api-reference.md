@@ -667,6 +667,12 @@ poster-config增加 `send_weekdays/push_start_date/poster_kinds`，奖项周一�
 | `GET /search-jobs`、`GET /search-jobs/{id}/context` | 获取可领取搜索任务和冻结目标画像 |
 | `POST /search-jobs/{id}/claim|heartbeat|candidates|complete|fail` | 租约执行、幂等提交候选及终结任务 |
 
+### 客户查重（`/api/customer-dedup`，迁移 284，2026-11-27）
+
+| 方法与路径 | 用途 |
+|---|---|
+| `POST /check` | body `{account, platform?}`：按社媒账号（instagram/facebook/whatsapp/wechat/linkedin/pinterest/tiktok/x/yelp/youtube）或邮箱查重，返回 `status=private|public|not_found|inconclusive`（inconclusive=范围过大或客户资料未同步，不得当作未收录）、可展示的 `message`、命中客户名称与负责人姓名（不返回联系人资料）。鉴权接受个人 token（`ark_mcp_tokens`）或登录 JWT（两条路径都实时回查账号状态与当前权限），需 `customer_dedup:read`；每人 30 次/分钟、600 次/北京自然日，超限 429；查询前按用户行锁占额度并先写 `ark_customer_dedup_checks` 审计（并发请求不能绕过限频），审计失败 503 不返回结果。接入与比对规则见 [customer-dedup-api.md](customer-dedup-api.md) |
+
 ### 客户 MCP 只读工具
 
 Agent 消费侧只从方舟调用：`resolve_customer`、`search_customers`、`get_customer_profile`、`get_customer_facts`、`get_customer_orders`、`search_customer_messages`、`get_customer_actions`、`get_customer_evidence`、`get_customer_source_chunks`。工具均声明只读，按当前用户的数据范围、分类和可见范围裁剪；返回内容不得作为越权写入凭证。

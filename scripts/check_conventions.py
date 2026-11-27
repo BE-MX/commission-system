@@ -31,6 +31,7 @@ AUTH_PATTERNS = re.compile(
     r"|get_current_mini_user|_require_\w+|_verify_\w+"
     r"|require_pm_member"  # PM 协作站自定义鉴权（验签+回查白名单），登记即逐端点强制
     r"|require_sales_agent"  # 智能获客 Agent：可撤销 opaque token + invoke 权限
+    r"|require_dedup_caller"  # 客户查重：个人令牌或登录会话 + customer_dedup:read，super_admin 绕过
     r"|require_mail_worker"  # 邮件执行器：独立 token SHA-256 白名单 + 邮箱 worker 绑定
     r"|require_app_key"  # AI 网关：站点密钥哈希，准入事务回查启用状态与 Preset 授权
     r"|verify_runtime_heartbeat_token"  # 云实例：service+instance claim 机器 token SHA-256 白名单

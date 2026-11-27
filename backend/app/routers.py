@@ -63,6 +63,7 @@ from app.customer_image.public_router import (
 )
 from app.sales_automation.agent_router import router as sales_automation_agent_router
 from app.sales_automation.router import router as sales_automation_router
+from app.customer_dedup.router import router as customer_dedup_router
 from app.customer.router import router as customer_hub_router
 from app.knowledge.router import router as knowledge_router
 from app.announcement.router import router as announcement_router
@@ -172,6 +173,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(customer_hub_router, prefix="/api/customer-hub", tags=["客户经营"])
     app.include_router(sales_automation_router, prefix="/api/sales-automation", tags=["智能获客"])
     app.include_router(sales_automation_agent_router, prefix="/api/sales-automation", tags=["智能获客-Agent"])
+    app.include_router(customer_dedup_router, prefix="/api/customer-dedup", tags=["客户查重"])
     app.include_router(knowledge_router, prefix="/api/knowledge", tags=["知识库"])
     app.include_router(announcement_router, prefix="/api/announcements", tags=["公告管理"])
     app.include_router(

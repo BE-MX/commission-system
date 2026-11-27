@@ -500,6 +500,8 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
   - `ark_expo_results` — 效果图（session_id FK CASCADE, wig_id 可空，scene 模式为 NULL；hair_color_json 发色快照、scene_json 场景快照、reaction、short_code、gen_ms、quality）。139 新增 `prompt_version_id`（版本 FK RESTRICT + index）与 `prompt_snapshot`（版本 id/名称/修订号、最终 text、image_paths、size），与任务创建及扣额同事务写入；后台只读该快照。历史 `prompt_variant` 原值保留，不再写入；历史无快照保持 NULL，不凭现有配置伪造历史。
 
   - `ark_expo_feedback` — 销售反馈（intent_level A/B/C/D 直通客户机会台口径, next_action）
+- **客户查重（1 张表，284 迁移）**：
+  - `ark_customer_dedup_checks` — 查重调用审计（user_id ark_users.id 无 FK, auth_channel personal_token/session, platform, normalized_value 统一格式后的账号或邮箱, result_status private/public/not_found/inconclusive/pending（查询前先写 pending 占额度）, matched_count, created_at 北京时间）；`(user_id, created_at)` 索引供按人限频。查询只读 `lsordertest.customer_contact_socials/customer_contacts/customer_info/user_basic`
 - **MCP 网关（1 张表，051 迁移）**：
   - `ark_mcp_tokens`（053 更名，原 mcp_tokens）— 业务员个人 access token（token_hash sha256 UNIQUE 只存哈希, user_id FK ark_users.id CASCADE 归属, label 用途备注, is_active 停用即撤销, last_used_at, created_by）；`(user_id)` 索引。供入口无关的 MCP 工具鉴权→复用登录 claims 产出 current_user dict
 

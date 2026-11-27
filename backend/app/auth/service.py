@@ -598,6 +598,8 @@ def seed_role_permissions(db: Session):
         ("sales_monid_spend:read", "sales_monid_spend", "read", "查看私海背调 Monid 花费"),
         ("sales_automation:admin", "sales_automation", "admin", "管理获客模型与Agent接入"),
         ("sales_automation:invoke", "sales_automation", "invoke", "Agent领取任务并提交搜索与研究结果"),
+        # 客户查重：同事自建获客工具用个人令牌查询账号/邮箱是否已在私海或公海
+        ("customer_dedup:read", "customer_dedup", "read", "按社媒账号或邮箱查重客户，查看归属同事姓名"),
         # 客户邮件触达：审核后定时发送开发信；worker 使用独立机器凭证，不具备审批能力
         ("mail_outreach:read",   "mail_outreach", "read",   "查看邮件触达草稿/队列/事件"),
         ("mail_outreach:write",  "mail_outreach", "write",  "生成、编辑、审批和撤销开发信"),
