@@ -29,6 +29,7 @@ def auto_init_fx_settlement_preset() -> None:
             parameters["max_tokens"] = 2400
             db.add(AiPreset(
                 preset_name="fx_settlement_advisor", provider_id=source.provider_id, model=source.model,
+                feature_key="invoice",
                 system_prompt="", parameters=parameters, is_enabled=True,
                 description="结汇决策：基于行情和现金流约束选择并解释可行方案",
             ))

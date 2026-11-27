@@ -18,7 +18,7 @@
     </el-form-item>
     <el-form-item label="估算 token 费用">
       <el-switch :model-value="Boolean(parameters?.chat?.pricing)" @update:model-value="update('pricing', $event ? { currency: 'USD', input_per_million: '0', output_per_million: '0' } : null)" />
-      <div class="form-hint">可选。按每百万 token 配置，历史调用保留当时价格；关闭开关表示未计价，0 表示免费。</div>
+      <div class="form-hint">建议统一在「订阅管理 → 模型单价」维护；当单价表已配置该提供商+模型时以单价表为准。此处仅作过渡期回退，0 表示免费。</div>
     </el-form-item>
     <template v-if="parameters?.chat?.pricing">
       <el-form-item label="币种"><el-select :model-value="parameters.chat.pricing.currency" @update:model-value="price('currency', $event)"><el-option value="USD" label="USD" /><el-option value="CNY" label="CNY" /></el-select></el-form-item>

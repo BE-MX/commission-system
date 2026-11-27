@@ -218,10 +218,12 @@ def _auto_create_preset(
             )
             model = model_name_hint or (first_preset.model if first_preset else "gpt-4o")
 
+            from app.ai.feature_catalog import default_feature_for_preset
             preset = AiPreset(
                 preset_name=preset_name,
                 provider_id=provider.id,
                 model=model,
+                feature_key=default_feature_for_preset(preset_name),
                 system_prompt=system_prompt,
                 parameters=parameters,
                 description=description,

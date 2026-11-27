@@ -1,11 +1,39 @@
-"""AI 调用日志查询"""
+"""AI 调用日志查询（SQL 聚合 + 提供商/费用状态筛选）"""
 
+from decimal import Decimal
 from typing import Optional
 
-from app.core.list_sort import apply_list_sort
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.ai.models import AiCallLog
+from app.core.list_sort import apply_list_sort
+
+
+def _serialize_log_item(log: AiCallLog) -> dict:
+    return {
+        "id": log.id,
+        "task_id": log.task_id,
+        "caller_module": log.caller_module,
+        "caller_user_id": log.caller_user_id,
+        "preset_id": log.preset_id,
+        "preset_name": log.preset_name,
+        "provider_id": log.provider_id,
+        "provider_type": log.provider_type,
+        "model": log.model,
+        "tokens_prompt": log.tokens_prompt,
+        "tokens_completion": log.tokens_completion,
+        "tokens_used": log.tokens_used,
+        "duration_ms": log.duration_ms,
+        "status": log.status,
+        "finished_at": log.finished_at.isoformat() if log.finished_at else None,
+        "cost_status": log.cost_status,
+        "cost_amount": str(Decimal(log.cost_amount).quantize(Decimal("0.000001"))) if log.cost_amount is not None else None,
+        "cost_currency": log.cost_currency,
+        "error_code": log.error_code,
+        "error_message": log.error_message,
+        "created_at": log.created_at.isoformat() if log.created_at else None,
+    }
 
 
 def list_logs(
@@ -19,14 +47,20 @@ def list_logs(
     page_size: int = 50,
     sort_field: str = "created_at",
     sort_order: str = "desc",
+    provider_id: Optional[int] = None,
+    cost_status: Optional[str] = None,
 ) -> dict:
     query = db.query(AiCallLog)
     if caller_module:
         query = query.filter(AiCallLog.caller_module == caller_module)
     if preset_id:
         query = query.filter(AiCallLog.preset_id == preset_id)
+    if provider_id:
+        query = query.filter(AiCallLog.provider_id == provider_id)
     if status:
         query = query.filter(AiCallLog.status == status)
+    if cost_status:
+        query = query.filter(AiCallLog.cost_status == cost_status)
     if date_from:
         query = query.filter(AiCallLog.created_at >= date_from)
     if date_to:
@@ -41,9 +75,16 @@ def list_logs(
         "caller_module": AiCallLog.caller_module,
         "provider_type": AiCallLog.provider_type,
         "status": AiCallLog.status,
+        "cost_amount": AiCallLog.cost_amount,
     }
-    query = apply_list_sort(query, sort_field, sort_order, SORT_MAP,
-        default=(AiCallLog.created_at.desc(),), tie_breakers=(AiCallLog.id.asc(),))
+    query = apply_list_sort(
+        query,
+        sort_field,
+        sort_order,
+        SORT_MAP,
+        default=(AiCallLog.created_at.desc(),),
+        tie_breakers=(AiCallLog.id.asc(),),
+    )
 
     total = query.count()
     items = (
@@ -53,38 +94,25 @@ def list_logs(
         .all()
     )
 
-    summary = {
-        "tokens_total": (
-            db.query(AiCallLog)
-            .filter(AiCallLog.tokens_used.isnot(None))
-            .with_entities(AiCallLog.tokens_used)
-            .all()
-        ),
-        "success_count": db.query(AiCallLog).filter(AiCallLog.status == "success").count(),
-        "error_count": db.query(AiCallLog).filter(AiCallLog.status == "error").count(),
-        "timeout_count": db.query(AiCallLog).filter(AiCallLog.status == "timeout").count(),
-    }
-    tokens_total = sum(x[0] for x in summary["tokens_total"] if x[0] is not None)
-    avg_q = (
-        db.query(AiCallLog)
-        .filter(AiCallLog.duration_ms.isnot(None))
-        .with_entities(AiCallLog.duration_ms)
-        .all()
-    )
-    avg_duration = (
-        round(sum(x[0] for x in avg_q) / len(avg_q)) if avg_q else 0
-    )
+    # SQL 聚合替代旧版 .all() 全表拉内存求和
+    agg = db.query(
+        func.coalesce(func.sum(AiCallLog.tokens_used), 0).label("tokens_total"),
+        func.coalesce(func.sum(case((AiCallLog.status == "success", 1), else_=0)), 0).label("success_count"),
+        func.coalesce(func.sum(case((AiCallLog.status == "error", 1), else_=0)), 0).label("error_count"),
+        func.coalesce(func.sum(case((AiCallLog.status == "timeout", 1), else_=0)), 0).label("timeout_count"),
+        func.avg(AiCallLog.duration_ms).label("avg_duration_ms"),
+    ).one()
 
     return {
         "total": total,
         "summary": {
-            "tokens_total": tokens_total,
-            "success_count": summary["success_count"],
-            "error_count": summary["error_count"],
-            "timeout_count": summary["timeout_count"],
-            "avg_duration_ms": avg_duration,
+            "tokens_total": int(agg.tokens_total or 0),
+            "success_count": int(agg.success_count or 0),
+            "error_count": int(agg.error_count or 0),
+            "timeout_count": int(agg.timeout_count or 0),
+            "avg_duration_ms": round(float(agg.avg_duration_ms)) if agg.avg_duration_ms is not None else 0,
         },
-        "items": items,
+        "items": [_serialize_log_item(item) for item in items],
     }
 
 

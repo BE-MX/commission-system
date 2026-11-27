@@ -2,44 +2,43 @@ import { msgSuccessText, confirmAction, alertAction, msgError, msgWarning } from
 /**
  * AI 管理页 — 业务逻辑 composable
  *
- * 集中三个 tab (Provider / Preset / Log) 的 state + 方法:
- *   - Provider CRUD + 启用切换 + 连通性测试
- *   - Preset CRUD + 复制 + 单条测试
- *   - Log 查询 + 摘要 + 模块/状态/日期筛选
- *
- * Preset 依赖 providerOptions (Provider tab 加载后填充),所以三个 tab 共享一个 composable。
+ * 保留 Provider / Preset / Log 既有契约（兼容 aiManagerResources.test.mjs），
+ * 并接入 feature_catalog 动态模块标签、预设 feature_key 与日志提供商/费用状态筛选。
  */
 import { ref, reactive, computed, onMounted, toRef } from 'vue'
 
-import {
-  getProviders, createProvider, updateProvider, deleteProvider, testProvider,
-  getPresets, createPreset, updatePreset, deletePreset, testPreset,
-  getLogs,
-} from '@/api/ai'
+import * as aiApi from '@/api/ai'
 import { useListPage } from '@/composables/useListPage'
 import { useAsyncResource } from '@/composables/useAsyncResource'
 import { resolveStatus } from '@/utils/status'
 import { useTableSort } from '@/composables/useTableSort'
 
-const MODULE_LABELS = {
+const FALLBACK_MODULE_LABELS = {
   logistics: '物流跟踪',
   design_booking: '设计预约',
   commission: '提成管理',
   system: '系统管理',
-}
-
-// ── 状态/标签 工具函数 ─────────────────────────────────────
-
-function moduleLabel(code) {
-  return MODULE_LABELS[code] || code
+  ai_preset_test: '预设测试',
 }
 
 const CALL_STATUS = {
   success: { label: '成功', tone: 'success' }, error: { label: '错误', tone: 'danger' },
   timeout: { label: '超时', tone: 'warning' }, pending: { label: '进行中', tone: 'primary' },
 }
+const COST_STATUS = {
+  priced: { label: '已计费', tone: 'success' },
+  unpriced: { label: '未定价', tone: 'warning' },
+  no_usage: { label: '无用量', tone: 'warning' },
+  failed: { label: '失败不计费', tone: 'info' },
+  not_billed: { label: '不计费', tone: 'info' },
+  legacy: { label: '上线前', tone: 'info' },
+  test: { label: '测试', tone: 'info' },
+}
+
 function statusLabel(status) { return resolveStatus(status, CALL_STATUS).label }
 function statusTagType(status) { return resolveStatus(status, CALL_STATUS).tone }
+function costStatusLabel(status) { return status ? resolveStatus(status, COST_STATUS).label : '—' }
+function costStatusTone(status) { return status ? resolveStatus(status, COST_STATUS).tone : 'info' }
 
 function formatDuration(ms) {
   if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
@@ -51,13 +50,40 @@ function formatToken(n) {
   return String(n)
 }
 
-// ── composable ──────────────────────────────────────────
-
 export function useAiManager() {
-  const activeTab = ref('providers')
+  const activeTab = ref('subscriptions')
+
+  // ── Feature Catalog ───────────────────────────────────
+  const featureCatalog = ref([])
+  const dynamicModuleLabels = ref({ ...FALLBACK_MODULE_LABELS })
+
+  function moduleLabel(code) {
+    return dynamicModuleLabels.value[code] || FALLBACK_MODULE_LABELS[code] || code
+  }
+
+  async function fetchFeatureCatalog() {
+    if (typeof aiApi.getFeatureCatalog !== 'function') return
+    try {
+      const res = await aiApi.getFeatureCatalog()
+      featureCatalog.value = res?.data?.items || []
+      if (res?.data?.module_labels) {
+        dynamicModuleLabels.value = { ...FALLBACK_MODULE_LABELS, ...res.data.module_labels }
+      }
+    } catch { /* fallback labels remain active */ }
+  }
+
+  const featureGroupedOptions = computed(() => {
+    const groups = new Map()
+    for (const item of featureCatalog.value) {
+      const grp = item.nav_group || '其他'
+      if (!groups.has(grp)) groups.set(grp, [])
+      groups.get(grp).push(item)
+    }
+    return [...groups.entries()].map(([label, options]) => ({ label, options }))
+  })
 
   // ── Providers ─────────────────────────────────────────
-  const providerResource = useAsyncResource(async (_, { signal }) => (await getProviders(undefined, { signal, suppressToast: true })).data.items || [], { initialData: [] })
+  const providerResource = useAsyncResource(async (_, { signal }) => (await aiApi.getProviders(undefined, { signal, suppressToast: true })).data.items || [], { initialData: [] })
   const { data: providers, loading: providerLoading } = providerResource
   const providerDraft = reactive({ search: '', type: '', status: '' })
   const providerApplied = ref({ ...providerDraft })
@@ -88,7 +114,7 @@ export function useAiManager() {
   }
 
   // ── Presets ───────────────────────────────────────────
-  const presetResource = useAsyncResource(async (_, { signal }) => (await getPresets(undefined, { signal, suppressToast: true })).data.items || [], { initialData: [] })
+  const presetResource = useAsyncResource(async (_, { signal }) => (await aiApi.getPresets(undefined, { signal, suppressToast: true })).data.items || [], { initialData: [] })
   const { data: presets, loading: presetLoading } = presetResource
   const presetDraft = reactive({ search: '', provider: '' })
   const presetApplied = ref({ ...presetDraft })
@@ -103,7 +129,7 @@ export function useAiManager() {
   const presetFormRef = ref(null)
   const presetSaving = ref(false)
   const presetForm = ref({
-    preset_name: '', provider_id: '', model: '', system_prompt: '', parameters: '{}', description: '',
+    preset_name: '', provider_id: '', feature_key: '', model: '', system_prompt: '', parameters: '{}', description: '',
   })
   const presetRules = {
     preset_name: [
@@ -111,6 +137,7 @@ export function useAiManager() {
       { pattern: /^[a-zA-Z0-9_]+$/, message: '只允许字母、数字、下划线', trigger: 'blur' },
     ],
     provider_id: [{ required: true, message: '请选择提供商', trigger: 'change' }],
+    feature_key: [{ required: true, message: '请选择所属功能', trigger: 'change' }],
   }
   const isAccioProvider = computed(() => {
     const p = providerOptions.value.find(x => x.id === presetForm.value.provider_id)
@@ -138,18 +165,30 @@ export function useAiManager() {
   // ── Logs ──────────────────────────────────────────────
   const logSummaryData = ref({ tokens_total: 0, success_count: 0, error_count: 0, timeout_count: 0, avg_duration_ms: 0 })
   const logSort = useTableSort()
-  const logState = useListPage(async ({ module, status, dates, ...params }, { signal, isCurrent }) => {
+  const logState = useListPage(async ({ module, providerId, status, costStatus, dates, ...params }, { signal, isCurrent }) => {
     if (module) params.caller_module = module
+    if (providerId) params.provider_id = providerId
     if (status) params.status = status
+    if (costStatus) params.cost_status = costStatus
     if (dates?.length === 2) { params.date_from = dates[0]; params.date_to = dates[1] }
-    const data = (await getLogs(params, { signal, suppressToast: true })).data
+    const data = (await aiApi.getLogs(params, { signal, suppressToast: true })).data
     if (isCurrent()) logSummaryData.value = data.summary || { tokens_total: 0, success_count: 0, error_count: 0, timeout_count: 0, avg_duration_ms: 0 }
     return data
-  }, { searchForm: { module: '', status: '', dates: [] }, immediate: false })
+  }, { searchForm: { module: '', providerId: '', status: '', costStatus: '', dates: [] }, immediate: false })
   const { list: logsData, loading: logsLoading, page: logPage, pageSize: logPageSize, total: logTotal,
     fetchList: fetchLogs, handleSearch: searchLogs, handleReset: resetLogs, handlePageChange: changeLogPage, handleSizeChange: changeLogSize } = logState
-  const logModuleFilter = toRef(logState.searchForm, 'module'), logStatusFilter = toRef(logState.searchForm, 'status'), logDateRange = toRef(logState.searchForm, 'dates')
+  const logModuleFilter = toRef(logState.searchForm, 'module')
+  const logProviderFilter = toRef(logState.searchForm, 'providerId')
+  const logStatusFilter = toRef(logState.searchForm, 'status')
+  const logCostStatusFilter = toRef(logState.searchForm, 'costStatus')
+  const logDateRange = toRef(logState.searchForm, 'dates')
   function sortLogs(sort) { logSort.onSortChange(sort); return logState.handleSortChange(logSort.sortParams.value) }
+
+  function jumpToProviderLogs(providerId) {
+    activeTab.value = 'logs'
+    logProviderFilter.value = providerId
+    searchLogs()
+  }
 
   // ── Computed ──────────────────────────────────────────
   const stats = computed(() => {
@@ -188,12 +227,12 @@ export function useAiManager() {
   const logSummary = computed(() => {
     const s = logSummaryData.value
     return [
-      { label: '调用次数', value: String(logTotal.value), icon: 'Histogram', color: '#2563eb' },
-      { label: '成功', value: String(s.success_count), icon: 'SuccessFilled', color: '#059669' },
-      { label: '错误', value: String(s.error_count), icon: 'CircleCloseFilled', color: '#dc2626' },
-      { label: '超时', value: String(s.timeout_count), icon: 'WarningFilled', color: '#d97706' },
-      { label: '总 Token', value: s.tokens_total.toLocaleString(), icon: 'Histogram', color: '#7c3aed' },
-      { label: '平均耗时', value: `${s.avg_duration_ms}ms`, icon: 'Loading', color: '#0891b2' },
+      { label: '调用次数', value: String(logTotal.value), icon: 'Histogram', color: 'var(--tag-info-solid)' },
+      { label: '成功', value: String(s.success_count), icon: 'SuccessFilled', color: 'var(--tag-success-solid)' },
+      { label: '错误', value: String(s.error_count), icon: 'CircleCloseFilled', color: 'var(--tag-danger-solid)' },
+      { label: '超时', value: String(s.timeout_count), icon: 'WarningFilled', color: 'var(--tag-warning-solid)' },
+      { label: '总 Token', value: s.tokens_total.toLocaleString(), icon: 'Histogram', color: 'var(--metric-violet-ink)' },
+      { label: '平均耗时', value: `${s.avg_duration_ms}ms`, icon: 'Loading', color: 'var(--tag-info-text)' },
     ]
   })
 
@@ -208,9 +247,7 @@ export function useAiManager() {
     providerDialogVisible.value = true
   }
 
-  function onProviderTypeChange() {
-    // Changing adapter type must not overwrite an administrator's endpoint or key.
-  }
+  function onProviderTypeChange() {}
 
   async function submitProvider() {
     const valid = await providerFormRef.value?.validate().catch(() => false)
@@ -230,10 +267,10 @@ export function useAiManager() {
       }
       if (!payload.api_key) delete payload.api_key
       if (providerEditId.value) {
-        await updateProvider(providerEditId.value, payload)
+        await aiApi.updateProvider(providerEditId.value, payload)
         msgSuccessText('更新成功')
       } else {
-        await createProvider(payload)
+        await aiApi.createProvider(payload)
         msgSuccessText('创建成功')
       }
       providerDialogVisible.value = false
@@ -242,19 +279,24 @@ export function useAiManager() {
     finally { providerSaving.value = false }
   }
 
-  async function toggleProvider(row) {
+  async function toggleProvider(row, nextVal = null) {
+    const target = nextVal !== null ? nextVal : !row.is_enabled
+    const prev = row.is_enabled
+    row.is_enabled = target
     try {
-      await updateProvider(row.id, { is_enabled: row.is_enabled })
-      msgSuccessText(row.is_enabled ? '已启用' : '已禁用')
+      await aiApi.updateProvider(row.id, { is_enabled: target })
+      msgSuccessText(target ? '已启用' : '已禁用')
+      return true
     } catch (e) {
-      row.is_enabled = !row.is_enabled
+      row.is_enabled = prev
+      return false
     }
   }
 
   async function handleTestProvider(row) {
     testingId.value = row.id
     try {
-      const res = await testProvider(row.id)
+      const res = await aiApi.testProvider(row.id)
       testResultData.value = res.data
       testResultVisible.value = true
     } catch (e) { /* ignore */ }
@@ -263,10 +305,11 @@ export function useAiManager() {
 
   async function handleDeleteProvider(row) {
     try {
-      await confirmAction(`确定删除提供商「${row.name}」？`, '确认删除', { type: 'warning' })
-      await deleteProvider(row.id)
+      await confirmAction(`确定删除提供商「${row.name}」？软删除后历史调用消费仍保留在总账。`, '确认删除', { type: 'warning' })
+      await aiApi.deleteProvider(row.id)
       msgSuccessText('删除成功')
       fetchProviders()
+      return true
     } catch (e) {
       if (e !== 'cancel') {
         const msg = e.response?.data?.message || e.message
@@ -276,6 +319,7 @@ export function useAiManager() {
           msgError(msg || '删除失败', e)
         }
       }
+      return false
     }
   }
 
@@ -289,8 +333,8 @@ export function useAiManager() {
   function openPresetDialog(row = null) {
     presetEditId.value = row?.id || null
     presetForm.value = row
-      ? { ...row, parameters: JSON.stringify(row.parameters || {}) }
-      : { preset_name: '', provider_id: providerOptions.value[0]?.id || '', model: '', system_prompt: '', parameters: '{}', description: '' }
+      ? { ...row, feature_key: row.feature_key || '', parameters: JSON.stringify(row.parameters || {}) }
+      : { preset_name: '', provider_id: providerOptions.value[0]?.id || '', feature_key: '', model: '', system_prompt: '', parameters: '{}', description: '' }
     presetDialogVisible.value = true
   }
 
@@ -315,11 +359,12 @@ export function useAiManager() {
         msgError('调用参数格式有误，请输入有效的 JSON 对象；原配置尚未修改')
         return
       }
+      if (!payload.feature_key) delete payload.feature_key
       if (presetEditId.value) {
-        await updatePreset(presetEditId.value, payload)
+        await aiApi.updatePreset(presetEditId.value, payload)
         msgSuccessText('更新成功')
       } else {
-        await createPreset(payload)
+        await aiApi.createPreset(payload)
         msgSuccessText('创建成功')
       }
       presetDialogVisible.value = false
@@ -328,30 +373,47 @@ export function useAiManager() {
     finally { presetSaving.value = false }
   }
 
+  async function togglePreset(row) {
+    try {
+      const next = !row.is_enabled
+      await aiApi.updatePreset(row.id, { is_enabled: next })
+      msgSuccessText(next ? '预设已启用' : '预设已停用')
+      fetchPresets()
+      return true
+    } catch { return false }
+  }
+
   async function handleDeletePreset(row) {
     try {
       await confirmAction(`确定删除预设「${row.preset_name}」？`, '确认删除', { type: 'warning' })
-      await deletePreset(row.id)
+      await aiApi.deletePreset(row.id)
       msgSuccessText('删除成功')
       fetchPresets()
+      return true
     } catch (e) {
       if (e !== 'cancel') {
         msgError(e.response?.data?.message || e.message || '删除失败', e)
       }
+      return false
     }
   }
 
   async function handleCopyPreset(row) {
+    if (!row.feature_key) {
+      msgWarning('该存量预设尚未设置所属功能，请先编辑归属后再复制')
+      return
+    }
     try {
       const payload = {
         preset_name: `${row.preset_name}_copy`,
         provider_id: row.provider_id,
+        feature_key: row.feature_key,
         model: row.model,
         system_prompt: row.system_prompt,
         parameters: row.parameters,
         description: row.description ? `${row.description} (复制)` : '',
       }
-      await createPreset(payload)
+      await aiApi.createPreset(payload)
       msgSuccessText('复制成功')
       fetchPresets()
     } catch (e) { /* ignore */ }
@@ -394,33 +456,12 @@ export function useAiManager() {
     target.list.value = [uploadFile]
   }
 
-  function handleTestImageChange(uploadFile) {
-    setTestImageFile(uploadFile, { file: testImageFile, list: testImageFileList })
-  }
-
-  function handleTestImageExceed(files) {
-    const file = files[0]
-    handleTestImageChange({ name: file.name, raw: file })
-  }
-
-  function clearTestImage() {
-    testImageFile.value = null
-    testImageFileList.value = []
-  }
-
-  function handleTestReferenceImageChange(uploadFile) {
-    setTestImageFile(uploadFile, { file: testReferenceImageFile, list: testReferenceImageFileList })
-  }
-
-  function handleTestReferenceImageExceed(files) {
-    const file = files[0]
-    handleTestReferenceImageChange({ name: file.name, raw: file })
-  }
-
-  function clearTestReferenceImage() {
-    testReferenceImageFile.value = null
-    testReferenceImageFileList.value = []
-  }
+  function handleTestImageChange(uploadFile) { setTestImageFile(uploadFile, { file: testImageFile, list: testImageFileList }) }
+  function handleTestImageExceed(files) { const file = files[0]; handleTestImageChange({ name: file.name, raw: file }) }
+  function clearTestImage() { testImageFile.value = null; testImageFileList.value = [] }
+  function handleTestReferenceImageChange(uploadFile) { setTestImageFile(uploadFile, { file: testReferenceImageFile, list: testReferenceImageFileList }) }
+  function handleTestReferenceImageExceed(files) { const file = files[0]; handleTestReferenceImageChange({ name: file.name, raw: file }) }
+  function clearTestReferenceImage() { testReferenceImageFile.value = null; testReferenceImageFileList.value = [] }
 
   function isImageResponse(value) {
     return typeof value === 'string' && (
@@ -438,7 +479,7 @@ export function useAiManager() {
     testing.value = true
     testResult.value = null
     try {
-      const res = await testPreset(
+      const res = await aiApi.testPreset(
         testPresetId.value,
         testMessage.value,
         testImageFile.value,
@@ -449,17 +490,10 @@ export function useAiManager() {
     testing.value = false
   }
 
-  // ── Log methods ───────────────────────────────────────
+  function onLogExpand() {}
 
-
-  function onLogExpand(/* row, expandedRows */) {
-    // 展开时可选加载详情
-  }
-
-
-
-  // ── Lifecycle ─────────────────────────────────────────
   onMounted(() => {
+    fetchFeatureCatalog()
     fetchProviders()
     fetchPresets()
     fetchLogs()
@@ -468,6 +502,7 @@ export function useAiManager() {
   return {
     providerResource, providerPending, searchProviders, resetProviders, presetResource, presetPending, searchPresets, resetPresets,
     logState, searchLogs, resetLogs, changeLogPage, changeLogSize, sortLogs, activeTab,
+    featureCatalog, featureGroupedOptions, dynamicModuleLabels, fetchFeatureCatalog,
     // Provider
     providers, providerLoading, providerSearch, providerTypeFilter, providerStatusFilter,
     showKeyMap, testingId, testResultVisible, testResultData,
@@ -482,19 +517,19 @@ export function useAiManager() {
     presetForm, presetRules, isAccioProvider,
     testDialogVisible, testPresetName, testPresetId, testMessage,
     testImageFileList, testReferenceImageFileList, testing, testResult, isCompositePreset, isImageTest,
-    fetchPresets, openPresetDialog, onPresetProviderChange, submitPreset,
+    fetchPresets, openPresetDialog, onPresetProviderChange, submitPreset, togglePreset,
     handleDeletePreset, handleCopyPreset, openTestPreset,
     handleTestImageChange, handleTestImageExceed, clearTestImage,
     handleTestReferenceImageChange, handleTestReferenceImageExceed, clearTestReferenceImage,
     isImageResponse, sendTest,
     filteredPresets,
     // Logs
-    logsData, logsLoading, logModuleFilter, logStatusFilter, logDateRange,
+    logsData, logsLoading, logModuleFilter, logProviderFilter, logStatusFilter, logCostStatusFilter, logDateRange,
     logPage, logPageSize, logTotal, logSummaryData,
-    fetchLogs, onLogExpand, logSort,
+    fetchLogs, onLogExpand, logSort, jumpToProviderLogs,
     logSummary,
     // shared
     stats,
-    moduleLabel, statusLabel, statusTagType, formatDuration, formatToken,
+    moduleLabel, statusLabel, statusTagType, costStatusLabel, costStatusTone, formatDuration, formatToken,
   }
 }

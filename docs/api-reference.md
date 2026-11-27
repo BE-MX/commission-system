@@ -3285,6 +3285,20 @@ stock条目含external_id、mode、warehouse_id、local_sku_id、quality、整�
 新增权限为commerce_transition:read/write/admin、commerce_shadow:read/write/admin。菜单/按钮能力不代替提交时后端授权。独立进程及旧路线原始映射契约见[说明](../backend/app/commerce_shadow/README.md)；完整交接/settlement接口见前文“完整订单承接与放行”。
 
 
+### AI 订阅管理、统一单价与预设功能目录（2026-11-27）
+
+全部沿用 `backend/app/ai/router.py` 路由级 `ai:admin` 权限与统一 `ok()` 信封：
+
+- `GET /api/ai/subscriptions`：订阅源卡片/表格列表与全平台汇总（含本月/上线后累计调用估算、在用固定订阅月折算、独立维度续费提醒与余额预警计数；支持 `status_filter`、`service_kind`、`api_type`、`hide_disabled`、`q`、`sort`）。
+- `PUT /api/ai/providers/{id}/billing`：新增/更新提供商订阅与账务元数据（校验 `https://` 外链、日期先后与非负金额）。
+- `POST /api/ai/providers/{id}/renew-confirm`：人工确认续费，按计费周期顺延 `renew_at` 一期并写 `renew_confirmed_at`。
+- `GET / POST /api/ai/providers/{id}/balance-checkpoints`：查询与登记余额核对/充值流水（默认 `beijing_now()` 截点，保存登记前系统估算值快照与漂移差额）。
+- `GET / PUT /api/ai/providers/{id}/model-prices`：查询与批量替换该提供商模型单价（`token / per_call / image_rate_card`）。
+- `PUT / GET /api/ai/providers/{id}/logo`：上传与读取提供商 LOGO（magic bytes 校验仅允许 PNG/JPEG/WEBP ≤ 512KB，禁 SVG，走 `app/core/storage/`）。
+- `GET /api/ai/feature-catalog`：返回预设所属功能目录与调用模块中文映射。
+- `GET / POST / PUT /api/ai/presets`：新建必填 `feature_key`；列表支持 `feature_key`、`provider_ids`、`model` 多选筛选并返回 `unassigned_count`。
+- `GET /api/ai/logs`：新增 `provider_id`、`cost_status` 筛选并返回费用估算字段，摘要切换 SQL 聚合。
+
 ### AI 提供商运行参数（2026-11-09）
 
 `POST /api/ai/providers`、`PUT /api/ai/providers/{id}` 接收 `runtime_config` JSON，列表返回该字段；需 `ai:admin`。字段定义以 `app/ai/provider_config.py` 为准：分操作相对路径、认证头/前缀、Anthropic 版本、Token 字段映射、请求超时、图片重试/代理及连通性探测选项。未知字段或非法类型拒绝保存。`extra_headers` 可维护普通头和 `{api_key}` 占位符；已存认证值返回 `__KEEP_EXISTING_SECRET__`，更新时代表保留，不得新建此标记。管理员配置的自定义认证头同样受保护。

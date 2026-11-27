@@ -32,6 +32,7 @@ from app.ai.keyring import decrypt_key
 from app.ai.preset_config import text_request_parameters
 from app.ai.models import AiCallLog, AiPreset
 from app.ai.provider_service import get_provider
+from app.ai.billing_service import settle_call_log_cost
 from app.auth.models import ArkUser
 from app.auth.service import get_user_permissions, get_user_roles
 from app.core.config import get_settings
@@ -201,6 +202,8 @@ def _reserve_budget(
     for item in stale:
         accounting_stage = (item.usage_detail or {}).get("accounting_stage")
         item.status = "timeout"
+        item.finished_at = beijing_now()
+        item.cost_status = "failed"
         item.error_code = "STALE_RESERVATION_RELEASED"
         if accounting_stage == "reserved":
             # The lazy stream was never advanced, so the provider request was
@@ -328,6 +331,7 @@ def prepare_agent_chat(
         caller_user_id=run.owner_user_id,
         preset_id=preset.id,
         preset_name=preset.preset_name,
+        provider_id=provider.id,
         provider_type=provider.provider_type,
         model=preset.model,
         prompt_snapshot=_message_snapshot(governed_messages, effective_tools),
@@ -467,20 +471,32 @@ def prepare_agent_chat(
                     charged_prompt = reserved_prompt_tokens
                     charged_completion = allowed_output
                     accounting_source = "reservation"
-                current_log.status = status
-                current_log.tokens_prompt = charged_prompt
-                current_log.tokens_completion = charged_completion
-                current_log.tokens_used = charged_total
-                current_log.duration_ms = int((time.time() - started) * 1000)
-                current_log.error_code = error_code
-                current_log.error_message = error_message
-                current_log.usage_detail = {
+                finished_at = beijing_now()
+            snap_usage_detail = None
+            snap_log_id = None
+            snap_provider_id = getattr(provider, "id", None)
+            snap_provider_type = getattr(provider, "provider_type", None)
+            snap_model = getattr(preset, "model", None)
+            snap_preset_name = getattr(preset, "preset_name", None)
+            snap_preset_params = dict(preset.parameters) if isinstance(getattr(preset, "parameters", None), dict) else None
+            if current_log is not None:
+                snap_log_id = current_log.id
+                snap_usage_detail = {
                     **usage,
                     "finish_reason": finish_reason,
                     "accounting_stage": "finalized",
                     "accounting_source": accounting_source,
                     "reserved_tokens": reserved_tokens,
                 }
+                current_log.status = status
+                current_log.finished_at = finished_at
+                current_log.tokens_prompt = charged_prompt
+                current_log.tokens_completion = charged_completion
+                current_log.tokens_used = charged_total
+                current_log.duration_ms = int((time.time() - started) * 1000)
+                current_log.error_code = error_code
+                current_log.error_message = error_message
+                current_log.usage_detail = snap_usage_detail
                 current_log.response_snapshot = json.dumps({
                     "content_length": response_chars,
                     "content_sha256": response_hash.hexdigest(),
@@ -491,5 +507,22 @@ def prepare_agent_chat(
                 current_run.prompt_tokens += charged_prompt
                 current_run.completion_tokens += charged_completion
             db.commit()
+            if snap_log_id is not None:
+                settle_call_log_cost(
+                    db,
+                    snap_log_id,
+                    provider_id=snap_provider_id,
+                    provider_type=snap_provider_type,
+                    model=snap_model,
+                    preset_name=snap_preset_name,
+                    caller_module="agent_runtime",
+                    status=status,
+                    tokens_prompt=charged_prompt if accounting_source == "provider_usage" else None,
+                    tokens_completion=charged_completion if accounting_source == "provider_usage" else None,
+                    usage_detail=snap_usage_detail,
+                    preset_parameters=snap_preset_params,
+                    accounting_source=accounting_source,
+                    finished_at=finished_at,
+                )
 
     return generate(), preset.model

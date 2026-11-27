@@ -3,6 +3,7 @@ from datetime import timedelta
 
 from sqlalchemy import and_, or_
 
+from app.ai.billing_service import terminal_failed_fields
 from app.ai.models import AiCallLog
 from app.ai_chat.models import AiChatMessage, AiChatSession
 from app.core.config import get_settings
@@ -40,7 +41,8 @@ def recover_expired(db, owner_id, *, commit=True):
         if row.ai_call_log_id:
             db.query(AiCallLog).filter(AiCallLog.id == row.ai_call_log_id, AiCallLog.status == 'pending').update(
                 {'status': 'error', 'error_code': 'generation_interrupted',
-                 'error_message': '生成租约已过期', 'updated_at': now}, synchronize_session=False)
+                 'error_message': '生成租约已过期', 'updated_at': now,
+                 **terminal_failed_fields(now)}, synchronize_session=False)
     if commit:
         try:
             db.commit()

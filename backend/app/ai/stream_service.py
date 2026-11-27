@@ -24,6 +24,8 @@ from app.ai.preset_config import text_request_parameters
 from app.ai.models import AiCallLog, AiPreset
 from app.ai.provider_service import get_provider
 from app.ai.text_snapshot import TextChatSnapshot, freeze_text_call_config
+from app.ai.billing_service import compute_cost_fields
+from app.core.time import beijing_now
 
 logger = logging.getLogger("commission.ai")
 
@@ -183,14 +185,39 @@ def _finalize_log(
     error_message: Optional[str] = None,
     termination: Optional[str] = None,
     api_key: Optional[str] = None,
+    preset=None,
+    provider=None,
 ) -> None:
     usage_detail = dict(usage)
     usage_detail['complete'] = status == 'success'
     if termination:
         usage_detail["termination"] = termination
     safe_text = text.replace(api_key, "[REDACTED]") if api_key else text
-    final_values = {
+    finished_at = beijing_now()
+    log_id = log.id
+    snap_provider_id = getattr(provider, "id", None) or getattr(log, "provider_id", None)
+    snap_provider_type = getattr(provider, "provider_type", None) or getattr(log, "provider_type", None)
+    snap_model = getattr(preset, "model", None) or getattr(log, "model", None)
+    snap_preset_name = getattr(preset, "preset_name", None) or getattr(log, "preset_name", None)
+    snap_caller_module = getattr(log, "caller_module", None)
+    snap_preset_params = dict(preset.parameters) if isinstance(getattr(preset, "parameters", None), dict) else None
+
+    cost_fields = compute_cost_fields(
+        db,
+        provider_id=snap_provider_id,
+        provider_type=snap_provider_type,
+        model=snap_model,
+        preset_name=snap_preset_name,
+        caller_module=snap_caller_module,
+        status=status,
+        tokens_prompt=usage.get("input_tokens"),
+        tokens_completion=usage.get("output_tokens"),
+        usage_detail=usage_detail,
+        preset_parameters=snap_preset_params,
+    )
+    core_values = {
         "status": status,
+        "finished_at": finished_at,
         "tokens_prompt": usage.get("input_tokens"),
         "tokens_completion": usage.get("output_tokens"),
         "tokens_used": usage.get("total_tokens"),
@@ -202,15 +229,15 @@ def _finalize_log(
             {"content": safe_text, "usage": usage_detail}
         ),
     }
+    final_values = {**core_values, **cost_fields}
 
-    def apply_values(target: AiCallLog) -> None:
+    def apply_values(target_id: int, values: dict) -> None:
         # Recovery owns an interrupted terminal state; late workers cannot undo it.
-        db.query(AiCallLog).filter(AiCallLog.id == target.id, AiCallLog.status == "pending").update(
-            final_values, synchronize_session=False)
+        db.query(AiCallLog).filter(AiCallLog.id == target_id, AiCallLog.status == "pending").update(
+            values, synchronize_session=False)
 
-    log_id = log.id
     try:
-        apply_values(log)
+        apply_values(log_id, final_values)
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -220,10 +247,32 @@ def _finalize_log(
             retry_log = db.query(AiCallLog).filter(AiCallLog.id == log_id).first()
             if retry_log is None:
                 raise RuntimeError("AI stream log row disappeared before retry")
-            apply_values(retry_log)
+            apply_values(retry_log.id, final_values)
             db.commit()
         except Exception as retry_exc:
             db.rollback()
+            # 兜底隔离：若是计费列写入异常，剥离费用列后再保底落盘终态日志，绝不破坏已完成的流式响应
+            if cost_fields.get("cost_amount") is not None or cost_fields.get("price_snapshot") is not None:
+                try:
+                    fallback_values = {
+                        **core_values,
+                        "cost_status": "unpriced" if status == "success" else "failed",
+                        "cost_amount": None,
+                        "cost_currency": None,
+                        "price_snapshot": None,
+                    }
+                    retry_log = db.query(AiCallLog).filter(AiCallLog.id == log_id).first()
+                    if retry_log is not None:
+                        apply_values(retry_log.id, fallback_values)
+                        db.commit()
+                        logger.warning(
+                            "AI stream billing columns dropped on fallback commit log_id=%s err=%s",
+                            log_id, type(retry_exc).__name__,
+                        )
+                        print(f"[AI-BILLING] stream fallback dropped cost cols log_id={log_id}", flush=True)
+                        return
+                except Exception:  # noqa: BLE001
+                    db.rollback()
             logger.warning("Failed to finalize AI stream log after retry: %s", type(retry_exc).__name__)
             print(
                 f"[AI] failed to finalize stream log after retry: {type(retry_exc).__name__}",
@@ -300,6 +349,7 @@ def _create_pending_log(
         caller_user_id=caller_user_id,
         preset_id=preset.id,
         preset_name=preset.preset_name,
+        provider_id=provider.id,
         provider_type=provider.provider_type,
         model=preset.model,
         prompt_snapshot=_prompt_snapshot(full_messages),
@@ -419,6 +469,8 @@ def chat_stream(
             error_message="调用方已停止接收流式响应",
             termination="stopped",
             api_key=api_key,
+            preset=preset,
+            provider=provider,
         )
         raise
     except Exception as exc:
@@ -441,13 +493,15 @@ def chat_stream(
             error_code=code,
             error_message=message,
             api_key=api_key,
+            preset=preset,
+            provider=provider,
         )
         yield {"type": "error", "code": code, "message": message}
         return
 
     text = "".join(text_parts)
     if terminal_event and terminal_event["type"] == "done":
-        _finalize_log(db, log, start, "success", usage, text, api_key=api_key)
+        _finalize_log(db, log, start, "success", usage, text, api_key=api_key, preset=preset, provider=provider)
     else:
         terminal_event = terminal_event or _stream_error("stream_incomplete")
         _finalize_log(
@@ -460,5 +514,7 @@ def chat_stream(
             error_code=terminal_event["code"],
             error_message=terminal_event["message"],
             api_key=api_key,
+            preset=preset,
+            provider=provider,
         )
     yield terminal_event

@@ -309,9 +309,11 @@ def _effective_log_id(
         _warn_visible(f"job {job_id}: AI call log {log_id} is missing")
         return None
     if failure is not None and log.status == "pending":
+        from app.ai.billing_service import mark_log_terminal_failed
         log.status = "error"
         log.error_code = failure.code
         log.error_message = failure.customer_message
+        mark_log_terminal_failed(db, log)
     return log_id
 
 

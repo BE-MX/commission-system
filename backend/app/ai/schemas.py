@@ -1,6 +1,7 @@
 """AI 接入模块 — Pydantic 模式"""
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Optional, Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -105,6 +106,7 @@ class PresetCreate(BaseModel):
     preset_name: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
     provider_id: int
     model: Optional[str] = Field(None, max_length=128)
+    feature_key: str = Field(..., min_length=1, max_length=64)
     system_prompt: Optional[str] = None
     parameters: Optional[dict] = None
     description: Optional[str] = Field(None, max_length=512)
@@ -114,10 +116,48 @@ class PresetUpdate(BaseModel):
     preset_name: Optional[str] = Field(None, min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
     provider_id: Optional[int] = None
     model: Optional[str] = Field(None, max_length=128)
+    feature_key: Optional[str] = Field(None, min_length=1, max_length=64)
     system_prompt: Optional[str] = None
     parameters: Optional[dict] = None
     description: Optional[str] = Field(None, max_length=512)
     is_enabled: Optional[bool] = None
+
+
+# ── Subscription & Billing ────────────────────────────
+
+class ProviderBillingUpsert(BaseModel):
+    service_kind: str = Field("official", pattern="^(official|relay)$")
+    plan_name: Optional[str] = Field(None, max_length=64)
+    billing_mode: str = Field("pay_as_you_go", pattern="^(monthly|quarterly|yearly|pay_as_you_go)$")
+    is_balance_deducted_by_usage: bool = True
+    price_amount: Optional[Decimal] = Field(None, ge=0)
+    price_currency: str = Field("CNY", pattern="^(CNY|USD)$")
+    subscribed_at: Optional[date] = None
+    renew_at: Optional[date] = None
+    console_url: Optional[str] = Field(None, max_length=512)
+    docs_url: Optional[str] = Field(None, max_length=512)
+    low_balance_threshold: Optional[Decimal] = Field(None, ge=0)
+
+
+class BalanceCheckpointCreate(BaseModel):
+    checkpoint_kind: str = Field("reconcile", pattern="^(reconcile|topup)$")
+    balance_amount: Decimal = Field(..., ge=0)
+    balance_currency: str = Field("CNY", pattern="^(CNY|USD)$")
+    recorded_at: Optional[datetime] = None
+    remark: Optional[str] = Field(None, max_length=256)
+
+
+class ModelPriceItem(BaseModel):
+    model: str = Field(..., min_length=1, max_length=128)
+    pricing_mode: str = Field("token", pattern="^(token|per_call|image_rate_card)$")
+    input_per_million: Optional[Decimal] = Field(None, ge=0)
+    output_per_million: Optional[Decimal] = Field(None, ge=0)
+    per_call_amount: Optional[Decimal] = Field(None, ge=0)
+    currency: str = Field("CNY", pattern="^(CNY|USD)$")
+
+
+class ModelPricesReplace(BaseModel):
+    items: list[ModelPriceItem] = Field(default_factory=list)
 
 
 class Preset(BaseModel):

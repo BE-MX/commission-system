@@ -26,7 +26,8 @@ from app.ai.http_client import (
 )
 from app.ai.log_snapshot import serialize_response_snapshot
 from app.ai.provider_service import get_provider
-from app.core.time import utc_now
+from app.ai.billing_service import settle_call_log_cost
+from app.core.time import beijing_now, utc_now
 from app.ai.text_snapshot import TextChatSnapshot
 
 # 带图 chat（如 expo 面容分析）的超时下限：多模态请求模型处理更慢，Provider 常配的
@@ -119,6 +120,7 @@ def chat(
         caller_user_id=caller_user_id,
         preset_id=preset.id,
         preset_name=preset.preset_name,
+        provider_id=provider.id,
         provider_type=provider.provider_type,
         model=preset.model,
         prompt_snapshot=snapshot_str,
@@ -240,10 +242,20 @@ def chat(
                       f"result_keys={list(result.keys())} full_result={diag}", flush=True)
         duration_ms = int((time.time() - start) * 1000)
 
+        finished_at = beijing_now()
+        snap_log_id = log.id
+        snap_provider_id = provider.id
+        snap_provider_type = provider.provider_type
+        snap_model = preset.model
+        snap_preset_name = preset.preset_name
+        snap_preset_params = dict(preset.parameters) if isinstance(preset.parameters, dict) else None
+
         log.status = "success"
+        log.finished_at = finished_at
         log.tokens_prompt = usage.get("prompt_tokens")
         log.tokens_completion = usage.get("completion_tokens")
         log.tokens_used = usage.get("total_tokens")
+        log.usage_detail = usage or None
         log.duration_ms = duration_ms
         if snapshot_mode == "metadata":
             response_serialized = json.dumps(result, ensure_ascii=False, sort_keys=True)
@@ -256,13 +268,13 @@ def chat(
             log.response_snapshot = serialize_response_snapshot(result)
         db.commit()
 
-        return {
+        chat_response = {
             "content": content,
             "tokens_prompt": usage.get("prompt_tokens"),
             "tokens_completion": usage.get("completion_tokens"),
             "tokens_used": usage.get("total_tokens"),
             "duration_ms": duration_ms,
-            "log_id": log.id,
+            "log_id": snap_log_id,
             "finish_reason": finish_reason if finish_reason in (
                 "length", "max_tokens", "stop", "end_turn", "stop_sequence",
                 "content_filter", "refusal", "tool_calls", "tool_use",
@@ -275,6 +287,8 @@ def chat(
         db.rollback()
         try:
             log.status = "error"
+            log.finished_at = beijing_now()
+            log.cost_status = "failed"
             log.error_code = "unknown_error"
             log.error_message = type(e).__name__ if snapshot_mode == "metadata" else str(e)[:500]
             log.duration_ms = int((time.time() - start) * 1000)
@@ -284,6 +298,24 @@ def chat(
             print(f"[AI-DIAG] log persistence failed: {type(log_error).__name__}", flush=True)
             db.rollback()
         raise
+
+    # 计费独立于业务 try 块之外执行：全程使用提交前快照，不触发过期 ORM 懒加载
+    settle_call_log_cost(
+        db,
+        snap_log_id,
+        provider_id=snap_provider_id,
+        provider_type=snap_provider_type,
+        model=snap_model,
+        preset_name=snap_preset_name,
+        caller_module=caller_module,
+        status="success",
+        tokens_prompt=usage.get("prompt_tokens"),
+        tokens_completion=usage.get("completion_tokens"),
+        usage_detail=usage,
+        preset_parameters=snap_preset_params,
+        finished_at=finished_at,
+    )
+    return chat_response
 
 
 def delegate(
@@ -321,7 +353,9 @@ def delegate(
         caller_user_id=caller_user_id,
         preset_id=preset.id,
         preset_name=preset.preset_name,
+        provider_id=provider.id,
         provider_type=provider.provider_type,
+        cost_status="not_billed",
         prompt_snapshot=json.dumps(task, ensure_ascii=False),
         status="pending",
     )

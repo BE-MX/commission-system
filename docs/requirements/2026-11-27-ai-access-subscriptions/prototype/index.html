@@ -1,0 +1,1315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 接入管理 · v0.3 交互原型（示例数据）</title>
+<style>
+  /* 配色与动效令牌取自 frontend/src/styles/tokens.css 与 DESIGN.md */
+  :root {
+    --gold: #E0A50B; --gold-hover: #C9930A; --gold-ink: #211903;
+    --gold-soft: #FDF6DD; --gold-border: #F0D889; --gold-text: #8F6508;
+    --ink: #1a1a2e; --ink-2: #4a5568; --muted: #5B6678;
+    --line: #e2e5ef; --line-soft: #edf0f7; --card: #FFFFFF;
+    --ok: #0D9488; --ok-soft: #E4F7F3; --ok-border: #A8E3D6; --ok-text: #0B6E63;
+    --warn: #C2610A; --warn-soft: #FEF0DE; --warn-border: #F4CCA0; --warn-text: #9A4E08;
+    --danger: #E5484D; --danger-soft: #FDEBEC; --danger-border: #F6C6CA; --danger-text: #C62A30;
+    --info: #2563EB; --info-soft: #EBF1FE; --info-border: #BFD4FB; --info-text: #1D4ED8;
+    --neutral: #64748B; --neutral-soft: #F6F7F9; --neutral-border: #E2E5EA; --neutral-text: #4A5563;
+    --glass-bg: linear-gradient(160deg, rgba(255,255,255,.88), rgba(255,255,255,.72));
+    --glass-border: rgba(255,255,255,.92);
+    --glass-shadow: 0 8px 24px rgba(146, 103, 24, 0.10), inset 0 1px 0 rgba(255,255,255,.92);
+    --glass-shadow-hover: 0 12px 30px rgba(146, 103, 24, 0.15), inset 0 1px 0 rgba(255,255,255,.95);
+    --font-display: "Outfit", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    --font-body: "DM Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+    --motion-press: 120ms;
+    --motion-fast: 160ms;
+    --motion-base: 220ms;
+    --motion-sheet: 320ms;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.5;
+    background:
+      radial-gradient(ellipse 680px 340px at 88% 0%, rgba(245, 203, 92, 0.28), transparent 68%),
+      radial-gradient(ellipse 560px 320px at 10% 35%, rgba(230, 160, 60, 0.16), transparent 68%),
+      radial-gradient(ellipse 600px 360px at 80% 90%, rgba(242, 165, 110, 0.16), transparent 68%),
+      linear-gradient(155deg, #fdf8ec 0%, #f8f3ea 52%, #f9efe7 100%);
+  }
+  .num { font-variant-numeric: tabular-nums; }
+  .mono { font-family: var(--font-mono); }
+  .hidden { display: none !important; }
+
+  /* 顶栏与导航 */
+  header.top {
+    background: linear-gradient(90deg, #262a33, #1e2129);
+    color: #F5F2EE;
+    padding: 13px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  header.top .crumb { opacity: .65; font-size: 13px; white-space: nowrap; }
+  header.top h1 { font: 700 17px var(--font-display); margin: 0; white-space: nowrap; }
+  header.top .badge-ver { font-size: 11px; font-weight: 700; background: rgba(245,203,92,.18); color: #F5CB5C; border: 1px solid rgba(245,203,92,.35); border-radius: 6px; padding: 1px 7px; }
+  header.top .note { margin-left: auto; font-size: 12px; opacity: .75; }
+
+  nav.tabs {
+    display: flex;
+    gap: 4px;
+    padding: 0 24px;
+    background: rgba(255,255,255,.78);
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  nav.tabs button {
+    border: 0;
+    background: none;
+    padding: 13px 14px;
+    font: 600 14px var(--font-display);
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: color var(--motion-fast) ease, border-color var(--motion-fast) ease;
+  }
+  nav.tabs button.on { color: var(--ink); border-bottom-color: var(--gold); }
+  nav.tabs button .cnt { font-size: 11px; font-weight: 700; background: var(--neutral-soft); color: var(--neutral-text); border-radius: 999px; padding: 0 6px; line-height: 18px; }
+  nav.tabs button.on .cnt { background: var(--gold-soft); color: var(--gold-text); }
+  nav.tabs .new { font-size: 10px; font-weight: 700; background: var(--gold); color: var(--gold-ink); border-radius: 4px; padding: 1px 5px; }
+
+  main { padding: 18px 24px 56px; max-width: 1440px; margin: 0 auto; }
+
+  /* 迁移提示 */
+  .notice {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; margin-bottom: 14px;
+    background: var(--gold-soft); border: 1px solid var(--gold-border); border-radius: 10px;
+    color: var(--gold-text); font-size: 13px;
+  }
+  .notice button { margin-left: auto; border: 0; background: none; color: var(--gold-text); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+
+  /* 顶部汇总卡（对齐 DESIGN.md 看板概览卡片规范） */
+  .summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat {
+    --m-ink: var(--neutral-text); --m-bg: var(--neutral-soft);
+    position: relative; overflow: hidden; isolation: isolate;
+    background: linear-gradient(145deg, rgba(255,255,255,.92), var(--m-bg));
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    border-radius: 14px; padding: 14px 16px;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+    text-align: left; font: inherit; color: var(--ink);
+  }
+  .stat.t-gold { --m-ink: var(--gold-text); --m-bg: var(--gold-soft); }
+  .stat.t-info { --m-ink: var(--info-text); --m-bg: var(--info-soft); }
+  .stat.t-ok { --m-ink: var(--ok-text); --m-bg: var(--ok-soft); }
+  .stat.t-warn { --m-ink: var(--warn-text); --m-bg: var(--warn-soft); }
+  .stat.t-danger { --m-ink: var(--danger-text); --m-bg: var(--danger-soft); }
+  .stat .ic {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: var(--m-bg); color: var(--m-ink);
+    display: grid; place-items: center; font-size: 15px; font-weight: 700;
+    position: relative; z-index: 1;
+  }
+  .stat .wm {
+    position: absolute; right: -8px; bottom: -14px; font-size: 76px; line-height: 1;
+    color: var(--m-ink); opacity: .07; transform: rotate(-12deg); pointer-events: none; z-index: 0;
+  }
+  .stat .k { color: var(--ink-2); font-size: 12px; font-weight: 600; position: relative; z-index: 1; }
+  .stat .v { font: 700 22px var(--font-display); line-height: 1.15; position: relative; z-index: 1; }
+  .stat .v-sub { font: 700 15px var(--font-display); color: var(--ink-2); position: relative; z-index: 1; }
+  .stat .v small { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 3px; }
+  .stat .h { font-size: 11px; color: var(--muted); line-height: 1.45; position: relative; z-index: 1; }
+  button.stat { cursor: pointer; transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease; }
+  button.stat.is-selected { border-color: var(--m-ink); box-shadow: inset 0 0 0 1px var(--m-ink), var(--glass-shadow); }
+  .stat .chk { position: absolute; top: 12px; right: 12px; font-size: 12px; font-weight: 700; color: var(--m-ink); background: rgba(255,255,255,.85); border-radius: 999px; padding: 1px 7px; z-index: 1; }
+
+  /* 筛选与工具栏 */
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .chip {
+    border: 1px solid var(--line); background: rgba(255,255,255,.85);
+    border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer;
+    color: var(--ink); white-space: nowrap;
+    transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, color var(--motion-fast) ease;
+  }
+  .chip .n { color: var(--muted); margin-left: 4px; font-variant-numeric: tabular-nums; }
+  .chip.on { background: var(--gold-soft); border-color: var(--gold); color: var(--gold-text); font-weight: 600; }
+  .chip.on .n { color: var(--gold-text); }
+  .chip:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible {
+    outline: 3px solid rgba(224,165,11,.35); outline-offset: 2px;
+  }
+  select, input[type=search], input[type=number], input[type=text], input[type=datetime-local], input[type=url] {
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px;
+    font: 13px var(--font-body); background: rgba(255,255,255,.92); color: var(--ink);
+  }
+  input[type=search] { min-width: 190px; }
+  .check-lbl { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--ink-2); cursor: pointer; user-select: none; }
+  .spacer { flex: 1; }
+  .seg { display: inline-flex; background: rgba(255,255,255,.8); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+  .seg button {
+    border: 0; background: none; padding: 4px 10px; border-radius: 6px;
+    font: 600 12px var(--font-body); color: var(--muted); cursor: pointer;
+    transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease;
+  }
+  .seg button.on { background: var(--gold-soft); color: var(--gold-text); }
+
+  button.btn {
+    border: 1px solid var(--line); background: rgba(255,255,255,.92);
+    border-radius: 8px; padding: 6px 11px; font: 600 13px var(--font-body);
+    cursor: pointer; color: var(--ink); display: inline-flex; align-items: center; gap: 5px;
+    transition: transform var(--motion-press) var(--ease-out-strong), background-color var(--motion-fast) ease, border-color var(--motion-fast) ease;
+  }
+  button.btn:active { transform: scale(0.97); }
+  button.btn.sm { padding: 4px 9px; font-size: 12px; }
+  button.btn.primary { background: var(--gold); border-color: var(--gold); color: var(--gold-ink); }
+  button.btn.danger-ghost { color: var(--danger-text); border-color: var(--danger-border); background: var(--danger-soft); }
+
+  /* 卡片网格 */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    border-radius: 14px;
+    border-top: 3px solid var(--neutral);
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 12px;
+    transition: box-shadow var(--motion-base) var(--ease-out-strong);
+  }
+  .card.s-healthy { border-top-color: var(--ok); }
+  .card.s-warn { border-top-color: var(--warn); }
+  .card.s-danger { border-top-color: var(--danger); }
+  .card.s-disabled { opacity: .72; }
+  .head { display: flex; gap: 11px; align-items: flex-start; }
+  .logo { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: #fff; font: 800 16px var(--font-display); flex: none; }
+  .head-info { min-width: 0; flex: 1; }
+  .head .name { font: 700 15px var(--font-display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .head .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .badges { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+  .tag { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; border-radius: 6px; padding: 2px 8px; white-space: nowrap; border: 1px solid transparent; }
+  .t-ok { background: var(--ok-soft); color: var(--ok-text); border-color: var(--ok-border); }
+  .t-warn { background: var(--warn-soft); color: var(--warn-text); border-color: var(--warn-border); }
+  .t-danger { background: var(--danger-soft); color: var(--danger-text); border-color: var(--danger-border); }
+  .t-neutral { background: var(--neutral-soft); color: var(--neutral-text); border-color: var(--neutral-border); }
+  .t-gold { background: var(--gold-soft); color: var(--gold-text); border-color: var(--gold-border); }
+  .t-info { background: var(--info-soft); color: var(--info-text); border-color: var(--info-border); }
+
+  .models { display: flex; flex-wrap: wrap; gap: 6px; }
+  .models .m { font: 12px var(--font-mono); background: rgba(243,244,246,.95); border: 1px solid var(--line-soft); border-radius: 5px; padding: 2px 7px; color: #374151; }
+
+  .block { border-top: 1px dashed var(--line); padding-top: 10px; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .label { color: var(--muted); font-size: 12px; }
+  .val { font: 700 16px var(--font-display); }
+  .unset { color: #8c96a6; font-style: italic; font-weight: 400; font-size: 12px; }
+  .bar-track { position: relative; height: 7px; background: #e8ebf2; border-radius: 999px; overflow: visible; margin: 7px 0 5px; }
+  .bar-fill { height: 100%; border-radius: 999px; transition: width var(--motion-base) var(--ease-out-strong); }
+  .bar-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink-2); border-radius: 2px; opacity: .65; }
+  .f-ok { background: var(--ok); } .f-warn { background: var(--warn); } .f-danger { background: var(--danger); }
+  .hint { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .spend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .internal-box { background: rgba(246,247,249,.85); border: 1px solid var(--line-soft); border-radius: 10px; padding: 10px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; align-items: center; padding-top: 4px; border-top: 1px solid var(--line-soft); }
+  .links a { font-size: 12px; color: var(--gold-text); text-decoration: none; font-weight: 600; }
+  .more-wrap { position: relative; }
+  .more-menu {
+    position: absolute; right: 0; bottom: calc(100% + 6px); min-width: 144px; z-index: 25;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 4px;
+    box-shadow: 0 12px 28px rgba(26,26,46,.14);
+    transform-origin: bottom right;
+    transition: opacity var(--motion-fast) var(--ease-out-strong), transform var(--motion-fast) var(--ease-out-strong);
+  }
+  .more-menu button {
+    width: 100%; text-align: left; border: 0; background: none; padding: 7px 10px;
+    border-radius: 6px; font: 500 13px var(--font-body); color: var(--ink); cursor: pointer;
+  }
+  .more-menu button.danger { color: var(--danger-text); }
+
+  /* 表格视图（复用旧提供商管理能力） */
+  .table-wrap { background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); border-radius: 14px; overflow-x: auto; }
+  table.data { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 860px; }
+  table.data th { background: rgba(250,251,254,.85); color: var(--ink-2); font-weight: 600; text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.data td { padding: 10px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+  table.data tr:last-child td { border-bottom: 0; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 20px; background: var(--glass-bg); border: 1px dashed var(--line); border-radius: 14px; }
+
+  /* 预设管理 */
+  .trail-panel { background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+  .trail-row { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 9px; }
+  .trail-row:last-child { margin-bottom: 0; }
+  .trail-row .lbl { width: 52px; color: var(--muted); font-size: 12px; font-weight: 600; padding-top: 6px; flex: none; }
+  .trail-row .chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+  .presets { background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); border-radius: 14px; overflow: hidden; }
+  .head-row { display: grid; grid-template-columns: minmax(260px, 1.5fr) 140px 175px 110px 80px; gap: 12px; padding: 9px 14px; font-size: 12px; font-weight: 600; color: var(--muted); background: rgba(250,251,254,.85); border-bottom: 1px solid var(--line); }
+  .group-h { background: rgba(250,250,248,.92); padding: 9px 14px; font: 700 13px var(--font-display); color: var(--ink-2); border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
+  .group-h .nav-cat { font-size: 11px; font-weight: 500; color: var(--muted); background: #fff; border: 1px solid var(--line); border-radius: 5px; padding: 0 6px; }
+  .group-h .c { margin-left: auto; font-weight: 500; color: var(--muted); font-size: 12px; }
+  .prow {
+    display: grid; grid-template-columns: minmax(260px, 1.5fr) 140px 175px 110px 80px;
+    gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line-soft); align-items: center; cursor: pointer;
+    transition: background-color var(--motion-fast) ease;
+  }
+  .prow:last-child { border-bottom: 0; }
+  .prow .crumbs { font-size: 13px; min-width: 0; }
+  .prow .crumbs .f { color: var(--muted); }
+  .prow .crumbs .sepc { color: #b6becb; margin: 0 5px; }
+  .prow .pn { font: 600 13px var(--font-mono); color: var(--ink); word-break: break-all; }
+  .prow .d { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .prow .model-pill { font: 12px var(--font-mono); background: rgba(243,244,246,.95); border: 1px solid var(--line-soft); border-radius: 5px; padding: 2px 7px; color: #374151; display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .unassigned { color: var(--danger-text); }
+  .alert { background: var(--danger-soft); color: var(--danger-text); border: 1px solid var(--danger-border); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+  .alert button { margin-left: auto; }
+
+  /* 弹窗与抽屉 */
+  .mask {
+    position: fixed; inset: 0; background: rgba(20, 22, 30, .42); z-index: 50;
+    display: grid; place-items: center; padding: 12px;
+    transition: opacity var(--motion-base) var(--ease-out-strong);
+  }
+  .mask.drawer-mask { display: flex; justify-content: flex-end; align-items: stretch; padding: 0; }
+  .dlg {
+    background: #fff; border-radius: 16px; width: min(460px, calc(100% - 24px)); max-height: calc(100% - 32px);
+    overflow-y: auto; padding: 20px; box-shadow: 0 24px 60px rgba(0,0,0,.22);
+    transform: scale(1); opacity: 1;
+    transition: transform var(--motion-base) var(--ease-out-strong), opacity var(--motion-base) var(--ease-out-strong);
+  }
+  @starting-style { .dlg { transform: scale(0.96); opacity: 0; } }
+  .drawer {
+    background: #fff; width: min(560px, calc(100% - 24px)); height: 100%;
+    display: flex; flex-direction: column; box-shadow: -12px 0 40px rgba(0,0,0,.18);
+    transform: translateX(0); opacity: 1;
+    transition: transform var(--motion-sheet) var(--ease-drawer), opacity var(--motion-fast) ease;
+  }
+  @starting-style { .drawer { transform: translateX(100%); opacity: .85; } }
+  .drawer-head { padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+  .drawer-head h3 { margin: 0; font: 700 16px var(--font-display); }
+  .drawer-head .x { margin-left: auto; border: 0; background: none; font-size: 20px; color: var(--muted); cursor: pointer; padding: 2px 8px; border-radius: 6px; }
+  .drawer-body { padding: 16px 20px 24px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 18px; }
+  .drawer-foot { padding: 12px 20px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; background: #fafbfe; }
+  .sec-title { font: 700 13px var(--font-display); color: var(--ink); margin: 0 0 8px; display: flex; align-items: center; gap: 6px; }
+  .kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+  .field input, .field select { width: 100%; }
+  .cp-list { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .cp-item { padding: 9px 12px; border-bottom: 1px solid var(--line-soft); font-size: 12px; display: flex; justify-content: space-between; gap: 10px; }
+  .cp-item:last-child { border-bottom: 0; }
+  .price-row { display: grid; grid-template-columns: 1.2fr 92px 88px 88px 66px; gap: 6px; align-items: center; margin-bottom: 6px; font-size: 12px; }
+  .price-row input, .price-row select { padding: 4px 6px; font-size: 12px; }
+
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: #1F2430; color: #fff; padding: 10px 16px; border-radius: 10px;
+    font-size: 13px; z-index: 70; box-shadow: 0 10px 28px rgba(0,0,0,.25);
+    transition: opacity var(--motion-fast) var(--ease-out-strong), transform var(--motion-fast) var(--ease-out-strong);
+  }
+  @starting-style { .toast { opacity: 0; transform: translate(-50%, 8px); } }
+
+  /* 仅精确指针启用悬停反馈（Emil + DESIGN.md） */
+  @media (hover: hover) and (pointer: fine) {
+    button.stat:hover { border-color: var(--m-ink); }
+    button.btn:hover { border-color: var(--gold-border); background: var(--gold-soft); }
+    button.btn.primary:hover { background: var(--gold-hover); border-color: var(--gold-hover); }
+    .chip:hover:not(.on) { border-color: var(--gold-border); }
+    .card:hover { box-shadow: var(--glass-shadow-hover); }
+    .links a:hover { text-decoration: underline; }
+    .more-menu button:hover { background: var(--neutral-soft); }
+    .prow:hover { background: #fef9f0; }
+    table.data tbody tr:hover { background: #fef9f0; }
+  }
+
+  /* 响应式适配：中等屏幕 & 390px 移动端 */
+  @media (max-width: 1100px) {
+    .summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 960px) {
+    .head-row { display: none; }
+    .prow {
+      display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center;
+      padding: 12px 14px;
+    }
+    .prow .crumbs { flex: 1 1 70%; }
+    .prow .col-status { order: 2; margin-left: auto; }
+    .prow .col-prov { order: 3; }
+    .prow .col-model { order: 4; }
+    .prow .col-calls { order: 5; margin-left: auto; font-size: 12px; color: var(--muted); }
+  }
+  @media (max-width: 640px) {
+    header.top { padding: 11px 14px; gap: 8px; }
+    header.top .note { width: 100%; margin-left: 0; font-size: 11px; }
+    nav.tabs { padding: 0 10px; }
+    main { padding: 14px 14px 48px; }
+    /* A10 验收：390px 下汇总条横向滚动不折行、不产生 2+2+1 落单 */
+    .summary {
+      display: flex;
+      overflow-x: auto;
+      gap: 10px;
+      padding-bottom: 4px;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+    }
+    .summary .stat { flex: 0 0 210px; scroll-snap-align: start; }
+    .grid { grid-template-columns: 1fr; }
+    input[type=search] { min-width: 0; flex: 1 1 160px; }
+    .trail-row { flex-direction: column; gap: 4px; }
+    .trail-row .lbl { width: auto; padding-top: 0; }
+    .kv-grid { grid-template-columns: 1fr; }
+    .price-row { grid-template-columns: 1fr 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+    button.btn:active { transform: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <span class="crumb">系统管理 ›</span>
+  <h1>AI 接入管理</h1>
+  <span class="badge-ver">v0.3 原型</span>
+  <span class="note">示例数据 · 费用为方舟按单价估算，以供应商账单为准</span>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="AI 接入管理标签页">
+  <button id="tab-sub" class="on" role="tab" aria-selected="true" data-tab="sub">订阅管理<span class="new">新</span><span class="cnt" id="cnt-sub">6</span></button>
+  <button id="tab-preset" role="tab" aria-selected="false" data-tab="preset">预设管理<span class="cnt" id="cnt-preset">13</span></button>
+  <button role="tab" aria-selected="false" data-tab="logs" class="dis">调用日志</button>
+  <button role="tab" aria-selected="false" data-tab="chat" class="dis">聊天运行</button>
+  <button role="tab" aria-selected="false" data-tab="sites" class="dis">站点应用</button>
+</nav>
+
+<main>
+  <!-- ============ 订阅管理 ============ -->
+  <section id="view-sub" role="tabpanel">
+    <div class="notice" id="merge-notice">
+      <span>原「提供商管理」已并入本页，支持卡片与表格切换；顶部旧 4 张统计卡已合并至下方汇总条。</span>
+      <button type="button" aria-label="关闭提示" id="close-notice">×</button>
+    </div>
+
+    <div class="summary" id="summary"></div>
+
+    <div class="bar" id="sub-filters"></div>
+    <div class="bar">
+      <select id="sub-kind" aria-label="接入类型筛选">
+        <option value="">全部接入类型</option>
+        <option value="直连">直连</option>
+        <option value="中转站">中转站</option>
+        <option value="ACCIO WORK">ACCIO WORK</option>
+      </select>
+      <select id="sub-proto" aria-label="协议筛选">
+        <option value="">全部协议</option>
+        <option value="OpenAI">OpenAI</option>
+        <option value="Anthropic">Anthropic</option>
+      </select>
+      <input type="search" id="sub-q" placeholder="搜索名称或模型名">
+      <select id="sub-sort" aria-label="排序方式">
+        <option value="renew">按到期日（近的在前）</option>
+        <option value="balance">按余额剩余占比（低的在前）</option>
+        <option value="month">按本月消费（同币种高到低）</option>
+      </select>
+      <label class="check-lbl"><input type="checkbox" id="sub-hide-dis"> 隐藏已停用</label>
+      <span class="spacer"></span>
+      <div class="seg" role="group" aria-label="视图切换">
+        <button type="button" id="v-card" class="on">卡片</button>
+        <button type="button" id="v-table">表格</button>
+      </div>
+      <button type="button" class="btn primary" id="btn-add-sub">+ 新增订阅源</button>
+    </div>
+
+    <div class="grid" id="sub-grid"></div>
+    <div class="table-wrap hidden" id="sub-table"></div>
+    <div class="empty hidden" id="sub-empty">没有符合条件的订阅源</div>
+  </section>
+
+  <!-- ============ 预设管理 ============ -->
+  <section id="view-preset" class="hidden" role="tabpanel">
+    <div id="preset-alert"></div>
+
+    <div class="trail-panel">
+      <div class="trail-row"><div class="lbl">功能</div><div class="chips" id="f-feature"></div></div>
+      <div class="trail-row"><div class="lbl">提供商</div><div class="chips" id="f-provider"></div></div>
+      <div class="trail-row"><div class="lbl">模型</div><div class="chips" id="f-model"></div></div>
+    </div>
+
+    <div class="bar">
+      <span class="hint" id="preset-count"></span>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="clear-all">清除全部筛选</button>
+      <button type="button" class="btn primary" id="btn-add-preset">+ 新增预设</button>
+    </div>
+
+    <div class="presets">
+      <div class="head-row">
+        <div>功能 › 预设名称</div><div>绑定提供商</div><div>模型</div><div>近 30 天调用</div><div>状态</div>
+      </div>
+      <div id="preset-list"></div>
+    </div>
+    <div class="empty hidden" id="preset-empty">没有符合条件的预设，清除部分标签试试</div>
+  </section>
+</main>
+
+<div id="dialog-host"></div>
+
+<script>
+/* ---------- 示例数据（严格对齐 design.md v0.3） ---------- */
+const TODAY_STR = '2026-11-27';
+const NOW_STR = '2026-11-27T16:10';
+const TODAY_MS = new Date(TODAY_STR + 'T00:00:00+08:00').getTime();
+const DAY = 86400000;
+const daysFrom = (d) => d ? Math.round((new Date(d + 'T00:00:00+08:00').getTime() - TODAY_MS) / DAY) : null;
+
+const PROVIDERS = [
+  {
+    id: 1, name: 'TeamRouter', kind: '中转站', proto: 'OpenAI', apiBase: 'https://api.teamrouter.example/v1', apiKeyMask: 'sk-tr****9f2a',
+    color: '#0D9488', plan: 'Pro 包月 + 额度池', billing: 'monthly', deductByUsage: true, price: 299, cur: 'CNY',
+    subscribed: '2026-11-15', renew: '2026-12-15', renewConfirmedAt: null,
+    balance: 318.2, balanceBase: 500.0, balanceCur: 'CNY', balanceAt: '2026-11-20T14:30', threshold: 50,
+    inflight: 1, enabled: true, console: 'https://example.com/console', docs: 'https://example.com/docs',
+    models: ['gpt-image-2', 'claude-sonnet-x', 'deepseek-v3'],
+    month: 86.4, total: 1204.1, unpriced: 3, calls30d: 412,
+    prices: [
+      { model: 'claude-sonnet-x', mode: 'token', inp: 21.0, out: 105.0, perCall: null, cur: 'CNY' },
+      { model: 'deepseek-v3', mode: 'token', inp: 2.0, out: 8.0, perCall: null, cur: 'CNY' },
+      { model: 'gpt-image-2', mode: 'image_rate_card', inp: null, out: null, perCall: null, cur: 'USD' },
+    ],
+    checkpoints: [
+      { at: '2026-11-20 14:30', kind: 'reconcile', amount: 500.0, estBefore: 488.5, remark: '周度核对' },
+      { at: '2026-11-01 09:15', kind: 'topup', amount: 800.0, estBefore: 102.0, remark: '月初充值' },
+    ],
+  },
+  {
+    id: 2, name: 'ELBNT', kind: '中转站', proto: 'OpenAI', apiBase: 'https://api.elbnt.example/v1', apiKeyMask: 'sk-el****4c11',
+    color: '#7C3AED', plan: '按量充值', billing: 'pay_as_you_go', deductByUsage: true, price: null, cur: 'CNY',
+    subscribed: '2026-06-03', renew: null, renewConfirmedAt: null,
+    balance: 12.5, balanceBase: 200.0, balanceCur: 'CNY', balanceAt: '2026-11-26T18:05', threshold: 50,
+    inflight: 0, enabled: true, console: 'https://example.com/console', docs: 'https://example.com/docs',
+    models: ['claude-sonnet-x', 'claude-haiku-x'],
+    month: 41.2, total: 560.8, unpriced: 0, calls30d: 184,
+    prices: [
+      { model: 'claude-sonnet-x', mode: 'token', inp: 22.0, out: 110.0, perCall: null, cur: 'CNY' },
+      { model: 'claude-haiku-x', mode: 'token', inp: 6.0, out: 30.0, perCall: null, cur: 'CNY' },
+    ],
+    checkpoints: [
+      { at: '2026-11-26 18:05', kind: 'reconcile', amount: 200.0, estBefore: 204.2, remark: '后台核对' },
+    ],
+  },
+  {
+    id: 3, name: 'DeepSeek', kind: '直连', proto: 'OpenAI', apiBase: 'https://api.deepseek.com/v1', apiKeyMask: 'sk-ds****88a0',
+    color: '#2563EB', plan: '按量充值', billing: 'pay_as_you_go', deductByUsage: true, price: null, cur: 'CNY',
+    subscribed: '2025-12-01', renew: null, renewConfirmedAt: null,
+    balance: 210.0, balanceBase: 300.0, balanceCur: 'CNY', balanceAt: '2026-11-10T10:00', threshold: 30,
+    inflight: 0, enabled: true, console: 'https://example.com/console', docs: 'https://example.com/docs',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
+    month: 58.0, total: 902.6, unpriced: 0, calls30d: 1096,
+    prices: [
+      { model: 'deepseek-chat', mode: 'token', inp: 2.0, out: 8.0, perCall: null, cur: 'CNY' },
+      { model: 'deepseek-reasoner', mode: 'token', inp: 4.0, out: 16.0, perCall: null, cur: 'CNY' },
+    ],
+    checkpoints: [
+      { at: '2026-11-10 10:00', kind: 'topup', amount: 300.0, estBefore: 42.3, remark: '官网充值 ¥300' },
+    ],
+  },
+  {
+    id: 4, name: 'StepFun', kind: '直连', proto: 'OpenAI', apiBase: 'https://api.stepfun.com/v1', apiKeyMask: 'sk-sf****310d',
+    color: '#EA580C', plan: '年付资源包', billing: 'yearly', deductByUsage: false, price: 1200, cur: 'CNY',
+    subscribed: '2025-12-02', renew: '2026-12-02', renewConfirmedAt: null,
+    balance: null, balanceBase: null, balanceCur: 'CNY', balanceAt: null, threshold: null,
+    inflight: 0, enabled: true, console: 'https://example.com/console', docs: 'https://example.com/docs',
+    models: ['step-3.7-flash'],
+    month: 12.3, total: 188.0, unpriced: 0, calls30d: 264,
+    prices: [
+      { model: 'step-3.7-flash', mode: 'token', inp: 1.5, out: 6.0, perCall: null, cur: 'CNY' },
+    ],
+    checkpoints: [],
+  },
+  {
+    id: 5, name: 'Anthropic 官方', kind: '直连', proto: 'Anthropic', apiBase: 'https://api.anthropic.com/v1', apiKeyMask: 'sk-an****77e2',
+    color: '#B45309', plan: 'Team 包月 + API 额度', billing: 'monthly', deductByUsage: true, price: 180, cur: 'USD',
+    subscribed: '2026-10-24', renew: '2026-11-24', renewConfirmedAt: null,
+    balance: 0, balanceBase: 50.0, balanceCur: 'USD', balanceAt: '2026-11-24T11:20', threshold: 10,
+    inflight: 0, enabled: true, console: 'https://example.com/console', docs: 'https://example.com/docs',
+    models: ['claude-opus-x'],
+    month: 18.6, total: 412.4, unpriced: 0, calls30d: 35,
+    prices: [
+      { model: 'claude-opus-x', mode: 'token', inp: 15.0, out: 75.0, perCall: null, cur: 'USD' },
+    ],
+    checkpoints: [
+      { at: '2026-11-24 11:20', kind: 'reconcile', amount: 50.0, estBefore: 51.8, remark: '账单核对' },
+    ],
+  },
+  {
+    id: 6, name: 'ACCIO WORK', kind: 'ACCIO WORK', proto: '—', apiBase: 'https://accio.internal.example/sse', apiKeyMask: '',
+    color: '#475569', plan: '内部通道', billing: 'pay_as_you_go', deductByUsage: false, price: null, cur: 'CNY',
+    subscribed: null, renew: null, renewConfirmedAt: null,
+    balance: null, balanceBase: null, balanceCur: 'CNY', balanceAt: null, threshold: null,
+    inflight: 0, enabled: false, console: null, docs: null,
+    models: [], month: 0, total: 0, unpriced: 0, calls30d: 0, notBilled: true,
+    prices: [], checkpoints: [],
+  },
+];
+
+// 包含已软删历史提供商的归档消费（用于体现总账守恒）
+const ARCHIVED_SPEND = { monthCNY: 0, totalCNY: 0, monthUSD: 0, totalUSD: 0 };
+
+const FEATURES = [
+  { key: '物流跟踪', nav: '物流管理', route: '/tracking' },
+  { key: '展会营销', nav: '展会营销', route: '/expo/leads' },
+  { key: '内贸订单', nav: '内贸订单', route: '/domestic/followups' },
+  { key: '客户经营', nav: '客户经营', route: '/mail-outreach' },
+  { key: '方舟洞见', nav: '方舟洞见', route: '/insight/daily' },
+  { key: 'WhatsApp 助手', nav: '系统管理', route: '/system/whatsapp-translation' },
+  { key: '外部站点网关', nav: '平台内置', route: null },
+  { key: 'Agent 引擎', nav: '平台内置', route: null },
+  { key: '未归属', nav: '待处理', route: null },
+];
+
+const PRESETS = [
+  { name: 'waybill_ocr', feature: '物流跟踪', provider: 4, model: 'step-3.7-flash', desc: '运单字段 OCR', calls: 214, rate: 98.6, latency: 1420, spend: '¥8.10', caller: 'logistics', ok: true },
+  { name: 'tracking_summary', feature: '物流跟踪', provider: 3, model: 'deepseek-chat', desc: '物流异常摘要', calls: 96, rate: 99.0, latency: 980, spend: '¥3.40', caller: 'logistics', ok: true },
+  { name: 'expo_wig_composite', feature: '展会营销', provider: 1, model: 'gpt-image-2', desc: '试戴图合成（rate_card 计费）', calls: 128, rate: 94.5, latency: 18400, spend: '$9.60', caller: 'expo', ok: true },
+  { name: 'expo_sales_strategy', feature: '展会营销', provider: 3, model: 'deepseek-chat', desc: '导购话术生成', calls: 77, rate: 100.0, latency: 1150, spend: '¥2.90', caller: 'expo', ok: true },
+  { name: 'domestic_followup_parse', feature: '内贸订单', provider: 3, model: 'deepseek-chat', desc: '跟进记录结构化', calls: 302, rate: 99.3, latency: 1320, spend: '¥16.80', caller: 'domestic_followup', ok: true },
+  { name: 'domestic_followup_ocr', feature: '内贸订单', provider: 4, model: 'step-3.7-flash', desc: '微信截图转写', calls: 41, rate: 97.6, latency: 2100, spend: '¥4.20', caller: 'domestic_followup', ok: true },
+  { name: 'mail_outreach_generate', feature: '客户经营', provider: 2, model: 'claude-sonnet-x', desc: '多语言开发信草稿', calls: 66, rate: 98.5, latency: 2650, spend: '¥24.50', caller: 'mail_outreach', ok: true },
+  { name: 'insight_daily_organize', feature: '方舟洞见', provider: 2, model: 'claude-sonnet-x', desc: '行业日报归类', calls: 30, rate: 100.0, latency: 4100, spend: '¥16.70', caller: 'insight', ok: true },
+  { name: 'whatsapp_text_translation', feature: 'WhatsApp 助手', provider: 3, model: 'deepseek-chat', desc: '收件消息翻译', calls: 540, rate: 99.8, latency: 620, spend: '¥14.20', caller: 'whatsapp_translation', ok: true },
+  { name: 'site_gateway_copywriter', feature: '外部站点网关', provider: 2, model: 'claude-haiku-x', desc: '独立站外发文案接口', calls: 88, rate: 98.9, latency: 840, spend: '¥7.40', caller: 'ai_gateway', ok: true },
+  { name: 'agent_runtime_copilot', feature: 'Agent 引擎', provider: 3, model: 'deepseek-reasoner', desc: '客户与订单经营副驾驶', calls: 81, rate: 96.3, latency: 3800, spend: '¥20.70', caller: 'agent_runtime', ok: true },
+  { name: 'invoice_screenshot_extract', feature: '未归属', provider: 4, model: 'step-3.7-flash', desc: '发票截图提取（迁移未能回填）', calls: 9, rate: 100.0, latency: 1950, spend: '¥0.80', caller: 'invoice', ok: true },
+  { name: 'legacy_claude_opus', feature: '未归属', provider: 5, model: 'claude-opus-x', desc: '旧测试预设', calls: 0, rate: null, latency: null, spend: '$0.00', caller: 'system', ok: false },
+];
+
+/* ---------- v0.3 多维度状态计算（独立维度，不互相遮蔽） ---------- */
+const LABEL_MAP = {
+  disabled: '已停用',
+  renew_pending: '待确认续费',
+  renew_soon: '即将到期',
+  balance_empty: '余额不足',
+  balance_low: '余额偏低',
+  healthy: '正常',
+};
+const TONE_MAP = {
+  disabled: 'neutral',
+  renew_pending: 'warn',
+  renew_soon: 'warn',
+  balance_empty: 'danger',
+  balance_low: 'warn',
+  healthy: 'ok',
+};
+
+function evalProvider(p) {
+  if (!p.enabled) {
+    return { status: 'disabled', renewFlag: null, balanceFlag: null, secondary: [] };
+  }
+  const d = daysFrom(p.renew);
+  let renewFlag = null;
+  if (d !== null) {
+    if (d < 0) renewFlag = 'renew_pending';
+    else if (d <= 7) renewFlag = 'renew_soon';
+  }
+  let balanceFlag = null;
+  if (p.balance !== null && !p.notBilled) {
+    if (p.balance <= 0) balanceFlag = 'balance_empty';
+    else if (p.threshold != null && p.balance < p.threshold) balanceFlag = 'balance_low';
+  }
+  let status = 'healthy';
+  if (renewFlag === 'renew_pending') status = 'renew_pending';
+  else if (balanceFlag === 'balance_empty') status = 'balance_empty';
+  else if (balanceFlag === 'balance_low') status = 'balance_low';
+  else if (renewFlag === 'renew_soon') status = 'renew_soon';
+
+  const secondary = [];
+  if (renewFlag && renewFlag !== status) secondary.push(renewFlag);
+  if (balanceFlag && balanceFlag !== status) secondary.push(balanceFlag);
+  return { status, renewFlag, balanceFlag, secondary };
+}
+
+const SYM = { CNY: '¥', USD: '$' };
+const fmtMoney = (v, c) => v == null ? '<span class="unset">未登记</span>' : `${SYM[c] || c}${Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function addCycle(dateStr, billing) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const months = billing === 'yearly' ? 12 : billing === 'quarterly' ? 3 : 1;
+  const dt = new Date(Date.UTC(y, m - 1 + months, 1));
+  const lastDay = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 0)).getUTCDate();
+  const clamped = Math.min(d, lastDay);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(clamped).padStart(2, '0')}`;
+}
+
+/* ---------- 订阅管理 ---------- */
+let subFilter = 'all';
+let subView = 'card';
+let openMoreId = null;
+const showKeySet = new Set();
+
+const SUB_FILTERS = [
+  ['all', '全部', () => true],
+  ['renew_alert', '续费提醒', (ev) => ev.renewFlag === 'renew_pending' || ev.renewFlag === 'renew_soon'],
+  ['balance_alert', '余额预警', (ev) => ev.balanceFlag === 'balance_empty' || ev.balanceFlag === 'balance_low'],
+  ['disabled', '已停用', (ev) => ev.status === 'disabled'],
+];
+
+function monthlyEquivalent(p) {
+  if (!p.enabled || p.price == null) return 0;
+  if (p.billing === 'monthly') return p.price;
+  if (p.billing === 'quarterly') return p.price / 3;
+  if (p.billing === 'yearly') return p.price / 12;
+  return 0;
+}
+
+function renderSummary() {
+  const evals = PROVIDERS.map((p) => ({ p, ev: evalProvider(p) }));
+  const activeCount = evals.filter(({ p, ev }) => p.enabled && ev.renewFlag !== 'renew_pending').length;
+  const renewCount = evals.filter(({ ev }) => ev.renewFlag === 'renew_pending' || ev.renewFlag === 'renew_soon').length;
+  const balCount = evals.filter(({ ev }) => ev.balanceFlag === 'balance_empty' || ev.balanceFlag === 'balance_low').length;
+
+  const monthCNY = PROVIDERS.filter((p) => p.cur === 'CNY').reduce((a, p) => a + p.month, ARCHIVED_SPEND.monthCNY);
+  const totalCNY = PROVIDERS.filter((p) => p.cur === 'CNY').reduce((a, p) => a + p.total, ARCHIVED_SPEND.totalCNY);
+  const monthUSD = PROVIDERS.filter((p) => p.cur === 'USD').reduce((a, p) => a + p.month, ARCHIVED_SPEND.monthUSD);
+  const totalUSD = PROVIDERS.filter((p) => p.cur === 'USD').reduce((a, p) => a + p.total, ARCHIVED_SPEND.totalUSD);
+  const fixedCNY = PROVIDERS.filter((p) => p.cur === 'CNY').reduce((a, p) => a + monthlyEquivalent(p), 0);
+  const fixedUSD = PROVIDERS.filter((p) => p.cur === 'USD').reduce((a, p) => a + monthlyEquivalent(p), 0);
+  const unpricedSum = PROVIDERS.reduce((a, p) => a + p.unpriced, 0);
+
+  const renewSel = subFilter === 'renew_alert';
+  const balSel = subFilter === 'balance_alert';
+
+  document.getElementById('cnt-sub').textContent = String(PROVIDERS.length);
+  document.getElementById('summary').innerHTML = `
+    <div class="stat t-gold">
+      <div class="ic" aria-hidden="true">¥</div>
+      <div class="wm" aria-hidden="true">¥</div>
+      <div class="k">本月调用估算</div>
+      <div class="v num">${fmtMoney(monthCNY, 'CNY')}</div>
+      ${monthUSD ? `<div class="v-sub num">+ ${fmtMoney(monthUSD, 'USD')}</div>` : ''}
+      <div class="h">在用固定订阅月折算：${fmtMoney(fixedCNY, 'CNY')}${fixedUSD ? ` + ${fmtMoney(fixedUSD, 'USD')}` : ''}（不混算）</div>
+    </div>
+    <div class="stat t-info">
+      <div class="ic" aria-hidden="true">Σ</div>
+      <div class="wm" aria-hidden="true">Σ</div>
+      <div class="k">上线后累计调用</div>
+      <div class="v num">${fmtMoney(totalCNY, 'CNY')}</div>
+      ${totalUSD ? `<div class="v-sub num">+ ${fmtMoney(totalUSD, 'USD')}</div>` : ''}
+      <div class="h">含 ${unpricedSum} 次未定价（未计入）· 含已停用历史</div>
+    </div>
+    <div class="stat t-ok">
+      <div class="ic" aria-hidden="true">✓</div>
+      <div class="wm" aria-hidden="true">✓</div>
+      <div class="k">在用订阅</div>
+      <div class="v num">${activeCount}<small>个</small></div>
+      <div class="h">共 ${PROVIDERS.length} 个订阅源 · 不含待确认续费与停用</div>
+    </div>
+    <button type="button" class="stat t-warn ${renewSel ? 'is-selected' : ''}" aria-pressed="${renewSel}" data-jump="renew_alert">
+      ${renewSel ? '<span class="chk">✓ 已筛选</span>' : ''}
+      <div class="ic" aria-hidden="true">◷</div>
+      <div class="wm" aria-hidden="true">◷</div>
+      <div class="k">续费提醒</div>
+      <div class="v num">${renewCount}<small>个</small></div>
+      <div class="h">待确认续费或 7 天内到期 · 点击筛选</div>
+    </button>
+    <button type="button" class="stat t-danger ${balSel ? 'is-selected' : ''}" aria-pressed="${balSel}" data-jump="balance_alert">
+      ${balSel ? '<span class="chk">✓ 已筛选</span>' : ''}
+      <div class="ic" aria-hidden="true">!</div>
+      <div class="wm" aria-hidden="true">!</div>
+      <div class="k">余额预警</div>
+      <div class="v num">${balCount}<small>个</small></div>
+      <div class="h">独立维度统计（不被续费状态遮蔽）· 点击筛选</div>
+    </button>`;
+
+  document.querySelectorAll('[data-jump]').forEach((el) => {
+    el.onclick = () => {
+      const target = el.dataset.jump;
+      subFilter = subFilter === target ? 'all' : target;
+      renderSub();
+    };
+  });
+}
+
+function renderSubFilters() {
+  const counts = Object.fromEntries(SUB_FILTERS.map(([k, , fn]) => [k, PROVIDERS.filter((p) => fn(evalProvider(p))).length]));
+  document.getElementById('sub-filters').innerHTML = SUB_FILTERS.map(([k, label]) =>
+    `<button type="button" class="chip ${subFilter === k ? 'on' : ''}" data-f="${k}">${label}<span class="n">${counts[k]}</span></button>`).join('');
+  document.querySelectorAll('#sub-filters .chip').forEach((b) => {
+    b.onclick = () => { subFilter = b.dataset.f; renderSub(); };
+  });
+}
+
+function renewSection(p, ev) {
+  if (!p.renew) return ''; // 正交：无续费/到期日则不占位
+  const d = daysFrom(p.renew);
+  const total = p.billing === 'yearly' ? 365 : p.billing === 'quarterly' ? 90 : 30;
+  // v0.3：统一为“本周期已过进度”，彻底消除 1% → 100% 语义反转
+  const elapsedPct = d < 0 ? 100 : Math.max(0, Math.min(100, Math.round(((total - d) / total) * 100)));
+  const cls = ev.renewFlag ? 'f-warn' : 'f-ok';
+  const txt = d < 0 ? `已过续费日 ${-d} 天 · 待确认` : `剩 ${d} 天（已过 ${elapsedPct}%）`;
+  const cycle = p.billing === 'yearly' ? '年' : p.billing === 'quarterly' ? '季' : '月';
+  return `<div class="block">
+    <div class="row"><span class="label">下次续费 ${p.renew.slice(5)}</span><span class="num" style="font-weight:600;font-size:12px;color:${ev.renewFlag ? 'var(--warn-text)' : 'var(--ink)'}">${txt}</span></div>
+    <div class="bar-track" aria-label="本周期已过 ${elapsedPct}%"><div class="bar-fill ${cls}" style="width:${elapsedPct}%"></div></div>
+    <div class="hint">${esc(p.plan)}${p.price != null ? ` · ${fmtMoney(p.price, p.cur)} / ${cycle}` : ''}</div>
+  </div>`;
+}
+
+function balanceSection(p, ev) {
+  if (p.notBilled || p.balance == null) return ''; // 正交：未登记余额不强行占位
+  const base = p.balanceBase && p.balanceBase > 0 ? p.balanceBase : Math.max(p.balance, 1);
+  const remPct = Math.max(0, Math.min(100, Math.round((p.balance / base) * 100)));
+  const threshPct = p.threshold != null ? Math.max(0, Math.min(100, Math.round((p.threshold / base) * 100))) : null;
+  const cls = ev.balanceFlag === 'balance_empty' ? 'f-danger' : (ev.balanceFlag === 'balance_low' ? 'f-warn' : 'f-ok');
+  const dDays = p.balanceAt ? Math.abs(daysFrom(p.balanceAt.slice(0, 10))) : null;
+  const stale = dDays !== null && dDays > 14
+    ? ` · <span class="tag t-warn">登记 ${dDays} 天前，建议核对</span>`
+    : (p.balanceAt ? ` · 核对于 ${p.balanceAt.slice(5, 16).replace('T', ' ')}` : '');
+  const inflight = p.inflight ? ` · 含 ${p.inflight} 次在途未计入` : '';
+  return `<div class="block">
+    <div class="row"><span class="label">余额（${p.deductByUsage ? '估算' : '固定不扣减'}）</span><span class="val num">${fmtMoney(p.balance, p.balanceCur)}</span></div>
+    <div class="bar-track" aria-label="较上次登记剩余 ${remPct}%">
+      <div class="bar-fill ${cls}" style="width:${remPct}%"></div>
+      ${threshPct !== null ? `<span class="bar-mark" style="left:${threshPct}%" title="预警线 ${SYM[p.balanceCur]}${p.threshold}"></span>` : ''}
+    </div>
+    <div class="hint">较上次登记（${fmtMoney(base, p.balanceCur)}）剩 ${remPct}%${p.threshold != null ? ` · 预警 ${fmtMoney(p.threshold, p.balanceCur)}` : ''}${stale}${inflight}</div>
+  </div>`;
+}
+
+function cardHtml(p) {
+  const ev = evalProvider(p);
+  const tone = TONE_MAP[ev.status];
+  const models = p.models.length
+    ? p.models.slice(0, 4).map((m) => `<span class="m">${esc(m)}</span>`).join('') + (p.models.length > 4 ? `<span class="m">+${p.models.length - 4}</span>` : '')
+    : '<span class="unset">未配置启用预设</span>';
+  const sub = `${esc(p.kind)} · ${esc(p.proto)} 协议${p.subscribed ? ` · 订阅于 ${p.subscribed.slice(0, 7).replace('-', '.')}` : ''}`;
+
+  const badges = `<span class="tag t-${tone}">${LABEL_MAP[ev.status]}</span>` +
+    ev.secondary.map((f) => `<span class="tag t-${TONE_MAP[f]}">${LABEL_MAP[f]}</span>`).join('');
+
+  const bodyBlocks = p.notBilled
+    ? `<div class="block">
+        <div class="internal-box">
+          <div><div class="label">费用口径</div><div style="font-weight:600;font-size:13px">内部通道不计费</div></div>
+          <div><div class="label">近 30 天调用</div><div class="num" style="font-weight:700;font-size:14px">${p.calls30d} 次</div></div>
+        </div>
+      </div>`
+    : `${renewSection(p, ev)}${balanceSection(p, ev)}
+      <div class="block spend">
+        <div><div class="label">本月调用估算</div><div class="val num">${fmtMoney(p.month, p.cur)}</div></div>
+        <div><div class="label">上线后累计</div><div class="val num">${fmtMoney(p.total, p.cur)}</div></div>
+        ${p.unpriced ? `<div class="hint" style="grid-column:1/3">含 ${p.unpriced} 次未定价调用（未计入）</div>` : ''}
+      </div>`;
+
+  const moreOpen = openMoreId === p.id;
+  return `<article class="card s-${tone === 'ok' ? 'healthy' : tone === 'warn' ? 'warn' : tone === 'danger' ? 'danger' : 'disabled'}">
+    <div class="head">
+      <div class="logo" style="background:${p.color}" aria-hidden="true">${esc(p.name[0])}</div>
+      <div class="head-info"><div class="name">${esc(p.name)}</div><div class="sub">${sub}</div></div>
+      <div class="badges">${badges}</div>
+    </div>
+    <div class="models" aria-label="下挂模型">${models}</div>
+    ${bodyBlocks}
+    <div class="links">
+      ${p.console ? `<a href="${p.console}" target="_blank" rel="noopener">控制台 ↗</a>` : '<span class="hint">无控制台</span>'}
+      ${p.docs ? `<a href="${p.docs}" target="_blank" rel="noopener">文档 ↗</a>` : ''}
+      <span class="spacer"></span>
+      ${ev.renewFlag === 'renew_pending' ? `<button type="button" class="btn sm primary" data-act="renew" data-id="${p.id}">已续费</button>` : ''}
+      ${p.notBilled ? '' : `<button type="button" class="btn sm" data-act="bal" data-id="${p.id}">登记余额</button>`}
+      <button type="button" class="btn sm" data-act="edit" data-id="${p.id}">编辑</button>
+      <div class="more-wrap">
+        <button type="button" class="btn sm" data-act="more" data-id="${p.id}" aria-expanded="${moreOpen}">更多 ▾</button>
+        ${moreOpen ? `<div class="more-menu" role="menu">
+          <button type="button" role="menuitem" data-act="test" data-id="${p.id}">⚡ 连通性测试</button>
+          <button type="button" role="menuitem" data-act="logs" data-id="${p.id}">📋 查看调用日志</button>
+          <button type="button" role="menuitem" data-act="toggle" data-id="${p.id}">${p.enabled ? '⏸ 停用提供商' : '▶ 启用提供商'}</button>
+          <button type="button" role="menuitem" class="danger" data-act="del" data-id="${p.id}">🗑 删除提供商</button>
+        </div>` : ''}
+      </div>
+    </div>
+  </article>`;
+}
+
+function tableHtml(list) {
+  return `<table class="data">
+    <thead>
+      <tr>
+        <th>ID</th><th>名称 / 接入</th><th>协议</th><th>API Base / Key</th><th>状态</th><th>续费 / 余额</th><th>本月调用</th><th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${list.map((p) => {
+        const ev = evalProvider(p);
+        const keyTxt = p.apiKeyMask ? (showKeySet.has(p.id) ? p.apiKeyMask : '••••••••') : '—';
+        const renewTxt = p.renew ? `续费 ${p.renew}` : '无续费日';
+        const balTxt = p.notBilled ? '不计费' : (p.balance != null ? fmtMoney(p.balance, p.balanceCur) : '<span class="unset">未登记</span>');
+        return `<tr>
+          <td class="num">${p.id}</td>
+          <td><strong>${esc(p.name)}</strong><div class="hint">${esc(p.kind)}</div></td>
+          <td><span class="tag t-neutral">${esc(p.proto)}</span></td>
+          <td class="mono" style="font-size:12px">${esc(p.apiBase)}<div class="hint">${keyTxt} ${p.apiKeyMask ? `<button type="button" class="btn sm" style="padding:1px 6px;margin-left:4px" data-act="key" data-id="${p.id}">${showKeySet.has(p.id) ? '隐藏' : '查看掩码'}</button>` : ''}</div></td>
+          <td><span class="tag t-${TONE_MAP[ev.status]}">${LABEL_MAP[ev.status]}</span>${ev.secondary.map((f) => ` <span class="tag t-${TONE_MAP[f]}">${LABEL_MAP[f]}</span>`).join('')}</td>
+          <td class="num">${balTxt}<div class="hint">${renewTxt}</div></td>
+          <td class="num">${p.notBilled ? '—' : fmtMoney(p.month, p.cur)}</td>
+          <td style="white-space:nowrap">
+            <button type="button" class="btn sm" data-act="test" data-id="${p.id}">测试</button>
+            <button type="button" class="btn sm" data-act="edit" data-id="${p.id}">编辑</button>
+            <button type="button" class="btn sm" data-act="toggle" data-id="${p.id}">${p.enabled ? '停用' : '启用'}</button>
+          </td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
+function getFilteredProviders() {
+  const q = document.getElementById('sub-q').value.trim().toLowerCase();
+  const kind = document.getElementById('sub-kind').value;
+  const proto = document.getElementById('sub-proto').value;
+  const hideDis = document.getElementById('sub-hide-dis').checked;
+  const sort = document.getElementById('sub-sort').value;
+  const fn = SUB_FILTERS.find(([k]) => k === subFilter)[2];
+
+  let list = PROVIDERS.filter((p) => fn(evalProvider(p)));
+  if (kind) list = list.filter((p) => p.kind === kind);
+  if (proto) list = list.filter((p) => p.proto === proto);
+  if (hideDis) list = list.filter((p) => p.enabled);
+  if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.models.some((m) => m.toLowerCase().includes(q)));
+
+  const remRatio = (p) => (p.balance == null || !p.balanceBase) ? Infinity : p.balance / p.balanceBase;
+  list.sort((a, b) => {
+    if (sort === 'balance') return remRatio(a) - remRatio(b);
+    if (sort === 'month') {
+      // 同币种内部按金额降序（CNY 组在前、USD 组在后，避免不同币种数字直接混排）
+      if (a.cur !== b.cur) return a.cur === 'CNY' ? -1 : 1;
+      return b.month - a.month;
+    }
+    const da = daysFrom(a.renew), db = daysFrom(b.renew);
+    return (da ?? 1e9) - (db ?? 1e9);
+  });
+  return list;
+}
+
+function renderCardsOrTable() {
+  const list = getFilteredProviders();
+  const grid = document.getElementById('sub-grid');
+  const tbl = document.getElementById('sub-table');
+  grid.classList.toggle('hidden', subView !== 'card' || list.length === 0);
+  tbl.classList.toggle('hidden', subView !== 'table' || list.length === 0);
+  document.getElementById('sub-empty').classList.toggle('hidden', list.length > 0);
+  if (subView === 'card') grid.innerHTML = list.map(cardHtml).join('');
+  else tbl.innerHTML = tableHtml(list);
+}
+
+function renderSub() {
+  renderSummary();
+  renderSubFilters();
+  renderCardsOrTable();
+}
+
+/* ---------- 登记余额弹层（精确到分 + 漂移差额实时预览） ---------- */
+function openBalanceModal(id) {
+  const p = PROVIDERS.find((x) => x.id === id);
+  const est = p.balance;
+  document.getElementById('dialog-host').innerHTML = `<div class="mask" id="mask"><div class="dlg" role="dialog" aria-modal="true" aria-label="登记余额">
+    <h3 style="margin:0 0 4px;font:700 17px var(--font-display)">登记余额 · ${esc(p.name)}</h3>
+    <div class="hint" style="margin-bottom:14px">截点默认精确到当前时刻（北京时间），仅扣减该时刻之后结束的按量调用，避免重复扣减。</div>
+    <div class="kv-grid">
+      <div class="field"><label>登记类型</label><select id="bal-kind"><option value="reconcile">余额核对</option><option value="topup">充值入账</option></select></div>
+      <div class="field"><label>币种</label><input value="${p.balanceCur}" disabled></div>
+      <div class="field"><label>当前余额</label><input type="number" id="bal-v" step="0.01" value="${p.balance ?? ''}" placeholder="例如 318.20"></div>
+      <div class="field"><label>生效截点（北京时间）</label><input type="datetime-local" id="bal-at" value="${NOW_STR}"></div>
+    </div>
+    <div class="field" style="margin-top:10px"><label>备注（可选）</label><input type="text" id="bal-rmk" placeholder="如：官网核对 / 充值单号"></div>
+    <div class="hint" id="bal-diff" style="margin-top:10px;padding:8px 10px;background:var(--neutral-soft);border-radius:8px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+      <button type="button" class="btn" id="bal-cancel">取消</button>
+      <button type="button" class="btn primary" id="bal-ok">保存流水</button>
+    </div>
+  </div></div>`;
+  const close = () => { document.getElementById('dialog-host').innerHTML = ''; };
+  const updateDiff = () => {
+    const raw = document.getElementById('bal-v').value;
+    const box = document.getElementById('bal-diff');
+    if (raw === '' || est == null) { box.textContent = est == null ? '首次登记，将作为后续余额估算与进度条基准。' : '请输入金额。'; return; }
+    const diff = Number(raw) - est;
+    const sign = diff >= 0 ? '+' : '';
+    box.innerHTML = `当前系统估算：<strong>${fmtMoney(est, p.balanceCur)}</strong> · 本次登记差额：<strong>${sign}${SYM[p.balanceCur]}${diff.toFixed(2)}</strong>（将记入流水便于漂移复盘）`;
+  };
+  updateDiff();
+  document.getElementById('bal-v').addEventListener('input', updateDiff);
+  document.getElementById('bal-cancel').onclick = close;
+  document.getElementById('mask').onclick = (e) => { if (e.target.id === 'mask') close(); };
+  document.getElementById('bal-ok').onclick = () => {
+    const raw = document.getElementById('bal-v').value;
+    const at = document.getElementById('bal-at').value || NOW_STR;
+    const kind = document.getElementById('bal-kind').value;
+    const rmk = document.getElementById('bal-rmk').value.trim();
+    if (raw === '') return;
+    const val = Number(raw);
+    p.checkpoints.unshift({ at: at.replace('T', ' '), kind, amount: val, estBefore: p.balance, remark: rmk || (kind === 'topup' ? '手工充值登记' : '手工余额核对') });
+    p.balance = val;
+    p.balanceBase = val;
+    p.balanceAt = at;
+    close();
+    renderSub();
+    toast(`${p.name} 已登记余额 ${SYM[p.balanceCur]}${val.toFixed(2)}（截点 ${at.replace('T', ' ')}）`);
+  };
+}
+
+/* ---------- 编辑订阅与模型单价抽屉 ---------- */
+function openSubDrawer(id) {
+  const p = PROVIDERS.find((x) => x.id === id);
+  const cpRows = p.checkpoints.length
+    ? p.checkpoints.map((cp) => {
+        const diff = cp.estBefore != null ? cp.amount - cp.estBefore : null;
+        const diffTxt = diff != null ? `（较原估算 ${diff >= 0 ? '+' : ''}${SYM[p.balanceCur]}${diff.toFixed(2)}）` : '（首次基准）';
+        return `<div class="cp-item">
+          <div><strong>${cp.kind === 'topup' ? '充值' : '核对'} ${fmtMoney(cp.amount, p.balanceCur)}</strong> ${diffTxt}<div class="hint">${esc(cp.remark)}</div></div>
+          <div class="hint num" style="white-space:nowrap">${cp.at}</div>
+        </div>`;
+      }).join('')
+    : '<div class="cp-item"><span class="unset">尚无余额核对流水</span></div>';
+
+  const priceRows = p.prices.length
+    ? p.prices.map((pr, idx) => `<div class="price-row" data-pidx="${idx}">
+        <span class="mono" style="overflow:hidden;text-overflow:ellipsis">${esc(pr.model)}</span>
+        <select class="pm-mode"><option value="token" ${pr.mode === 'token' ? 'selected' : ''}>Token</option><option value="per_call" ${pr.mode === 'per_call' ? 'selected' : ''}>按次</option><option value="image_rate_card" ${pr.mode === 'image_rate_card' ? 'selected' : ''}>RateCard</option></select>
+        <input class="pm-in" type="number" step="0.0001" value="${pr.inp ?? ''}" placeholder="输入/M" ${pr.mode !== 'token' ? 'disabled' : ''}>
+        <input class="pm-out" type="number" step="0.0001" value="${pr.out ?? pr.perCall ?? ''}" placeholder="${pr.mode === 'per_call' ? '单次价' : '输出/M'}" ${pr.mode === 'image_rate_card' ? 'disabled' : ''}>
+        <select class="pm-cur"><option value="CNY" ${pr.cur === 'CNY' ? 'selected' : ''}>CNY</option><option value="USD" ${pr.cur === 'USD' ? 'selected' : ''}>USD</option></select>
+      </div>`).join('')
+    : '<div class="hint">该提供商下暂无已配置模型单价</div>';
+
+  document.getElementById('dialog-host').innerHTML = `<div class="mask drawer-mask" id="mask">
+    <aside class="drawer" role="dialog" aria-modal="true" aria-label="编辑订阅源">
+      <div class="drawer-head">
+        <h3>编辑订阅源 · ${esc(p.name)}</h3>
+        <button type="button" class="x" id="dr-x" aria-label="关闭">×</button>
+      </div>
+      <div class="drawer-body">
+        <div>
+          <h4 class="sec-title">1. 连接配置（原提供商表单）</h4>
+          <div class="kv-grid">
+            <div class="field"><label>名称</label><input id="ed-name" value="${esc(p.name)}"></div>
+            <div class="field"><label>接入类型</label><select id="ed-kind"><option ${p.kind==='直连'?'selected':''}>直连</option><option ${p.kind==='中转站'?'selected':''}>中转站</option><option ${p.kind==='ACCIO WORK'?'selected':''}>ACCIO WORK</option></select></div>
+            <div class="field" style="grid-column:1/-1"><label>API Base</label><input class="mono" value="${esc(p.apiBase)}" disabled></div>
+            <div class="field"><label>API Key（掩码）</label><input class="mono" value="${esc(p.apiKeyMask || '未配置')}" disabled></div>
+            <div class="field"><label>协议</label><input value="${esc(p.proto)}" disabled></div>
+          </div>
+        </div>
+        <div>
+          <h4 class="sec-title">2. 订阅、周期与余额扣减（正交可选）</h4>
+          <div class="kv-grid">
+            <div class="field"><label>套餐名</label><input id="ed-plan" value="${esc(p.plan || '')}"></div>
+            <div class="field"><label>计费方式</label><select id="ed-billing"><option value="pay_as_you_go" ${p.billing==='pay_as_you_go'?'selected':''}>按量充值</option><option value="monthly" ${p.billing==='monthly'?'selected':''}>包月</option><option value="quarterly" ${p.billing==='quarterly'?'selected':''}>包季</option><option value="yearly" ${p.billing==='yearly'?'selected':''}>包年</option></select></div>
+            <div class="field"><label>周期订阅金额</label><input type="number" id="ed-price" step="0.01" value="${p.price ?? ''}" placeholder="纯按量可留空"></div>
+            <div class="field"><label>下次续费 / 到期日</label><input type="text" id="ed-renew" value="${esc(p.renew || '')}" placeholder="YYYY-MM-DD，可空"></div>
+            <div class="field"><label>低余额预警线</label><input type="number" id="ed-thresh" step="0.01" value="${p.threshold ?? ''}"></div>
+            <div class="field" style="display:flex;align-items:flex-end;padding-bottom:6px">
+              <label class="check-lbl"><input type="checkbox" id="ed-deduct" ${p.deductByUsage ? 'checked' : ''}> 按调用估算自动扣减余额</label>
+            </div>
+            <div class="field"><label>控制台链接（仅 https）</label><input type="url" id="ed-console" value="${esc(p.console || '')}"></div>
+            <div class="field"><label>API 文档链接（仅 https）</label><input type="url" id="ed-docs" value="${esc(p.docs || '')}"></div>
+          </div>
+        </div>
+        <div>
+          <h4 class="sec-title">3. 余额核对与充值流水（ark_ai_balance_checkpoints）</h4>
+          <div class="cp-list">${cpRows}</div>
+        </div>
+        <div>
+          <h4 class="sec-title">4. 统一模型单价表（ark_ai_model_prices · 仅影响后续新调用）</h4>
+          <div class="hint" style="margin-bottom:8px">全平台唯一价格源，收编原 chat.pricing；支持百万 token（6 位小数）、按次及生图 rate_card。</div>
+          ${priceRows}
+        </div>
+      </div>
+      <div class="drawer-foot">
+        <button type="button" class="btn" id="dr-cancel">取消</button>
+        <button type="button" class="btn primary" id="dr-save">保存配置</button>
+      </div>
+    </aside>
+  </div>`;
+  const close = () => { document.getElementById('dialog-host').innerHTML = ''; };
+  document.getElementById('dr-x').onclick = close;
+  document.getElementById('dr-cancel').onclick = close;
+  document.getElementById('mask').onclick = (e) => { if (e.target.id === 'mask') close(); };
+  document.getElementById('dr-save').onclick = () => {
+    const cUrl = document.getElementById('ed-console').value.trim();
+    const dUrl = document.getElementById('ed-docs').value.trim();
+    if ((cUrl && !cUrl.startsWith('https://')) || (dUrl && !dUrl.startsWith('https://'))) {
+      toast('控制台与文档链接仅支持 https://');
+      return;
+    }
+    p.name = document.getElementById('ed-name').value.trim() || p.name;
+    p.kind = document.getElementById('ed-kind').value;
+    p.plan = document.getElementById('ed-plan').value.trim();
+    p.billing = document.getElementById('ed-billing').value;
+    const pr = document.getElementById('ed-price').value;
+    p.price = pr === '' ? null : Number(pr);
+    p.renew = document.getElementById('ed-renew').value.trim() || null;
+    const th = document.getElementById('ed-thresh').value;
+    p.threshold = th === '' ? null : Number(th);
+    p.deductByUsage = document.getElementById('ed-deduct').checked;
+    p.console = cUrl || null;
+    p.docs = dUrl || null;
+    close();
+    renderAll();
+    toast(`已更新「${p.name}」的订阅与单价配置（原型演示）`);
+  };
+}
+
+function handleSubAction(act, id) {
+  const p = PROVIDERS.find((x) => x.id === id);
+  if (!p) return;
+  openMoreId = null;
+  if (act === 'bal') { openBalanceModal(id); return; }
+  if (act === 'edit') { openSubDrawer(id); return; }
+  if (act === 'renew') {
+    const next = addCycle(p.renew, p.billing);
+    p.renew = next;
+    p.renewConfirmedAt = NOW_STR;
+    renderSub();
+    toast(`${p.name} 已确认续费，下次续费日顺延至 ${next}`);
+    return;
+  }
+  if (act === 'test') { toast(`连通性测试：${p.name} 响应正常（延迟 218ms）`); renderCardsOrTable(); return; }
+  if (act === 'logs') { toast(`跳转「调用日志」Tab 并筛选提供商：${p.name}`); renderCardsOrTable(); return; }
+  if (act === 'toggle') { p.enabled = !p.enabled; renderAll(); toast(`${p.name} 已${p.enabled ? '启用' : '停用'}（历史消费仍计入总账）`); return; }
+  if (act === 'del') {
+    const bound = PRESETS.filter((x) => x.provider === p.id && x.ok).map((x) => x.name);
+    if (bound.length) toast(`无法删除：仍有 ${bound.length} 个启用预设引用（${bound.slice(0, 2).join(', ')}）`);
+    else toast(`确认删除「${p.name}」后将软删，历史消费仍保留在总账`);
+    renderCardsOrTable();
+    return;
+  }
+  if (act === 'key') { if (showKeySet.has(id)) showKeySet.delete(id); else showKeySet.add(id); renderCardsOrTable(); }
+}
+
+document.getElementById('view-sub').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-act]');
+  if (!b) {
+    if (openMoreId !== null && !e.target.closest('.more-wrap')) { openMoreId = null; renderCardsOrTable(); }
+    return;
+  }
+  const act = b.dataset.act;
+  const id = Number(b.dataset.id);
+  if (act === 'more') { openMoreId = openMoreId === id ? null : id; renderCardsOrTable(); return; }
+  handleSubAction(act, id);
+});
+
+['sub-q', 'sub-kind', 'sub-proto', 'sub-sort', 'sub-hide-dis'].forEach((id) => {
+  document.getElementById(id).addEventListener(id === 'sub-q' ? 'input' : 'change', renderCardsOrTable);
+});
+document.getElementById('v-card').onclick = () => { subView = 'card'; document.getElementById('v-card').classList.add('on'); document.getElementById('v-table').classList.remove('on'); renderCardsOrTable(); };
+document.getElementById('v-table').onclick = () => { subView = 'table'; document.getElementById('v-table').classList.add('on'); document.getElementById('v-card').classList.remove('on'); renderCardsOrTable(); };
+document.getElementById('btn-add-sub').onclick = () => toast('打开「新增订阅源」抽屉（含连接配置 + 订阅与单价）');
+document.getElementById('close-notice').onclick = () => document.getElementById('merge-notice').classList.add('hidden');
+
+/* ---------- 预设管理（三层面包屑筛选 + 详情抽屉 + 窄屏保留模型） ---------- */
+const sel = { feature: new Set(), provider: new Set(), model: new Set() };
+
+function readHash() {
+  const q = new URLSearchParams(location.hash.slice(1));
+  ['feature', 'provider', 'model'].forEach((k) => { sel[k] = new Set((q.get(k) || '').split(',').filter(Boolean)); });
+  if (q.get('tab') === 'preset') showTab('preset', false);
+}
+function writeHash() {
+  const q = new URLSearchParams();
+  if (!document.getElementById('view-preset').classList.contains('hidden')) q.set('tab', 'preset');
+  ['feature', 'provider', 'model'].forEach((k) => { if (sel[k].size) q.set(k, [...sel[k]].join(',')); });
+  history.replaceState(null, '', q.toString() ? '#' + q.toString() : location.pathname);
+}
+
+const provName = (id) => PROVIDERS.find((p) => p.id === id)?.name || '—';
+const featMeta = (key) => FEATURES.find((f) => f.key === key) || { key, nav: '待处理', route: null };
+
+function matchesExcept(pr, skip) {
+  if (skip !== 'feature' && sel.feature.size && !sel.feature.has(pr.feature)) return false;
+  if (skip !== 'provider' && sel.provider.size && !sel.provider.has(String(pr.provider))) return false;
+  if (skip !== 'model' && sel.model.size && !sel.model.has(pr.model)) return false;
+  return true;
+}
+
+function chipGroup(key, items) {
+  return items.map(({ value, label, count, dim }) =>
+    `<button type="button" class="chip ${sel[key].has(String(value)) ? 'on' : ''}" data-k="${key}" data-v="${esc(value)}" ${dim ? 'style="opacity:.5"' : ''}>${esc(label)}<span class="n">${count}</span></button>`).join('');
+}
+
+function renderPresetFilters() {
+  const fItems = FEATURES.map((f) => {
+    const n = PRESETS.filter((p) => p.feature === f.key && matchesExcept(p, 'feature')).length;
+    return { value: f.key, label: f.key, count: n, dim: n === 0 };
+  }).filter((x) => x.count > 0 || sel.feature.has(x.value));
+  document.getElementById('f-feature').innerHTML = chipGroup('feature', fItems);
+
+  const pIds = [...new Set(PRESETS.map((p) => p.provider))];
+  const pItems = pIds.map((id) => {
+    const n = PRESETS.filter((p) => p.provider === id && matchesExcept(p, 'provider')).length;
+    return { value: id, label: provName(id), count: n, dim: n === 0 };
+  }).filter((x) => x.count > 0 || sel.provider.has(String(x.value)));
+  document.getElementById('f-provider').innerHTML = chipGroup('provider', pItems);
+
+  const mItems = [...new Set(PRESETS.filter((p) => matchesExcept(p, 'model')).map((p) => p.model))].map((m) => {
+    const n = PRESETS.filter((p) => p.model === m && matchesExcept(p, 'model')).length;
+    return { value: m, label: m, count: n };
+  });
+  document.getElementById('f-model').innerHTML = chipGroup('model', mItems);
+
+  document.querySelectorAll('.trail-row .chip').forEach((b) => {
+    b.onclick = () => {
+      const k = b.dataset.k, v = b.dataset.v;
+      if (sel[k].has(v)) sel[k].delete(v); else sel[k].add(v);
+      if (k !== 'model') [...sel.model].forEach((m) => { if (!PRESETS.some((p) => p.model === m && matchesExcept(p, 'model'))) sel.model.delete(m); });
+      writeHash(); renderPresets();
+    };
+  });
+}
+
+function openPresetDrawer(name) {
+  const pr = PRESETS.find((x) => x.name === name);
+  if (!pr) return;
+  const prov = PROVIDERS.find((x) => x.id === pr.provider);
+  const fm = featMeta(pr.feature);
+  document.getElementById('dialog-host').innerHTML = `<div class="mask drawer-mask" id="mask">
+    <aside class="drawer" role="dialog" aria-modal="true" aria-label="预设详情">
+      <div class="drawer-head">
+        <h3>${esc(pr.name)}</h3>
+        <button type="button" class="x" id="pdr-x" aria-label="关闭">×</button>
+      </div>
+      <div class="drawer-body">
+        <div class="hint">${esc(fm.nav)} › <strong>${esc(pr.feature)}</strong>${fm.route ? ` · <a href="javascript:void(0)" id="jump-route" style="color:var(--gold-text);font-weight:600">打开业务页 ${esc(fm.route)} ↗</a>` : ' · 平台内置（无独立菜单）'}</div>
+        <div class="kv-grid">
+          <div class="field"><label>绑定提供商</label><div><span class="tag t-gold">${esc(prov?.name || '—')}</span></div></div>
+          <div class="field"><label>绑定模型</label><div class="mono" style="font-size:13px">${esc(pr.model)}</div></div>
+          <div class="field"><label>调用模块（caller_module）</label><div class="mono" style="font-size:12px">${esc(pr.caller)}</div></div>
+          <div class="field"><label>启用状态</label><div>${pr.ok ? '<span class="tag t-ok">启用</span>' : '<span class="tag t-neutral">停用</span>'}</div></div>
+        </div>
+        <div>
+          <h4 class="sec-title">近 30 天用量与消费（二期完整统计）</h4>
+          <div class="internal-box" style="grid-template-columns:repeat(2,1fr)">
+            <div><div class="label">调用次数</div><div class="val num">${pr.calls} 次</div></div>
+            <div><div class="label">成功率</div><div class="val num">${pr.rate != null ? pr.rate + '%' : '—'}</div></div>
+            <div><div class="label">平均耗时</div><div class="val num">${pr.latency != null ? (pr.latency >= 1000 ? (pr.latency/1000).toFixed(1) + 's' : pr.latency + 'ms') : '—'}</div></div>
+            <div><div class="label">本月估算消费</div><div class="val num">${esc(pr.spend)}</div></div>
+          </div>
+        </div>
+        <div>
+          <h4 class="sec-title">用途说明</h4>
+          <div class="hint" style="color:var(--ink)">${esc(pr.desc)}</div>
+        </div>
+      </div>
+      <div class="drawer-foot">
+        <button type="button" class="btn" id="pdr-test">▶ 测试调用</button>
+        <button type="button" class="btn" id="pdr-copy">❐ 复制预设</button>
+        <button type="button" class="btn" id="pdr-toggle">${pr.ok ? '停用' : '启用'}</button>
+        <button type="button" class="btn primary" id="pdr-edit">编辑预设</button>
+      </div>
+    </aside>
+  </div>`;
+  const close = () => { document.getElementById('dialog-host').innerHTML = ''; };
+  document.getElementById('pdr-x').onclick = close;
+  document.getElementById('mask').onclick = (e) => { if (e.target.id === 'mask') close(); };
+  const jr = document.getElementById('jump-route');
+  if (jr) jr.onclick = () => toast(`跳转到业务页面：${fm.route}`);
+  document.getElementById('pdr-test').onclick = () => toast(`打开「${pr.name}」测试弹窗（保留多模态双图测试）`);
+  document.getElementById('pdr-copy').onclick = () => toast(`已复制为 ${pr.name}_copy（自动继承归属功能：${pr.feature}）`);
+  document.getElementById('pdr-toggle').onclick = () => { pr.ok = !pr.ok; close(); renderPresets(); toast(`${pr.name} 已${pr.ok ? '启用' : '停用'}`); };
+  document.getElementById('pdr-edit').onclick = () => toast(`打开「${pr.name}」编辑表单（含 feature_key、AiPresetImageFields / ChatFields）`);
+}
+
+function renderPresets() {
+  renderPresetFilters();
+  document.getElementById('cnt-preset').textContent = String(PRESETS.length);
+  const list = PRESETS.filter((p) => matchesExcept(p, null));
+  const groups = {};
+  list.forEach((p) => { (groups[p.feature] ||= []).push(p); });
+  const order = FEATURES.map((f) => f.key).filter((k) => groups[k]);
+
+  document.getElementById('preset-list').innerHTML = order.map((f) => {
+    const fm = featMeta(f);
+    const rows = groups[f].map((p) => {
+      const pr = PROVIDERS.find((x) => x.id === p.provider);
+      const unassigned = p.feature === '未归属';
+      return `<div class="prow" tabindex="0" data-pname="${esc(p.name)}">
+        <div class="crumbs"><span class="f ${unassigned ? 'unassigned' : ''}">${esc(p.feature)}</span><span class="sepc">›</span><span class="pn">${esc(p.name)}</span>
+          <div class="d">${esc(p.desc)}${p.ok ? '' : ' · <span class="unassigned">已停用预设</span>'}</div></div>
+        <div class="col-prov"><span class="tag ${pr && !pr.enabled ? 't-neutral' : 't-gold'}">${esc(pr?.name)}</span></div>
+        <div class="col-model"><span class="model-pill">${esc(p.model)}</span></div>
+        <div class="col-calls num">${p.calls} 次</div>
+        <div class="col-status">${p.ok ? '<span class="tag t-ok">启用</span>' : '<span class="tag t-neutral">停用</span>'}</div>
+      </div>`;
+    }).join('');
+    return `<div class="group-h">${f === '未归属' ? '<span class="unassigned">⚠ ' + f + '</span>' : esc(f)}<span class="nav-cat">${esc(fm.nav)}</span><span class="c">${groups[f].length} 个</span></div>${rows}`;
+  }).join('');
+
+  document.getElementById('preset-empty').classList.toggle('hidden', list.length > 0);
+  document.getElementById('preset-count').textContent = `显示 ${list.length} / ${PRESETS.length} 个预设`;
+
+  const unassignedN = PRESETS.filter((p) => p.feature === '未归属').length;
+  document.getElementById('preset-alert').innerHTML = unassignedN
+    ? `<div class="alert">⚠ ${unassignedN} 个存量预设未归属功能（调用不受影响，但无法按功能归类筛选）<button type="button" class="btn sm" id="go-unassigned">只看未归属</button></div>` : '';
+  const go = document.getElementById('go-unassigned');
+  if (go) go.onclick = () => { sel.feature = new Set(['未归属']); writeHash(); renderPresets(); };
+}
+
+document.getElementById('preset-list').addEventListener('click', (e) => {
+  const row = e.target.closest('.prow[data-pname]');
+  if (row) openPresetDrawer(row.dataset.pname);
+});
+document.getElementById('preset-list').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    const row = e.target.closest('.prow[data-pname]');
+    if (row) { e.preventDefault(); openPresetDrawer(row.dataset.pname); }
+  }
+});
+document.getElementById('clear-all').onclick = () => { Object.values(sel).forEach((s) => s.clear()); writeHash(); renderPresets(); };
+document.getElementById('btn-add-preset').onclick = () => toast('打开「新增预设」表单（所属功能 feature_key 必填）');
+
+/* ---------- Tab 切换与全局工具 ---------- */
+function toast(msg) {
+  document.querySelectorAll('.toast').forEach((n) => n.remove());
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.setAttribute('role', 'status');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+
+function showTab(t, syncHash = true) {
+  document.querySelectorAll('nav.tabs button').forEach((b) => {
+    const active = b.dataset.tab === t;
+    b.classList.toggle('on', active);
+    b.setAttribute('aria-selected', String(active));
+  });
+  document.getElementById('view-sub').classList.toggle('hidden', t !== 'sub');
+  document.getElementById('view-preset').classList.toggle('hidden', t !== 'preset');
+  if (syncHash) writeHash();
+}
+document.querySelectorAll('nav.tabs button:not(.dis)').forEach((b) => { b.onclick = () => showTab(b.dataset.tab); });
+document.querySelectorAll('nav.tabs button.dis').forEach((b) => { b.onclick = () => toast('原型聚焦「订阅管理」与「预设管理」，该 Tab 详见设计文档 §2'); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { document.getElementById('dialog-host').innerHTML = ''; openMoreId = null; renderCardsOrTable(); } });
+
+function renderAll() { renderSub(); renderPresets(); }
+readHash();
+renderAll();
+</script>
+</body>
+</html>

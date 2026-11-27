@@ -1,6 +1,9 @@
 .ai-manager-page {
   padding-bottom: 40px;
 }
+.w-full {
+  width: 100%;
+}
 
 /* Stats */
 .stats-row {
@@ -51,6 +54,25 @@
 }
 .ai-tabs :deep(.el-tabs__content) {
   padding: 20px;
+}
+.tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tab-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 6px;
+  line-height: 18px;
+  border-radius: 999px;
+  background: var(--tag-neutral-bg);
+  color: var(--tag-neutral-text);
+  font-variant-numeric: tabular-nums;
+}
+.ai-tabs :deep(.el-tabs__item.is-active) .tab-count {
+  background: var(--tag-gold-bg);
+  color: var(--tag-gold-text);
 }
 
 /* Toolbar */

@@ -1,18 +1,29 @@
 """AI 接入模块 — API 路由"""
 
+from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.auth.dependencies import require_permission
+from app.auth.dependencies import get_current_user, require_permission
 from app.core.response import ok as _ok
+from app.core.storage.cos import ObjectMissing
 from app.ai import service
+from app.ai.logo_storage import MAX_LOGO_BYTES
 from app.ai.provider_config import public_extra_headers
 from app.ai.schemas import (
-    ProviderCreate, ProviderUpdate, PresetCreate, PresetUpdate,
-    PresetTestRequest, ChatRequest, DelegateRequest,
+    BalanceCheckpointCreate,
+    ChatRequest,
+    DelegateRequest,
+    ModelPricesReplace,
+    PresetCreate,
+    PresetTestRequest,
+    PresetUpdate,
+    ProviderBillingUpsert,
+    ProviderCreate,
+    ProviderUpdate,
 )
 
 # 所有 AI 端点要求 ai:admin 权限。
@@ -28,6 +39,185 @@ def _mask_api_key(key: Optional[str]) -> str:
     if len(key) <= 8:
         return "****"
     return key[:4] + "****" + key[-4:]
+
+
+def _split_csv(value: Optional[str]) -> Optional[list[str]]:
+    if not value:
+        return None
+    parts = [part.strip() for part in value.split(",") if part.strip()]
+    return parts or None
+
+
+def _actor_id(current_user: dict) -> Optional[int]:
+    raw = current_user.get("sub")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+# ── Subscription & Billing ────────────────────────────
+
+@router.get("/subscriptions")
+def list_subscriptions(
+    status_filter: Optional[str] = Query(None),
+    service_kind: Optional[str] = Query(None),
+    api_type: Optional[str] = Query(None),
+    hide_disabled: bool = Query(False),
+    q: Optional[str] = Query(None),
+    sort: str = Query("renew"),
+    db: Session = Depends(get_db),
+):
+    result = service.list_subscriptions(
+        db,
+        status_filter=status_filter,
+        service_kind=service_kind,
+        api_type=api_type,
+        hide_disabled=hide_disabled,
+        q=q,
+        sort=sort,
+    )
+    return _ok(result)
+
+
+@router.put("/providers/{provider_id}/billing")
+def upsert_provider_billing(
+    provider_id: int,
+    data: ProviderBillingUpsert,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        billing = service.upsert_provider_billing(
+            db, provider_id, data.model_dump(), actor_id=_actor_id(current_user),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _ok({
+        "provider_id": billing.provider_id,
+        "service_kind": billing.service_kind,
+        "billing_mode": billing.billing_mode,
+        "updated_at": billing.updated_at.isoformat() if billing.updated_at else None,
+    }, "订阅信息已保存")
+
+
+@router.post("/providers/{provider_id}/renew-confirm")
+def confirm_provider_renew(
+    provider_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        result = service.confirm_provider_renew(db, provider_id, actor_id=_actor_id(current_user))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _ok(result, "已确认续费并顺延一期")
+
+
+@router.get("/providers/{provider_id}/balance-checkpoints")
+def list_balance_checkpoints(
+    provider_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    try:
+        items = service.list_balance_checkpoints(db, provider_id, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _ok({"total": len(items), "items": items})
+
+
+@router.post("/providers/{provider_id}/balance-checkpoints")
+def create_balance_checkpoint(
+    provider_id: int,
+    data: BalanceCheckpointCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        item = service.create_balance_checkpoint(
+            db, provider_id, data.model_dump(), actor_id=_actor_id(current_user),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _ok(item, "余额已登记")
+
+
+@router.get("/providers/{provider_id}/model-prices")
+def list_model_prices(
+    provider_id: int,
+    db: Session = Depends(get_db),
+):
+    try:
+        items = service.list_model_prices(db, provider_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _ok({"total": len(items), "items": items})
+
+
+@router.put("/providers/{provider_id}/model-prices")
+def replace_model_prices(
+    provider_id: int,
+    data: ModelPricesReplace,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        items = service.replace_model_prices(
+            db,
+            provider_id,
+            [item.model_dump() for item in data.items],
+            actor_id=_actor_id(current_user),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _ok({"total": len(items), "items": items}, "模型单价已保存")
+
+
+@router.put("/providers/{provider_id}/logo")
+async def upload_provider_logo(
+    provider_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    content = await file.read(MAX_LOGO_BYTES + 1)
+    try:
+        result = service.upload_provider_logo(db, provider_id, content, actor_id=_actor_id(current_user))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _ok(result, "LOGO 上传成功")
+
+
+@router.get("/providers/{provider_id}/logo")
+def get_provider_logo(
+    provider_id: int,
+    db: Session = Depends(get_db),
+):
+    try:
+        content, mime, storage_key = service.get_provider_logo_file(db, provider_id)
+    except (ValueError, FileNotFoundError, ObjectMissing) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(
+        content=content,
+        media_type=mime,
+        headers={
+            "Content-Disposition": "inline",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-cache",
+            "ETag": f'"{storage_key}"',
+        },
+    )
+
+
+@router.get("/feature-catalog")
+def get_feature_catalog():
+    return _ok({
+        "items": service.list_feature_catalog(),
+        "module_labels": service.caller_module_labels(),
+    })
 
 
 # ── Provider ──────────────────────────────────────────
@@ -126,11 +316,29 @@ def test_provider(
 @router.get("/presets")
 def list_presets(
     provider_id: Optional[int] = Query(None),
+    provider_ids: Optional[str] = Query(None),
+    feature_key: Optional[str] = Query(None),
+    model: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
-    items = service.list_presets(db, provider_id, search)
-    return _ok({"total": len(items), "items": items})
+    parsed_pids = None
+    raw_pids = _split_csv(provider_ids)
+    if raw_pids:
+        try:
+            parsed_pids = [int(x) for x in raw_pids]
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="provider_ids 格式无效") from exc
+    items = service.list_presets(
+        db,
+        provider_id,
+        search,
+        feature_keys=_split_csv(feature_key),
+        provider_ids=parsed_pids,
+        models=_split_csv(model),
+    )
+    unassigned_count = sum(1 for item in items if not item.get("feature_key"))
+    return _ok({"total": len(items), "unassigned_count": unassigned_count, "items": items})
 
 
 @router.post("/presets")
@@ -138,10 +346,14 @@ def create_preset(
     data: PresetCreate,
     db: Session = Depends(get_db),
 ):
-    p = service.create_preset(db, data.model_dump())
+    try:
+        p = service.create_preset(db, data.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _ok({
         "id": p.id,
         "preset_name": p.preset_name,
+        "feature_key": p.feature_key,
     }, "创建成功")
 
 
@@ -152,8 +364,11 @@ def update_preset(
     db: Session = Depends(get_db),
 ):
     update_data = {k: v for k, v in data.model_dump().items() if v is not None}
-    p = service.update_preset(db, preset_id, update_data)
-    return _ok({"id": p.id, "preset_name": p.preset_name}, "更新成功")
+    try:
+        p = service.update_preset(db, preset_id, update_data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _ok({"id": p.id, "preset_name": p.preset_name, "feature_key": p.feature_key}, "更新成功")
 
 
 @router.delete("/presets/{preset_id}")
@@ -264,7 +479,9 @@ def get_task_result(
 def list_logs(
     caller_module: Optional[str] = Query(None),
     preset_id: Optional[int] = Query(None),
+    provider_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
+    cost_status: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
@@ -273,7 +490,20 @@ def list_logs(
     sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
 ):
-    result = service.list_logs(db, caller_module, preset_id, status, date_from, date_to, page, page_size, sort_field=sort_field, sort_order=sort_order)
+    result = service.list_logs(
+        db,
+        caller_module,
+        preset_id,
+        status,
+        date_from,
+        date_to,
+        page,
+        page_size,
+        sort_field=sort_field,
+        sort_order=sort_order,
+        provider_id=provider_id,
+        cost_status=cost_status,
+    )
     return _ok(result)
 
 
@@ -289,6 +519,7 @@ def get_log_detail(
         "caller_module": log.caller_module,
         "caller_user_id": log.caller_user_id,
         "preset_name": log.preset_name,
+        "provider_id": log.provider_id,
         "provider_type": log.provider_type,
         "model": log.model,
         "tokens_prompt": log.tokens_prompt,
@@ -296,6 +527,11 @@ def get_log_detail(
         "tokens_used": log.tokens_used,
         "duration_ms": log.duration_ms,
         "status": log.status,
+        "finished_at": log.finished_at.isoformat() if log.finished_at else None,
+        "cost_status": log.cost_status,
+        "cost_amount": str(Decimal(log.cost_amount).quantize(Decimal("0.000001"))) if log.cost_amount is not None else None,
+        "cost_currency": log.cost_currency,
+        "price_snapshot": log.price_snapshot,
         "error_code": log.error_code,
         "error_message": log.error_message,
         "prompt_snapshot": log.prompt_snapshot,

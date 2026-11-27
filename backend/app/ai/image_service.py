@@ -25,6 +25,8 @@ from app.ai.log_snapshot import serialize_response_snapshot
 from app.ai.preset_config import image_request_parameters, image_size_parameter, image_aspect_ratio
 from app.ai.models import AiCallLog, AiPreset
 from app.ai.provider_service import get_provider
+from app.ai.billing_service import settle_call_log_cost
+from app.core.time import beijing_now
 
 
 class ImageInput(TypedDict):
@@ -761,6 +763,7 @@ def generate_image(
         caller_user_id=caller_user_id,
         preset_id=preset.id,
         preset_name=preset.preset_name,
+        provider_id=provider.id,
         provider_type=provider.provider_type,
         model=preset.model,
         prompt_snapshot=_image_prompt_snapshot(prompt, []),
@@ -817,7 +820,15 @@ def generate_image(
         usage = _extract_usage(result)
         usage_detail = _extract_usage_detail(result)
         duration_ms = int((time.time() - start) * 1000)
+        finished_at = beijing_now()
+        snap_log_id = log.id
+        snap_provider_id = provider.id
+        snap_provider_type = provider.provider_type
+        snap_model = preset.model
+        snap_preset_name = preset.preset_name
+        snap_preset_params = dict(preset.parameters) if isinstance(preset.parameters, dict) else None
         log.status = "success"
+        log.finished_at = finished_at
         log.tokens_prompt = usage.get("prompt_tokens")
         log.tokens_completion = usage.get("completion_tokens")
         log.tokens_used = usage.get("total_tokens")
@@ -825,12 +836,12 @@ def generate_image(
         log.duration_ms = duration_ms
         log.response_snapshot = serialize_response_snapshot(result)
         db.commit()
-        return {
+        response_payload: ImageCallResult = {
             "content": content,
             "tokens_used": usage.get("total_tokens"),
             "usage_detail": usage_detail,
             "duration_ms": duration_ms,
-            "log_id": log.id,
+            "log_id": snap_log_id,
             "provider_attempt_count": transport.attempts,
             "request_id": transport.request_id,
         }
@@ -841,6 +852,8 @@ def generate_image(
         db.rollback()
         try:
             log.status = "error"
+            log.finished_at = beijing_now()
+            log.cost_status = "failed"
             log.error_code = "unknown_error"
             log.error_message = str(exc)[:500]
             log.duration_ms = int((time.time() - start) * 1000)
@@ -849,6 +862,24 @@ def generate_image(
             db.rollback()
             _warn_log_commit_failure(log.id, log_exc)
         raise
+
+    # 计费独立于生图业务 try 块之外执行（使用提交前快照，避免触发过期 ORM 懒加载）
+    settle_call_log_cost(
+        db,
+        snap_log_id,
+        provider_id=snap_provider_id,
+        provider_type=snap_provider_type,
+        model=snap_model,
+        preset_name=snap_preset_name,
+        caller_module=caller_module,
+        status="success",
+        tokens_prompt=usage.get("prompt_tokens"),
+        tokens_completion=usage.get("completion_tokens"),
+        usage_detail=usage_detail,
+        preset_parameters=snap_preset_params,
+        finished_at=finished_at,
+    )
+    return response_payload
 
 
 def edit_image(
@@ -882,6 +913,7 @@ def edit_image(
         caller_user_id=caller_user_id,
         preset_id=preset.id,
         preset_name=preset.preset_name,
+        provider_id=provider.id,
         provider_type=provider.provider_type,
         model=preset.model,
         prompt_snapshot=_image_prompt_snapshot(prompt, images),
@@ -950,7 +982,15 @@ def edit_image(
         usage = _extract_usage(result)
         usage_detail = _extract_usage_detail(result)
         duration_ms = int((time.time() - start) * 1000)
+        finished_at = beijing_now()
+        snap_log_id = log.id
+        snap_provider_id = provider.id
+        snap_provider_type = provider.provider_type
+        snap_model = preset.model
+        snap_preset_name = preset.preset_name
+        snap_preset_params = dict(preset.parameters) if isinstance(preset.parameters, dict) else None
         log.status = "success"
+        log.finished_at = finished_at
         log.tokens_prompt = usage.get("prompt_tokens")
         log.tokens_completion = usage.get("completion_tokens")
         log.tokens_used = usage.get("total_tokens")
@@ -959,12 +999,12 @@ def edit_image(
         log.response_snapshot = serialize_response_snapshot(result)
         db.commit()
 
-        return {
+        response_payload: ImageCallResult = {
             "content": content,
             "tokens_used": usage.get("total_tokens"),
             "usage_detail": usage_detail,
             "duration_ms": duration_ms,
-            "log_id": log.id,
+            "log_id": snap_log_id,
             "provider_attempt_count": transport.attempts,
             "request_id": transport.request_id,
         }
@@ -975,6 +1015,8 @@ def edit_image(
         db.rollback()
         try:
             log.status = "error"
+            log.finished_at = beijing_now()
+            log.cost_status = "failed"
             log.error_code = "unknown_error"
             log.error_message = str(exc)[:500]
             log.duration_ms = int((time.time() - start) * 1000)
@@ -983,3 +1025,21 @@ def edit_image(
             db.rollback()
             _warn_log_commit_failure(log.id, log_exc)
         raise
+
+    # 计费独立于生图业务 try 块之外执行（使用提交前快照，避免触发过期 ORM 懒加载）
+    settle_call_log_cost(
+        db,
+        snap_log_id,
+        provider_id=snap_provider_id,
+        provider_type=snap_provider_type,
+        model=snap_model,
+        preset_name=snap_preset_name,
+        caller_module=caller_module,
+        status="success",
+        tokens_prompt=usage.get("prompt_tokens"),
+        tokens_completion=usage.get("completion_tokens"),
+        usage_detail=usage_detail,
+        preset_parameters=snap_preset_params,
+        finished_at=finished_at,
+    )
+    return response_payload

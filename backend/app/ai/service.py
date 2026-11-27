@@ -33,3 +33,15 @@ from app.ai.image_service import (  # noqa: F401
 )
 from app.ai.agent_service import prepare_agent_chat  # noqa: F401
 from app.ai.text_snapshot import prepare_text_chat, freeze_text_call_config  # noqa: F401
+from app.ai.feature_catalog import list_feature_catalog, caller_module_labels  # noqa: F401
+from app.ai.subscription_service import (  # noqa: F401
+    list_subscriptions,
+    upsert_provider_billing,
+    confirm_provider_renew,
+    list_balance_checkpoints,
+    create_balance_checkpoint,
+    list_model_prices,
+    replace_model_prices,
+    upload_provider_logo,
+    get_provider_logo_file,
+)

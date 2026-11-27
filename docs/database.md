@@ -1,5 +1,17 @@
 # 莱莎方舟 数据库表参考
 
+## AI 订阅管理与统一计费（285_ai_subscription_billing）
+
+迁移接 `282_client_desk_unlinked`（避开其他分支已占用的 283/284），位于提成系统库，所有业务时间使用北京时间，审计人列为 MySQL `INT UNSIGNED`。
+
+| 表 / 改造 | 数据与约束 |
+|---|---|
+| `ark_ai_provider_billings` | 1:1 关联 `ark_ai_providers`，保存接入渠道（`service_kind: official/relay`，不改原 `provider_type`）、计费周期、是否按调用扣减余额、续费日与人工确认时间、https 外链、LOGO 对象存储键、最新余额流水指针及低余额预警线 |
+| `ark_ai_balance_checkpoints` | 余额核对与充值流水（`reconcile/topup`），精确到秒的北京截点 `recorded_at` 与登记瞬间系统估算值快照 `estimated_before_amount`，支持漂移复盘 |
+| `ark_ai_model_prices` | 全平台统一模型单价表，`(provider_id, model)` 唯一；支持 `token`（6 位小数）、`per_call`、`image_rate_card` 三种计价模式，收编 `chat.pricing` |
+| `ark_ai_presets`（加列） | 新增 `feature_key VARCHAR(64) NULL` 与索引；迁移内按静态快照回填存量预设 |
+| `ark_ai_call_logs`（加列） | 新增 `provider_id`、`finished_at`、`cost_status`（`priced/unpriced/no_usage/failed/not_billed/legacy/test`）、`cost_amount`、`cost_currency`、`price_snapshot` 及三组统计索引；存量日志统一回填 `cost_status='legacy'` |
+
 ## 方舟开发动态（278_devlog_tables）
 
 迁移接在 `277_cross_border_review` 之后。以下五张表位于提成系统库，业务时间使用北京时间。

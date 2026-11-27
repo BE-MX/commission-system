@@ -466,9 +466,11 @@ def _finalize_failure(job_id: int, lease_token: str, exc: Exception) -> bool:
                 else:
                     effective_log_id = candidate_log_id
                     if log.status == "pending":
+                        from app.ai.billing_service import mark_log_terminal_failed
                         log.status = "error"
                         log.error_code = code
                         log.error_message = message
+                        mark_log_terminal_failed(db, log)
             job.status = "failed"
             job.error_code = code
             job.error_message = message

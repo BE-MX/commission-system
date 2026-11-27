@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.preset_config import is_image_preset, is_studio_preset, validate_parameters, validate_image_parameters
 from app.ai.models import AiPreset, AiProvider
+from app.ai.feature_catalog import get_feature, is_valid_feature_key
 from app.ai.call_service import chat
 from app.ai.image_service import edit_image, generate_image
 from app.ai.provider_service import get_provider
@@ -60,24 +61,52 @@ def list_presets(
     db: Session,
     provider_id: Optional[int] = None,
     search: Optional[str] = None,
+    *,
+    feature_keys: Optional[list[str]] = None,
+    provider_ids: Optional[list[int]] = None,
+    models: Optional[list[str]] = None,
 ) -> list[dict]:
     query = (
-        db.query(AiPreset, AiProvider.name.label("provider_name"))
+        db.query(
+            AiPreset,
+            AiProvider.name.label("provider_name"),
+            AiProvider.is_enabled.label("provider_is_enabled"),
+        )
         .join(AiProvider, AiPreset.provider_id == AiProvider.id)
         .filter(AiPreset.deleted_at.is_(None))
     )
     if provider_id:
         query = query.filter(AiPreset.provider_id == provider_id)
+    if provider_ids:
+        query = query.filter(AiPreset.provider_id.in_(provider_ids))
+    if models:
+        query = query.filter(AiPreset.model.in_(models))
+    if feature_keys:
+        want_unassigned = "__unassigned__" in feature_keys
+        normal_keys = [k for k in feature_keys if k != "__unassigned__"]
+        if want_unassigned and normal_keys:
+            query = query.filter(AiPreset.feature_key.is_(None) | AiPreset.feature_key.in_(normal_keys))
+        elif want_unassigned:
+            query = query.filter(AiPreset.feature_key.is_(None))
+        elif normal_keys:
+            query = query.filter(AiPreset.feature_key.in_(normal_keys))
     if search:
         like = f"%{search}%"
         query = query.filter(
-            AiPreset.preset_name.ilike(like) | AiPreset.description.ilike(like)
+            AiPreset.preset_name.ilike(like)
+            | AiPreset.description.ilike(like)
+            | AiPreset.model.ilike(like)
         )
     rows = query.order_by(AiPreset.id.desc()).all()
     result = []
-    for preset, provider_name in rows:
-        d = preset.__dict__.copy()
+    for preset, provider_name, provider_is_enabled in rows:
+        d = {k: v for k, v in preset.__dict__.items() if not k.startswith("_")}
+        feat = get_feature(preset.feature_key)
         d["provider_name"] = provider_name
+        d["provider_is_enabled"] = provider_is_enabled
+        d["feature_label"] = feat.label if feat else None
+        d["nav_group"] = feat.nav_group if feat else None
+        d["route_path"] = feat.route_path if feat else None
         result.append(d)
     return result
 
@@ -110,6 +139,11 @@ def create_preset(db: Session, data: dict) -> AiPreset:
     if is_studio_preset(candidate):
         validate_image_parameters(candidate.parameters, candidate.model)
 
+    # 校验 feature_key（新建预设必填且必须来自功能目录）
+    feature_key = (data.get("feature_key") or "").strip()
+    if not is_valid_feature_key(feature_key):
+        raise ValueError("请选择有效的所属功能")
+
     # 校验 provider 存在
     provider = get_provider(db, data["provider_id"])
 
@@ -117,6 +151,7 @@ def create_preset(db: Session, data: dict) -> AiPreset:
         preset_name=data["preset_name"],
         provider_id=data["provider_id"],
         model=data.get("model") or "",
+        feature_key=feature_key,
         system_prompt=data.get("system_prompt"),
         parameters=data.get("parameters"),
         description=data.get("description"),
@@ -153,6 +188,11 @@ def update_preset(db: Session, preset_id: int, data: dict) -> AiPreset:
         p.provider_id = data["provider_id"]
     if "model" in data:
         p.model = data["model"] or ""
+    if "feature_key" in data:
+        fk = (data["feature_key"] or "").strip()
+        if not is_valid_feature_key(fk):
+            raise ValueError("所属功能标识无效")
+        p.feature_key = fk
     if "system_prompt" in data:
         p.system_prompt = data["system_prompt"]
     if "parameters" in data:

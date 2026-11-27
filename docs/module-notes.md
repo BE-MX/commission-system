@@ -426,6 +426,12 @@ content = result["content"]
 
 **前端管理页**：`frontend/src/views/system/AIManager.vue`（菜单：系统管理 → AI 接入管理，需 `ai:admin` 权限）
 
+**订阅管理与全链路费用核算（2026-11-27，迁移 285）**：
+- `ark_ai_providers` 保持 1:1 对应订阅源，扩展账务表 `ark_ai_provider_billings`、余额流水表 `ark_ai_balance_checkpoints`、统一模型单价表 `ark_ai_model_prices`（收编 `chat.pricing` 并兼容生图 `rate_card`）。
+- 计费模块 `app/ai/billing_service.py` 覆盖 `call_service`（`chat`/`delegate`）、`stream_service`、`image_service`、`agent_service`（排除 `reservation` 预扣）及 3 处外部 pending 兜底清理；计费与业务结果严格隔离，失败只记日志不改调用状态。
+- 预设归属由 `app/ai/feature_catalog.py` 统一维护（覆盖 `navigation.js` 分组及外部站点网关 / Agent 引擎 / 系统测试），启动种子 `seed_ai.py` / `seed_fx_settlement.py` / `seed_whatsapp_reply.py` 同步写入 `feature_key`。
+- 前端「订阅管理」并入原提供商管理全部能力，移除顶部旧 4 卡并改用 `OverviewMetricCard` 汇总条（含在用固定订阅月折算、独立维度续费/余额预警、总账守恒）；「预设管理」升级为功能 × 提供商 × 模型三层面包屑筛选与分组列表。
+
 ## 短链接（leshine.work/s/{code}）
 
 统一短链服务,承载物流推送链接、对外分享链接等场景。

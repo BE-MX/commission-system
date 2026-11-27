@@ -1,5 +1,51 @@
 import { aiClient as aiApi } from './clients'
 
+// Subscription & Billing
+export function getSubscriptions(params, config = {}) {
+  return aiApi.get('/subscriptions', { ...config, params, showLoading: false })
+}
+
+export function upsertProviderBilling(id, data) {
+  return aiApi.put(`/providers/${id}/billing`, data, { loadingText: '正在保存订阅信息...' })
+}
+
+export function confirmProviderRenew(id) {
+  return aiApi.post(`/providers/${id}/renew-confirm`, {}, { loadingText: '正在确认续费...' })
+}
+
+export function getBalanceCheckpoints(id, params = {}, config = {}) {
+  return aiApi.get(`/providers/${id}/balance-checkpoints`, { ...config, params, showLoading: false })
+}
+
+export function createBalanceCheckpoint(id, data) {
+  return aiApi.post(`/providers/${id}/balance-checkpoints`, data, { loadingText: '正在登记余额...' })
+}
+
+export function getModelPrices(id, config = {}) {
+  return aiApi.get(`/providers/${id}/model-prices`, { ...config, showLoading: false })
+}
+
+export function replaceModelPrices(id, items) {
+  return aiApi.put(`/providers/${id}/model-prices`, { items }, { loadingText: '正在保存单价...' })
+}
+
+export function uploadProviderLogo(id, file) {
+  const form = new FormData()
+  form.append('file', file)
+  return aiApi.put(`/providers/${id}/logo`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    loadingText: '正在上传 LOGO...',
+  })
+}
+
+export function getProviderLogoBlob(id, config = {}) {
+  return aiApi.get(`/providers/${id}/logo`, { ...config, responseType: 'blob', showLoading: false, suppressToast: true })
+}
+
+export function getFeatureCatalog(config = {}) {
+  return aiApi.get('/feature-catalog', { ...config, showLoading: false })
+}
+
 // Provider
 export function getProviders(params, config = {}) {
   return aiApi.get('/providers', { ...config, params, showLoading: false })

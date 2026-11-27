@@ -47,6 +47,7 @@ def seed_reply_presets(db) -> int:
         parameters = reply_parameters(base.parameters, max_tokens, provider.api_type)
         db.add(AiPreset(
             preset_name=name, provider_id=base.provider_id, model=base.model,
+            feature_key="whatsapp",
             parameters=parameters, system_prompt="", description=description, is_enabled=False,
         ))
         created += 1

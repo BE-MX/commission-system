@@ -22,7 +22,7 @@ defineProps({
   label: { type: String, required: true },
   value: { type: [Number, String], default: '—' },
   icon: { type: [Object, Function], required: true },
-  tone: { type: String, default: 'neutral', validator: value => ['gold', 'success', 'info', 'warning', 'violet', 'neutral'].includes(value) },
+  tone: { type: String, default: 'neutral', validator: value => ['gold', 'success', 'info', 'warning', 'danger', 'violet', 'neutral'].includes(value) },
   hint: { type: String, default: '' },
   interactive: { type: Boolean, default: false },
   selected: { type: Boolean, default: false },
@@ -53,6 +53,7 @@ defineProps({
 .overview-metric--success { --metric-ink: var(--tag-success-text); --metric-bg: var(--tag-success-bg); }
 .overview-metric--info { --metric-ink: var(--tag-info-text); --metric-bg: var(--tag-info-bg); }
 .overview-metric--warning { --metric-ink: var(--tag-warning-text); --metric-bg: var(--tag-warning-bg); }
+.overview-metric--danger { --metric-ink: var(--tag-danger-text); --metric-bg: var(--tag-danger-bg); }
 .overview-metric--violet { --metric-ink: var(--metric-violet-ink); --metric-bg: var(--metric-violet-bg); }
 .overview-metric__icon {
   z-index: 1;
