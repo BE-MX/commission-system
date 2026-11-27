@@ -29,11 +29,28 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--portal-ink
 .brand-mark img { position: absolute; width: 180px; height: 180px; max-width: none; left: -17px; top: -62px; }
 .login-brand-mark { display: block; width: 144px; height: auto; flex-shrink: 0; }
 .login-layout { display: grid; grid-template-columns: 1fr 1fr; min-height: 100dvh; }
-.brand-panel { min-height: 100dvh; color: var(--portal-white); background: linear-gradient(var(--portal-dark-wash), var(--portal-dark-wash)), url('/assets/brand-texture.jpg'); background-size: cover, auto 180%; background-position: center, center 38%; padding: clamp(40px, 6vw, 88px); display: flex; flex-direction: column; align-items: flex-start; }
-.brand-story { margin: auto 0; padding: 70px 0 100px; }
+.brand-panel {
+  min-height: 100dvh;
+  color: var(--portal-white);
+  background: var(--portal-dark) url('/assets/login-hair-extensions.webp') center / cover no-repeat;
+  padding: clamp(40px, 6vw, 88px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 28px;
+}
+.brand-glass {
+  max-width: 100%;
+  background-color: var(--portal-dark-wash);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-radius: 10px;
+}
+.brand-signature { padding: 8px 14px; }
+.brand-story { margin: auto 0; padding: clamp(20px, 2vw, 32px); }
 .brand-story h1 { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(42px, 4.4vw, 70px); letter-spacing: -.045em; margin: 25px 0 32px; }
-.brand-story > p:last-child { color: var(--portal-light-text); line-height: 1.9; }
-.brand-foot { width: 100%; display: flex; flex-wrap: wrap; gap: 16px 32px; font-size: 13px; letter-spacing: .04em; }
+.brand-story > p:last-child { color: var(--portal-light-text); line-height: 1.9; margin-bottom: 0; }
+.brand-foot { padding: 7px 12px; font-size: 13px; letter-spacing: .04em; }
 .login-panel { min-width: 0; display: flex; flex-direction: column; align-items: center; padding: 80px 40px 28px; }
 .login-form { width: 100%; max-width: 380px; margin: auto 0; }
 .login-form h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 39px; white-space: pre-line; letter-spacing: -.02em; margin: 18px 0 26px; }
@@ -262,14 +279,13 @@ textarea { width: 100%; border: 1px solid var(--portal-border); border-radius: 7
 }
 @media (max-width: 1000px) {
   .brand-panel { padding: 45px; }
-  .brand-foot { font-size: 13px; }
   .portal-header { gap: 28px; }
   .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 700px) {
   .login-layout { grid-template-columns: 1fr; }
-  .brand-panel { min-height: auto; padding: 26px 24px 32px; }
-  .brand-story { padding: 25px 0 0; margin: 0; }
+  .brand-panel { min-height: auto; padding: 22px 24px; gap: 16px; }
+  .brand-story { padding: 12px 16px; margin: 0; }
   .brand-story .eyebrow, .brand-story > p:last-child, .brand-foot { display: none; }
   .brand-story h1 { font-size: 36px; margin: 0; }
   .login-panel { padding: 42px 24px 24px; }

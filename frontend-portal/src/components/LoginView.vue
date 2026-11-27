@@ -28,9 +28,15 @@ async function login() {
 <template>
   <main class="login-layout">
     <section class="brand-panel" aria-label="LeShine partner collection">
-      <img class="login-brand-mark" src="/assets/logo-white.png" alt="LeShine Hair" width="144" height="58" />
-      <div class="brand-story"><p class="eyebrow">THE PARTNER COLLECTION</p><h1>Good things<br />grow together.</h1><p>Your collection. Your shades.<br />A closer connection to LeShine.</p></div>
-      <div class="brand-foot"><span>LESHINE / PARTNER ATELIER</span></div>
+      <div class="brand-glass brand-signature">
+        <img class="login-brand-mark" src="/assets/logo-white.png" alt="LeShine Hair" width="144" height="58" />
+      </div>
+      <div class="brand-glass brand-story">
+        <p class="eyebrow">THE PARTNER COLLECTION</p>
+        <h1>Good things<br />grow together.</h1>
+        <p>Your collection. Your shades.<br />A closer connection to LeShine.</p>
+      </div>
+      <div class="brand-glass brand-foot">LESHINE / PARTNER ATELIER</div>
     </section>
     <section class="login-panel">
       <div class="login-form">

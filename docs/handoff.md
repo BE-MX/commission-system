@@ -1,3 +1,7 @@
+## 2026-11-27 客户商城登录页背景（Codex，待部署）
+
+- 分支 `codex/shop-login-photo`。客户门户登录页使用新的发制品实拍照，品牌标志、主文案和底部署名各有局部毛玻璃衬底。门户构建及 147 项单测通过。
+
 ## 2026-11-27 客户查重接口（Claude，已合入并推送 main，未部署）
 
 - 分支 `claude/customer-dedup`。新增 `POST /api/customer-dedup/check`：同事自建获客工具按社媒账号（10 个平台）或邮箱查重，返回已在同事私海（客户名+负责人姓名）、公海、未收录或无法判断四种结论，不返回联系人资料。接入说明见 [customer-dedup-api.md](customer-dedup-api.md)。
